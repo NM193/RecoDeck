@@ -28,36 +28,8 @@ jobs:
 
       - name: Sync versions
         run: npm run version:sync
-
-      - name: Import Apple Certificate
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
-          security create-keychain -p actions temp.keychain
-          security default-keychain -s temp.keychain
-          security unlock-keychain -p actions temp.keychain
-          security import certificate.p12 -k temp.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
-
       - name: Build macOS app
         run: npm run build:mac
-
-      - name: Notarize DMG
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          chmod +x scripts/notarize.sh
-          DMG_FILE=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
-          if [ -z "$DMG_FILE" ]; then
-            echo "Error: No DMG file found"
-            exit 1
-          fi
-          ./scripts/notarize.sh "$DMG_FILE"
-
       - name: Sign update bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -100,6 +72,6 @@ jobs:
             This version includes automatic updates. Future releases will notify you automatically!
 
             ---
-            🤖 Built with [Tauri](https://tauri.app) | Signed and notarized for macOS
+            🤖 Built with [Tauri](https://tauri.app) | macOS build (unsigned)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
