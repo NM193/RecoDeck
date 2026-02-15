@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { TrackTable, type TrackTableRef } from "./components/TrackTable";
 import { Player } from "./components/Player";
 import { Settings } from "./components/Settings";
@@ -77,6 +79,26 @@ function App() {
 
   useEffect(() => {
     initializeApp();
+  }, []);
+
+  // Check for app updates on startup (after a short delay to not block UI)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const update = await check();
+        if (update) {
+          setNotification({
+            message: `Update ${update.version} available. Downloading...`,
+            type: "info",
+          });
+          await update.downloadAndInstall();
+          await relaunch();
+        }
+      } catch (err) {
+        console.warn("Update check failed:", err);
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
   }, []);
 
   async function initializeApp() {
