@@ -21,6 +21,12 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          npm version $VERSION --no-git-tag-version --allow-same-version
+          npm run version:sync
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -28,9 +34,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Sync versions
-        run: npm run version:sync
 
       - name: Build and sign macOS app (Apple Silicon only)
         env:
