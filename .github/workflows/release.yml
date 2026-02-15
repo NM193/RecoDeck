@@ -33,11 +33,9 @@ jobs:
         run: npx tauri build --target aarch64-apple-darwin
       - name: Sign update bundle
         run: |
-          printf '%s\n' "$SIGNING_KEY" > /tmp/signing.key
           npx tauri signer sign \
             src-tauri/target/release/bundle/macos/recodeck.app.tar.gz \
-            --private-key-path /tmp/signing.key
-          rm /tmp/signing.key
+            -k "$SIGNING_KEY"
         env:
           SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
