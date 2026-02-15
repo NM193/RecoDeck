@@ -37,7 +37,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/YOURUSERNAME/RecoDeck/releases/latest/download/latest.json"
+        "https://github.com/NM193/RecoDeck/releases/latest/download/latest.json"
       ],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVERTg2NjJERDY0NzkwODgKUldTSWtFZldMV2JvN1ZJVnB4R2NRMG5uNHJDWVVBNVZscFFZWDQ3SnRQZTRoVHAzc1o3eW9DcnMK"
