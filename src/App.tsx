@@ -10,6 +10,7 @@ import { Settings } from "./components/Settings";
 import { FolderTree } from "./components/FolderTree";
 import { PromptModal } from "./components/PromptModal";
 import { Notification } from "./components/Notification";
+import { HeaderNotification } from "./components/HeaderNotification";
 import { AnalysisProgress, type AnalysisProgressData } from "./components/AnalysisProgress";
 import { PlayerAIChat } from "./components/ai/PlayerAIChat";
 import { Icon } from "./components/Icon";
@@ -18,6 +19,8 @@ import { tauriApi } from "./lib/tauri-api";
 import type { Track, Playlist } from "./types/track";
 import "./App.css";
 import "./components/TrackTable.css";
+
+const AI_ENABLED = false; // Set to true when AI assistant is ready
 
 type PromptAction =
   | { kind: "create-playlist"; parentId: number | null }
@@ -66,6 +69,9 @@ function App() {
     message: string;
     type: "info" | "success" | "warning" | "error";
   } | null>(null);
+
+  // Header notification (small text next to logo, typing animation)
+  const [headerNotification, setHeaderNotification] = useState<string | null>(null);
 
   // Analysis progress state
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgressData | null>(null);
@@ -706,8 +712,13 @@ function App() {
     try {
       await tauriApi.addTrackToPlaylist(playlistId, track.id);
       await loadPlaylists(); // Refresh playlist counts
+      const playlist = playlists.find((p) => p.id === playlistId);
+      setHeaderNotification(`Added to ${playlist?.name ?? "playlist"}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setNotification({
+        message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
+        type: "error",
+      });
     }
   }
 
@@ -1012,7 +1023,15 @@ function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>RecoDeck</h1>
+        <div className="header-brand">
+          <h1>RecoDeck</h1>
+          {headerNotification && (
+            <HeaderNotification
+              message={headerNotification}
+              onComplete={() => setHeaderNotification(null)}
+            />
+          )}
+        </div>
         <div className="header-actions">
           <button onClick={handleScanDirectory} className="btn-primary">
             Scan Folder
@@ -1091,14 +1110,12 @@ function App() {
           try {
             await tauriApi.addTrackToPlaylist(playlistId, trackId);
             await loadPlaylists();
-            setNotification({
-              message: 'Track added to playlist',
-              type: 'success',
-            });
+            const playlist = playlists.find((p) => p.id === playlistId);
+            setHeaderNotification(`Added to ${playlist?.name ?? "playlist"}`);
           } catch (err) {
             setNotification({
-              message: `Failed to add to playlist: ${err instanceof Error ? err.message : String(err)}`,
-              type: 'error',
+              message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
+              type: "error",
             });
           }
         }}
@@ -1136,17 +1153,17 @@ function App() {
       )}
 
       {/* AI Chat integrated into player */}
-      <PlayerAIChat
-        onPlaylistCreated={() => {
-          // Reload playlists to show the new one
-          loadPlaylists();
-          // Show notification
-          setNotification({
-            message: "Playlist created successfully!",
-            type: "success",
-          });
-        }}
-      />
+      {AI_ENABLED && (
+        <PlayerAIChat
+          onPlaylistCreated={() => {
+            loadPlaylists();
+            setNotification({
+              message: "Playlist created successfully!",
+              type: "success",
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

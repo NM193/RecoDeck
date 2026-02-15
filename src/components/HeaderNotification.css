@@ -1,0 +1,27 @@
+.header-notification {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.header-notification-text {
+  color: var(--accent);
+}
+
+.header-notification-cursor {
+  color: var(--accent);
+  animation: header-notification-blink 0.8s step-end infinite;
+  margin-left: 1px;
+}
+
+@keyframes header-notification-blink {
+  50% {
+    opacity: 0;
+  }
+}
