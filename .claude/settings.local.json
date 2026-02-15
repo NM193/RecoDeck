@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(npm run tauri:*)",
+      "Bash(chmod:*)"
+    ]
+  }
+}

@@ -1,0 +1,336 @@
+/* Folder Tree Panel — Traktor-style left sidebar */
+/* Two sections: Track Collection + Explorer (Home) */
+
+.folder-tree {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  overflow: hidden;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* --- Scrollable content area --- */
+
+.folder-tree-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* --- Section (Track Collection / Explorer) --- */
+
+.folder-tree-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.folder-tree-section:last-child {
+  border-bottom: none;
+}
+
+.folder-tree-section-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.1s ease;
+}
+
+.folder-tree-section-header:hover {
+  background: var(--surface, var(--bg-tertiary));
+}
+
+.section-arrow {
+  width: 14px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.section-icon {
+  font-size: 13px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.folder-tree-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+}
+
+.folder-tree-section-body {
+  padding: 2px 0;
+}
+
+/* --- Folder Rows --- */
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: background-color 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.folder-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.folder-row.selected {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.folder-row.selected:hover {
+  background: var(--accent-hover);
+}
+
+.folder-row.selected .folder-count {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.folder-row.selected .folder-arrow {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* "All Tracks" root item */
+.root-all {
+  padding: 0 12px;
+  height: 28px;
+  font-weight: 500;
+}
+
+/* Root library/explorer folder */
+.root-folder {
+  font-weight: 500;
+}
+
+/* --- Arrow / Expand Toggle --- */
+
+.folder-arrow {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  border-radius: 3px;
+  transition: color 0.1s ease;
+}
+
+.folder-arrow.has-children {
+  cursor: pointer;
+}
+
+.folder-arrow.has-children:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Folder Icon --- */
+
+.folder-icon {
+  font-size: 14px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* --- Folder Name --- */
+
+.folder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Track Count Badge --- */
+
+.folder-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+/* --- Children Container --- */
+
+.folder-children {
+  /* Tree indentation handled via inline paddingLeft */
+}
+
+/* --- Empty States --- */
+
+.folder-empty {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  padding: 4px 12px;
+  font-style: italic;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+/* --- Context Menu --- */
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-secondary, #1a1a24);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  min-width: 180px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.context-menu-header {
+  padding: 8px 12px 6px 12px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  gap: 8px;
+}
+
+/* Button reset so <button> items don't use browser default (white) background */
+button.context-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--text-primary, #e0e0e8);
+  padding: 7px 12px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-item:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.context-menu-icon {
+  flex-shrink: 0;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0;
+}
+
+.context-menu-item-danger:hover {
+  background: #dc2626;
+}
+
+/* Submenu indicator and styling */
+.context-menu-item-submenu {
+  position: relative;
+  justify-content: space-between;
+}
+
+.context-menu-arrow {
+  color: var(--text-secondary);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.context-menu-item-submenu:hover .context-menu-arrow {
+  color: #ffffff;
+}
+
+.context-submenu {
+  min-width: 160px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.context-menu-item-disabled {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  opacity: 0.5;
+  gap: 8px;
+}
+
+.context-menu-hint {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-left: auto;
+  font-style: italic;
+}
+
+/* Playlist empty hint */
+.playlist-empty-hint {
+  padding-left: 28px !important;
+  font-style: italic;
+}
+
+/* --- Scrollbar styling --- */
+
+.folder-tree-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.folder-tree-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.folder-tree-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.folder-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

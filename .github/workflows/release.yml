@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync versions
+        run: npm run version:sync
+
+      - name: Import Apple Certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          security create-keychain -p actions temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p actions temp.keychain
+          security import certificate.p12 -k temp.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
+
+      - name: Build macOS app
+        run: npm run build:mac
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          chmod +x scripts/notarize.sh
+          DMG_FILE=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
+          if [ -z "$DMG_FILE" ]; then
+            echo "Error: No DMG file found"
+            exit 1
+          fi
+          ./scripts/notarize.sh "$DMG_FILE"
+
+      - name: Sign update bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          echo "$TAURI_SIGNING_PRIVATE_KEY" > private.key
+          npm run tauri signer sign \
+            "src-tauri/target/release/bundle/macos/recodeck.app.tar.gz" \
+            -k private.key -p ""
+          rm private.key
+
+      - name: Generate update manifest
+        run: npm run release:manifest
+
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/recodeck.app.tar.gz
+            src-tauri/target/release/bundle/macos/recodeck.app.tar.gz.sig
+            latest.json
+          body: |
+            ## RecoDeck v${{ steps.get_version.outputs.VERSION }}
+
+            ### Installation
+            Download `recodeck_*_universal.dmg` and drag to your Applications folder.
+
+            ### What's Changed
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ### Requirements
+            - macOS 10.15 (Catalina) or later
+            - Supports both Intel and Apple Silicon Macs
+
+            ### Auto-Updates
+            This version includes automatic updates. Future releases will notify you automatically!
+
+            ---
+            🤖 Built with [Tauri](https://tauri.app) | Signed and notarized for macOS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base theme variables - Midnight (default) */
+:root[data-theme="midnight"] {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #12121a;
+    --bg-tertiary: #1a1a28;
+    --text-primary: #e0e0e8;
+    --text-secondary: #8888a0;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-rgb: 99, 102, 241;
+    --waveform-color: #6366f1;
+    --waveform-played: #a5b4fc;
+    --spectrogram-bg: #0a0a0f;
+    --cue-hot: #ef4444;
+    --cue-loop: #22c55e;
+    --energy-low: #3b82f6;
+    --energy-high: #ef4444;
+    --mood-happy: #fbbf24;
+    --mood-sad: #6366f1;
+    --vocal-yes: #22c55e;
+    --vocal-no: #64748b;
+    --border: #2a2a3a;
+    --surface: #16161f;
+}
+
+/* Carbon theme - Neutral dark */
+:root[data-theme="carbon"] {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #242424;
+    --text-primary: #ececec;
+    --text-secondary: #9a9a9a;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-rgb: 59, 130, 246;
+    --waveform-color: #3b82f6;
+    --waveform-played: #93c5fd;
+    --spectrogram-bg: #0f0f0f;
+    --cue-hot: #ef4444;
+    --cue-loop: #10b981;
+    --energy-low: #3b82f6;
+    --energy-high: #ef4444;
+    --mood-happy: #fbbf24;
+    --mood-sad: #3b82f6;
+    --vocal-yes: #10b981;
+    --vocal-no: #6b7280;
+    --border: #333333;
+    --surface: #1a1a1a;
+}
+
+/* Dawn theme - Light */
+:root[data-theme="dawn"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f8f8;
+    --bg-tertiary: #f0f0f0;
+    --text-primary: #1a1a1a;
+    --text-secondary: #6b7280;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-rgb: 99, 102, 241;
+    --waveform-color: #6366f1;
+    --waveform-played: #a5b4fc;
+    --spectrogram-bg: #ffffff;
+    --cue-hot: #ef4444;
+    --cue-loop: #22c55e;
+    --energy-low: #3b82f6;
+    --energy-high: #ef4444;
+    --mood-happy: #f59e0b;
+    --mood-sad: #6366f1;
+    --vocal-yes: #22c55e;
+    --vocal-no: #9ca3af;
+    --border: #e5e7eb;
+    --surface: #f9fafb;
+}
+
+/* Neon theme - Dark with vibrant accents */
+:root[data-theme="neon"] {
+    --bg-primary: #000000;
+    --bg-secondary: #0a0a0a;
+    --bg-tertiary: #141414;
+    --text-primary: #ffffff;
+    --text-secondary: #a0a0a0;
+    --accent: #ff00ff;
+    --accent-hover: #ff66ff;
+    --accent-rgb: 255, 0, 255;
+    --waveform-color: #00ffff;
+    --waveform-played: #ff00ff;
+    --spectrogram-bg: #000000;
+    --cue-hot: #ff0055;
+    --cue-loop: #00ff88;
+    --energy-low: #00ddff;
+    --energy-high: #ff0055;
+    --mood-happy: #ffff00;
+    --mood-sad: #ff00ff;
+    --vocal-yes: #00ff88;
+    --vocal-no: #666666;
+    --border: #333333;
+    --surface: #0a0a0a;
+}
+
+/* Base styles */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+        monospace;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}

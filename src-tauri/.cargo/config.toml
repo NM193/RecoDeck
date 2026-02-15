@@ -1,0 +1,11 @@
+# Speed up development builds
+#
+# Dependencies (aubio, symphonia, sqlite, etc.) are compiled with opt-level 1
+# even in debug mode. This makes the FIRST build slightly slower, but:
+# 1. The app runs faster (important for audio decoding / BPM analysis)
+# 2. Subsequent incremental builds only recompile YOUR code (fast)
+#
+# Your own code (recodeck crate) still compiles in debug mode for fast iteration.
+
+[profile.dev.package."*"]
+opt-level = 1

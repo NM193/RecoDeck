@@ -1,0 +1,258 @@
+%PDF-1.4
+%ASCII
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 4391 >>
+stream
+1.000 1.000 1.000 rg
+0.00 0.00 612.00 792.00 re f
+0.059 0.094 0.196 rg
+36.00 684.00 540.00 72.00 re f
+0.165 0.851 0.933 rg
+36.00 684.00 8.00 72.00 re f
+BT
+/F2 25.00 Tf
+1.000 1.000 1.000 rg
+1 0 0 1 54.00 725.00 Tm
+(RecoDeck App Summary) Tj
+ET
+BT
+/F1 10.80 Tf
+0.824 0.886 0.969 rg
+1 0 0 1 54.00 703.00 Tm
+(One-page, repo-evidence snapshot) Tj
+ET
+0.965 0.973 0.988 rg
+36.00 554.00 260.00 116.00 re f
+0.808 0.867 0.941 RG
+0.80 w
+36.00 554.00 260.00 116.00 re S
+0.133 0.827 0.933 rg
+36.00 664.00 260.00 6.00 re f
+BT
+/F2 12.00 Tf
+0.059 0.090 0.165 rg
+1 0 0 1 48.00 648.00 Tm
+(What It Is) Tj
+ET
+BT
+/F1 10.20 Tf
+0.149 0.192 0.282 rg
+12.00 TL
+1 0 0 1 48.00 631.00 Tm
+(RecoDeck is a desktop music library app) Tj
+T*
+(built with Tauri \(Rust backend\) and a) Tj
+T*
+(React/TypeScript frontend.) Tj
+T*
+(It scans local audio folders, stores) Tj
+T*
+(metadata in SQLite, and adds playback,) Tj
+T*
+(analysis, and AI playlist tools.) Tj
+ET
+0.965 0.973 0.988 rg
+36.00 460.00 260.00 82.00 re f
+0.808 0.867 0.941 RG
+0.80 w
+36.00 460.00 260.00 82.00 re S
+0.133 0.827 0.933 rg
+36.00 536.00 260.00 6.00 re f
+BT
+/F2 12.00 Tf
+0.059 0.090 0.165 rg
+1 0 0 1 48.00 520.00 Tm
+(Who It Is For) Tj
+ET
+BT
+/F1 10.20 Tf
+0.149 0.192 0.282 rg
+12.00 TL
+1 0 0 1 48.00 503.00 Tm
+(Primary persona \(inferred from code\):) Tj
+T*
+(digital DJs managing local libraries) Tj
+T*
+(and playlist/set prep workflows.) Tj
+ET
+0.965 0.973 0.988 rg
+36.00 24.00 260.00 424.00 re f
+0.808 0.867 0.941 RG
+0.80 w
+36.00 24.00 260.00 424.00 re S
+0.133 0.827 0.933 rg
+36.00 442.00 260.00 6.00 re f
+BT
+/F2 12.00 Tf
+0.059 0.090 0.165 rg
+1 0 0 1 48.00 426.00 Tm
+(What It Does) Tj
+ET
+BT
+/F1 10.00 Tf
+0.149 0.192 0.282 rg
+12.00 TL
+1 0 0 1 48.00 409.00 Tm
+(- Recursive scan/import for mp3, flac, wav,) Tj
+T*
+(  aiff/aif, m4a, and ogg files.) Tj
+T*
+(- SQLite-backed tracks, playlists,) Tj
+T*
+(  genres, settings, and analysis data.) Tj
+T*
+(- Folder tree + playlist folders with) Tj
+T*
+(  add/remove/rename/delete operations.) Tj
+T*
+(- Playback queue with seek, repeat,) Tj
+T*
+(  shuffle, volume, and crossfade.) Tj
+T*
+(- BPM + key analysis \(Camelot/Open Key\)) Tj
+T*
+(  with progress UI and batch runs.) Tj
+T*
+(- AI chat + AI playlist generation) Tj
+T*
+(  using cached library context.) Tj
+T*
+(- File watcher emits library-changed) Tj
+T*
+(  events for automatic refresh.) Tj
+ET
+0.965 0.973 0.988 rg
+316.00 338.00 260.00 332.00 re f
+0.808 0.867 0.941 RG
+0.80 w
+316.00 338.00 260.00 332.00 re S
+0.133 0.827 0.933 rg
+316.00 664.00 260.00 6.00 re f
+BT
+/F2 12.00 Tf
+0.059 0.090 0.165 rg
+1 0 0 1 328.00 648.00 Tm
+(How It Works \(Architecture\)) Tj
+ET
+BT
+/F1 10.00 Tf
+0.149 0.192 0.282 rg
+11.60 TL
+1 0 0 1 328.00 631.00 Tm
+(Components and services) Tj
+T*
+(- Frontend: React UI + Zustand stores.) Tj
+T*
+(- Bridge: src/lib/tauri-api.ts uses invoke\(\).) Tj
+T*
+(- Backend: Rust command modules for) Tj
+T*
+(  library, scanner, analysis, playback,) Tj
+T*
+(  playlists, genres, settings, watcher,) Tj
+T*
+(  and AI \(src-tauri/src/commands/*\).) Tj
+T*
+(- Data: rusqlite migrations and queries) Tj
+T*
+(  on recodeck.db in app data.) Tj
+T*
+() Tj
+T*
+(Data flow) Tj
+T*
+(1. UI action triggers invoke\(\) command.) Tj
+T*
+(2. Rust services read/write DB and files.) Tj
+T*
+(3. Rust emits library-changed/audio-* events.) Tj
+T*
+(4. Frontend listeners refresh UI state.) Tj
+ET
+0.965 0.973 0.988 rg
+316.00 158.00 260.00 168.00 re f
+0.808 0.867 0.941 RG
+0.80 w
+316.00 158.00 260.00 168.00 re S
+0.133 0.827 0.933 rg
+316.00 320.00 260.00 6.00 re f
+BT
+/F2 12.00 Tf
+0.059 0.090 0.165 rg
+1 0 0 1 328.00 304.00 Tm
+(How To Run) Tj
+ET
+BT
+/F1 10.40 Tf
+0.149 0.192 0.282 rg
+12.20 TL
+1 0 0 1 328.00 287.00 Tm
+(1. npm install) Tj
+T*
+(2. npm run tauri dev) Tj
+T*
+(3. In app, click Scan Folder) Tj
+T*
+(   \(or add folders in Settings\).) Tj
+ET
+0.965 0.973 0.988 rg
+316.00 28.00 260.00 118.00 re f
+0.808 0.867 0.941 RG
+0.80 w
+316.00 28.00 260.00 118.00 re S
+0.133 0.827 0.933 rg
+316.00 140.00 260.00 6.00 re f
+BT
+/F2 12.00 Tf
+0.059 0.090 0.165 rg
+1 0 0 1 328.00 124.00 Tm
+(Not Found In Repo) Tj
+ET
+BT
+/F1 9.60 Tf
+0.149 0.192 0.282 rg
+11.00 TL
+1 0 0 1 328.00 107.00 Tm
+(- Explicit persona statement: Not found in repo.) Tj
+T*
+(- Node/Rust version requirements: Not found in repo.) Tj
+T*
+(- Production deployment guide: Not found in repo.) Tj
+ET
+BT
+/F1 8.20 Tf
+0.333 0.396 0.490 rg
+1 0 0 1 36.00 16.00 Tm
+(Evidence: package.json, src/App.tsx, src/lib/tauri-api.ts, src-tauri/src/*, tauri.conf.json) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000016 00000 n 
+0000000065 00000 n 
+0000000122 00000 n 
+0000000258 00000 n 
+0000004700 00000 n 
+0000004770 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+4845
+%%EOF

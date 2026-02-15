@@ -1,0 +1,452 @@
+/* Track Table Styles */
+
+.track-table-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* --- Search Bar (integrated into table header area) --- */
+
+.track-table-search {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 32px;
+  transition: border-color 0.15s ease;
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.search-icon {
+  color: var(--text-secondary);
+  font-size: 16px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.search-clear {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.1s ease, background-color 0.1s ease;
+}
+
+.search-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* --- Column Headers (sortable) --- */
+
+.track-table-header {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.track-table-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+.track-table-footer {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.footer-sort-info {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.track-table-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: fit-content;
+}
+
+.header-row {
+  height: 36px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Sortable header cells */
+.header-row .sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.1s ease, background-color 0.1s ease;
+  gap: 4px;
+}
+
+.header-row .sortable:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.header-row .sortable.sorted {
+  color: var(--accent);
+}
+
+.sort-indicator {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+/* --- Data Rows --- */
+
+.data-row {
+  height: 32px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.data-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.data-row:active {
+  background: var(--bg-secondary);
+}
+
+.data-row--playing {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-left: 3px solid var(--accent);
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.data-row--playing:hover {
+  background: rgba(var(--accent-rgb), 0.15);
+}
+
+.data-row--playing .cell-title::before {
+  content: "▶";
+  margin-right: 8px;
+  font-size: 10px;
+  color: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* --- Table Cells --- */
+
+.table-cell {
+  padding: 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+/* Column widths */
+.cell-title {
+  flex: 0 0 300px;
+  min-width: 200px;
+}
+
+.cell-artist {
+  flex: 0 0 200px;
+  min-width: 150px;
+}
+
+.cell-album {
+  flex: 0 0 200px;
+  min-width: 150px;
+}
+
+.cell-bpm {
+  flex: 0 0 70px;
+  justify-content: center;
+}
+
+.cell-key {
+  flex: 0 0 70px;
+  justify-content: center;
+}
+
+.cell-genre {
+  flex: 0 0 150px;
+  min-width: 100px;
+}
+
+.cell-duration {
+  flex: 0 0 80px;
+  justify-content: flex-end;
+}
+
+.cell-format {
+  flex: 0 0 80px;
+  justify-content: center;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.text-muted {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* --- Scrollbar Styling --- */
+
+.track-table-body::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.track-table-body::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+.track-table-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+
+.track-table-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-subtitle {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+  margin-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.modal-input:focus {
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.modal-button {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  outline: none;
+}
+
+.modal-button-secondary {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.modal-button-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.modal-button-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.modal-button-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.modal-button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Context menu improvements (track table uses same classes as FolderTree) */
+.context-menu-item-active {
+  background: var(--bg-hover);
+  font-weight: 500;
+}
+
+.context-menu-checkmark {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+/* Ensure context menu and button items are readable (no white-on-white) */
+.track-table-container .context-menu {
+  background: var(--bg-secondary, #1a1a24);
+}
+
+button.context-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--text-primary, #e0e0e8);
+  padding: 7px 12px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+button.context-menu-item:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Ensure no gaps in context menu */
+.context-menu,
+.context-submenu {
+  padding: 0;
+}
+
+.context-menu > *:first-child,
+.context-submenu > *:first-child {
+  margin-top: 0;
+}
+
+.context-menu > *:last-child,
+.context-submenu > *:last-child {
+  margin-bottom: 0;
+}
