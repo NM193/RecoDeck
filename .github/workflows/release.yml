@@ -34,6 +34,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: npx tauri build --target aarch64-apple-darwin
 
+      - name: Debug - list bundle files
+        run: |
+          echo "=== target directory structure ==="
+          find src-tauri/target -name "*.tar.gz*" -o -name "*.dmg" -o -name "*.sig" 2>/dev/null || true
+          echo "=== bundle directory ==="
+          ls -R src-tauri/target/aarch64-apple-darwin/release/bundle/ 2>/dev/null || echo "Directory not found"
+          ls -R src-tauri/target/release/bundle/ 2>/dev/null || echo "Directory not found"
+
       - name: Generate update manifest
         env:
           TAURI_UPDATE_PLATFORM: darwin-aarch64
