@@ -12,10 +12,11 @@ const packageJsonPath = path.join(__dirname, '../package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const version = packageJson.version;
 
-// Path to the update bundle (universal macOS binary)
+// Path to the update bundle. With --target aarch64-apple-darwin: target/aarch64-apple-darwin/release/bundle/
+const targetDir = process.env.TAURI_BUNDLE_TARGET || 'release';
 const tarballPath = path.join(
   __dirname,
-  '../src-tauri/target/release/bundle/macos/recodeck.app.tar.gz'
+  `../src-tauri/target/${targetDir}/bundle/macos/recodeck.app.tar.gz`
 );
 
 // Check if tarball exists

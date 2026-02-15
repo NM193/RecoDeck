@@ -38,6 +38,7 @@ jobs:
         env:
           TAURI_UPDATE_PLATFORM: darwin-aarch64
           GITHUB_REPOSITORY: ${{ github.repository }}
+          TAURI_BUNDLE_TARGET: aarch64-apple-darwin/release
         run: npm run release:manifest
 
       - name: Extract version from tag
@@ -48,9 +49,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/recodeck.app.tar.gz
-            src-tauri/target/release/bundle/macos/recodeck.app.tar.gz.sig
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/recodeck.app.tar.gz
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/recodeck.app.tar.gz.sig
             latest.json
           body: |
             ## RecoDeck v${{ steps.get_version.outputs.VERSION }}
