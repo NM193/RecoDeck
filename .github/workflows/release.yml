@@ -29,15 +29,10 @@ jobs:
       - name: Sync versions
         run: npm run version:sync
 
-      - name: Build macOS app (Apple Silicon only)
-        run: npx tauri build --target aarch64-apple-darwin
-      - name: Sign update bundle
-        run: |
-          npx tauri signer sign \
-            src-tauri/target/release/bundle/macos/recodeck.app.tar.gz \
-            -k "$SIGNING_KEY"
+      - name: Build and sign macOS app (Apple Silicon only)
         env:
-          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npx tauri build --target aarch64-apple-darwin
 
       - name: Generate update manifest
         env:
