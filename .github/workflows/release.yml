@@ -31,11 +31,13 @@ jobs:
 
       - name: Build macOS app (Apple Silicon only)
         run: npx tauri build --target aarch64-apple-darwin
+      # TAURI_SIGNING_PRIVATE_KEY must be base64-encoded (avoids GitHub multiline issues).
+      # Create it with: base64 < ~/.tauri/recodeck.key | tr -d '\n' | pbcopy
       - name: Sign update bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
-          echo "$TAURI_SIGNING_PRIVATE_KEY" > private.key
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > private.key
           npx tauri signer sign \
             src-tauri/target/release/bundle/macos/recodeck.app.tar.gz \
             -k private.key
