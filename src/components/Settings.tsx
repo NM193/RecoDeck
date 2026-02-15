@@ -4,6 +4,9 @@
 
 import { useState, useEffect } from "react";
 import { open, ask } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { tauriApi } from "../lib/tauri-api";
 import { useAIStore } from "../store/aiStore";
 import { Icon } from "./Icon";
@@ -37,7 +40,7 @@ const WAVEFORM_STYLES = [
   { id: "bars", name: "Bars", description: "Simple bar visualization" },
 ];
 
-type SettingsTab = 'library' | 'appearance' | 'audio' | 'database' | 'ai';
+type SettingsTab = 'library' | 'appearance' | 'audio' | 'database' | 'ai' | 'app';
 
 export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, onKeyNotationChanged, onWaveformStyleChanged, onNotification }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('library');
@@ -52,6 +55,8 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
   const [scanningFolder, setScanningFolder] = useState<string | null>(null);
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false);
   const [normalizingPaths, setNormalizingPaths] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>("");
 
   // AI settings
   const { isApiKeyConfigured, checkApiKeyStatus, setApiKey, deleteApiKey } = useAIStore();
@@ -80,6 +85,11 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
 
       // Check AI API key status
       await checkApiKeyStatus();
+      try {
+        setAppVersion(await getVersion());
+      } catch {
+        setAppVersion("—");
+      }
       setFolders(loadedFolders);
       setCurrentTheme(loadedTheme);
       setKeyNotation(loadedKeyNotation || "camelot");
@@ -385,6 +395,27 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
     }
   }
 
+  async function handleCheckForUpdates() {
+    try {
+      setUpdateChecking(true);
+      setError(null);
+      const update = await check();
+      if (update) {
+        onNotification?.(`Update ${update.version} available. Downloading...`, "info");
+        await update.downloadAndInstall();
+        await relaunch();
+      } else {
+        onNotification?.("You're on the latest version.", "success");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Update check failed: ${msg}`);
+      onNotification?.(`Update check failed: ${msg}`, "error");
+    } finally {
+      setUpdateChecking(false);
+    }
+  }
+
   // Extract folder name from full path for display
   function getFolderName(path: string): string {
     const parts = path.replace(/\\/g, "/").split("/");
@@ -577,6 +608,29 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
     </div>
   );
 
+  const renderAppContent = () => (
+    <div className="settings-tab-content">
+      <h3 className="settings-tab-title">About</h3>
+
+      <section className="settings-section">
+        <p className="settings-description">
+          RecoDeck v{appVersion || "—"}
+        </p>
+        <button
+          onClick={handleCheckForUpdates}
+          disabled={updateChecking}
+          className="btn-primary btn-small"
+          style={{ marginTop: "0.5rem" }}
+        >
+          {updateChecking ? "Checking..." : "Check for Updates"}
+        </button>
+        <p className="settings-hint" style={{ marginTop: "0.5rem", fontSize: "0.75rem", opacity: 0.7 }}>
+          Manually check for app updates from GitHub Releases.
+        </p>
+      </section>
+    </div>
+  );
+
   const renderDatabaseContent = () => (
     <div className="settings-tab-content">
       <h3 className="settings-tab-title">Database Maintenance</h3>
@@ -754,6 +808,13 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
               <Icon name="Sparkles" size={20} />
               AI Assistant
             </button>
+            <button
+              className={`settings-menu-item ${activeTab === 'app' ? 'settings-menu-item--active' : ''}`}
+              onClick={() => setActiveTab('app')}
+            >
+              <Icon name="Info" size={20} />
+              About
+            </button>
           </nav>
 
           {/* Right content panel */}
@@ -763,6 +824,7 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
             {activeTab === 'audio' && renderAudioContent()}
             {activeTab === 'database' && renderDatabaseContent()}
             {activeTab === 'ai' && renderAIContent()}
+            {activeTab === 'app' && renderAppContent()}
           </div>
         </div>
       </div>
