@@ -42,15 +42,19 @@ if (!fs.existsSync(signaturePath)) {
 
 const signature = fs.readFileSync(signaturePath, 'utf8').trim();
 
+// Platform: darwin-aarch64 for Apple Silicon only, darwin-universal for universal builds
+const platform = process.env.TAURI_UPDATE_PLATFORM || 'darwin-universal';
+const repo = process.env.GITHUB_REPOSITORY || 'YOURUSERNAME/RecoDeck';
+
 // Create update manifest
 const manifest = {
   version: version,
   notes: `Release ${version}`,
   pub_date: new Date().toISOString(),
   platforms: {
-    "darwin-universal": {
+    [platform]: {
       signature: signature,
-      url: `https://github.com/YOURUSERNAME/RecoDeck/releases/download/v${version}/recodeck.app.tar.gz`,
+      url: `https://github.com/${repo}/releases/download/v${version}/recodeck.app.tar.gz`,
       sha256: sha256
     }
   }

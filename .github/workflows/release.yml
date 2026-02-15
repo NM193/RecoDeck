@@ -21,15 +21,16 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
 
       - name: Install dependencies
         run: npm ci
 
       - name: Sync versions
         run: npm run version:sync
-      - name: Build macOS app
-        run: npm run build:mac
+
+      - name: Build macOS app (Apple Silicon only)
+        run: tauri build --target aarch64-apple-darwin
       - name: Sign update bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -41,6 +42,9 @@ jobs:
           rm private.key
 
       - name: Generate update manifest
+        env:
+          TAURI_UPDATE_PLATFORM: darwin-aarch64
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: npm run release:manifest
 
       - name: Extract version from tag
@@ -59,14 +63,14 @@ jobs:
             ## RecoDeck v${{ steps.get_version.outputs.VERSION }}
 
             ### Installation
-            Download `recodeck_*_universal.dmg` and drag to your Applications folder.
+            Download `recodeck_*_aarch64.dmg` and drag to your Applications folder.
 
             ### What's Changed
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
 
             ### Requirements
             - macOS 10.15 (Catalina) or later
-            - Supports both Intel and Apple Silicon Macs
+            - Apple Silicon (M1/M2/M3) only
 
             ### Auto-Updates
             This version includes automatic updates. Future releases will notify you automatically!
