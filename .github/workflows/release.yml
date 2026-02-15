@@ -36,9 +36,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           echo "$TAURI_SIGNING_PRIVATE_KEY" > private.key
-          npm run tauri signer sign \
-            "src-tauri/target/release/bundle/macos/recodeck.app.tar.gz" \
-            -k private.key -p ""
+          npx tauri signer sign \
+            src-tauri/target/release/bundle/macos/recodeck.app.tar.gz \
+            -k private.key
           rm private.key
 
       - name: Generate update manifest
