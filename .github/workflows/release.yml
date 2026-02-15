@@ -30,7 +30,7 @@ jobs:
         run: npm run version:sync
 
       - name: Build macOS app (Apple Silicon only)
-        run: tauri build --target aarch64-apple-darwin
+        run: npx tauri build --target aarch64-apple-darwin
       - name: Sign update bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
