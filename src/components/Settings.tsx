@@ -1068,13 +1068,21 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
               background: 'white',
               borderRadius: '8px',
             }}>
-              <QRCodeSVG
-                value={`${companionUrl}/?token=${companionToken}`}
-                size={180}
-                level="M"
-              />
+              {companionUrl && companionToken ? (
+                <QRCodeSVG
+                  value={`${companionUrl}/?token=${companionToken}`}
+                  size={180}
+                  level="M"
+                />
+              ) : (
+                <div style={{ width: 180, height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '0.75rem' }}>
+                  Loading...
+                </div>
+              )}
               <span style={{ color: '#666', fontSize: '0.7rem', marginTop: '0.5rem' }}>
-                Scan with your phone camera to connect
+                {companionUrl?.startsWith('http://127.0.0.1')
+                  ? 'Phone and desktop must be on same WiFi — LAN IP not detected'
+                  : 'Scan with your phone camera to connect'}
               </span>
             </div>
 

@@ -4,9 +4,33 @@ use crate::commands::library::AppState;
 use crate::db::Database;
 use crate::server::{self, RunningServer};
 use serde::Serialize;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
+
+/// Get LAN IP suitable for QR code — avoids 127.0.0.1 so phone can reach desktop.
+fn get_lan_ip_for_qr() -> String {
+    // Try local_ip() first
+    if let Ok(ip) = local_ip_address::local_ip() {
+        if !ip.is_loopback() {
+            return ip.to_string();
+        }
+    }
+    // Fallback: scan interfaces for first non-loopback IPv4
+    if let Ok(ifas) = local_ip_address::list_afinet_netifas() {
+        for (_name, ip) in ifas {
+            if !ip.is_loopback() {
+                if let IpAddr::V4(v4) = ip {
+                    return v4.to_string();
+                }
+            }
+        }
+    }
+    // Last resort — 127.0.0.1 won't work for phone scanning, but at least URL/token copy works
+    eprintln!("[companion] Could not detect LAN IP, using 127.0.0.1 — QR scan from phone will not work");
+    "127.0.0.1".to_string()
+}
 
 /// Managed state for the companion server
 pub struct CompanionState {
@@ -175,10 +199,7 @@ pub async fn start_companion_server(
     // Persist token, port, and autostart setting
     persist_companion_settings(&app_state, &running.token, running.addr.port());
 
-    // Get LAN IP
-    let lan_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let lan_ip = get_lan_ip_for_qr();
 
     let url = format!("http://{}:{}", lan_ip, running.addr.port());
     let info = CompanionServerInfo {
@@ -230,9 +251,7 @@ pub fn get_companion_status(
 
     match lock.as_ref() {
         Some(server) => {
-            let lan_ip = local_ip_address::local_ip()
-                .map(|ip| ip.to_string())
-                .unwrap_or_else(|_| "127.0.0.1".to_string());
+            let lan_ip = get_lan_ip_for_qr();
 
             Ok(CompanionServerInfo {
                 running: true,
@@ -341,17 +360,18 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
         Ok(running) => {
             persist_companion_settings(&app_state, &running.token, running.addr.port());
 
-            let lan_ip = local_ip_address::local_ip()
-                .map(|ip| ip.to_string())
-                .unwrap_or_else(|_| "127.0.0.1".to_string());
+            let lan_ip = get_lan_ip_for_qr();
             eprintln!(
                 "[companion] Auto-started at http://{}:{}",
                 lan_ip,
                 running.addr.port()
             );
 
-            let mut lock = companion_state.running_server.lock().unwrap();
-            *lock = Some(running);
+            if let Ok(mut lock) = companion_state.running_server.lock() {
+                *lock = Some(running);
+            } else {
+                eprintln!("[companion] Failed to acquire lock for auto-start, server may not persist");
+            }
         }
         Err(e) => {
             eprintln!("[companion] Auto-start failed: {}", e);
