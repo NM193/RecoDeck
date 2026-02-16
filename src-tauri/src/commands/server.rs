@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tauri::path::BaseDirectory;
 use tauri::{Manager, State};
 
 /// Get LAN IP suitable for QR code — avoids 127.0.0.1 so phone can reach desktop.
@@ -59,33 +60,45 @@ pub struct CompanionServerInfo {
 
 /// Find the mobile PWA dist directory.
 /// In dev: <project_root>/mobile/dist
-/// In production: <app_bundle>/Contents/Resources/mobile-dist (macOS)
-fn find_mobile_dist() -> Option<PathBuf> {
-    // Dev mode: look relative to the cargo manifest directory
+/// In production: uses Tauri PathResolver (Resource) when app_handle given
+fn find_mobile_dist(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
+    // 1. Production: Tauri resource dir (bundled app) — most reliable
+    if let Some(handle) = app {
+        if let Ok(path) = handle.path().resolve("mobile-dist", BaseDirectory::Resource) {
+            if path.join("index.html").exists() {
+                eprintln!("[companion] Found mobile PWA at {:?} (Resource)", path);
+                return Some(path);
+            }
+        }
+    }
+
+    // 2. Dev mode: project_root/mobile/dist
     let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(|p| p.join("mobile").join("dist"));
     if let Some(ref p) = dev_path {
         if p.join("index.html").exists() {
+            eprintln!("[companion] Found mobile PWA at {:?} (dev)", p);
             return dev_path;
         }
     }
 
-    // Production: look relative to the executable
+    // 3. Fallback: manual exe-relative (legacy)
     if let Ok(exe) = std::env::current_exe() {
-        // macOS: .app/Contents/MacOS/recodeck -> .app/Contents/Resources/mobile-dist
         if let Some(macos_dir) = exe.parent() {
             let resources = macos_dir
                 .parent()
                 .map(|contents| contents.join("Resources").join("mobile-dist"));
             if let Some(ref p) = resources {
                 if p.join("index.html").exists() {
+                    eprintln!("[companion] Found mobile PWA at {:?} (exe-relative)", p);
                     return resources;
                 }
             }
         }
     }
 
+    eprintln!("[companion] No mobile PWA dist found — API-only mode");
     None
 }
 
@@ -171,6 +184,7 @@ fn persist_companion_settings(app_state: &AppState, token: &str, port: u16) {
 /// Start the companion server. Returns connection info.
 #[tauri::command]
 pub async fn start_companion_server(
+    app: tauri::AppHandle,
     app_state: State<'_, AppState>,
     companion_state: State<'_, CompanionState>,
     port: Option<u16>,
@@ -191,7 +205,7 @@ pub async fn start_companion_server(
 
     let library_folders = companion_state.library_folders.clone();
 
-    let mobile_dist = find_mobile_dist();
+    let mobile_dist = find_mobile_dist(Some(&app));
     let running = server::start_server(port, token, db_arc, library_folders, 3, mobile_dist)
         .await
         .map_err(|e| format!("Failed to start companion server: {}", e))?;
@@ -274,6 +288,7 @@ pub fn get_companion_status(
 /// Regenerate the auth token, invalidating all active sessions
 #[tauri::command]
 pub async fn regenerate_companion_token(
+    app: tauri::AppHandle,
     app_state: State<'_, AppState>,
     companion_state: State<'_, CompanionState>,
 ) -> Result<CompanionServerInfo, String> {
@@ -300,7 +315,7 @@ pub async fn regenerate_companion_token(
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // Restart with new token (start_companion_server will generate fresh + persist)
-    start_companion_server(app_state, companion_state, None).await
+    start_companion_server(app, app_state, companion_state, None).await
 }
 
 /// Auto-start the companion server if `companion_autostart` is enabled.
@@ -354,7 +369,7 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
     };
 
     let library_folders = companion_state.library_folders.clone();
-    let mobile_dist = find_mobile_dist();
+    let mobile_dist = find_mobile_dist(Some(&app_handle));
 
     match server::start_server(port, token, db_arc, library_folders, 3, mobile_dist).await {
         Ok(running) => {
