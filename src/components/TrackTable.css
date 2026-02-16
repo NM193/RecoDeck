@@ -85,11 +85,28 @@
   position: sticky;
   top: 0;
   z-index: 10;
+  /* Extend background horizontally when scrolled — prevents visual "cut" at scroll edges */
+}
+
+.track-table-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -9999px;
+  right: -9999px;
+  bottom: 0;
+  background: var(--bg-secondary);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Scroll area: header + body scroll together (horizontal + vertical) */
+.track-table-scroll-area {
+  position: relative;
+  min-height: 0;
 }
 
 .track-table-body {
-  flex: 1;
-  overflow: auto;
   position: relative;
 }
 
@@ -254,21 +271,21 @@
 
 /* --- Scrollbar Styling --- */
 
-.track-table-body::-webkit-scrollbar {
+.track-table-scroll-area::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
 
-.track-table-body::-webkit-scrollbar-track {
+.track-table-scroll-area::-webkit-scrollbar-track {
   background: var(--bg-primary);
 }
 
-.track-table-body::-webkit-scrollbar-thumb {
+.track-table-scroll-area::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 6px;
 }
 
-.track-table-body::-webkit-scrollbar-thumb:hover {
+.track-table-scroll-area::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
 

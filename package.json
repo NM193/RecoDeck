@@ -1,13 +1,14 @@
 {
   "name": "recodeck",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "icon": "node scripts/generate-app-icon.js && tauri icon app-icon.png",
     "version:sync": "node scripts/sync-version.js",
     "version:patch": "npm version patch && npm run version:sync",
     "version:minor": "npm version minor && npm run version:sync",
@@ -15,7 +16,9 @@
     "build:mac": "npm run version:sync && tauri build --target universal-apple-darwin",
     "build:dev": "tauri build --debug",
     "release:sign": "tauri signer sign src-tauri/target/release/bundle/macos/recodeck.app.tar.gz -k ~/.tauri/recodeck.key",
-    "release:manifest": "node scripts/generate-update-manifest.js"
+    "release:manifest": "node scripts/generate-update-manifest.js",
+    "mobile:dev": "vite --config mobile/vite.config.ts",
+    "mobile:build": "vite build --config mobile/vite.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
@@ -28,6 +31,7 @@
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.564.0",
     "markdown-to-jsx": "^7.4.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.13.0",
@@ -42,6 +46,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.24",
     "postcss": "^8.5.6",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"

@@ -106,15 +106,10 @@
   color: var(--accent);
 }
 
-/* Action buttons (favourite, playlist) */
+/* Action buttons (mini player, playlist) */
 .sc-player__btn--action {
   width: 32px;
   height: 32px;
-}
-
-/* Favourite active state */
-.sc-player__btn--favourite {
-  color: var(--accent) !important;
 }
 
 /* ---- Transport controls group ---- */

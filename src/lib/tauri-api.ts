@@ -77,6 +77,23 @@ export const tauriApi = {
     return await invoke("set_theme", { theme });
   },
 
+  async getCustomThemeColors(): Promise<Record<string, string> | null> {
+    const json = await invoke<string | null>("get_setting", { key: "custom_theme_colors" });
+    if (!json) return null;
+    try {
+      return JSON.parse(json) as Record<string, string>;
+    } catch {
+      return null;
+    }
+  },
+
+  async setCustomThemeColors(colors: Record<string, string>): Promise<void> {
+    return await invoke("set_setting", {
+      key: "custom_theme_colors",
+      value: JSON.stringify(colors),
+    });
+  },
+
   // Folder tree commands
   async listSubdirectories(path: string): Promise<FolderInfo[]> {
     return await invoke("list_subdirectories", { path });
@@ -318,5 +335,40 @@ export const tauriApi = {
 
   async bulkSetGenre(trackIds: number[], genre: string): Promise<number> {
     return await invoke("bulk_set_genre", { trackIds, genre });
+  },
+
+  // Companion server commands
+  async startCompanionServer(port?: number): Promise<{
+    running: boolean;
+    url: string | null;
+    token: string | null;
+    port: number | null;
+    active_streams: number;
+  }> {
+    return await invoke("start_companion_server", { port: port ?? null });
+  },
+
+  async stopCompanionServer(): Promise<void> {
+    return await invoke("stop_companion_server");
+  },
+
+  async getCompanionStatus(): Promise<{
+    running: boolean;
+    url: string | null;
+    token: string | null;
+    port: number | null;
+    active_streams: number;
+  }> {
+    return await invoke("get_companion_status");
+  },
+
+  async regenerateCompanionToken(): Promise<{
+    running: boolean;
+    url: string | null;
+    token: string | null;
+    port: number | null;
+    active_streams: number;
+  }> {
+    return await invoke("regenerate_companion_token");
   },
 };

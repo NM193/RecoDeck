@@ -33,12 +33,14 @@ interface TrackTableProps {
   tracks: Track[];
   playlists?: Playlist[];
   keyNotation?: "camelot" | "openkey";
+  selectedPlaylistId?: number | null;
   onTrackClick?: (track: Track) => void;
   onTrackDoubleClick?: (track: Track, sortedTracks: Track[], trackIndex: number) => void;
   onAnalyzeTrack?: (track: Track) => void;
   onAnalyzeBpm?: (track: Track) => void;
   onAnalyzeKey?: (track: Track) => void;
   onAddToPlaylist?: (track: Track, playlistId: number) => void;
+  onRemoveFromPlaylist?: (track: Track) => void;
   onSetGenre?: (track: Track, genre: string) => void;
   onClearGenre?: (track: Track) => void;
   genreDefinitions?: Array<{ id: number; name: string; color?: string }>;
@@ -66,12 +68,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
   tracks,
   playlists = [],
   keyNotation = "camelot",
+  selectedPlaylistId = null,
   onTrackClick,
   onTrackDoubleClick,
   onAnalyzeTrack,
   onAnalyzeBpm,
   onAnalyzeKey,
   onAddToPlaylist,
+  onRemoveFromPlaylist,
   onSetGenre,
   onClearGenre,
   genreDefinitions = [],
@@ -134,11 +138,15 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (
-        contextMenu &&
-        contextMenuRef.current &&
-        !contextMenuRef.current.contains(e.target as Node)
-      ) {
+      if (!contextMenu || !contextMenuRef.current) return;
+      const target = e.target as Node;
+      // Don't close if clicking inside main menu, any submenu, or custom genre modal
+      const isInsideMenu =
+        target instanceof Element &&
+        (target.closest(".context-menu") !== null ||
+          target.closest(".context-submenu") !== null ||
+          target.closest(".modal-overlay") !== null);
+      if (!isInsideMenu) {
         setContextMenu(null);
         setPlaylistSubmenu({ visible: false, x: 0, y: 0 });
         setGenreSubmenu({ visible: false, x: 0, y: 0 });
@@ -307,11 +315,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
     );
   };
 
+  const HEADER_HEIGHT = 36;
+
   const virtualizer = useVirtualizer({
     count: sortedTracks.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 32,
     overscan: 10,
+    scrollMargin: HEADER_HEIGHT,
   });
 
   // Expose scroll to current track method via ref
@@ -403,69 +414,71 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
         </div>
       </div>
 
-      {/* Column headers — clickable for sorting */}
-      <div className="track-table-header">
-        <div className="track-table-row header-row">
-          <div
-            className={`table-cell cell-title sortable ${sort.column === "title" ? "sorted" : ""}`}
-            onClick={() => handleSort("title")}
-          >
-            Title {sortIndicator("title")}
-          </div>
-          <div
-            className={`table-cell cell-artist sortable ${sort.column === "artist" ? "sorted" : ""}`}
-            onClick={() => handleSort("artist")}
-          >
-            Artist {sortIndicator("artist")}
-          </div>
-          <div
-            className={`table-cell cell-album sortable ${sort.column === "album" ? "sorted" : ""}`}
-            onClick={() => handleSort("album")}
-          >
-            Album {sortIndicator("album")}
-          </div>
-          <div
-            className={`table-cell cell-bpm sortable ${sort.column === "bpm" ? "sorted" : ""}`}
-            onClick={() => handleSort("bpm")}
-          >
-            BPM {sortIndicator("bpm")}
-          </div>
-          <div
-            className={`table-cell cell-key sortable ${sort.column === "key" ? "sorted" : ""}`}
-            onClick={() => handleSort("key")}
-          >
-            Key {sortIndicator("key")}
-          </div>
-          <div
-            className={`table-cell cell-genre sortable ${sort.column === "genre" ? "sorted" : ""}`}
-            onClick={() => handleSort("genre")}
-          >
-            Genre {sortIndicator("genre")}
-          </div>
-          <div
-            className={`table-cell cell-duration sortable ${sort.column === "duration" ? "sorted" : ""}`}
-            onClick={() => handleSort("duration")}
-          >
-            Duration {sortIndicator("duration")}
-          </div>
-          <div
-            className={`table-cell cell-format sortable ${sort.column === "format" ? "sorted" : ""}`}
-            onClick={() => handleSort("format")}
-          >
-            Format {sortIndicator("format")}
-          </div>
-        </div>
-      </div>
-
-      {/* Virtualized body */}
+      {/* Scroll area: header + body scroll together (vertically and horizontally) */}
       <div
         ref={parentRef}
-        className="track-table-body"
+        className="track-table-scroll-area"
         style={{
           flex: 1,
           overflow: "auto",
         }}
       >
+        {/* Column headers — scroll with content, sticky at top when scrolling down */}
+        <div className="track-table-header">
+          <div className="track-table-row header-row">
+            <div
+              className={`table-cell cell-title sortable ${sort.column === "title" ? "sorted" : ""}`}
+              onClick={() => handleSort("title")}
+            >
+              Title {sortIndicator("title")}
+            </div>
+            <div
+              className={`table-cell cell-artist sortable ${sort.column === "artist" ? "sorted" : ""}`}
+              onClick={() => handleSort("artist")}
+            >
+              Artist {sortIndicator("artist")}
+            </div>
+            <div
+              className={`table-cell cell-album sortable ${sort.column === "album" ? "sorted" : ""}`}
+              onClick={() => handleSort("album")}
+            >
+              Album {sortIndicator("album")}
+            </div>
+            <div
+              className={`table-cell cell-bpm sortable ${sort.column === "bpm" ? "sorted" : ""}`}
+              onClick={() => handleSort("bpm")}
+            >
+              BPM {sortIndicator("bpm")}
+            </div>
+            <div
+              className={`table-cell cell-key sortable ${sort.column === "key" ? "sorted" : ""}`}
+              onClick={() => handleSort("key")}
+            >
+              Key {sortIndicator("key")}
+            </div>
+            <div
+              className={`table-cell cell-genre sortable ${sort.column === "genre" ? "sorted" : ""}`}
+              onClick={() => handleSort("genre")}
+            >
+              Genre {sortIndicator("genre")}
+            </div>
+            <div
+              className={`table-cell cell-duration sortable ${sort.column === "duration" ? "sorted" : ""}`}
+              onClick={() => handleSort("duration")}
+            >
+              Duration {sortIndicator("duration")}
+            </div>
+            <div
+              className={`table-cell cell-format sortable ${sort.column === "format" ? "sorted" : ""}`}
+              onClick={() => handleSort("format")}
+            >
+              Format {sortIndicator("format")}
+            </div>
+          </div>
+        </div>
+
+        {/* Virtualized body */}
+        <div className="track-table-body">
         <div
           style={{
             height: `${virtualizer.getTotalSize()}px`,
@@ -550,6 +563,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
             );
           })}
         </div>
+        </div>
       </div>
 
       {/* Right-click context menu */}
@@ -564,6 +578,21 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
             zIndex: 9999,
           }}
         >
+          {/* Delete from Playlist — only when viewing a playlist */}
+          {selectedPlaylistId != null && onRemoveFromPlaylist && (
+            <button
+              type="button"
+              className="context-menu-item context-menu-item-danger"
+              onClick={() => {
+                onRemoveFromPlaylist(contextMenu.track);
+                setContextMenu(null);
+              }}
+            >
+              <Icon name="Trash2" size={16} className="context-menu-icon" />
+              Delete from playlist
+            </button>
+          )}
+
           {/* Add to Playlist option */}
           {onAddToPlaylist && actualPlaylists.length > 0 && (
             <div

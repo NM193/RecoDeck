@@ -1,0 +1,211 @@
+/* Mini Player - Spotify-style floating window */
+
+.mini-player {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.mini-player__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mini-player__title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.mini-player__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.mini-player__close:hover {
+  color: var(--text-primary);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+/* Artwork */
+.mini-player__artwork {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 24px 24px 16px;
+}
+
+.mini-player__artwork-img {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.mini-player__artwork-placeholder {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mini-player__artwork-placeholder--empty {
+  background: var(--bg-tertiary);
+}
+
+.mini-player__artwork-icon {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+/* Track meta */
+.mini-player__meta {
+  padding: 0 24px 20px;
+  text-align: center;
+}
+
+.mini-player__track-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mini-player__track-artist {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Controls */
+.mini-player__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 24px 20px;
+}
+
+.mini-player__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.mini-player__btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.mini-player__btn:disabled {
+  color: var(--border);
+  cursor: default;
+}
+
+.mini-player__btn--play {
+  width: 56px;
+  height: 56px;
+  color: var(--text-primary);
+}
+
+.mini-player__btn--play:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+/* Progress */
+.mini-player__progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px 24px;
+}
+
+.mini-player__time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+}
+
+.mini-player__progress {
+  flex: 1;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+}
+
+.mini-player__progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.mini-player__progress-fill {
+  position: absolute;
+  left: 0;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  transition: width 0.05s linear;
+}
+
+.mini-player__progress-handle {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.mini-player__progress:hover .mini-player__progress-handle,
+.mini-player__progress:active .mini-player__progress-handle {
+  opacity: 1;
+}
+
+.mini-player__empty {
+  padding: 16px 24px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+}

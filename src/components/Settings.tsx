@@ -7,6 +7,7 @@ import { open, ask } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { QRCodeSVG } from "qrcode.react";
 import { tauriApi } from "../lib/tauri-api";
 import { useAIStore } from "../store/aiStore";
 import { Icon } from "./Icon";
@@ -16,7 +17,7 @@ interface SettingsProps {
   isOpen: boolean;
   onClose: () => void;
   onFoldersChanged: () => void;
-  onThemeChanged: (theme: string) => void;
+  onThemeChanged: (theme: string, customColors?: Record<string, string>) => void;
   onKeyNotationChanged?: (notation: string) => void;
   onWaveformStyleChanged?: (style: string) => void;
   onNotification?: (message: string, type: "info" | "success" | "warning" | "error") => void;
@@ -27,7 +28,30 @@ const THEMES = [
   { id: "carbon", name: "Carbon", description: "Neutral dark with blue accents" },
   { id: "dawn", name: "Dawn", description: "Light theme" },
   { id: "neon", name: "Neon", description: "Dark with vibrant neon accents" },
+  { id: "custom", name: "Custom", description: "Choose your own colors" },
 ];
+
+const DEFAULT_CUSTOM_COLORS: Record<string, string> = {
+  accent: "#6366f1",
+  "bg-primary": "#0a0a0f",
+  "bg-secondary": "#12121a",
+  "bg-tertiary": "#1a1a28",
+  "text-primary": "#e0e0e8",
+  "text-secondary": "#8888a0",
+  border: "#2a2a3a",
+  surface: "#16161f",
+};
+
+const CUSTOM_COLOR_LABELS: Record<string, string> = {
+  accent: "Accent",
+  "bg-primary": "Background",
+  "bg-secondary": "Panel background",
+  "bg-tertiary": "Card background",
+  "text-primary": "Text",
+  "text-secondary": "Secondary text",
+  border: "Border",
+  surface: "Surface",
+};
 
 const KEY_NOTATIONS = [
   { id: "camelot", name: "Camelot", description: "8A, 11B (Mixed In Key)" },
@@ -40,12 +64,13 @@ const WAVEFORM_STYLES = [
   { id: "bars", name: "Bars", description: "Simple bar visualization" },
 ];
 
-type SettingsTab = 'library' | 'appearance' | 'audio' | 'database' | 'ai' | 'app';
+type SettingsTab = 'library' | 'appearance' | 'audio' | 'database' | 'ai' | 'companion' | 'app';
 
 export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, onKeyNotationChanged, onWaveformStyleChanged, onNotification }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('library');
   const [folders, setFolders] = useState<string[]>([]);
   const [currentTheme, setCurrentTheme] = useState("midnight");
+  const [customColors, setCustomColors] = useState<Record<string, string>>(DEFAULT_CUSTOM_COLORS);
   const [keyNotation, setKeyNotation] = useState("camelot");
   const [waveformStyle, setWaveformStyle] = useState("traktor_rgb");
   const [crossfadeEnabled, setCrossfadeEnabled] = useState(false);
@@ -57,12 +82,28 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
   const [normalizingPaths, setNormalizingPaths] = useState(false);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [updateProgress, setUpdateProgress] = useState<{
+    status: "checking" | "downloading" | "installing";
+    progress: number;
+    totalBytes?: number;
+    downloadedBytes?: number;
+  } | null>(null);
 
   // AI settings
   const { isApiKeyConfigured, checkApiKeyStatus, setApiKey, deleteApiKey } = useAIStore();
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [aiSaving, setAiSaving] = useState(false);
+
+  // Companion server state
+  const [companionRunning, setCompanionRunning] = useState(false);
+  const [companionUrl, setCompanionUrl] = useState<string | null>(null);
+  const [companionToken, setCompanionToken] = useState<string | null>(null);
+  const [_companionPort, setCompanionPort] = useState<number>(8384);
+  const [companionPortInput, setCompanionPortInput] = useState("8384");
+  const [companionActiveStreams, setCompanionActiveStreams] = useState(0);
+  const [companionLoading, setCompanionLoading] = useState(false);
+  const [companionAutostart, setCompanionAutostart] = useState(false);
 
   // Load settings when panel opens
   useEffect(() => {
@@ -74,17 +115,40 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
   async function loadSettings() {
     try {
       setError(null);
-      const [loadedFolders, loadedTheme, loadedKeyNotation, loadedWaveformStyle, loadedCrossfadeEnabled, loadedCrossfadeDuration] = await Promise.all([
+      const [loadedFolders, loadedTheme, loadedKeyNotation, loadedWaveformStyle, loadedCrossfadeEnabled, loadedCrossfadeDuration, loadedCustomColors] = await Promise.all([
         tauriApi.getLibraryFolders(),
         tauriApi.getTheme(),
         tauriApi.getSetting("key_notation").catch(() => "camelot"),
         tauriApi.getSetting("waveform_style").catch(() => "traktor_rgb"),
         tauriApi.getSetting("crossfade_enabled").catch(() => "false"),
         tauriApi.getSetting("crossfade_duration_sec").catch(() => "8"),
+        tauriApi.getCustomThemeColors().catch(() => null),
       ]);
 
       // Check AI API key status
       await checkApiKeyStatus();
+
+      // Check companion server status
+      try {
+        const status = await tauriApi.getCompanionStatus();
+        setCompanionRunning(status.running);
+        setCompanionUrl(status.url);
+        setCompanionToken(status.token);
+        if (status.port) {
+          setCompanionPort(status.port);
+          setCompanionPortInput(status.port.toString());
+        }
+        setCompanionActiveStreams(status.active_streams);
+      } catch {
+        // Companion commands may not be available
+      }
+      // Load companion autostart setting
+      try {
+        const autostart = await tauriApi.getSetting("companion_autostart");
+        setCompanionAutostart(autostart === "true");
+      } catch {
+        // Setting may not exist yet
+      }
       try {
         setAppVersion(await getVersion());
       } catch {
@@ -92,6 +156,7 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
       }
       setFolders(loadedFolders);
       setCurrentTheme(loadedTheme);
+      setCustomColors(loadedCustomColors ? { ...DEFAULT_CUSTOM_COLORS, ...loadedCustomColors } : DEFAULT_CUSTOM_COLORS);
       setKeyNotation(loadedKeyNotation || "camelot");
       setWaveformStyle(loadedWaveformStyle || "traktor_rgb");
       setCrossfadeEnabled(loadedCrossfadeEnabled === "true");
@@ -282,11 +347,34 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
       await tauriApi.setTheme(themeId);
       setCurrentTheme(themeId);
 
-      // Apply immediately
-      onThemeChanged(themeId);
+      // Apply immediately (pass custom colors when switching to custom)
+      onThemeChanged(themeId, themeId === "custom" ? customColors : undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function handleCustomColorChange(key: string, value: string) {
+    const hex = value.startsWith("#") ? value : (value.length > 0 ? "#" + value : value);
+    const next = { ...customColors, [key]: hex };
+    setCustomColors(next);
+    if (currentTheme === "custom") {
+      onThemeChanged("custom", next);
+      tauriApi.setCustomThemeColors(next).catch((err) =>
+        setError(err instanceof Error ? err.message : String(err))
+      );
+    }
+  }
+
+  async function handleResetCustomColors() {
+    setCustomColors(DEFAULT_CUSTOM_COLORS);
+    if (currentTheme === "custom") {
+      onThemeChanged("custom", DEFAULT_CUSTOM_COLORS);
+    }
+    tauriApi.setCustomThemeColors(DEFAULT_CUSTOM_COLORS).catch((err) =>
+      setError(err instanceof Error ? err.message : String(err))
+    );
+    onNotification?.("Custom colors reset to default", "info");
   }
 
   async function handleKeyNotationChange(notation: string) {
@@ -399,20 +487,134 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
     try {
       setUpdateChecking(true);
       setError(null);
+      setUpdateProgress({ status: "checking", progress: 0 });
+
       const update = await check();
+
       if (update) {
+        setUpdateProgress({ status: "downloading", progress: 0, downloadedBytes: 0, totalBytes: 0 });
         onNotification?.(`Update ${update.version} available. Downloading...`, "info");
-        await update.downloadAndInstall();
-        await relaunch();
+
+        let downloadedBytes = 0;
+        let totalBytes = 0;
+
+        await update.downloadAndInstall((event) => {
+          if (event.event === "Started") {
+            totalBytes = event.data.contentLength ?? 0;
+            setUpdateProgress((p) =>
+              p ? { ...p, totalBytes, downloadedBytes: 0, progress: 0 } : p
+            );
+          } else if (event.event === "Progress") {
+            downloadedBytes += event.data.chunkLength;
+            const progress =
+              totalBytes > 0 ? Math.min(95, Math.round((downloadedBytes / totalBytes) * 100)) : 0;
+            setUpdateProgress((p) =>
+              p ? { ...p, downloadedBytes, totalBytes, progress } : p
+            );
+          } else if (event.event === "Finished") {
+            setUpdateProgress((p) => (p ? { ...p, status: "installing", progress: 98 } : p));
+          }
+        });
+
+        setUpdateProgress((p) => (p ? { ...p, status: "installing", progress: 100 } : p));
+
+        const restartNow = await ask(
+          "Update v" +
+            update.version +
+            " has been downloaded.\n\nDo you want to restart now to apply it? If you choose Later, the new version will be applied the next time you open the app.",
+          {
+            title: "Restart to Update",
+            kind: "info",
+            okLabel: "Restart Now",
+            cancelLabel: "Later",
+          }
+        );
+
+        if (restartNow) {
+          onNotification?.("Restarting app...", "success");
+          await relaunch();
+        } else {
+          onNotification?.("Update will be applied when you restart the app.", "info");
+        }
       } else {
+        setUpdateProgress(null);
         onNotification?.("You're on the latest version.", "success");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(`Update check failed: ${msg}`);
       onNotification?.(`Update check failed: ${msg}`, "error");
+      setUpdateProgress(null);
     } finally {
       setUpdateChecking(false);
+      setUpdateProgress(null);
+    }
+  }
+
+  // Companion server handlers
+  async function handleStartCompanion() {
+    try {
+      setError(null);
+      setCompanionLoading(true);
+      const portNum = parseInt(companionPortInput, 10) || 8384;
+      const info = await tauriApi.startCompanionServer(portNum);
+      setCompanionRunning(info.running);
+      setCompanionUrl(info.url);
+      setCompanionToken(info.token);
+      if (info.port) {
+        setCompanionPort(info.port);
+        setCompanionPortInput(info.port.toString());
+      }
+      setCompanionActiveStreams(info.active_streams);
+      onNotification?.("Mobile companion server started", "success");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      onNotification?.(msg, "error");
+    } finally {
+      setCompanionLoading(false);
+    }
+  }
+
+  async function handleStopCompanion() {
+    try {
+      setError(null);
+      setCompanionLoading(true);
+      await tauriApi.stopCompanionServer();
+      setCompanionRunning(false);
+      setCompanionUrl(null);
+      setCompanionToken(null);
+      setCompanionActiveStreams(0);
+      onNotification?.("Mobile companion server stopped", "info");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      onNotification?.(msg, "error");
+    } finally {
+      setCompanionLoading(false);
+    }
+  }
+
+  async function handleRegenerateToken() {
+    try {
+      setError(null);
+      setCompanionLoading(true);
+      const info = await tauriApi.regenerateCompanionToken();
+      setCompanionRunning(info.running);
+      setCompanionUrl(info.url);
+      setCompanionToken(info.token);
+      if (info.port) {
+        setCompanionPort(info.port);
+        setCompanionPortInput(info.port.toString());
+      }
+      setCompanionActiveStreams(info.active_streams);
+      onNotification?.("Token regenerated. Reconnect your phone.", "info");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      onNotification?.(msg, "error");
+    } finally {
+      setCompanionLoading(false);
     }
   }
 
@@ -525,6 +727,45 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
             </button>
           ))}
         </div>
+
+        {currentTheme === "custom" && (
+          <div className="settings-custom-colors">
+            <h4 className="settings-subsection-title" style={{ marginTop: "20px" }}>Custom Colors</h4>
+            <p className="settings-hint settings-custom-colors-hint">
+              Choose colors — changes apply live and save automatically.
+            </p>
+            <div className="custom-colors-grid">
+              {(Object.keys(DEFAULT_CUSTOM_COLORS) as (keyof typeof DEFAULT_CUSTOM_COLORS)[]).map((key) => (
+                <div key={key} className="custom-color-row">
+                  <label className="custom-color-label">{CUSTOM_COLOR_LABELS[key]}</label>
+                  <div className="custom-color-input-wrap">
+                    <input
+                      type="color"
+                      value={customColors[key] ?? DEFAULT_CUSTOM_COLORS[key]}
+                      onChange={(e) => handleCustomColorChange(key, e.target.value)}
+                      className="custom-color-swatch"
+                    />
+                    <input
+                      type="text"
+                      value={customColors[key] ?? DEFAULT_CUSTOM_COLORS[key]}
+                      onChange={(e) => handleCustomColorChange(key, e.target.value)}
+                      className="custom-color-hex"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="custom-colors-actions">
+              <button
+                type="button"
+                className="btn-secondary btn-small"
+                onClick={handleResetCustomColors}
+              >
+                Reset to Default
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="settings-section">
@@ -622,7 +863,7 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
           className="btn-primary btn-small"
           style={{ marginTop: "0.5rem" }}
         >
-          {updateChecking ? "Checking..." : "Check for Updates"}
+          {updateChecking ? (updateProgress?.status === "checking" ? "Checking..." : "Downloading...") : "Check for Updates"}
         </button>
         <p className="settings-hint" style={{ marginTop: "0.5rem", fontSize: "0.75rem", opacity: 0.7 }}>
           Manually check for app updates from GitHub Releases.
@@ -751,6 +992,178 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
     </div>
   );
 
+  const renderCompanionContent = () => (
+    <div className="settings-tab-content">
+      <h3 className="settings-tab-title">Mobile Companion</h3>
+
+      <section className="settings-section">
+        <p className="settings-description">
+          Stream music from this computer to your phone over WiFi. Open the URL on your phone's browser.
+        </p>
+
+        <div style={{ marginTop: '1rem' }}>
+          {/* Port configuration */}
+          {!companionRunning && (
+            <div className="settings-input-group" style={{ marginBottom: '1rem' }}>
+              <label htmlFor="companion-port">Port</label>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                <input
+                  id="companion-port"
+                  type="number"
+                  min="1024"
+                  max="65535"
+                  value={companionPortInput}
+                  onChange={(e) => setCompanionPortInput(e.target.value)}
+                  className="settings-number-input"
+                  style={{ width: '100px' }}
+                />
+                <span className="settings-input-hint">Default: 8384</span>
+              </div>
+            </div>
+          )}
+
+          {/* Start/Stop button */}
+          <button
+            onClick={companionRunning ? handleStopCompanion : handleStartCompanion}
+            disabled={companionLoading}
+            className={companionRunning ? "btn-secondary btn-small" : "btn-primary btn-small"}
+            style={{ width: '100%' }}
+          >
+            {companionLoading
+              ? (companionRunning ? "Stopping..." : "Starting...")
+              : (companionRunning ? "Stop Server" : "Start Server")}
+          </button>
+        </div>
+
+        {/* Connection info (shown when running) */}
+        {companionRunning && companionUrl && (
+          <div className="companion-info" style={{
+            marginTop: '1.5rem',
+            padding: '1rem',
+            borderRadius: '8px',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--border)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: '#10b981',
+                display: 'inline-block',
+              }} />
+              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Server Running</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginLeft: 'auto' }}>
+                {companionActiveStreams} active stream{companionActiveStreams !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {/* QR Code for easy phone pairing */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              marginBottom: '1.5rem',
+              padding: '1rem',
+              background: 'white',
+              borderRadius: '8px',
+            }}>
+              <QRCodeSVG
+                value={`${companionUrl}/?token=${companionToken}`}
+                size={180}
+                level="M"
+              />
+              <span style={{ color: '#666', fontSize: '0.7rem', marginTop: '0.5rem' }}>
+                Scan with your phone camera to connect
+              </span>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
+                URL
+              </label>
+              <div style={{
+                padding: '0.5rem 0.75rem',
+                background: 'var(--bg-primary)',
+                borderRadius: '4px',
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+                color: 'var(--accent)',
+                wordBreak: 'break-all',
+                userSelect: 'all',
+              }}>
+                {companionUrl}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>
+                Auth Token
+              </label>
+              <div style={{
+                padding: '0.5rem 0.75rem',
+                background: 'var(--bg-primary)',
+                borderRadius: '4px',
+                fontFamily: 'monospace',
+                fontSize: '0.7rem',
+                color: 'var(--text-primary)',
+                wordBreak: 'break-all',
+                userSelect: 'all',
+              }}>
+                {companionToken}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={handleRegenerateToken}
+                disabled={companionLoading}
+                className="btn-secondary btn-small"
+              >
+                Regenerate Token
+              </button>
+            </div>
+
+            <p className="settings-hint" style={{ marginTop: '1rem', fontSize: '0.7rem', opacity: 0.6 }}>
+              Your token and port are saved — your phone stays paired across restarts. Regenerating the token will disconnect all connected devices.
+            </p>
+          </div>
+        )}
+
+        {/* Auto-start toggle */}
+        <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <input
+            type="checkbox"
+            id="companion-autostart"
+            checked={companionAutostart}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              setCompanionAutostart(enabled);
+              try {
+                await tauriApi.setSetting("companion_autostart", enabled ? "true" : "false");
+              } catch {
+                // revert on failure
+                setCompanionAutostart(!enabled);
+              }
+            }}
+            style={{ width: '16px', height: '16px', accentColor: 'var(--accent)' }}
+          />
+          <label htmlFor="companion-autostart" style={{ color: 'var(--text-primary)', fontSize: '0.875rem', cursor: 'pointer' }}>
+            Auto-start server when app launches
+          </label>
+        </div>
+        <p className="settings-hint" style={{ marginTop: '0.25rem', fontSize: '0.7rem', opacity: 0.6, marginLeft: '1.75rem' }}>
+          Enabled automatically after first manual start. Your phone will reconnect without re-pairing.
+        </p>
+
+        <p className="settings-hint" style={{ marginTop: '1rem', fontSize: '0.75rem', opacity: 0.7 }}>
+          The server runs on your local network only. Your phone must be connected to the same WiFi network.
+          Supported formats: MP3, AAC/M4A, WAV. FLAC and OGG may not work on all mobile browsers.
+        </p>
+      </section>
+    </div>
+  );
+
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
@@ -809,6 +1222,13 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
               AI Assistant
             </button>
             <button
+              className={`settings-menu-item ${activeTab === 'companion' ? 'settings-menu-item--active' : ''}`}
+              onClick={() => setActiveTab('companion')}
+            >
+              <Icon name="Smartphone" size={20} />
+              Mobile Companion
+            </button>
+            <button
               className={`settings-menu-item ${activeTab === 'app' ? 'settings-menu-item--active' : ''}`}
               onClick={() => setActiveTab('app')}
             >
@@ -824,10 +1244,49 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
             {activeTab === 'audio' && renderAudioContent()}
             {activeTab === 'database' && renderDatabaseContent()}
             {activeTab === 'ai' && renderAIContent()}
+            {activeTab === 'companion' && renderCompanionContent()}
             {activeTab === 'app' && renderAppContent()}
           </div>
         </div>
+
+        {/* Update progress bar at bottom */}
+        {updateProgress && (
+          <div className="settings-update-progress">
+            <div className="settings-update-progress-header">
+              <span className="settings-update-progress-label">
+                {updateProgress.status === "checking" && "Checking for updates..."}
+                {updateProgress.status === "downloading" &&
+                  (updateProgress.totalBytes
+                    ? `Downloading... ${formatBytes(updateProgress.downloadedBytes ?? 0)} / ${formatBytes(updateProgress.totalBytes)}`
+                    : "Downloading...")}
+                {updateProgress.status === "installing" &&
+                  (updateProgress.progress >= 100
+                    ? "Restarting to apply update..."
+                    : "Installing update...")}
+              </span>
+              {updateProgress.status !== "checking" && (
+                <span className="settings-update-progress-percent">{updateProgress.progress}%</span>
+              )}
+            </div>
+            <div
+              className={`settings-update-progress-bar ${updateProgress.status === "checking" ? "settings-update-progress-bar--indeterminate" : ""}`}
+            >
+              <div
+                className="settings-update-progress-fill"
+                style={{
+                  width: updateProgress.status === "checking" ? "30%" : `${updateProgress.progress}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

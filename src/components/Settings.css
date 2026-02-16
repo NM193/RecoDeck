@@ -418,6 +418,127 @@
   background: #333333;
 }
 
+/* Custom preview - uses accent gradient */
+.theme-preview--custom {
+  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a28 100%);
+}
+.theme-preview--custom .theme-preview-bar {
+  background: #6366f1;
+}
+.theme-preview--custom .theme-preview-line {
+  background: #2a2a3a;
+}
+
+/* Custom color picker section */
+.settings-custom-colors {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow-x: hidden;
+}
+
+.settings-custom-colors-hint {
+  margin-bottom: 12px !important;
+}
+
+.custom-colors-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 520px) {
+  .custom-colors-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+.custom-color-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (max-width: 380px) {
+  .custom-color-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+}
+
+.custom-color-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+@media (min-width: 381px) {
+  .custom-color-label {
+    min-width: 90px;
+  }
+}
+
+.custom-color-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.custom-color-swatch {
+  width: 32px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.custom-color-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.custom-color-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+.custom-color-hex {
+  width: 72px;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: monospace;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+
+.custom-color-hex:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.custom-colors-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .theme-name {
   font-size: 13px;
   font-weight: 500;
@@ -599,4 +720,53 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Update progress bar at bottom of Preferences */
+.settings-update-progress {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.settings-update-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.settings-update-progress-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.settings-update-progress-percent {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.settings-update-progress-bar {
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.settings-update-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.settings-update-progress-bar--indeterminate .settings-update-progress-fill {
+  animation: settings-progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes settings-progress-indeterminate {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(233%); }
 }

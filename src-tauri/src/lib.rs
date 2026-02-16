@@ -4,9 +4,11 @@ pub mod audio;
 pub mod commands;
 pub mod db;
 pub mod scanner;
+pub mod server;
 
-use commands::{library::AppState, playback::PlaybackState, watcher::WatcherState};
+use commands::{library::AppState, playback::PlaybackState, server::CompanionState, watcher::WatcherState};
 use std::sync::Mutex;
+use tauri::{Emitter, Listener};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -81,6 +83,18 @@ fn audio_mime_type(path: &str) -> &'static str {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            // Relay player events between windows (main <-> mini player)
+            let handle = app.handle().clone();
+            for event_name in ["player-state", "player-position", "player-action", "request-player-state"] {
+                let h = handle.clone();
+                let name = event_name.to_string();
+                app.listen(event_name, move |event| {
+                    let _ = h.emit(&name, event.payload());
+                });
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -404,9 +418,11 @@ pub fn run() {
         .manage(AppState {
             db: Mutex::new(None),
             ai_context_cache: Mutex::new(None),
+            db_path: Mutex::new(None),
         })
         .manage(PlaybackState::new())
         .manage(WatcherState::new())
+        .manage(CompanionState::new())
         .invoke_handler(tauri::generate_handler![
             greet,
             // Library commands
@@ -481,6 +497,11 @@ pub fn run() {
             commands::ai::rebuild_ai_context,
             commands::ai::ai_generate_playlist,
             commands::ai::ai_chat,
+            // Companion server commands
+            commands::server::start_companion_server,
+            commands::server::stop_companion_server,
+            commands::server::get_companion_status,
+            commands::server::regenerate_companion_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

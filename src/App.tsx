@@ -6,6 +6,7 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { TrackTable, type TrackTableRef } from "./components/TrackTable";
 import { Player } from "./components/Player";
+import { MiniPlayer } from "./components/MiniPlayer";
 import { Settings } from "./components/Settings";
 import { FolderTree } from "./components/FolderTree";
 import { PromptModal } from "./components/PromptModal";
@@ -28,6 +29,22 @@ type PromptAction =
   | { kind: "rename"; id: number; currentName: string };
 
 function App() {
+  const [hash, setHash] = useState(() => window.location.hash);
+
+  useEffect(() => {
+    const onHashChange = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  if (hash === "#mini-player") {
+    return <MiniPlayer />;
+  }
+
+  return <AppContent />;
+}
+
+function AppContent() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +105,10 @@ function App() {
   }, []);
 
   // Check for app updates on startup (after a short delay to not block UI)
+  // Skip in dev mode - updater can cause unexpected relaunch during development
   useEffect(() => {
+    if (import.meta.env.DEV) return;
+
     const timer = setTimeout(async () => {
       try {
         const update = await check();
@@ -119,7 +139,12 @@ function App() {
       // Load saved theme
       try {
         const savedTheme = await tauriApi.getTheme();
-        applyTheme(savedTheme);
+        if (savedTheme === "custom") {
+          const customColors = await tauriApi.getCustomThemeColors();
+          applyTheme(savedTheme, customColors ?? undefined);
+        } else {
+          applyTheme(savedTheme);
+        }
       } catch {
         console.warn("Failed to load saved theme, using default");
       }
@@ -326,8 +351,51 @@ function App() {
     };
   }, []);
 
-  function applyTheme(theme: string) {
+  function hexToRgb(hex: string): string {
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m) return "99, 102, 241";
+    return `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`;
+  }
+
+  function lightenHex(hex: string, amount: number): string {
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!m) return hex;
+    const r = Math.min(255, parseInt(m[1], 16) + amount);
+    const g = Math.min(255, parseInt(m[2], 16) + amount);
+    const b = Math.min(255, parseInt(m[3], 16) + amount);
+    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  }
+
+  const CUSTOM_THEME_VARS = [
+    "accent", "accent-hover", "accent-rgb", "bg-primary", "bg-secondary", "bg-tertiary",
+    "text-primary", "text-secondary", "border", "surface", "waveform-color", "waveform-played",
+    "spectrogram-bg",
+  ];
+
+  function applyTheme(theme: string, customColors?: Record<string, string>) {
+    const root = document.documentElement.style;
     document.documentElement.setAttribute("data-theme", theme);
+    if (theme === "custom" && customColors) {
+      const validHex = /^#[0-9A-Fa-f]{6}$/;
+      for (const [key, value] of Object.entries(customColors)) {
+        if (validHex.test(value)) {
+          root.setProperty("--" + key, value);
+        }
+      }
+      if (customColors.accent && validHex.test(customColors.accent)) {
+        root.setProperty("--accent-hover", lightenHex(customColors.accent, 30));
+        root.setProperty("--accent-rgb", hexToRgb(customColors.accent));
+        root.setProperty("--waveform-color", customColors.accent);
+        root.setProperty("--waveform-played", lightenHex(customColors.accent, 60));
+      }
+      if (customColors["bg-primary"]) {
+        root.setProperty("--spectrogram-bg", customColors["bg-primary"]);
+      }
+    } else {
+      for (const name of CUSTOM_THEME_VARS) {
+        root.removeProperty("--" + name);
+      }
+    }
   }
 
   // Settings callbacks
@@ -348,8 +416,8 @@ function App() {
     loadTracks();
   }
 
-  function handleThemeChanged(theme: string) {
-    applyTheme(theme);
+  function handleThemeChanged(theme: string, customColors?: Record<string, string>) {
+    applyTheme(theme, customColors);
   }
 
   function handleKeyNotationChanged(notation: string) {
@@ -527,10 +595,7 @@ function App() {
       setAnalysisProgress(null);
       await loadTracks();
 
-      setNotification({
-        message: `Analysis complete for "${track.title || "track"}"`,
-        type: "success",
-      });
+      setHeaderNotification(`Analysis complete for "${track.title || "track"}"`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setNotification({
@@ -717,6 +782,22 @@ function App() {
     } catch (err) {
       setNotification({
         message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
+        type: "error",
+      });
+    }
+  }
+
+  // Remove track from playlist (when viewing a playlist)
+  async function handleRemoveFromPlaylist(track: Track) {
+    if (selectedPlaylistId == null) return;
+    try {
+      await tauriApi.removeTrackFromPlaylist(selectedPlaylistId, track.id);
+      await loadTracks(null, selectedPlaylistId); // Refresh playlist tracks
+      await loadPlaylists(); // Refresh playlist counts
+      setHeaderNotification(`Removed from playlist`);
+    } catch (err) {
+      setNotification({
+        message: `Failed to remove: ${err instanceof Error ? err.message : String(err)}`,
         type: "error",
       });
     }
@@ -979,7 +1060,7 @@ function App() {
     return (
       <div className="app-container loading">
         <div className="loading-screen">
-          <h1 className="loading-title">RecoDeck</h1>
+          <img src="/recodeck-logo.png" alt="RecoDeck" className="loading-logo" />
           <p className="loading-subtitle">Preparing your library</p>
           <div className="loading-progress-track">
             <div className="loading-progress-fill" />
@@ -1024,7 +1105,7 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <div className="header-brand">
-          <h1>RecoDeck</h1>
+          <img src="/recodeck-logo.png" alt="RecoDeck" className="header-logo" />
           {headerNotification && (
             <HeaderNotification
               message={headerNotification}
@@ -1085,12 +1166,14 @@ function App() {
               tracks={tracks}
               playlists={playlists}
               keyNotation={keyNotation}
+              selectedPlaylistId={selectedPlaylistId}
               onTrackClick={handleTrackClick}
               onTrackDoubleClick={handlePlayTrack}
               onAnalyzeTrack={handleAnalyzeTrack}
               onAnalyzeBpm={handleAnalyzeBpm}
               onAnalyzeKey={handleAnalyzeKey}
               onAddToPlaylist={handleAddToPlaylist}
+              onRemoveFromPlaylist={handleRemoveFromPlaylist}
               onSetGenre={handleSetGenre}
               onClearGenre={handleClearGenre}
               genreDefinitions={genreDefinitions}

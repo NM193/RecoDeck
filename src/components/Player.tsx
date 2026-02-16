@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { emit, listen } from '@tauri-apps/api/event';
 import { usePlayerStore } from '../store/playerStore';
 import { audioPlayer } from '../lib/audioPlayer';
 import { tauriApi } from '../lib/tauri-api';
@@ -39,7 +40,6 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
     playTrackAtIndex,
   } = usePlayerStore();
 
-  const [isFavourite, setIsFavourite] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -85,6 +85,11 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
 
   // Cooldown: timestamp of last crossfade swap, prevents re-triggering immediately
   const crossfadeCooldownUntilRef = useRef(0);
+
+  // Refs for mini player action handlers (assigned after handlers are defined)
+  const handlePlayPauseRef = useRef<() => void>(() => {});
+  const handlePreviousRef = useRef<() => void>(() => {});
+  const handleNextRef = useRef<() => void>(() => {});
 
   // Load crossfade settings on mount
   useEffect(() => {
@@ -191,18 +196,14 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
     };
 
     // Listen for audio errors from backend (native playback)
-    let unlistenError: (() => void) | undefined;
-    (async () => {
-      const { listen } = await import('@tauri-apps/api/event');
-      unlistenError = await listen<string>('audio-error', (event) => {
-        setError(event.payload);
-        setIsPlaying(false);
-      });
-    })();
+    const unlistenError = listen<string>('audio-error', (event) => {
+      setError(event.payload);
+      setIsPlaying(false);
+    });
 
     return () => {
       audioPlayer.cleanup();
-      if (unlistenError) unlistenError();
+      unlistenError.then((fn) => fn());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -431,6 +432,58 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
     playNext();
   };
 
+  handlePlayPauseRef.current = handlePlayPause;
+  handlePreviousRef.current = handlePrevious;
+  handleNextRef.current = handleNext;
+
+  // Emit player state for mini player window (and listen for actions)
+  useEffect(() => {
+    const unReq = listen('request-player-state', () => {
+      const s = usePlayerStore.getState();
+      emit('player-state', {
+        currentTrack: s.currentTrack,
+        isPlaying: s.isPlaying,
+        position: s.position,
+        duration: s.duration,
+        isLoading: s.isLoading,
+      });
+    });
+    const unAct = listen<{ type: string; payload?: number }>('player-action', (ev) => {
+      const { type, payload } = ev.payload;
+      if (type === 'playPause') handlePlayPauseRef.current();
+      else if (type === 'previous') handlePreviousRef.current();
+      else if (type === 'next') handleNextRef.current();
+      else if (type === 'seek' && typeof payload === 'number') {
+        audioPlayer.seek(payload).catch((err) => setError(err?.message ?? String(err)));
+      }
+    });
+    return () => {
+      unReq.then((fn) => fn());
+      unAct.then((fn) => fn());
+    };
+  }, []);
+
+  // Throttled position emit for mini player (every 250ms instead of every tick)
+  const lastPositionEmitRef = useRef(0);
+  useEffect(() => {
+    const now = Date.now();
+    if (now - lastPositionEmitRef.current < 250) return;
+    lastPositionEmitRef.current = now;
+    emit('player-position', { position, duration });
+  }, [position, duration]);
+
+  // Emit full player state only when non-position fields change (infrequent)
+  useEffect(() => {
+    emit('player-state', {
+      currentTrack,
+      isPlaying,
+      position,
+      duration,
+      isLoading,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrack, isPlaying, isLoading]);
+
   const handleRepeatToggle = () => {
     if (repeatMode === 'off') setRepeatMode('all');
     else if (repeatMode === 'all') setRepeatMode('one');
@@ -452,10 +505,6 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
     const val = parseFloat(e.target.value);
     setVolume(val);
     if (val > 0) setIsMuted(false);
-  };
-
-  const handleFavourite = () => {
-    setIsFavourite((prev) => !prev);
   };
 
   const handleAddToPlaylist = (playlistId: number) => {
@@ -717,14 +766,17 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
             )}
           </div>
 
-          {/* Favourite */}
+          {/* Open Mini Player */}
           <button
-            className={`sc-player__btn sc-player__btn--action ${isFavourite ? 'sc-player__btn--favourite' : ''}`}
-            onClick={handleFavourite}
-            disabled={!currentTrack}
-            title={isFavourite ? 'Remove from favourites' : 'Add to favourites'}
+            className="sc-player__btn sc-player__btn--action"
+            onClick={() =>
+              import('../lib/miniPlayer')
+                .then((m) => m.openMiniPlayer())
+                .catch((err) => console.error('[Player] Mini player open failed:', err))
+            }
+            title="Open Mini Player"
           >
-            <Icon name="Heart" size={20} className={isFavourite ? 'fill-current' : ''} />
+            <Icon name="PictureInPicture2" size={20} />
           </button>
 
           {/* Add to playlist */}

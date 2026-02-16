@@ -30,6 +30,9 @@ dist-ssr
 **/.env
 **/.env.local
 
+# Generated app icon (source: public/recodeck-logo.png)
+app-icon.png
+
 # Tauri dev environment
 src-tauri/.env
 src-tauri/.env.local

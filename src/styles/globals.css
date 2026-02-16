@@ -77,6 +77,24 @@
     --surface: #f9fafb;
 }
 
+/* Custom theme - User-defined colors (overridden via JS) */
+:root[data-theme="custom"] {
+    /* Base values - overridden by applyCustomTheme() */
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #12121a;
+    --bg-tertiary: #1a1a28;
+    --text-primary: #e0e0e8;
+    --text-secondary: #8888a0;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-rgb: 99, 102, 241;
+    --waveform-color: #6366f1;
+    --waveform-played: #a5b4fc;
+    --spectrogram-bg: #0a0a0f;
+    --border: #2a2a3a;
+    --surface: #16161f;
+}
+
 /* Neon theme - Dark with vibrant accents */
 :root[data-theme="neon"] {
     --bg-primary: #000000;

@@ -12,6 +12,8 @@ pub struct AppState {
     pub db: Mutex<Option<Database>>,
     /// Pre-built AI context JSON, rebuilt on library changes
     pub ai_context_cache: Mutex<Option<String>>,
+    /// Path to the SQLite database file (needed for companion server's own connection)
+    pub db_path: Mutex<Option<String>>,
 }
 
 /// Serializable track for frontend
@@ -148,7 +150,11 @@ impl From<ScanResult> for ScanResultDTO {
 /// Initialize the database.
 /// Creates parent directories if they don't exist (needed for persistent DB path).
 #[tauri::command]
-pub fn init_database(state: State<AppState>, db_path: String) -> Result<String, String> {
+pub fn init_database(
+    state: State<AppState>,
+    app_handle: tauri::AppHandle,
+    db_path: String,
+) -> Result<String, String> {
     let path = Path::new(&db_path);
 
     // Create parent directory if it doesn't exist (e.g., ~/Library/Application Support/com.nemanjamarjanovic.recodeck/)
@@ -161,7 +167,7 @@ pub fn init_database(state: State<AppState>, db_path: String) -> Result<String, 
 
     let db = Database::new(path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
-    
+
     db.run_migrations()
         .map_err(|e| format!("Failed to run migrations: {}", e))?;
 
@@ -171,7 +177,14 @@ pub fn init_database(state: State<AppState>, db_path: String) -> Result<String, 
     // - normalize_all_file_paths() - loads all tracks into memory
     // Both are now exposed as manual commands: cleanup_duplicate_tracks, normalize_file_paths
 
+    *state.db_path.lock().unwrap() = Some(db_path);
     *state.db.lock().unwrap() = Some(db);
+
+    // Auto-start companion server if enabled (non-blocking)
+    tauri::async_runtime::spawn(
+        crate::commands::server::auto_start_companion(app_handle)
+    );
+
     Ok("Database initialized successfully".to_string())
 }
 

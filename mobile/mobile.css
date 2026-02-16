@@ -1,0 +1,526 @@
+/* RecoDeck Mobile Companion PWA styles */
+
+:root {
+  --accent: #6366f1;
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-tertiary: #1a1a28;
+  --text-primary: #e0e0e8;
+  --text-secondary: #8888a0;
+  --border: #2a2a3a;
+  --surface: #16161f;
+  --danger: #ef4444;
+  --success: #10b981;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overscroll-behavior: none;
+}
+
+/* Connect Screen */
+.mobile-connect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.mobile-connect-card {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.mobile-connect-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.mobile-connect-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.875rem;
+}
+
+.mobile-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mobile-input-group {
+  text-align: left;
+}
+
+.mobile-input-group label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.375rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mobile-use-current-url {
+  font-size: 0.7rem;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.mobile-input-group input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.mobile-input-group input:focus {
+  border-color: var(--accent);
+}
+
+.mobile-error {
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 0.875rem;
+  text-align: left;
+}
+
+.mobile-connect-btn {
+  width: 100%;
+  padding: 0.875rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.mobile-connect-btn:disabled {
+  opacity: 0.6;
+}
+
+.mobile-connect-hint {
+  margin-top: 2rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+/* Main App Layout */
+.mobile-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.mobile-header-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-header-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.mobile-header-meta {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.mobile-disconnect-btn {
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.mobile-main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Track List */
+.mobile-track-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.mobile-search {
+  position: relative;
+  padding: 0.75rem 1rem;
+  flex-shrink: 0;
+}
+
+.mobile-search-input {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  outline: none;
+}
+
+.mobile-search-input:focus {
+  border-color: var(--accent);
+}
+
+.mobile-search-clear {
+  position: absolute;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.mobile-track-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-track-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.mobile-track-item:active {
+  background: var(--bg-tertiary);
+}
+
+.mobile-track-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  margin-right: 0.75rem;
+}
+
+.mobile-track-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-track-artist {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.125rem;
+}
+
+.mobile-track-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.mobile-track-bpm {
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.1);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+}
+
+.mobile-track-duration {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-loading,
+.mobile-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* Player Bar (compact, bottom) */
+.mobile-player-bar {
+  position: relative;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
+}
+
+.mobile-player-bar-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width 0.5s linear;
+}
+
+.mobile-player-bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 1rem;
+}
+
+.mobile-player-bar-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  margin-right: 0.75rem;
+}
+
+.mobile-player-bar-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-player-bar-artist {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-player-bar-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mobile-player-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  padding: 0.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+}
+
+.mobile-player-btn:disabled {
+  opacity: 0.3;
+}
+
+/* Full-screen player */
+.mobile-player-full {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  padding-top: max(2rem, env(safe-area-inset-top));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+.mobile-player-collapse {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+}
+
+.mobile-player-full-info {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.mobile-player-full-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.mobile-player-full-artist {
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.mobile-player-full-album {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  margin-top: 0.25rem;
+}
+
+/* Seek bar */
+.mobile-player-seek {
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 2rem;
+}
+
+.mobile-player-seek-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.mobile-player-seek-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.15s linear;
+}
+
+.mobile-player-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Full controls */
+.mobile-player-full-controls {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.mobile-player-btn-lg {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 1.75rem;
+  cursor: pointer;
+  padding: 0.5rem;
+}
+
+.mobile-player-btn-lg:disabled {
+  opacity: 0.3;
+}
+
+.mobile-player-btn-xl {
+  background: var(--accent);
+  border: none;
+  color: white;
+  font-size: 2rem;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-player-meta {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.mobile-player-meta span {
+  background: var(--bg-tertiary);
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+}

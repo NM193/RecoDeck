@@ -153,7 +153,7 @@ pub fn get_theme(state: State<AppState>) -> Result<String, String> {
 #[tauri::command]
 pub fn set_theme(state: State<AppState>, theme: String) -> Result<(), String> {
     // Validate theme name
-    let valid_themes = ["midnight", "carbon", "dawn", "neon"];
+    let valid_themes = ["midnight", "carbon", "dawn", "neon", "custom"];
     if !valid_themes.contains(&theme.as_str()) {
         return Err(format!(
             "Invalid theme '{}'. Valid themes: {}",
