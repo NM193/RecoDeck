@@ -201,13 +201,15 @@ async fn search_tracks(
     let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let tracks = db
-        .search_tracks(&query)
+    let rows = db
+        .search_tracks_with_analysis(&query)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mobile_tracks: Vec<MobileTrackDTO> = tracks
+    let mobile_tracks: Vec<MobileTrackDTO> = rows
         .into_iter()
-        .map(MobileTrackDTO::from_track)
+        .map(|(track, bpm, _bpm_conf, key, _key_conf)| {
+            MobileTrackDTO::from_track_with_analysis(track, bpm, key)
+        })
         .collect();
 
     Ok(Json(mobile_tracks))

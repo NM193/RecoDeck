@@ -1233,6 +1233,63 @@ impl Database {
         tracks.collect()
     }
 
+    /// Search tracks by query, returning Track + analysis data (BPM, key) in a single JOIN query.
+    pub fn search_tracks_with_analysis(&self, query: &str) -> Result<Vec<TrackWithAnalysis>> {
+        let like_pattern = format!("%{}%", query);
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
+                    t.track_number, t.year, t.label, t.duration_ms, t.file_format,
+                    t.bitrate, t.sample_rate, t.file_size, t.date_added, t.date_modified,
+                    t.play_count, t.rating, t.comment, t.artwork_path, t.genre, t.genre_source,
+                    a.bpm, a.bpm_confidence, a.musical_key, a.key_confidence
+             FROM tracks t
+             LEFT JOIN track_analysis a ON t.id = a.track_id
+             WHERE t.title LIKE ?1 COLLATE NOCASE
+                OR t.artist LIKE ?1 COLLATE NOCASE
+                OR t.album LIKE ?1 COLLATE NOCASE
+                OR t.label LIKE ?1 COLLATE NOCASE
+                OR t.comment LIKE ?1 COLLATE NOCASE
+                OR t.file_path LIKE ?1 COLLATE NOCASE
+                OR t.genre LIKE ?1 COLLATE NOCASE
+             ORDER BY t.id"
+        )?;
+
+        let rows = stmt.query_map([&like_pattern], |row| {
+            let track = Track {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                file_hash: row.get(2)?,
+                title: row.get(3)?,
+                artist: row.get(4)?,
+                album: row.get(5)?,
+                album_artist: row.get(6)?,
+                track_number: row.get(7)?,
+                year: row.get(8)?,
+                label: row.get(9)?,
+                duration_ms: row.get(10)?,
+                file_format: row.get(11)?,
+                bitrate: row.get(12)?,
+                sample_rate: row.get(13)?,
+                file_size: row.get(14)?,
+                date_added: row.get(15)?,
+                date_modified: row.get(16)?,
+                play_count: row.get(17)?,
+                rating: row.get(18)?,
+                comment: row.get(19)?,
+                artwork_path: row.get(20)?,
+                genre: row.get(21)?,
+                genre_source: row.get(22)?,
+            };
+            let bpm: Option<f64> = row.get(23)?;
+            let bpm_conf: Option<f64> = row.get(24)?;
+            let musical_key: Option<String> = row.get(25)?;
+            let key_conf: Option<f64> = row.get(26)?;
+            Ok((track, bpm, bpm_conf, musical_key, key_conf))
+        })?;
+
+        rows.collect()
+    }
+
     // --- Genre operations ---
 
     /// Save genre for a track with specified source.
