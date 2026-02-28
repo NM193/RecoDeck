@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-// QR scan: URL = http://host:port/?token=xxx — parse both server URL and token from same URL
+// QR scan: URL = http://host:port/?token=xxx&playlist=123&name=... — parse server URL, token, and optional playlist
+// Token/playlist can come from: 1) URL params, 2) server-injected __RECODECK_* (when PWA strips URL)
 function getInitialUrl() {
   if (typeof window === "undefined") return null;
   const href = window.location.href;
@@ -11,6 +12,20 @@ function getInitialUrl() {
   if (!token && window.location.hash) {
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, "").replace(/^\?/, ""));
     token = hashParams.get("token");
+  }
+  // Server injects token when request has ?token=... (works in PWA when window.location is stripped)
+  if (!token) {
+    const injected = (window as unknown as { __RECODECK_TOKEN__?: string }).__RECODECK_TOKEN__;
+    if (injected) token = injected;
+  }
+  const playlistParam = params.get("playlist") ?? (window.location.hash ? new URLSearchParams(window.location.hash.replace(/^#/, "").replace(/^\?/, "")).get("playlist") : null);
+  let playlistId = playlistParam ? parseInt(playlistParam, 10) : null;
+  if ((playlistId == null || isNaN(playlistId)) && (window as unknown as { __RECODECK_PLAYLIST_ID__?: number }).__RECODECK_PLAYLIST_ID__ != null) {
+    playlistId = (window as unknown as { __RECODECK_PLAYLIST_ID__: number }).__RECODECK_PLAYLIST_ID__;
+  }
+  let playlistName = params.get("name") ?? (window.location.hash ? new URLSearchParams(window.location.hash.replace(/^#/, "").replace(/^\?/, "")).get("name") : null) ?? undefined;
+  if (!playlistName && (window as unknown as { __RECODECK_PLAYLIST_NAME__?: string }).__RECODECK_PLAYLIST_NAME__) {
+    playlistName = (window as unknown as { __RECODECK_PLAYLIST_NAME__: string }).__RECODECK_PLAYLIST_NAME__;
   }
   let origin = "";
   // 1. Meta tag (reliable, in DOM before script runs)
@@ -39,7 +54,12 @@ function getInitialUrl() {
       origin = window.location.origin || "";
     }
   }
-  return { origin: origin || "", token };
+  return {
+    origin: origin || "",
+    token: token ?? undefined,
+    playlistId: playlistId != null && !isNaN(playlistId) ? playlistId : undefined,
+    playlistName: playlistName ?? undefined,
+  };
 }
 const INITIAL_URL = getInitialUrl();
 import { httpApi } from "../src/lib/http-api";
@@ -59,8 +79,15 @@ export function MobileApp() {
     () => INITIAL_URL?.token || localStorage.getItem("companion_token") || ""
   );
   const [errorMessage, setErrorMessage] = useState("");
+  const [pasteLinkValue, setPasteLinkValue] = useState("");
   const [serverName, setServerName] = useState("");
   const [trackCount, setTrackCount] = useState(0);
+  const [playlistId, setPlaylistId] = useState<number | undefined>(
+    () => INITIAL_URL?.playlistId
+  );
+  const [playlistName, setPlaylistName] = useState<string | undefined>(
+    () => INITIAL_URL?.playlistName
+  );
 
   // Player state
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
@@ -125,6 +152,18 @@ export function MobileApp() {
     }
   }, [token, serverUrl]);
 
+  // Re-parse token + server from URL on mount (handles timing when shared link opens — meta gives server, URL gives token)
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      const tokenFromUrl = u.searchParams.get("token") ?? new URLSearchParams(u.hash.replace(/^#/, "").replace(/^\?/, "")).get("token");
+      if (tokenFromUrl && !token) setToken(tokenFromUrl);
+      if (!serverUrl && u.origin && u.origin !== "null") setServerUrl(u.origin);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // QR scan: token from URL immediately, server URL after fetch — then auto-connect
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +212,40 @@ export function MobileApp() {
   }, [connect]);
 
   // When user pastes a full URL (e.g. from QR scan) into server URL field, extract base URL + token and auto-connect
+  const handlePasteFullLink = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      const pasted = pasteLinkValue.trim();
+      if (!pasted) return;
+      try {
+        const url = new URL(pasted);
+        const tokenParam =
+          url.searchParams.get("token") ??
+          new URLSearchParams(url.hash.replace(/^#/, "").replace(/^\?/, "")).get("token");
+        if (tokenParam) {
+          const baseUrl = url.origin;
+          setServerUrl(baseUrl);
+          setToken(tokenParam);
+          setErrorMessage("");
+          const pl = url.searchParams.get("playlist");
+          const plId = pl ? parseInt(pl, 10) : undefined;
+          if (plId && !isNaN(plId)) setPlaylistId(plId);
+          const plName = url.searchParams.get("name") ?? undefined;
+          if (plName) setPlaylistName(plName);
+          setPasteLinkValue("");
+          connect(baseUrl, tokenParam);
+        } else {
+          setErrorMessage(
+            "Link mora sadržati token. Koristi pun link iz Share playlist (desni klik → Share playlist) ili skeniraj QR u Settings."
+          );
+        }
+      } catch {
+        setErrorMessage("Nepravilan link");
+      }
+    },
+    [pasteLinkValue, connect]
+  );
+
   const handleServerUrlPaste = useCallback(
     (e: React.ClipboardEvent<HTMLInputElement>) => {
       const pasted = e.clipboardData.getData("text");
@@ -184,6 +257,11 @@ export function MobileApp() {
           const baseUrl = url.origin;
           setServerUrl(baseUrl);
           setToken(tokenParam);
+          const pl = url.searchParams.get("playlist");
+          const plId = pl ? parseInt(pl, 10) : undefined;
+          if (plId && !isNaN(plId)) setPlaylistId(plId);
+          const plName = url.searchParams.get("name") ?? undefined;
+          if (plName) setPlaylistName(plName);
           connect(baseUrl, tokenParam);
         }
       } catch {
@@ -310,6 +388,44 @@ export function MobileApp() {
           <p className="mobile-connect-subtitle">Connect to your music library</p>
 
           <div className="mobile-connect-form">
+            <form onSubmit={handlePasteFullLink} className="mobile-paste-link-form">
+              <input
+                type="url"
+                placeholder="Nalepi pun link (sa tokenom) ovde..."
+                value={pasteLinkValue}
+                onChange={(e) => {
+                  setPasteLinkValue(e.target.value);
+                  setErrorMessage("");
+                }}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  try {
+                    const url = new URL(pasted);
+                    const tokenParam =
+                      url.searchParams.get("token") ??
+                      new URLSearchParams(url.hash.replace(/^#/, "").replace(/^\?/, "")).get("token");
+                    if (tokenParam) {
+                      e.preventDefault();
+                      setPasteLinkValue(pasted);
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="mobile-paste-link-input"
+              />
+              <button
+                type="submit"
+                className="mobile-connect-btn mobile-paste-link-btn"
+                disabled={!pasteLinkValue.trim()}
+              >
+                Poveži
+              </button>
+            </form>
+            <p className="mobile-paste-link-hint">
+              Pun link izgleda: http://192.168.x.x:8409/?token=xxx...
+            </p>
+
             <div className="mobile-input-group">
               <label htmlFor="server-url">
                 Server URL
@@ -386,7 +502,11 @@ export function MobileApp() {
       </header>
 
       <main className="mobile-main">
-        <MobileTrackList onPlayTrack={handlePlayTrack} />
+        <MobileTrackList
+          onPlayTrack={handlePlayTrack}
+          playlistId={playlistId}
+          playlistName={playlistName}
+        />
       </main>
 
       {currentTrack && (

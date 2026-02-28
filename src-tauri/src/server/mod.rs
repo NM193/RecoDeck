@@ -105,6 +105,7 @@ pub struct RunningServer {
     pub shutdown_tx: oneshot::Sender<()>,
     pub addr: SocketAddr,
     pub token: String,
+    pub server_state: Arc<CompanionServerState>,
 }
 
 /// Generate a cryptographically random 256-bit token (64 hex chars)
@@ -288,7 +289,7 @@ pub async fn start_server(
             state.clone(),
             auth_middleware,
         ))
-        .with_state(state);
+        .with_state(state.clone());
 
     // Serve mobile PWA static files (no auth needed — the app itself is public,
     // only API endpoints require authentication)
@@ -352,6 +353,7 @@ pub async fn start_server(
         shutdown_tx,
         addr: actual_addr,
         token,
+        server_state: state,
     })
 }
 

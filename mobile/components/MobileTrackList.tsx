@@ -6,6 +6,8 @@ import type { Track } from "../../src/types/track";
 
 interface MobileTrackListProps {
   onPlayTrack: (track: Track, tracks: Track[], index: number) => void;
+  playlistId?: number;
+  playlistName?: string;
 }
 
 function formatDuration(ms?: number): string {
@@ -16,7 +18,11 @@ function formatDuration(ms?: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
+export function MobileTrackList({
+  onPlayTrack,
+  playlistId,
+  playlistName,
+}: MobileTrackListProps) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,14 +30,41 @@ export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
   const [offset, setOffset] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const PAGE_SIZE = 50;
+  const isPlaylistMode = playlistId != null;
 
   // Load initial tracks
   useEffect(() => {
-    loadTracks(true);
-  }, []);
+    if (isPlaylistMode && playlistId != null) {
+      let cancelled = false;
+      setLoading(true);
+      httpApi
+        .getPlaylistTracks(playlistId)
+        .then((result) => {
+          if (!cancelled) {
+            setTracks(result);
+            setHasMore(false);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            console.error("Failed to load playlist:", err);
+            setTracks([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    } else if (!isPlaylistMode) {
+      loadTracks(true);
+    }
+  }, [playlistId]);
 
-  // Search debounce
+  // Search debounce (only when not in playlist mode)
   useEffect(() => {
+    if (isPlaylistMode) return;
     const timer = setTimeout(() => {
       if (searchQuery.trim()) {
         searchTracks();
@@ -40,7 +73,7 @@ export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, isPlaylistMode]);
 
   async function loadTracks(reset: boolean) {
     if (loading) return;
@@ -76,14 +109,24 @@ export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
     }
   }
 
-  // Infinite scroll
+  // Infinite scroll (only when not in playlist mode)
   const handleScroll = useCallback(() => {
-    if (!listRef.current || loading || !hasMore || searchQuery.trim()) return;
+    if (isPlaylistMode || !listRef.current || loading || !hasMore || searchQuery.trim())
+      return;
     const { scrollTop, scrollHeight, clientHeight } = listRef.current;
     if (scrollHeight - scrollTop - clientHeight < 200) {
       loadTracks(false);
     }
-  }, [loading, hasMore, searchQuery, offset]);
+  }, [isPlaylistMode, loading, hasMore, searchQuery, offset]);
+
+  const displayedTracks = isPlaylistMode && searchQuery.trim()
+    ? tracks.filter(
+        (t) =>
+          (t.title ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (t.artist ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (t.album ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : tracks;
 
   // Pull to refresh
   function handleRefresh() {
@@ -96,6 +139,11 @@ export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
 
   return (
     <div className="mobile-track-list">
+      {isPlaylistMode && (
+        <div className="mobile-playlist-title">
+          Playlist: {playlistName || "Shared playlist"}
+        </div>
+      )}
       <div className="mobile-search">
         <input
           type="search"
@@ -119,7 +167,7 @@ export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
         ref={listRef}
         onScroll={handleScroll}
       >
-        {tracks.map((track, index) => (
+        {displayedTracks.map((track, index) => (
           <button
             key={track.id}
             className="mobile-track-item"
@@ -151,9 +199,15 @@ export function MobileTrackList({ onPlayTrack }: MobileTrackListProps) {
           <div className="mobile-loading">Loading...</div>
         )}
 
-        {!loading && tracks.length === 0 && (
+        {!loading && displayedTracks.length === 0 && (
           <div className="mobile-empty">
-            {searchQuery ? "No tracks found" : "No tracks in library"}
+            {isPlaylistMode
+              ? searchQuery
+                ? "No tracks found"
+                : "No tracks in this playlist"
+              : searchQuery
+                ? "No tracks found"
+                : "No tracks in library"}
           </div>
         )}
       </div>

@@ -25,6 +25,7 @@ interface FolderTreeProps {
   onCreateFolder: (parentId: number | null) => void;
   onRenamePlaylist: (id: number, currentName: string) => void;
   onDeletePlaylist: (id: number, name: string) => void;
+  onSharePlaylist?: (playlistId: number, playlistName: string) => void;
 }
 
 interface FolderNodeData {
@@ -141,6 +142,7 @@ export function FolderTree({
   onCreateFolder,
   onRenamePlaylist,
   onDeletePlaylist,
+  onSharePlaylist,
 }: FolderTreeProps) {
   // ===== TRACK COLLECTION state =====
   const [libraryNodes, setLibraryNodes] = useState<
@@ -652,6 +654,21 @@ export function FolderTree({
                 Create Folder
               </div>
               <div className="context-menu-separator" />
+              {onSharePlaylist && (
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onSharePlaylist(
+                      contextMenu.playlistId!,
+                      contextMenu.playlistName!
+                    );
+                    closeContextMenu();
+                  }}
+                >
+                  <Icon name="Share2" size={16} className="context-menu-icon" />
+                  Share playlist
+                </div>
+              )}
               <div
                 className="context-menu-item"
                 onClick={() => {

@@ -226,12 +226,13 @@ pub async fn start_companion_server(
     let lan_ip = get_lan_ip_for_qr();
 
     let url = format!("http://{}:{}", lan_ip, running.addr.port());
+    let active_streams = running.server_state.active_stream_count();
     let info = CompanionServerInfo {
         running: true,
         url: Some(url),
         token: Some(running.token.clone()),
         port: Some(running.addr.port()),
-        active_streams: 0,
+        active_streams,
     };
 
     let mut lock = companion_state
@@ -285,7 +286,7 @@ pub fn get_companion_status(
                 url: Some(format!("http://{}:{}", lan_ip, server.addr.port())),
                 token: Some(server.token.clone()),
                 port: Some(server.addr.port()),
-                active_streams: 0, // TODO: get from server state
+                active_streams: server.server_state.active_stream_count(),
             })
         }
         None => Ok(CompanionServerInfo {
@@ -391,6 +392,7 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
         Ok(running) => {
             let port = running.addr.port();
             let token = running.token.clone();
+            let active_streams = running.server_state.active_stream_count();
             persist_companion_settings(&app_state, &token, port);
 
             let lan_ip = get_lan_ip_for_qr();
@@ -412,7 +414,7 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
                 url: Some(format!("http://{}:{}", lan_ip, port)),
                 token: Some(token),
                 port: Some(port),
-                active_streams: 0,
+                active_streams,
             };
             let _ = app_handle.emit("companion-started", &info);
         }

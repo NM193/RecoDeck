@@ -129,6 +129,7 @@ pub fn api_routes() -> Router<Arc<CompanionServerState>> {
         .route("/api/tracks", get(get_tracks))
         .route("/api/tracks/search", get(search_tracks))
         .route("/api/tracks/{id}", get(get_track))
+        .route("/api/playlists/{id}/tracks", get(get_playlist_tracks))
         .route("/api/stream-ticket", post(create_stream_ticket))
 }
 
@@ -210,6 +211,27 @@ async fn search_tracks(
         .collect();
 
     Ok(Json(mobile_tracks))
+}
+
+async fn get_playlist_tracks(
+    State(state): State<Arc<CompanionServerState>>,
+    Path(playlist_id): Path<i64>,
+) -> Result<Json<Vec<MobileTrackDTO>>, StatusCode> {
+    let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let rows = db
+        .get_playlist_tracks(playlist_id)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let tracks: Vec<MobileTrackDTO> = rows
+        .into_iter()
+        .map(|(track, bpm, _bpm_conf, key, _key_conf)| {
+            MobileTrackDTO::from_track_with_analysis(track, bpm, key)
+        })
+        .collect();
+
+    Ok(Json(tracks))
 }
 
 async fn get_track(

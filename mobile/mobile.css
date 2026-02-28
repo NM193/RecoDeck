@@ -67,6 +67,38 @@ body {
   gap: 1rem;
 }
 
+.mobile-paste-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mobile-paste-link-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.mobile-paste-link-input:focus {
+  border-color: var(--accent);
+}
+
+.mobile-paste-link-btn {
+  width: 100%;
+}
+
+.mobile-paste-link-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: -0.5rem;
+}
+
 .mobile-input-group {
   text-align: left;
 }
@@ -204,6 +236,15 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.mobile-playlist-title {
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
 }
 
 .mobile-search {

@@ -2,14 +2,15 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { appDataDir, join } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+// import { check } from "@tauri-apps/plugin-updater";
+// import { relaunch } from "@tauri-apps/plugin-process";
 import { TrackTable, type TrackTableRef } from "./components/TrackTable";
 import { Player } from "./components/Player";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { Settings } from "./components/Settings";
 import { FolderTree } from "./components/FolderTree";
 import { PromptModal } from "./components/PromptModal";
+import { SharePlaylistModal } from "./components/SharePlaylistModal";
 import { Notification } from "./components/Notification";
 import { HeaderNotification } from "./components/HeaderNotification";
 import { AnalysisProgress, type AnalysisProgressData } from "./components/AnalysisProgress";
@@ -81,6 +82,15 @@ function AppContent() {
     action: PromptAction | null;
   }>({ open: false, title: "", defaultValue: "", action: null });
 
+  // Share playlist modal
+  const [sharePlaylistModal, setSharePlaylistModal] = useState<{
+    open: boolean;
+    playlistId: number;
+    playlistName: string;
+    companionUrl: string;
+    companionToken: string;
+  } | null>(null);
+
   // Notification state
   const [notification, setNotification] = useState<{
     message: string;
@@ -104,27 +114,29 @@ function AppContent() {
     initializeApp();
   }, []);
 
-  // Check for app updates on startup (after a short delay to not block UI)
+  // Check for app updates on startup (after a delay to not block UI)
   // Skip in dev mode - updater can cause unexpected relaunch during development
+  // NOTE: Temporarily disabled - tauri-plugin-updater has known crash issues on macOS
+  // (cross-device link, restart failures). Re-enable when upstream is fixed.
   useEffect(() => {
     if (import.meta.env.DEV) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        const update = await check();
-        if (update) {
-          setNotification({
-            message: `Update ${update.version} available. Downloading...`,
-            type: "info",
-          });
-          await update.downloadAndInstall();
-          await relaunch();
-        }
-      } catch (err) {
-        console.warn("Update check failed:", err);
-      }
-    }, 2000);
-    return () => clearTimeout(timer);
+    // Disabled: update check was causing "quit unexpectedly" crashes on macOS
+    // const timer = setTimeout(async () => {
+    //   try {
+    //     const update = await check();
+    //     if (update) {
+    //       setNotification({
+    //         message: `Update ${update.version} available. Downloading...`,
+    //         type: "info",
+    //       });
+    //       await update.downloadAndInstall();
+    //       await relaunch();
+    //     }
+    //   } catch (err) {
+    //     console.warn("Update check failed:", err);
+    //   }
+    // }, 2000);
+    // return () => clearTimeout(timer);
   }, []);
 
   async function initializeApp() {
@@ -772,6 +784,32 @@ function AppContent() {
     }
   }
 
+  // Share playlist — open modal with QR code if Companion is running
+  async function handleSharePlaylist(playlistId: number, playlistName: string) {
+    try {
+      const status = await tauriApi.getCompanionStatus();
+      if (!status.running || !status.url || !status.token) {
+        setNotification({
+          message: "Enable Companion in Settings first",
+          type: "warning",
+        });
+        return;
+      }
+      setSharePlaylistModal({
+        open: true,
+        playlistId,
+        playlistName,
+        companionUrl: status.url,
+        companionToken: status.token,
+      });
+    } catch (err) {
+      setNotification({
+        message: err instanceof Error ? err.message : "Failed to get Companion status",
+        type: "error",
+      });
+    }
+  }
+
   // Add track to playlist
   async function handleAddToPlaylist(track: Track, playlistId: number) {
     try {
@@ -1150,6 +1188,7 @@ function AppContent() {
             onCreateFolder={handleCreateFolder}
             onRenamePlaylist={handleRenamePlaylist}
             onDeletePlaylist={handleDeletePlaylist}
+            onSharePlaylist={handleSharePlaylist}
           />
         </aside>
 
@@ -1225,6 +1264,18 @@ function AppContent() {
           setPromptState((p) => ({ ...p, open: false, action: null }))
         }
       />
+
+      {/* Share playlist modal (QR + link) */}
+      {sharePlaylistModal && (
+        <SharePlaylistModal
+          open={sharePlaylistModal.open}
+          playlistId={sharePlaylistModal.playlistId}
+          playlistName={sharePlaylistModal.playlistName}
+          companionUrl={sharePlaylistModal.companionUrl}
+          companionToken={sharePlaylistModal.companionToken}
+          onClose={() => setSharePlaylistModal(null)}
+        />
+      )}
 
       {/* Notification toast */}
       {notification && (

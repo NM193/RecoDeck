@@ -128,6 +128,13 @@ export const httpApi = {
     return mobileTrackToTrack(mt);
   },
 
+  /** Get tracks in a playlist */
+  async getPlaylistTracks(playlistId: number): Promise<Track[]> {
+    const res = await authFetch(`/api/playlists/${playlistId}/tracks`);
+    const mobileTracks: MobileTrack[] = await res.json();
+    return mobileTracks.map(mobileTrackToTrack);
+  },
+
   /** Request a stream ticket for audio playback */
   async getStreamTicket(trackId: number): Promise<StreamTicketResponse> {
     const res = await authFetch("/api/stream-ticket", {

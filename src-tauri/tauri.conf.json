@@ -33,7 +33,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../mobile/dist/**/*": "mobile-dist/"
+      "../mobile/dist/": "mobile-dist/"
     }
   },
   "plugins": {

@@ -3,6 +3,7 @@
 // All changes persist to SQLite via the settings table.
 
 import { useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
@@ -112,6 +113,27 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
     }
   }, [isOpen]);
 
+  // Listen for companion-started (e.g. from auto-start) to update UI
+  useEffect(() => {
+    const unlisten = listen<{ running: boolean; url: string | null; token: string | null; port: number | null; active_streams: number }>(
+      "companion-started",
+      (event) => {
+        const info = event.payload;
+        setCompanionRunning(info.running);
+        setCompanionUrl(info.url);
+        setCompanionToken(info.token);
+        if (info.port) {
+          setCompanionPort(info.port);
+          setCompanionPortInput(info.port.toString());
+        }
+        setCompanionActiveStreams(info.active_streams ?? 0);
+      }
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   async function loadSettings() {
     try {
       setError(null);
@@ -142,12 +164,12 @@ export function Settings({ isOpen, onClose, onFoldersChanged, onThemeChanged, on
       } catch {
         // Companion commands may not be available
       }
-      // Load companion autostart setting
+      // Load companion autostart setting (default: true for new users)
       try {
         const autostart = await tauriApi.getSetting("companion_autostart");
-        setCompanionAutostart(autostart === "true");
+        setCompanionAutostart(autostart !== "false");
       } catch {
-        // Setting may not exist yet
+        setCompanionAutostart(true);
       }
       try {
         setAppVersion(await getVersion());
