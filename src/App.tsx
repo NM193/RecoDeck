@@ -16,6 +16,7 @@ import { HeaderNotification } from "./components/HeaderNotification";
 import { AnalysisProgress, type AnalysisProgressData } from "./components/AnalysisProgress";
 import { PlayerAIChat } from "./components/ai/PlayerAIChat";
 import { AIPlaylistDialog } from "./components/ai/AIPlaylistDialog";
+import { RecommendationsPanel } from "./components/ai/RecommendationsPanel";
 import { Icon } from "./components/Icon";
 import { usePlayerStore } from "./store/playerStore";
 import { tauriApi } from "./lib/tauri-api";
@@ -94,6 +95,13 @@ function AppContent() {
 
   // AI Playlist dialog seed track
   const [aiPlaylistSeedTrack, setAiPlaylistSeedTrack] = useState<Track | null>(null);
+
+  // AI Recommendations panel state
+  const [recommendationSeed, setRecommendationSeed] = useState<{
+    track?: Track;
+    playlistId?: number;
+    playlistName?: string;
+  } | null>(null);
 
   // Notification state
   const [notification, setNotification] = useState<{
@@ -1046,6 +1054,14 @@ function AppContent() {
     setAiPlaylistSeedTrack(track);
   }, []);
 
+  const handleGetRecommendations = useCallback((track: Track) => {
+    setRecommendationSeed({ track });
+  }, []);
+
+  const handleGetPlaylistRecommendations = useCallback((playlistId: number, playlistName: string) => {
+    setRecommendationSeed({ playlistId, playlistName });
+  }, []);
+
   const {
     setIsLoading,
     setError: setPlayerError,
@@ -1228,6 +1244,7 @@ function AppContent() {
               hasMoreTracks={hasMoreTracks}
               isLoadingMore={isLoadingMore}
               onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
+              onGetPlaylistRecommendations={AI_ENABLED ? handleGetPlaylistRecommendations : undefined}
             />
           )}
         </main>
@@ -1251,6 +1268,7 @@ function AppContent() {
           }
         }}
         onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
+        onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
       />
 
       {/* Settings panel */}
@@ -1322,6 +1340,16 @@ function AppContent() {
               type: "success",
             });
           }}
+        />
+      )}
+
+      {/* AI Recommendations Panel */}
+      {AI_ENABLED && recommendationSeed && (
+        <RecommendationsPanel
+          seedTrack={recommendationSeed.track}
+          playlistId={recommendationSeed.playlistId}
+          playlistName={recommendationSeed.playlistName}
+          onClose={() => setRecommendationSeed(null)}
         />
       )}
     </div>

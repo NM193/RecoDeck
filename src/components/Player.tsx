@@ -12,9 +12,10 @@ interface PlayerProps {
   onAddToPlaylist?: (trackId: number, playlistId: number) => void;
   onTrackMetaClick?: () => void;
   onGenerateAIPlaylist?: (track: Track) => void;
+  onGetRecommendations?: (track: Track) => void;
 }
 
-export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick, onGenerateAIPlaylist }: PlayerProps) {
+export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick, onGenerateAIPlaylist, onGetRecommendations }: PlayerProps) {
   const {
     currentTrack,
     isPlaying,
@@ -822,6 +823,18 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick, onGe
               title="Generate AI Playlist from this track"
             >
               <Icon name="Sparkles" size={20} />
+            </button>
+          )}
+
+          {/* Get AI Recommendations for current track */}
+          {onGetRecommendations && (
+            <button
+              className="sc-player__btn sc-player__btn--action"
+              onClick={() => currentTrack && onGetRecommendations(currentTrack)}
+              disabled={!currentTrack}
+              title={currentTrack ? 'Get similar track recommendations' : 'Play a track first to get recommendations'}
+            >
+              <Icon name="Compass" size={20} />
             </button>
           )}
         </div>

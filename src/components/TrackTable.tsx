@@ -48,6 +48,7 @@ interface TrackTableProps {
   hasMoreTracks?: boolean;
   isLoadingMore?: boolean;
   onGenerateAIPlaylist?: (track: Track) => void;
+  onGetPlaylistRecommendations?: (playlistId: number, playlistName: string) => void;
 }
 
 export interface TrackTableRef {
@@ -84,6 +85,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
   hasMoreTracks = false,
   isLoadingMore = false,
   onGenerateAIPlaylist,
+  onGetPlaylistRecommendations,
 }, ref) {
   const parentRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -414,6 +416,22 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
             </button>
           )}
         </div>
+        {/* AI Recommendations for current playlist (DISC-02) */}
+        {onGetPlaylistRecommendations && selectedPlaylistId != null && (() => {
+          const playlist = playlists.find((p) => p.id === selectedPlaylistId);
+          if (!playlist) return null;
+          return (
+            <button
+              type="button"
+              className="track-table-ai-rec-btn"
+              onClick={() => onGetPlaylistRecommendations(selectedPlaylistId, playlist.name)}
+              title="Get AI recommendations for this playlist"
+            >
+              <Icon name="Compass" size={16} />
+              <span>Recommend</span>
+            </button>
+          );
+        })()}
       </div>
 
       {/* Scroll area: header + body scroll together (vertically and horizontally) */}

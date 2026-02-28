@@ -16,6 +16,35 @@
   padding: 8px 12px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.track-table-search .search-input-wrapper {
+  flex: 1;
+}
+
+.track-table-ai-rec-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  border-radius: 6px;
+  padding: 0 10px;
+  height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4ade80;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.track-table-ai-rec-btn:hover {
+  background: rgba(74, 222, 128, 0.18);
+  border-color: rgba(74, 222, 128, 0.4);
 }
 
 .search-input-wrapper {
