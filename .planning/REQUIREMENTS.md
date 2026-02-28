@@ -42,8 +42,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **QUAL-01**: Fix broken/incomplete AI command integration (ai.rs)
 - [x] **QUAL-02**: Consistent error handling across all Tauri commands
-- [ ] **QUAL-03**: Remove dead code and unused dependencies
-- [ ] **QUAL-04**: Fix known stability issues and bugs
+- [x] **QUAL-03**: Remove dead code and unused dependencies
+- [x] **QUAL-04**: Fix known stability issues and bugs
 
 ## v2 Requirements
 
@@ -84,8 +84,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | QUAL-01 | Phase 1 | Complete |
 | QUAL-02 | Phase 1 | Complete |
-| QUAL-03 | Phase 1 | Pending |
-| QUAL-04 | Phase 1 | Pending |
+| QUAL-03 | Phase 1 | Complete |
+| QUAL-04 | Phase 1 | Complete |
 | MOBL-01 | Phase 2 | Pending |
 | MOBL-02 | Phase 2 | Pending |
 | MOBL-03 | Phase 2 | Pending |
