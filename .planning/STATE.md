@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-last_updated: "2026-02-28T21:49:40.075Z"
+status: in_progress
+last_updated: "2026-02-28T22:14:00.000Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 9
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** Phase 3 (AI Playlists) — planning complete, ready for execution
+**Current focus:** Phase 4 (AI Discovery and Mix Prep) — 04-01 complete, executing 04-02 next
 
 ## Current Position
 
-Phase: 3 of 4 (AI Playlists) — COMPLETE
-Plan: 2 of 2 in current phase — 03-01 complete, 03-02 complete
-Status: In progress (Phase 4 pending)
-Last activity: 2026-02-28 — Completed 03-02 (AIPlaylistDialog UI, context menu, Sparkles button)
+Phase: 4 of 4 (AI Discovery and Mix Prep) — IN PROGRESS
+Plan: 1 of 2 in current phase — 04-01 COMPLETE, 04-02 pending
+Status: Executing
+Last activity: 2026-02-28 — 04-01 executed (AI recommendations backend + RecommendationsPanel UI)
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88% (04-01 complete, 04-02 pending)
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [████████░░] 75%
 | Phase 02-mobile-companion P03 | 5 min | 1 task | 1 file |
 | Phase 03-ai-playlists P01 | 2 min | 2 tasks | 5 files |
 | Phase 03-ai-playlists P02 | 4 | 2 tasks | 5 files |
+| Phase 04-ai-discovery P01 | 13 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 03-ai-playlists]: Energy direction instructions injected into user prompt, not system prompt -- system prompt stays generic and reusable
 - [Phase 03-ai-playlists]: Fallback to full library context when seed has no BPM/key data or filtering yields <20 tracks
 - [Phase 03-ai-playlists]: AlertTriangle icon replaced with TriangleAlert (correct lucide-react name for the version in use)
+- [Phase 04-ai-discovery 04-01]: extract_json made pub(crate) not pub -- limits visibility to crate, sufficient for new recommendation commands
+- [Phase 04-ai-discovery 04-01]: Playlist DISC-02 entry point in TrackTable search toolbar rather than FolderTree context menu -- avoids FolderTree surgery
+- [Phase 04-ai-discovery 04-01]: Median BPM (not mean) for playlist aggregate -- more robust to BPM outliers
 
 ### Pending Todos
 
@@ -102,5 +106,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 03-02-PLAN.md — AIPlaylistDialog UI complete, Phase 3 done
-Resume file: .planning/phases/04-*/04-01-PLAN.md (Phase 4)
+Stopped at: Completed 04-01 (AI recommendations) — 3 tasks, 13 files, 3 commits
+Resume file: .planning/phases/04-ai-discovery-and-mix-prep/04-02-PLAN.md (execute wave 1)

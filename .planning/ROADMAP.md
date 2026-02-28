@@ -77,11 +77,11 @@ Plans:
   3. User can view a reordered version of any playlist optimized for key-compatible mixing
   4. User can see an energy arc visualization showing the energy level of each track across a playlist
   5. Potential transition issues (BPM jumps, key clashes) are highlighted so the user can spot problem spots before a set
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Track recommendation engine (by track and by playlist)
-- [ ] 04-02: Mix prep analysis — key-optimized ordering, energy arc, transition issue detection
+- [ ] 04-01-PLAN.md — AI track recommendations: extract_json pub(crate), ai_recommend_similar + ai_recommend_for_playlist commands, musicUtils extraction, RecommendationsPanel slide-in, Player/App wiring (DISC-01, DISC-02, DISC-03)
+- [ ] 04-02-PLAN.md — Mix prep analysis: ai_optimize_playlist_order command, reorder_playlist_tracks DB method, MixPrepPanel with energy arc (BPM proxy), transition issues, suggested order + Apply (MIXP-01, MIXP-02, MIXP-03)
 
 ## Progress
 
@@ -93,4 +93,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Codebase Quality | 2/2 | Complete   | 2026-02-28 |
 | 2. Mobile Companion | 3/3 | Complete   | 2026-02-28 |
 | 3. AI Playlists | 2/2 | Complete   | 2026-02-28 |
-| 4. AI Discovery and Mix Prep | 0/2 | Not started | - |
+| 4. AI Discovery and Mix Prep | 1/2 | In Progress|  |

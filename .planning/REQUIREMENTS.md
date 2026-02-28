@@ -18,9 +18,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### AI Discovery
 
-- [ ] **DISC-01**: User can get AI-powered track recommendations based on currently playing track
-- [ ] **DISC-02**: User can get AI recommendations based on an existing playlist's vibe
-- [ ] **DISC-03**: AI recommendations draw only from user's own library (local-first)
+- [x] **DISC-01**: User can get AI-powered track recommendations based on currently playing track
+- [x] **DISC-02**: User can get AI recommendations based on an existing playlist's vibe
+- [x] **DISC-03**: AI recommendations draw only from user's own library (local-first)
 
 ### AI Mix Prep
 
@@ -99,9 +99,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AIPL-04 | Phase 3 | Complete |
 | AIPL-05 | Phase 3 | Complete |
 | AIPL-06 | Phase 3 | Complete |
-| DISC-01 | Phase 4 | Pending |
-| DISC-02 | Phase 4 | Pending |
-| DISC-03 | Phase 4 | Pending |
+| DISC-01 | Phase 4 | Complete |
+| DISC-02 | Phase 4 | Complete |
+| DISC-03 | Phase 4 | Complete |
 | MIXP-01 | Phase 4 | Pending |
 | MIXP-02 | Phase 4 | Pending |
 | MIXP-03 | Phase 4 | Pending |
