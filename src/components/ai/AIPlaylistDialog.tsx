@@ -11,6 +11,7 @@ import { usePlayerStore } from '../../store/playerStore';
 import type { Track } from '../../types/track';
 import type { EnergyDirection, GeneratedPlaylist } from '../../types/ai';
 import { getErrorMessage } from '../../types/ai';
+import { getKeyCompatibility } from '../../lib/musicUtils';
 import './AIPlaylistDialog.css';
 
 interface AIPlaylistDialogProps {
@@ -20,33 +21,6 @@ interface AIPlaylistDialogProps {
 }
 
 type DialogStep = 'config' | 'generating' | 'results' | 'saving';
-
-// --------------------------------------------------------------------------
-// Camelot wheel compatibility (inline — no external dependency)
-// --------------------------------------------------------------------------
-function getKeyCompatibility(
-  keyA: string | undefined,
-  keyB: string | undefined,
-): 'perfect' | 'compatible' | 'clash' {
-  if (!keyA || !keyB) return 'clash';
-  if (keyA === keyB) return 'perfect';
-  const parse = (k: string) => {
-    const m = k.match(/^(\d{1,2})([AB])$/i);
-    if (!m) return null;
-    return { num: parseInt(m[1], 10), letter: m[2].toUpperCase() };
-  };
-  const a = parse(keyA);
-  const b = parse(keyB);
-  if (!a || !b) return 'clash';
-  // Same number, different letter (inner/outer wheel)
-  if (a.num === b.num && a.letter !== b.letter) return 'compatible';
-  // Same letter, ±1 position (circular 1-12)
-  if (a.letter === b.letter) {
-    const diff = Math.abs(a.num - b.num);
-    if (diff === 1 || diff === 11) return 'compatible';
-  }
-  return 'clash';
-}
 
 function formatMinutes(ms: number): string {
   return `${Math.round(ms / 60000)} min`;
