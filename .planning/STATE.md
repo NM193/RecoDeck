@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in_progress
-last_updated: "2026-02-28T22:14:00.000Z"
+status: complete
+last_updated: "2026-02-28T22:24:02.211Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** Phase 4 (AI Discovery and Mix Prep) — 04-01 complete, executing 04-02 next
+**Current focus:** v1.0 milestone COMPLETE — all 4 phases and 9 plans executed
 
 ## Current Position
 
-Phase: 4 of 4 (AI Discovery and Mix Prep) — IN PROGRESS
-Plan: 1 of 2 in current phase — 04-01 COMPLETE, 04-02 pending
-Status: Executing
-Last activity: 2026-02-28 — 04-01 executed (AI recommendations backend + RecommendationsPanel UI)
+Phase: 4 of 4 (AI Discovery and Mix Prep) — COMPLETE
+Plan: 2 of 2 in current phase — 04-01 COMPLETE, 04-02 COMPLETE
+Status: Complete — v1.0 milestone achieved
+Last activity: 2026-02-28 — 04-02 executed (MixPrepPanel: energy arc, transition issues, AI playlist order)
 
-Progress: [█████████░] 88% (04-01 complete, 04-02 pending)
+Progress: [██████████] 100% (all 9 plans complete)
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [█████████░] 88% (04-01 complete, 04-02 pending)
 | Phase 03-ai-playlists P01 | 2 min | 2 tasks | 5 files |
 | Phase 03-ai-playlists P02 | 4 | 2 tasks | 5 files |
 | Phase 04-ai-discovery P01 | 13 min | 3 tasks | 13 files |
+| Phase 04-ai-discovery-and-mix-prep P02 | 18 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 04-ai-discovery 04-01]: extract_json made pub(crate) not pub -- limits visibility to crate, sufficient for new recommendation commands
 - [Phase 04-ai-discovery 04-01]: Playlist DISC-02 entry point in TrackTable search toolbar rather than FolderTree context menu -- avoids FolderTree surgery
 - [Phase 04-ai-discovery 04-01]: Median BPM (not mean) for playlist aggregate -- more robust to BPM outliers
+- [Phase 04-ai-discovery 04-02]: execute_batch with string-built SQL for atomic playlist reorder -- avoids &mut self requirement of rusqlite transaction()
+- [Phase 04-ai-discovery 04-02]: BPM as energy proxy in MixPrepPanel energy arc -- loudness_lufs is never populated so BPM is the only available energy signal
 
 ### Pending Todos
 
@@ -106,5 +109,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 04-01 (AI recommendations) — 3 tasks, 13 files, 3 commits
-Resume file: .planning/phases/04-ai-discovery-and-mix-prep/04-02-PLAN.md (execute wave 1)
+Stopped at: Completed 04-02 (Mix Prep Panel) -- 2 tasks, 8 files, 2 commits -- v1.0 milestone COMPLETE
+Resume file: N/A -- all plans complete

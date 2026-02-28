@@ -24,9 +24,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### AI Mix Prep
 
-- [ ] **MIXP-01**: User can view AI-suggested track order for key-compatible mixing
-- [ ] **MIXP-02**: User can view energy arc visualization for a playlist (energy level per track)
-- [ ] **MIXP-03**: AI highlights potential transition issues (large BPM jumps, clashing keys)
+- [x] **MIXP-01**: User can view AI-suggested track order for key-compatible mixing
+- [x] **MIXP-02**: User can view energy arc visualization for a playlist (energy level per track)
+- [x] **MIXP-03**: AI highlights potential transition issues (large BPM jumps, clashing keys)
 
 ### Mobile Companion
 
@@ -102,9 +102,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DISC-01 | Phase 4 | Complete |
 | DISC-02 | Phase 4 | Complete |
 | DISC-03 | Phase 4 | Complete |
-| MIXP-01 | Phase 4 | Pending |
-| MIXP-02 | Phase 4 | Pending |
-| MIXP-03 | Phase 4 | Pending |
+| MIXP-01 | Phase 4 | Complete |
+| MIXP-02 | Phase 4 | Complete |
+| MIXP-03 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 23 total
