@@ -82,13 +82,35 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated during roadmap creation) | | |
+| QUAL-01 | Phase 1 | Pending |
+| QUAL-02 | Phase 1 | Pending |
+| QUAL-03 | Phase 1 | Pending |
+| QUAL-04 | Phase 1 | Pending |
+| MOBL-01 | Phase 2 | Pending |
+| MOBL-02 | Phase 2 | Pending |
+| MOBL-03 | Phase 2 | Pending |
+| MOBL-04 | Phase 2 | Pending |
+| MOBL-05 | Phase 2 | Pending |
+| MOBL-06 | Phase 2 | Pending |
+| MOBL-07 | Phase 2 | Pending |
+| AIPL-01 | Phase 3 | Pending |
+| AIPL-02 | Phase 3 | Pending |
+| AIPL-03 | Phase 3 | Pending |
+| AIPL-04 | Phase 3 | Pending |
+| AIPL-05 | Phase 3 | Pending |
+| AIPL-06 | Phase 3 | Pending |
+| DISC-01 | Phase 4 | Pending |
+| DISC-02 | Phase 4 | Pending |
+| DISC-03 | Phase 4 | Pending |
+| MIXP-01 | Phase 4 | Pending |
+| MIXP-02 | Phase 4 | Pending |
+| MIXP-03 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17
+- v1 requirements: 23 total
+- Mapped to phases: 23
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-28*
-*Last updated: 2026-02-28 after initial definition*
+*Last updated: 2026-02-28 after roadmap creation — traceability complete*
