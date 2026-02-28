@@ -14,7 +14,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **AIPL-03**: AI considers BPM compatibility when ordering tracks in a playlist
 - [x] **AIPL-04**: AI considers key compatibility (Camelot wheel) when selecting and ordering tracks
 - [x] **AIPL-05**: AI considers energy flow (gradual transitions, no jarring jumps) in playlist sequence
-- [ ] **AIPL-06**: User can save AI-generated playlist to their library
+- [x] **AIPL-06**: User can save AI-generated playlist to their library
 
 ### AI Discovery
 
@@ -98,7 +98,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AIPL-03 | Phase 3 | Complete |
 | AIPL-04 | Phase 3 | Complete |
 | AIPL-05 | Phase 3 | Complete |
-| AIPL-06 | Phase 3 | Pending |
+| AIPL-06 | Phase 3 | Complete |
 | DISC-01 | Phase 4 | Pending |
 | DISC-02 | Phase 4 | Pending |
 | DISC-03 | Phase 4 | Pending |
