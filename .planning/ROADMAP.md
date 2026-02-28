@@ -28,11 +28,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. All Tauri commands return consistent error types that the frontend can interpret and display
   3. Dead code and unused dependencies are removed — cargo check/clippy passes without warnings
   4. Known stability bugs (crashes, hangs, data loss) are fixed and reproducible test cases pass
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Fix ai.rs integration and establish error handling conventions
-- [ ] 01-02: Dead code removal, dependency audit, stability bug fixes
+- [ ] 01-01-PLAN.md — Create AppError enum, migrate all commands to typed errors, fix AI integration (QUAL-01, QUAL-02)
+- [ ] 01-02-PLAN.md — Remove dead code, unused dependencies, fix clippy warnings to zero (QUAL-03, QUAL-04)
 
 ### Phase 2: Mobile Companion
 **Goal**: Users can open a browser on their phone, scan a QR code, and stream their full library with playback controls
