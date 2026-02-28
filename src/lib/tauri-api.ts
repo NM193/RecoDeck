@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, ScanResult, BpmResult, KeyResult, TrackAnalysis, FolderInfo, Playlist, GenreCount, GenreDefinition } from "../types/track";
 import type { ChatMessage, GeneratedPlaylist } from "../types/ai";
+// AppError, isAppError, getErrorMessage are exported from ../types/ai for use by UI components
 
 export const tauriApi = {
   // Database commands

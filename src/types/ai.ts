@@ -30,3 +30,51 @@ export interface AIChatState {
   pendingPlaylist: GeneratedPlaylist | null;
   error: string | null;
 }
+
+/**
+ * Structured error from Tauri backend.
+ * Matches the Rust AppError enum serialized with #[serde(tag = "kind", content = "message")].
+ * Unit variants (AiNoApiKey, AiInvalidKey) have no message field.
+ */
+export type AppErrorKind =
+  | 'Database'
+  | 'NotFound'
+  | 'AiNoApiKey'
+  | 'AiInvalidKey'
+  | 'AiNetwork'
+  | 'AiParsing'
+  | 'Internal'
+  | 'Validation';
+
+export interface AppError {
+  kind: AppErrorKind;
+  message?: string;
+}
+
+/**
+ * Type guard: checks if an unknown catch value is a structured AppError.
+ * Tauri IPC catch blocks receive either a string or an AppError object.
+ */
+export function isAppError(e: unknown): e is AppError {
+  return typeof e === 'object' && e !== null && 'kind' in e;
+}
+
+/**
+ * Extract a user-friendly error message from any Tauri error.
+ * Falls back to generic message if the error shape is unexpected.
+ */
+export function getErrorMessage(e: unknown): string {
+  if (isAppError(e)) {
+    // Unit variants without message field -- use kind as the message source
+    switch (e.kind) {
+      case 'AiNoApiKey':
+        return 'No API key configured -- add your Claude API key in Settings';
+      case 'AiInvalidKey':
+        return 'API key is invalid -- check your key in Settings';
+      default:
+        return e.message ?? 'An unexpected error occurred';
+    }
+  }
+  if (typeof e === 'string') return e;
+  return 'An unexpected error occurred';
+}
