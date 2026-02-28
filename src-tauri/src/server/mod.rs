@@ -26,8 +26,15 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::db::Database;
 
-/// A short-lived, single-use ticket for audio streaming.
-/// Avoids putting the main auth token in audio element URLs.
+/// Stream ticket for audio playback — avoids putting the Bearer token in audio element URLs.
+///
+/// Design decision (MOBL-07): Tickets use 10-minute expiry and are multi-use.
+/// The original requirement specified "30s single-use" but this is incompatible with
+/// HTTP Range-based audio streaming. Browsers make multiple Range requests to the same
+/// URL as the user plays, seeks, and buffers. A 30s single-use ticket would break
+/// seeking and buffering. The 10-minute window covers full track playback with seeking.
+/// Security is maintained by: binding tickets to specific track IDs, cleaning expired
+/// tickets on each validation, and limiting concurrent streams.
 #[derive(Debug, Clone)]
 pub struct StreamTicket {
     pub track_id: i64,
@@ -35,7 +42,8 @@ pub struct StreamTicket {
 }
 
 impl StreamTicket {
-    /// Ticket valid for 10 minutes — enough for Range requests during playback
+    /// Ticket expires after 10 minutes — long enough for full track playback with seeking.
+    /// Expired tickets are cleaned on each create_ticket() and validate_ticket() call.
     pub fn is_expired(&self) -> bool {
         self.created_at.elapsed().as_secs() > 600
     }
