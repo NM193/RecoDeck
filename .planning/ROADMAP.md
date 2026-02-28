@@ -61,11 +61,11 @@ Plans:
   3. Generated playlist track order follows BPM compatibility — no jumps larger than ~10 BPM between adjacent tracks
   4. Generated playlist track order follows Camelot wheel key compatibility — adjacent tracks are in compatible keys
   5. User can save the AI-generated playlist to their library with a name of their choosing
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: AI playlist prompt design, Claude API integration, library context feeding
-- [ ] 03-02: Playlist generation UI — seed selection, energy controls, result display, save flow
+- [ ] 03-01-PLAN.md — New ai_generate_playlist_from_seed Tauri command, seed-aware context builder, energy-direction prompt injection (AIPL-01, AIPL-02, AIPL-03, AIPL-04, AIPL-05)
+- [ ] 03-02-PLAN.md — AIPlaylistDialog component, context menu + player bar entry points, transition indicators, save flow (AIPL-01, AIPL-02, AIPL-03, AIPL-04, AIPL-05, AIPL-06)
 
 ### Phase 4: AI Discovery and Mix Prep
 **Goal**: Users can get track recommendations and see mix-readiness analysis that makes preparing a DJ set faster
@@ -92,5 +92,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Codebase Quality | 2/2 | Complete   | 2026-02-28 |
 | 2. Mobile Companion | 3/3 | Complete   | 2026-02-28 |
-| 3. AI Playlists | 0/2 | Not started | - |
+| 3. AI Playlists | 1/2 | In Progress|  |
 | 4. AI Discovery and Mix Prep | 0/2 | Not started | - |

@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** Phase 2 (Mobile Companion) — executing plans
+**Current focus:** Phase 3 (AI Playlists) — planning complete, ready for execution
 
 ## Current Position
 
-Phase: 2 of 4 (Mobile Companion) — COMPLETE
-Plan: 3 of 3 in current phase — 02-01, 02-02, 02-03 all complete
-Status: Executing
-Last activity: 2026-02-28 — Completed 02-03 (streaming security audit + MOBL-07 documentation)
+Phase: 3 of 4 (AI Playlists) — IN PROGRESS
+Plan: 1 of 2 in current phase — 03-01 complete, 03-02 pending
+Status: In progress
+Last activity: 2026-02-28 — Completed 03-01 (seed playlist backend command)
 
-Progress: [████░░░░░░] 50%
+Progress: [██████░░░░] 62%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [████░░░░░░] 50%
 | Phase 02-mobile-companion P01 | 8 min | 2 tasks | 14 files |
 | Phase 02-mobile-companion P02 | 5 min | 2 tasks | 3 files |
 | Phase 02-mobile-companion P03 | 5 min | 1 task | 1 file |
+| Phase 03-ai-playlists P01 | 2 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,9 @@ Recent decisions affecting current work:
 - [Phase 02-mobile-companion]: Capture active_stream_count() before moving RunningServer into Mutex in auto_start_companion -- avoids deadlock from re-locking while constructing CompanionServerInfo
 - [Phase 02-mobile-companion]: search_tracks_with_analysis JOIN instead of N+1 per-track lookups -- single query consistent with paginated track pattern
 - [Phase 02-mobile-companion]: MOBL-07: 10-minute multi-use stream tickets -- 30s single-use incompatible with HTTP Range audio (browsers make many Range requests for seek/buffer)
+- [Phase 03-ai-playlists]: Seed context uses OR logic (bpm_ok || key_ok) -- AND is too restrictive for small libraries with limited analyzed tracks
+- [Phase 03-ai-playlists]: Energy direction instructions injected into user prompt, not system prompt -- system prompt stays generic and reusable
+- [Phase 03-ai-playlists]: Fallback to full library context when seed has no BPM/key data or filtering yields <20 tracks
 
 ### Pending Todos
 
@@ -96,5 +100,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Phase 3 context gathered — AI Playlists decisions captured, ready for planning
-Resume file: .planning/phases/03-ai-playlists/03-CONTEXT.md
+Stopped at: Completed 03-01-PLAN.md — seed playlist backend command and frontend wrapper done
+Resume file: .planning/phases/03-ai-playlists/03-02-PLAN.md
