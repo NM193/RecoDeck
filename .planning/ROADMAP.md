@@ -13,7 +13,7 @@ RecoDeck already has a working foundation — library scanning, BPM/key detectio
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Codebase Quality** - Stabilize foundation and fix broken AI integration so future phases build on solid ground (completed 2026-02-28)
-- [ ] **Phase 2: Mobile Companion** - Ship the PWA streaming experience so users can browse and play their library on mobile
+- [x] **Phase 2: Mobile Companion** - Ship the PWA streaming experience so users can browse and play their library on mobile (completed 2026-02-28)
 - [ ] **Phase 3: AI Playlists** - Deliver AI-powered smart playlist generation with energy/key/mood awareness
 - [ ] **Phase 4: AI Discovery and Mix Prep** - Add track recommendations and mix preparation tools that complete the DJ workflow intelligence
 
@@ -91,6 +91,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Codebase Quality | 2/2 | Complete   | 2026-02-28 |
-| 2. Mobile Companion | 1/3 | In Progress | - |
+| 2. Mobile Companion | 3/3 | Complete   | 2026-02-28 |
 | 3. AI Playlists | 0/2 | Not started | - |
 | 4. AI Discovery and Mix Prep | 0/2 | Not started | - |
