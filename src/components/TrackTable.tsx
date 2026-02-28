@@ -47,6 +47,7 @@ interface TrackTableProps {
   onLoadMore?: () => void;
   hasMoreTracks?: boolean;
   isLoadingMore?: boolean;
+  onGenerateAIPlaylist?: (track: Track) => void;
 }
 
 export interface TrackTableRef {
@@ -82,6 +83,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
   onLoadMore,
   hasMoreTracks = false,
   isLoadingMore = false,
+  onGenerateAIPlaylist,
 }, ref) {
   const parentRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -704,6 +706,24 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
               <Icon name="X" size={16} className="context-menu-icon" />
               Clear Genre
             </button>
+          )}
+
+          {/* Generate AI Playlist */}
+          {onGenerateAIPlaylist && (
+            <>
+              <div className="context-menu-separator" />
+              <button
+                type="button"
+                className="context-menu-item"
+                onClick={() => {
+                  onGenerateAIPlaylist(contextMenu.track);
+                  setContextMenu(null);
+                }}
+              >
+                <Icon name="Sparkles" size={16} className="context-menu-icon" />
+                Generate AI Playlist
+              </button>
+            </>
           )}
         </div>
       )}

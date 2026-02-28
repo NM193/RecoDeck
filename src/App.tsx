@@ -15,6 +15,7 @@ import { Notification } from "./components/Notification";
 import { HeaderNotification } from "./components/HeaderNotification";
 import { AnalysisProgress, type AnalysisProgressData } from "./components/AnalysisProgress";
 import { PlayerAIChat } from "./components/ai/PlayerAIChat";
+import { AIPlaylistDialog } from "./components/ai/AIPlaylistDialog";
 import { Icon } from "./components/Icon";
 import { usePlayerStore } from "./store/playerStore";
 import { tauriApi } from "./lib/tauri-api";
@@ -90,6 +91,9 @@ function AppContent() {
     companionUrl: string;
     companionToken: string;
   } | null>(null);
+
+  // AI Playlist dialog seed track
+  const [aiPlaylistSeedTrack, setAiPlaylistSeedTrack] = useState<Track | null>(null);
 
   // Notification state
   const [notification, setNotification] = useState<{
@@ -1038,6 +1042,10 @@ function AppContent() {
     }
   }, []);
 
+  const handleGenerateAIPlaylist = useCallback((track: Track) => {
+    setAiPlaylistSeedTrack(track);
+  }, []);
+
   const {
     setIsLoading,
     setError: setPlayerError,
@@ -1219,6 +1227,7 @@ function AppContent() {
               onLoadMore={loadMoreTracks}
               hasMoreTracks={hasMoreTracks}
               isLoadingMore={isLoadingMore}
+              onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
             />
           )}
         </main>
@@ -1241,6 +1250,7 @@ function AppContent() {
             });
           }
         }}
+        onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
       />
 
       {/* Settings panel */}
@@ -1293,6 +1303,22 @@ function AppContent() {
             loadPlaylists();
             setNotification({
               message: "Playlist created successfully!",
+              type: "success",
+            });
+          }}
+        />
+      )}
+
+      {/* AI Playlist Generation Dialog */}
+      {AI_ENABLED && aiPlaylistSeedTrack && (
+        <AIPlaylistDialog
+          seedTrack={aiPlaylistSeedTrack}
+          onClose={() => setAiPlaylistSeedTrack(null)}
+          onPlaylistSaved={(_playlistId) => {
+            setAiPlaylistSeedTrack(null);
+            loadPlaylists();
+            setNotification({
+              message: "AI playlist created successfully!",
               type: "success",
             });
           }}

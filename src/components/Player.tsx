@@ -3,7 +3,7 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { usePlayerStore } from '../store/playerStore';
 import { audioPlayer } from '../lib/audioPlayer';
 import { tauriApi } from '../lib/tauri-api';
-import type { Playlist } from '../types/track';
+import type { Playlist, Track } from '../types/track';
 import { Icon } from './Icon';
 import './Player.css';
 
@@ -11,9 +11,10 @@ interface PlayerProps {
   playlists?: Playlist[];
   onAddToPlaylist?: (trackId: number, playlistId: number) => void;
   onTrackMetaClick?: () => void;
+  onGenerateAIPlaylist?: (track: Track) => void;
 }
 
-export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: PlayerProps) {
+export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick, onGenerateAIPlaylist }: PlayerProps) {
   const {
     currentTrack,
     isPlaying,
@@ -811,6 +812,18 @@ export function Player({ playlists = [], onAddToPlaylist, onTrackMetaClick }: Pl
               </div>
             )}
           </div>
+
+          {/* Generate AI Playlist from current track */}
+          {onGenerateAIPlaylist && (
+            <button
+              className="sc-player__btn sc-player__btn--action"
+              onClick={() => currentTrack && onGenerateAIPlaylist(currentTrack)}
+              disabled={!currentTrack}
+              title="Generate AI Playlist from this track"
+            >
+              <Icon name="Sparkles" size={20} />
+            </button>
+          )}
         </div>
       </div>
     </div>
