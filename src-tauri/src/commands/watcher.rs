@@ -14,6 +14,12 @@ pub struct WatcherState {
     pub watcher: Mutex<Option<RecommendedWatcher>>,
 }
 
+impl Default for WatcherState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WatcherState {
     pub fn new() -> Self {
         Self {

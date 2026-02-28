@@ -11,6 +11,9 @@ use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager, State};
 
+/// Result type for start_companion_internal: (token, port, db_arc)
+type CompanionStartResult = (String, u16, Arc<Mutex<Option<Database>>>);
+
 /// Get LAN IP suitable for QR code -- avoids 127.0.0.1 so phone can reach desktop.
 fn get_lan_ip_for_qr() -> String {
     // Try local_ip() first
@@ -39,6 +42,12 @@ pub struct CompanionState {
     pub running_server: Mutex<Option<RunningServer>>,
     /// Shared reference to library folders (kept in sync with settings)
     pub library_folders: Arc<Mutex<Vec<String>>>,
+}
+
+impl Default for CompanionState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CompanionState {
@@ -109,7 +118,7 @@ fn start_companion_internal(
     app_state: &AppState,
     companion_state: &CompanionState,
     port: Option<u16>,
-) -> Result<(String, u16, Arc<Mutex<Option<Database>>>), AppError> {
+) -> Result<CompanionStartResult, AppError> {
     // Load library folders from settings
     {
         let db_lock = app_state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;

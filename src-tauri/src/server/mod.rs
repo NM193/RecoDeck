@@ -5,12 +5,13 @@ pub mod routes;
 pub mod streaming;
 
 use axum::{
-    Router,
-    extract::{Extension, Request},
-    http::{HeaderValue, Method, StatusCode},
+    body::Body,
+    extract::{Extension, Path, Request},
+    http::{header::CONTENT_TYPE, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::get,
+    Router,
 };
 use rand::Rng;
 use rand::thread_rng;
@@ -113,7 +114,59 @@ pub fn generate_token() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Serves asset files (JS, CSS, etc.) with correct MIME type — avoids HTML fallback causing MIME errors
+async fn serve_asset(
+    Path(filename): Path<String>,
+    Extension(assets_path): Extension<PathBuf>,
+) -> Result<Response, StatusCode> {
+    // Prevent path traversal
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let file_path = assets_path.join(&filename);
+    if !file_path.starts_with(&assets_path) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let content = tokio::fs::read(&file_path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+    let mime = match file_path.extension().and_then(|e| e.to_str()) {
+        Some("js") | Some("mjs") => "application/javascript",
+        Some("css") => "text/css",
+        Some("json") => "application/json",
+        Some("woff2") => "font/woff2",
+        Some("woff") => "font/woff",
+        Some("ttf") => "font/ttf",
+        _ => "application/octet-stream",
+    };
+    Response::builder()
+        .status(200)
+        .header(CONTENT_TYPE, mime)
+        .body(Body::from(content))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// Parse query params from URI (token, playlist, name) — used when opening shared playlist link
+fn parse_share_params(query: Option<&str>) -> (Option<String>, Option<i64>, Option<String>) {
+    let query = query.unwrap_or("");
+    let mut token = None;
+    let mut playlist_id = None;
+    let mut playlist_name = None;
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            match k {
+                "token" => token = Some(v.to_string()),
+                "playlist" => playlist_id = v.parse().ok(),
+                "name" => playlist_name = Some(
+                    urlencoding::decode(v).map(|c| c.into_owned()).unwrap_or_else(|_| v.to_string()),
+                ),
+                _ => {}
+            }
+        }
+    }
+    (token, playlist_id, playlist_name)
+}
+
 /// Serves index.html with server URL injected for PWA auto-fill (window.location unreliable in standalone)
+/// When URL has ?token=...&playlist=...&name=..., injects them so mobile app can read even in PWA mode
 async fn serve_index_with_url(
     Extension(index_path): Extension<PathBuf>,
     request: Request,
@@ -129,12 +182,33 @@ async fn serve_index_with_url(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("http");
     let url = format!("{}://{}", scheme, host);
+    let (token, playlist_id, playlist_name) = parse_share_params(request.uri().query());
+
     let html = tokio::fs::read_to_string(&index_path)
         .await
         .unwrap_or_else(|_| String::from("<html><body>Error</body></html>"));
+
+    let mut script_parts = vec![format!("window.__RECODECK_SERVER_URL__=\"{}\";", url)];
+    if let Some(ref t) = token {
+        script_parts.push(format!(
+            "window.__RECODECK_TOKEN__=\"{}\";",
+            t.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    if let Some(pid) = playlist_id {
+        script_parts.push(format!("window.__RECODECK_PLAYLIST_ID__={};", pid));
+    }
+    if let Some(ref pn) = playlist_name {
+        script_parts.push(format!(
+            "window.__RECODECK_PLAYLIST_NAME__=\"{}\";",
+            pn.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ")
+        ));
+    }
+
     let injection = format!(
-        r#"<meta name="recodeck-server-url" content="{}"><script>window.__RECODECK_SERVER_URL__="{}";</script>"#,
-        url, url
+        r#"<meta name="recodeck-server-url" content="{}"><script>{}</script>"#,
+        url,
+        script_parts.join(" ")
     );
     let html = html.replace("</head>", &format!("{}\n  </head>", injection));
     Html(html)
@@ -220,14 +294,24 @@ pub async fn start_server(
     // only API endpoints require authentication)
     let app = if let Some(dist_path) = mobile_dist_path.filter(|p| p.exists()) {
         let index_html = dist_path.join("index.html");
+        let assets_path = dist_path.join("assets");
         eprintln!("[companion] Serving mobile PWA from {:?}", dist_path);
         let index_routes = Router::new()
             .route("/", get(serve_index_with_url))
             .route("/index.html", get(serve_index_with_url))
             .layer(Extension(index_html));
+        // Serve /assets/* with correct MIME type (custom handler avoids fallback returning HTML)
+        let assets_service = if assets_path.exists() {
+            Router::new()
+                .route("/assets/{path}", get(serve_asset))
+                .layer(Extension(assets_path))
+        } else {
+            Router::new()
+        };
         index_routes
+            .merge(assets_service)
             .merge(api_routes)
-            .fallback_service(ServeDir::new(&dist_path).fallback(ServeFile::new(&dist_path.join("index.html"))))
+            .fallback_service(ServeDir::new(&dist_path).fallback(ServeFile::new(dist_path.join("index.html"))))
             .layer(cors)
     } else {
         eprintln!("[companion] No mobile PWA dist found, API-only mode");

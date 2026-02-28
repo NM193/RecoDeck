@@ -3,6 +3,9 @@
 use rusqlite::{params, Connection, Result};
 use std::path::Path;
 
+/// Track with optional analysis fields: (track, bpm, bpm_confidence, musical_key, key_confidence)
+pub type TrackWithAnalysis = (Track, Option<f64>, Option<f64>, Option<String>, Option<f64>);
+
 /// Represents a playlist or playlist folder in the database.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Playlist {
@@ -404,7 +407,7 @@ impl Database {
     }
 
     /// Get tracks in a playlist (with analysis data), ordered by position.
-    pub fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<(Track, Option<f64>, Option<f64>, Option<String>, Option<f64>)>> {
+    pub fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<TrackWithAnalysis>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
                     t.track_number, t.year, t.label, t.duration_ms, t.file_format,
@@ -490,7 +493,7 @@ impl Database {
 
     /// Get all tracks with their analysis data (BPM, key, etc.) via LEFT JOIN.
     /// Returns (Track, Option<bpm>, Option<bpm_confidence>, Option<musical_key>, Option<key_confidence>) tuples.
-    pub fn get_all_tracks_with_analysis(&self) -> Result<Vec<(Track, Option<f64>, Option<f64>, Option<String>, Option<f64>)>> {
+    pub fn get_all_tracks_with_analysis(&self) -> Result<Vec<TrackWithAnalysis>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
                     t.track_number, t.year, t.label, t.duration_ms, t.file_format,
@@ -541,7 +544,7 @@ impl Database {
     /// Get a paginated subset of tracks with analysis data.
     /// PERFORMANCE: Use this instead of get_all_tracks_with_analysis() for large libraries.
     /// Returns (Track, Option<bpm>, Option<bpm_confidence>, Option<musical_key>, Option<key_confidence>) tuples.
-    pub fn get_tracks_with_analysis_paginated(&self, limit: i64, offset: i64) -> Result<Vec<(Track, Option<f64>, Option<f64>, Option<String>, Option<f64>)>> {
+    pub fn get_tracks_with_analysis_paginated(&self, limit: i64, offset: i64) -> Result<Vec<TrackWithAnalysis>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
                     t.track_number, t.year, t.label, t.duration_ms, t.file_format,
@@ -785,10 +788,8 @@ impl Database {
         let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
         let paths = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut set = std::collections::HashSet::new();
-        for path in paths {
-            if let Ok(p) = path {
-                set.insert(p);
-            }
+        for p in paths.flatten() {
+            set.insert(p);
         }
         Ok(set)
     }
@@ -805,9 +806,11 @@ impl Database {
     }
 
     /// Remove duplicate tracks.
+    ///
     /// Detection methods (in order):
     /// 1. Same file_hash (excluding 'unknown') - exact same file content
     /// 2. Same file name + file size - catches identical copies at different paths
+    ///
     /// NOTE: We do NOT dedupe by title alone - different artists can have songs with the same name.
     /// Keeps the track with the lowest id (earliest import) for each duplicate group.
     /// Also cleans up related analysis data and playlist associations for removed tracks.
@@ -918,7 +921,7 @@ impl Database {
 
     /// Get tracks in a specific folder (by file_path prefix) with analysis data.
     /// Matches tracks directly in the folder and all subfolders.
-    pub fn get_tracks_in_folder_with_analysis(&self, folder_path: &str) -> Result<Vec<(Track, Option<f64>, Option<f64>, Option<String>, Option<f64>)>> {
+    pub fn get_tracks_in_folder_with_analysis(&self, folder_path: &str) -> Result<Vec<TrackWithAnalysis>> {
         // Normalize path: remove trailing slash if present
         let normalized = folder_path.trim_end_matches('/');
         // Pattern: folder/% matches anything inside the folder (including nested)
@@ -994,7 +997,7 @@ impl Database {
 
     /// Get tracks directly in a specific folder (non-recursive, shallow) with analysis data.
     /// Only matches tracks in the immediate folder, not in subfolders.
-    pub fn get_tracks_in_folder_shallow_with_analysis(&self, folder_path: &str) -> Result<Vec<(Track, Option<f64>, Option<f64>, Option<String>, Option<f64>)>> {
+    pub fn get_tracks_in_folder_shallow_with_analysis(&self, folder_path: &str) -> Result<Vec<TrackWithAnalysis>> {
         // Normalize path: remove trailing slash if present
         let normalized = folder_path.trim_end_matches('/');
         let prefix = format!("{}/", normalized);
@@ -1308,7 +1311,7 @@ impl Database {
     }
 
     /// Get tracks by genre (with analysis data)
-    pub fn get_tracks_by_genre(&self, genre: &str) -> Result<Vec<(Track, Option<f64>, Option<f64>, Option<String>, Option<f64>)>> {
+    pub fn get_tracks_by_genre(&self, genre: &str) -> Result<Vec<TrackWithAnalysis>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
                     t.track_number, t.year, t.label, t.duration_ms, t.file_format,

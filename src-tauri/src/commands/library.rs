@@ -318,12 +318,11 @@ pub fn scan_directory(state: State<AppState>, path: String) -> Result<ScanResult
             let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
             // Check for duplicate hash
-            if track.file_hash != "unknown" {
-                if db.track_exists_with_hash(&track.file_hash).unwrap_or(false) {
+            if track.file_hash != "unknown"
+                && db.track_exists_with_hash(&track.file_hash).unwrap_or(false) {
                     skipped += 1;
                     continue;
                 }
-            }
 
             match db.create_track(&track) {
                 Ok(id) => {

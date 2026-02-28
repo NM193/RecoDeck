@@ -218,7 +218,7 @@ fn compute_chromagram(samples: &[f32], sample_rate: u32) -> Result<[f64; 12], St
     let bin_to_pitch_class: Vec<Option<usize>> = (0..FFT_SIZE / 2 + 1)
         .map(|bin| {
             let freq = bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
-            if freq < MIN_FREQ || freq > MAX_FREQ {
+            if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
                 None // Outside musical range
             } else {
                 let semitones_from_a = 12.0 * (freq / 440.0).log2();

@@ -107,7 +107,7 @@ impl Scanner {
             let bpm_str = tag.get_string(&ItemKey::Bpm)
                 .or_else(|| tag.get_string(&ItemKey::IntegerBpm));
             let bpm = bpm_str.and_then(|s| s.trim().parse::<f64>().ok())
-                .filter(|&b| b >= 40.0 && b <= 300.0);
+                .filter(|&b| (40.0..=300.0).contains(&b));
 
             // Genre from file tags (ID3 TCON, Vorbis GENRE, etc.)
             let genre = tag.genre().as_deref().map(|s| s.to_string());
@@ -234,12 +234,11 @@ impl Scanner {
         let (track, tag_bpm, tag_genre) = Self::extract_metadata(path)?;
 
         // Skip if a track with the same content hash already exists (different path, same file)
-        if track.file_hash != "unknown" {
-            if db.track_exists_with_hash(&track.file_hash)
+        if track.file_hash != "unknown"
+            && db.track_exists_with_hash(&track.file_hash)
                 .map_err(|e| format!("Database error: {}", e))? {
                 return Err("DUPLICATE_HASH".to_string());
             }
-        }
 
         let id = db.create_track(&track)
             .map_err(|e| format!("Database error: {}", e))?;

@@ -89,7 +89,7 @@ impl TrackContextBuilder {
 
         // If filtering reduced the set significantly, use filtered tracks
         // Otherwise, use all tracks (prompt might be too generic)
-        let tracks_to_use = if filtered_tracks.len() < tracks.len() / 2 && filtered_tracks.len() > 0 {
+        let tracks_to_use = if filtered_tracks.len() < tracks.len() / 2 && !filtered_tracks.is_empty() {
             &filtered_tracks
         } else {
             tracks
@@ -180,7 +180,7 @@ impl TrackContextBuilder {
         }
 
         // Check BPM range (e.g., "120 bpm", "128-130")
-        if let Some(ref a) = analysis {
+        if let Some(a) = analysis {
             if let Some(bpm) = a.bpm {
                 let bpm_int = bpm.round() as i32;
                 if prompt_lower.contains(&format!("{}", bpm_int)) {

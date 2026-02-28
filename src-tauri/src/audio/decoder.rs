@@ -134,7 +134,7 @@ impl AudioDecoder {
         let time_base = self.decoder.codec_params().time_base;
         if let Some(tb) = time_base {
             let time = tb.calc_time(ts);
-            self.current_position_ms = (time.seconds as u64 * 1000) + (time.frac * 1000.0) as u64;
+            self.current_position_ms = (time.seconds * 1000) + (time.frac * 1000.0) as u64;
         }
 
         Ok(Some(AudioChunk {
@@ -152,11 +152,7 @@ impl AudioDecoder {
         // Leave a small margin before the end to avoid "end of stream" errors
         let clamped_position = if self.duration_ms > 0 {
             let margin_ms = 100;
-            let max_seek_position = if self.duration_ms > margin_ms {
-                self.duration_ms - margin_ms
-            } else {
-                0
-            };
+            let max_seek_position = self.duration_ms.saturating_sub(margin_ms);
             let final_position = position_ms.min(max_seek_position);
             println!("[decoder] Seeking: requested={}ms, duration={}ms, clamped={}ms",
                      position_ms, self.duration_ms, final_position);

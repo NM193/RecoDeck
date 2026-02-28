@@ -102,7 +102,7 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<BpmResult, String> {
     let confidence = confidence.clamp(0.0, 1.0);
     
     // If BPM is 0 or unreasonable, report low confidence
-    if bpm <= 0.0 || bpm < 40.0 || bpm > 300.0 {
+    if bpm <= 0.0 || !(40.0..=300.0).contains(&bpm) {
         return Ok(BpmResult {
             bpm: 0.0,
             confidence: 0.0,
@@ -111,7 +111,7 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<BpmResult, String> {
 
     // Normalize to "DJ range" (80–200 BPM) to match Traktor/Rekordbox and avoid half/double tempo mismatch.
     // Many algorithms lock onto half or double the true tempo; electronic music is usually 85–140 BPM.
-    if bpm >= 40.0 && bpm < 80.0 {
+    if (40.0..80.0).contains(&bpm) {
         bpm *= 2.0; // e.g. 64 → 128
     } else if bpm > 200.0 && bpm <= 300.0 {
         bpm /= 2.0; // e.g. 280 → 140

@@ -14,6 +14,12 @@ pub struct PlaybackState {
     pub task_generation: Arc<Mutex<u64>>,
 }
 
+impl Default for PlaybackState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlaybackState {
     pub fn new() -> Self {
         Self {
@@ -55,7 +61,7 @@ pub async fn load_track(
 
     // Create decoder
     let decoder = AudioDecoder::new(&file_path)
-        .map_err(|e| AppError::Internal(e))?;
+        .map_err(AppError::Internal)?;
 
     let sample_rate = decoder.sample_rate();
     let duration_ms = decoder.duration_ms();
@@ -160,11 +166,7 @@ pub async fn play(
                         // End of track reached - only log warnings for early end
                         let position_ms = chunk.position_ms;
                         let duration_ms = chunk.duration_ms;
-                        let gap_ms = if duration_ms > position_ms {
-                            duration_ms - position_ms
-                        } else {
-                            0
-                        };
+                        let gap_ms = duration_ms.saturating_sub(position_ms);
 
                         if gap_ms > 30000 {
                             eprintln!("[playback] WARNING: Track ended early! position={}ms, duration={}ms, gap={}ms (~{}s)",
@@ -193,11 +195,7 @@ pub async fn play(
                             (0, 0)
                         }
                     };
-                    let gap_ms = if duration_ms > position_ms {
-                        duration_ms - position_ms
-                    } else {
-                        0
-                    };
+                    let gap_ms = duration_ms.saturating_sub(position_ms);
 
                     if gap_ms > 30000 {
                         eprintln!("[playback] WARNING: Track ended early (Ok(None))! position={}ms, duration={}ms, gap={}ms (~{}s)",
@@ -289,7 +287,7 @@ pub async fn seek(
 
         if let Some(decoder) = decoder_lock.as_mut() {
             decoder.seek(position_ms)
-                .map_err(|e| AppError::Internal(e))?;
+                .map_err(AppError::Internal)?;
         }
     }
 
