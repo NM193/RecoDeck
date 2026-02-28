@@ -20,6 +20,11 @@ export interface GeneratedPlaylist {
 }
 
 /**
+ * Energy direction for AI seed-track playlist generation.
+ */
+export type EnergyDirection = 'build_up' | 'maintain' | 'wind_down';
+
+/**
  * AI chat state
  */
 export interface AIChatState {

@@ -297,6 +297,18 @@ export const tauriApi = {
     return await invoke("ai_generate_playlist", { prompt });
   },
 
+  async aiGeneratePlaylistFromSeed(
+    seedTrackId: number,
+    energyDirection: 'build_up' | 'maintain' | 'wind_down',
+    targetDurationMin: number
+  ): Promise<GeneratedPlaylist> {
+    return await invoke("ai_generate_playlist_from_seed", {
+      seedTrackId,
+      energyDirection,
+      targetDurationMin,
+    });
+  },
+
   async aiChat(message: string, conversationHistory: ChatMessage[]): Promise<string> {
     return await invoke("ai_chat", { message, conversationHistory });
   },
