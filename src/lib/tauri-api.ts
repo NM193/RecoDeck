@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, ScanResult, BpmResult, KeyResult, TrackAnalysis, FolderInfo, Playlist, GenreCount, GenreDefinition } from "../types/track";
-import type { ChatMessage, GeneratedPlaylist } from "../types/ai";
+import type { ChatMessage, GeneratedPlaylist, RecommendationResult } from "../types/ai";
 // AppError, isAppError, getErrorMessage are exported from ../types/ai for use by UI components
 
 export const tauriApi = {
@@ -307,6 +307,14 @@ export const tauriApi = {
       energyDirection,
       targetDurationMin,
     });
+  },
+
+  async aiRecommendSimilar(seedTrackId: number, count = 10): Promise<RecommendationResult> {
+    return await invoke("ai_recommend_similar", { seedTrackId, count });
+  },
+
+  async aiRecommendForPlaylist(playlistId: number, count = 10): Promise<RecommendationResult> {
+    return await invoke("ai_recommend_for_playlist", { playlistId, count });
   },
 
   async aiChat(message: string, conversationHistory: ChatMessage[]): Promise<string> {

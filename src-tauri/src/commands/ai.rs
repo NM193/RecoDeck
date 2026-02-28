@@ -22,6 +22,13 @@ pub struct GeneratedPlaylist {
     pub reasoning: String,
 }
 
+/// Recommendation result from AI -- track IDs + reasoning, no name/description
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecommendationResult {
+    pub track_ids: Vec<i64>,
+    pub reasoning: String,
+}
+
 /// Chat message for conversation history
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -257,6 +264,210 @@ pub async fn ai_generate_playlist_from_seed(
         track_ids: response.track_ids,
         reasoning: response.reasoning,
     })
+}
+
+/// Get AI track recommendations based on a seed track (DISC-01).
+/// Returns tracks from the user's library that are most similar to the seed.
+#[tauri::command]
+pub async fn ai_recommend_similar(
+    state: State<'_, AppState>,
+    seed_track_id: i64,
+    count: i32,
+) -> Result<RecommendationResult, AppError> {
+    let api_key = get_api_key_from_db(&state)?
+        .ok_or(AppError::AiNoApiKey)?;
+
+    // Get seed track info and analysis
+    let (seed_title, seed_artist, seed_bpm, seed_key) = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let track = db.get_track(seed_track_id)
+            .map_err(|e| AppError::Database(format!("Seed track {} not found: {}", seed_track_id, e)))?;
+
+        let analysis = db.get_track_analysis(seed_track_id)
+            .map_err(|e| AppError::Database(format!("Failed to get track analysis: {}", e)))?;
+
+        (
+            track.title.clone().unwrap_or_else(|| "Unknown".to_string()),
+            track.artist.clone().unwrap_or_else(|| "Unknown".to_string()),
+            analysis.as_ref().and_then(|a| a.bpm),
+            analysis.as_ref().and_then(|a| a.musical_key.clone()),
+        )
+    };
+
+    // Get all tracks with analysis for context building
+    let all_tracks = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let tracks = db.get_all_tracks()
+            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
+
+        tracks.into_iter()
+            .map(|track| {
+                let analysis = track
+                    .id
+                    .and_then(|id| db.get_track_analysis(id).ok().flatten());
+                (track, analysis)
+            })
+            .collect::<Vec<(Track, Option<TrackAnalysis>)>>()
+    };
+
+    // Build seed-aware context (filtered by BPM/key neighborhood, neutral direction)
+    let track_context = TrackContextBuilder::build_seed_context(
+        &all_tracks,
+        seed_bpm,
+        seed_key.as_deref(),
+        "maintain", // Neutral direction for recommendations
+    )?;
+
+    // Build the seed info string
+    let seed_info = match (seed_bpm, &seed_key) {
+        (Some(bpm), Some(key)) => format!("BPM: {:.1}, Key: {}", bpm, key),
+        (Some(bpm), None) => format!("BPM: {:.1}, Key: unknown", bpm),
+        (None, Some(key)) => format!("BPM: unknown, Key: {}", key),
+        (None, None) => "BPM: unknown, Key: unknown".to_string(),
+    };
+
+    let prompt = format!(
+        "Find {} tracks from my library that are most similar to \"{}\" by {} (ID: {}, {}). \
+        Prioritize BPM compatibility (within +/-8 BPM) and Camelot key compatibility (same key or +/-1 step). \
+        Also consider genre and energy similarity. \
+        Do NOT include the seed track itself (ID {}). \
+        Return ONLY a JSON object: {{ \"track_ids\": [...], \"reasoning\": \"...\" }}",
+        count, seed_title, seed_artist, seed_track_id, seed_info, seed_track_id
+    );
+
+    let client = ClaudeClient::new(api_key);
+    let messages = vec![crate::ai::claude_client::Message {
+        role: "user".to_string(),
+        content: format!("Here is my music library:\n\n{}\n\n{}", track_context, prompt),
+    }];
+
+    let response_text = client.chat(messages, Some(SYSTEM_PROMPT.to_string())).await?;
+    let json = ClaudeClient::extract_json(&response_text)?;
+
+    serde_json::from_str::<RecommendationResult>(&json)
+        .map_err(|e| AppError::AiParsing(format!("Recommendation response invalid: {}", e)))
+}
+
+/// Get AI track recommendations based on an existing playlist's vibe (DISC-02).
+/// Analyzes the playlist's aggregate BPM/key profile and finds complementary tracks.
+#[tauri::command]
+pub async fn ai_recommend_for_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    count: i32,
+) -> Result<RecommendationResult, AppError> {
+    let api_key = get_api_key_from_db(&state)?
+        .ok_or(AppError::AiNoApiKey)?;
+
+    // Get playlist tracks with analysis
+    let (playlist_track_ids, playlist_summary, median_bpm, most_common_key) = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let playlist_tracks = db.get_playlist_tracks(playlist_id)
+            .map_err(|e| AppError::Database(format!("Failed to get playlist tracks: {}", e)))?;
+
+        if playlist_tracks.is_empty() {
+            return Err(AppError::Validation("Playlist is empty -- add some tracks first".to_string()));
+        }
+
+        // Collect track IDs for exclusion
+        let track_ids: Vec<i64> = playlist_tracks.iter()
+            .filter_map(|(t, _, _, _, _)| t.id)
+            .collect();
+
+        // Calculate median BPM
+        let mut bpms: Vec<f64> = playlist_tracks.iter()
+            .filter_map(|(_, bpm, _, _, _)| *bpm)
+            .collect();
+        bpms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = if bpms.is_empty() { None } else { Some(bpms[bpms.len() / 2]) };
+
+        // Find most common key
+        let mut key_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (_, _, _, key, _) in &playlist_tracks {
+            if let Some(k) = key {
+                *key_counts.entry(k.clone()).or_insert(0) += 1;
+            }
+        }
+        let common_key = key_counts.into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(key, _)| key);
+
+        // Build summary of playlist tracks for the prompt
+        let summary: Vec<String> = playlist_tracks.iter()
+            .map(|(t, bpm, _, key, _)| {
+                let title = t.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                let artist = t.artist.clone().unwrap_or_else(|| "Unknown".to_string());
+                let bpm_str = bpm.map(|b| format!("{:.0} BPM", b)).unwrap_or_else(|| "? BPM".to_string());
+                let key_str = key.clone().unwrap_or_else(|| "?".to_string());
+                format!("  - \"{}\" by {} ({}, {})", title, artist, bpm_str, key_str)
+            })
+            .collect();
+
+        (track_ids, summary.join("\n"), median, common_key)
+    };
+
+    // Get full library context using seed context with playlist's aggregate values
+    let all_tracks = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let tracks = db.get_all_tracks()
+            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
+
+        tracks.into_iter()
+            .map(|track| {
+                let analysis = track
+                    .id
+                    .and_then(|id| db.get_track_analysis(id).ok().flatten());
+                (track, analysis)
+            })
+            .collect::<Vec<(Track, Option<TrackAnalysis>)>>()
+    };
+
+    let track_context = TrackContextBuilder::build_seed_context(
+        &all_tracks,
+        median_bpm,
+        most_common_key.as_deref(),
+        "maintain",
+    )?;
+
+    // Build exclusion list
+    let exclusion_str = playlist_track_ids.iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prompt = format!(
+        "I have a playlist with these tracks:\n{}\n\n\
+        The playlist has a median BPM around {:.0} and primarily uses key {}.\n\n\
+        Find {} tracks from my library that would fit well with this playlist's vibe. \
+        Prioritize BPM compatibility and Camelot key compatibility with the playlist's profile. \
+        IMPORTANT: Do NOT include any of these track IDs already in the playlist: [{}]. \
+        Return ONLY a JSON object: {{ \"track_ids\": [...], \"reasoning\": \"...\" }}",
+        playlist_summary,
+        median_bpm.unwrap_or(128.0),
+        most_common_key.as_deref().unwrap_or("unknown"),
+        count,
+        exclusion_str
+    );
+
+    let client = ClaudeClient::new(api_key);
+    let messages = vec![crate::ai::claude_client::Message {
+        role: "user".to_string(),
+        content: format!("Here is my music library:\n\n{}\n\n{}", track_context, prompt),
+    }];
+
+    let response_text = client.chat(messages, Some(SYSTEM_PROMPT.to_string())).await?;
+    let json = ClaudeClient::extract_json(&response_text)?;
+
+    serde_json::from_str::<RecommendationResult>(&json)
+        .map_err(|e| AppError::AiParsing(format!("Recommendation response invalid: {}", e)))
 }
 
 /// Send a chat message to AI (simple, non-streaming)

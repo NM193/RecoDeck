@@ -160,7 +160,7 @@ impl ClaudeClient {
     }
 
     /// Extract JSON from response text (handles markdown code blocks)
-    fn extract_json(text: &str) -> Result<String, AppError> {
+    pub(crate) fn extract_json(text: &str) -> Result<String, AppError> {
         // Try to find JSON in markdown code block
         if let Some(start) = text.find("```json") {
             let json_start = start + 7; // Skip "```json"

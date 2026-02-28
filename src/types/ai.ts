@@ -25,6 +25,14 @@ export interface GeneratedPlaylist {
 export type EnergyDirection = 'build_up' | 'maintain' | 'wind_down';
 
 /**
+ * Result from AI track recommendation commands.
+ */
+export interface RecommendationResult {
+  track_ids: number[];
+  reasoning: string;
+}
+
+/**
  * AI chat state
  */
 export interface AIChatState {
