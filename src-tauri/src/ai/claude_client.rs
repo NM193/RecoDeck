@@ -30,20 +30,12 @@ struct ClaudeRequest {
     messages: Vec<Message>,
     #[serde(skip_serializing_if = "Option::is_none")]
     system: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stream: Option<bool>,
 }
 
-/// Response from Claude API
+/// Response from Claude API (only the fields we use)
 #[derive(Debug, Deserialize)]
 struct ClaudeResponse {
-    id: String,
-    #[serde(rename = "type")]
-    response_type: String,
-    role: String,
     content: Vec<ContentBlock>,
-    model: String,
-    stop_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,29 +43,6 @@ struct ContentBlock {
     #[serde(rename = "type")]
     block_type: String,
     text: String,
-}
-
-/// Streaming event from Claude API
-#[derive(Debug, Deserialize)]
-struct StreamEvent {
-    #[serde(rename = "type")]
-    event_type: String,
-    #[serde(default)]
-    message: Option<serde_json::Value>,
-    #[serde(default)]
-    index: Option<usize>,
-    #[serde(default)]
-    content_block: Option<ContentBlock>,
-    #[serde(default)]
-    delta: Option<Delta>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Delta {
-    #[serde(rename = "type")]
-    delta_type: String,
-    #[serde(default)]
-    text: Option<String>,
 }
 
 /// Playlist generation response
@@ -112,7 +81,6 @@ impl ClaudeClient {
             max_tokens: MAX_TOKENS,
             messages,
             system: system_prompt,
-            stream: None,
         };
 
         let response = self

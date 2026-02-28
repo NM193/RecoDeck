@@ -64,24 +64,6 @@ const SHAATH_MINOR: [f64; 12] = [
     6.5, 2.7, 3.5, 5.4, 2.6, 3.5, 2.5, 4.7, 4.0, 2.7, 3.4, 3.2,
 ];
 
-/// Temperley's key profiles (alternative, good for classical music)
-const TEMPERLEY_MAJOR: [f64; 12] = [
-    5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0,
-];
-
-const TEMPERLEY_MINOR: [f64; 12] = [
-    5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0,
-];
-
-/// Krumhansl-Schmuckler profiles (original, kept for reference)
-const KS_MAJOR: [f64; 12] = [
-    6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
-];
-
-const KS_MINOR: [f64; 12] = [
-    6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
-];
-
 /// Musical key names for major keys (indexed by pitch class: 0=C, 1=C#/Db, ..., 11=B)
 const MAJOR_NAMES: [&str; 12] = [
     "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
