@@ -141,6 +141,12 @@ export function MobilePlayer({
           className="mobile-player-seek-bar"
           onClick={(e) => handleSeek(e.clientX)}
           onTouchStart={() => setSeeking(true)}
+          onTouchMove={(e) => {
+            if (seeking) {
+              const touch = e.touches[0];
+              if (touch) handleSeek(touch.clientX);
+            }
+          }}
           onTouchEnd={(e) => {
             setSeeking(false);
             const touch = e.changedTouches[0];
