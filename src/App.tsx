@@ -23,7 +23,7 @@ import type { Track, Playlist } from "./types/track";
 import "./App.css";
 import "./components/TrackTable.css";
 
-const AI_ENABLED = false; // Set to true when AI assistant is ready
+const AI_ENABLED = true;
 
 type PromptAction =
   | { kind: "create-playlist"; parentId: number | null }
