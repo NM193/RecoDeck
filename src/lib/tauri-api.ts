@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, ScanResult, BpmResult, KeyResult, TrackAnalysis, FolderInfo, Playlist, GenreCount, GenreDefinition } from "../types/track";
-import type { ChatMessage, GeneratedPlaylist, RecommendationResult } from "../types/ai";
+import type { ChatMessage, GeneratedPlaylist, RecommendationResult, RecommendedOrder } from "../types/ai";
 // AppError, isAppError, getErrorMessage are exported from ../types/ai for use by UI components
 
 export const tauriApi = {
@@ -169,6 +169,10 @@ export const tauriApi = {
     return await invoke("remove_track_from_playlist", { playlistId, trackId });
   },
 
+  async reorderPlaylistTracks(playlistId: number, orderedTrackIds: number[]): Promise<void> {
+    return await invoke("reorder_playlist_tracks", { playlistId, orderedTrackIds });
+  },
+
   // File watcher commands
   async startFileWatcher(folders: string[]): Promise<void> {
     return await invoke("start_file_watcher", { folders });
@@ -315,6 +319,10 @@ export const tauriApi = {
 
   async aiRecommendForPlaylist(playlistId: number, count = 10): Promise<RecommendationResult> {
     return await invoke("ai_recommend_for_playlist", { playlistId, count });
+  },
+
+  async aiOptimizePlaylistOrder(playlistId: number): Promise<RecommendedOrder> {
+    return await invoke("ai_optimize_playlist_order", { playlistId });
   },
 
   async aiChat(message: string, conversationHistory: ChatMessage[]): Promise<string> {

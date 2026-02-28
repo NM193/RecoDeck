@@ -177,3 +177,17 @@ pub fn remove_track_from_playlist(
     db.remove_track_from_playlist(playlist_id, track_id)
         .map_err(|e| AppError::Database(format!("Failed to remove track: {}", e)))
 }
+
+/// Reorder tracks in a playlist (atomic position update)
+#[tauri::command]
+pub fn reorder_playlist_tracks(
+    state: State<AppState>,
+    playlist_id: i64,
+    ordered_track_ids: Vec<i64>,
+) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    db.reorder_playlist_tracks(playlist_id, &ordered_track_ids)
+        .map_err(|e| AppError::Database(format!("Failed to reorder playlist: {}", e)))
+}

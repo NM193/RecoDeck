@@ -481,6 +481,23 @@ impl Database {
         Ok(())
     }
 
+    /// Reorder tracks in a playlist by updating position values atomically.
+    /// `ordered_track_ids` must contain the track IDs in the desired order.
+    /// Uses execute_batch with explicit BEGIN/COMMIT for atomic update.
+    pub fn reorder_playlist_tracks(&self, playlist_id: i64, ordered_track_ids: &[i64]) -> Result<()> {
+        // Build a batch SQL string with BEGIN/COMMIT for atomicity
+        let mut sql = String::from("BEGIN;\n");
+        for (position, track_id) in ordered_track_ids.iter().enumerate() {
+            sql.push_str(&format!(
+                "UPDATE playlist_tracks SET position = {} WHERE playlist_id = {} AND track_id = {};\n",
+                position as i64, playlist_id, track_id
+            ));
+        }
+        sql.push_str("COMMIT;\n");
+        self.conn.execute_batch(&sql)?;
+        Ok(())
+    }
+
     /// Count tracks in a playlist.
     pub fn count_playlist_tracks(&self, playlist_id: i64) -> Result<i64> {
         let count: i64 = self.conn.query_row(

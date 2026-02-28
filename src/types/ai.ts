@@ -33,6 +33,14 @@ export interface RecommendationResult {
 }
 
 /**
+ * AI-optimized track order for key-compatible mixing.
+ */
+export interface RecommendedOrder {
+  track_ids: number[];
+  reasoning: string;
+}
+
+/**
  * AI chat state
  */
 export interface AIChatState {

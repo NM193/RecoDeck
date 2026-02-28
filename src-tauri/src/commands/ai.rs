@@ -29,6 +29,13 @@ pub struct RecommendationResult {
     pub reasoning: String,
 }
 
+/// AI-optimized track order for key-compatible mixing
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecommendedOrder {
+    pub track_ids: Vec<i64>,
+    pub reasoning: String,
+}
+
 /// Chat message for conversation history
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -468,6 +475,67 @@ pub async fn ai_recommend_for_playlist(
 
     serde_json::from_str::<RecommendationResult>(&json)
         .map_err(|e| AppError::AiParsing(format!("Recommendation response invalid: {}", e)))
+}
+
+/// Get AI-optimized track order for key-compatible mixing (MIXP-01).
+/// Takes a playlist's tracks and returns them reordered for smooth DJ transitions.
+#[tauri::command]
+pub async fn ai_optimize_playlist_order(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+) -> Result<RecommendedOrder, AppError> {
+    let api_key = get_api_key_from_db(&state)?
+        .ok_or(AppError::AiNoApiKey)?;
+
+    // Get playlist tracks with analysis
+    let track_list = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let playlist_tracks = db.get_playlist_tracks(playlist_id)
+            .map_err(|e| AppError::Database(format!("Failed to get playlist tracks: {}", e)))?;
+
+        if playlist_tracks.len() < 2 {
+            return Err(AppError::Validation("Playlist needs at least 2 tracks to optimize order".to_string()));
+        }
+
+        // Build track descriptions for the prompt
+        let descriptions: Vec<String> = playlist_tracks.iter()
+            .map(|(t, bpm, _, key, _)| {
+                let id = t.id.unwrap_or(0);
+                let title = t.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                let artist = t.artist.clone().unwrap_or_else(|| "Unknown".to_string());
+                let bpm_str = bpm.map(|b| format!("{:.1}", b)).unwrap_or_else(|| "?".to_string());
+                let key_str = key.clone().unwrap_or_else(|| "?".to_string());
+                format!("ID:{} \"{}\" by {} (BPM:{}, Key:{})", id, title, artist, bpm_str, key_str)
+            })
+            .collect();
+
+        descriptions
+    };
+
+    let prompt = format!(
+        "I have a playlist with these tracks (in their current order):\n{}\n\n\
+        Reorder these tracks for optimal DJ mixing flow. Optimize for:\n\
+        1. Camelot key compatibility between adjacent tracks (same key, +/-1 step, or inner/outer circle)\n\
+        2. Smooth BPM transitions (minimize large BPM jumps between adjacent tracks, max +/-10 BPM)\n\
+        3. Natural energy progression (gradual BPM changes, not random jumps)\n\n\
+        Return ALL the same track IDs in a new optimized order.\n\
+        Return ONLY a JSON object: {{ \"track_ids\": [...], \"reasoning\": \"...\" }}",
+        track_list.join("\n")
+    );
+
+    let client = ClaudeClient::new(api_key);
+    let messages = vec![crate::ai::claude_client::Message {
+        role: "user".to_string(),
+        content: prompt,
+    }];
+
+    let response_text = client.chat(messages, Some(SYSTEM_PROMPT.to_string())).await?;
+    let json = ClaudeClient::extract_json(&response_text)?;
+
+    serde_json::from_str::<RecommendedOrder>(&json)
+        .map_err(|e| AppError::AiParsing(format!("Playlist order response invalid: {}", e)))
 }
 
 /// Send a chat message to AI (simple, non-streaming)

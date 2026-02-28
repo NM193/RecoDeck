@@ -471,6 +471,7 @@ pub fn run() {
             commands::playlists::get_playlist_tracks,
             commands::playlists::add_track_to_playlist,
             commands::playlists::remove_track_from_playlist,
+            commands::playlists::reorder_playlist_tracks,
             // Genre commands
             commands::genre::set_track_genre,
             commands::genre::clear_track_genre,
@@ -500,6 +501,7 @@ pub fn run() {
             commands::ai::ai_generate_playlist_from_seed,
             commands::ai::ai_recommend_similar,
             commands::ai::ai_recommend_for_playlist,
+            commands::ai::ai_optimize_playlist_order,
             commands::ai::ai_chat,
             // Companion server commands
             commands::server::start_companion_server,
