@@ -1,4 +1,5 @@
 use crate::audio::decoder::AudioDecoder;
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -40,20 +41,21 @@ pub async fn load_track(
     track_id: i64,
     app_state: State<'_, crate::commands::library::AppState>,
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     // Get track from database
     let db = app_state.db.lock()
-        .map_err(|e| format!("Failed to lock database: {}", e))?;
-    
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+
     let db = db.as_ref()
-        .ok_or_else(|| "Database not initialized".to_string())?;
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let track = db.get_track(track_id)
-        .map_err(|e| format!("Failed to get track: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get track: {}", e)))?;
     let file_path = PathBuf::from(&track.file_path);
 
     // Create decoder
-    let decoder = AudioDecoder::new(&file_path)?;
+    let decoder = AudioDecoder::new(&file_path)
+        .map_err(|e| AppError::Internal(e))?;
 
     let sample_rate = decoder.sample_rate();
     let duration_ms = decoder.duration_ms();
@@ -61,22 +63,22 @@ pub async fn load_track(
     // Increment generation to cancel any running tasks
     {
         let mut gen = playback_state.task_generation.lock()
-            .map_err(|e| format!("Failed to lock generation: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *gen += 1;
     }
 
     // Store decoder
     let mut decoder_lock = playback_state.decoder.lock()
-        .map_err(|e| format!("Failed to lock decoder: {}", e))?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *decoder_lock = Some(decoder);
 
     // Update state
     let mut track_id_lock = playback_state.current_track_id.lock()
-        .map_err(|e| format!("Failed to lock track ID: {}", e))?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *track_id_lock = Some(track_id);
 
     let mut is_playing_lock = playback_state.is_playing.lock()
-        .map_err(|e| format!("Failed to lock playing state: {}", e))?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *is_playing_lock = false;
 
     Ok(PlaybackStatus {
@@ -93,11 +95,11 @@ pub async fn load_track(
 pub async fn play(
     app: AppHandle,
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     // Set playing state
     {
         let mut is_playing = playback_state.is_playing.lock()
-            .map_err(|e| format!("Failed to lock playing state: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *is_playing = true;
     }
 
@@ -153,7 +155,7 @@ pub async fn play(
                 Ok(Some(chunk)) => {
                     // Reset error counter on successful decode
                     consecutive_errors = 0;
-                    
+
                     if chunk.is_end {
                         // End of track reached - only log warnings for early end
                         let position_ms = chunk.position_ms;
@@ -208,7 +210,7 @@ pub async fn play(
                 Err(e) => {
                     // Non-decode errors (I/O errors, etc.) - decode errors are now handled internally
                     consecutive_errors += 1;
-                    
+
                     // Get current position for logging
                     let position_ms = {
                         let decoder_lock = decoder_arc.lock().unwrap();
@@ -218,16 +220,16 @@ pub async fn play(
                             0
                         }
                     };
-                    
-                    eprintln!("[playback] Playback error (attempt {}/{}): {} (position={}ms)", 
+
+                    eprintln!("[playback] Playback error (attempt {}/{}): {} (position={}ms)",
                               consecutive_errors, MAX_CONSECUTIVE_ERRORS, e, position_ms);
-                    
+
                     if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
                         eprintln!("[playback] Too many consecutive errors, stopping playback");
                         let _ = app.emit("audio-error", format!("Playback error: {}", e));
                         break;
                     }
-                    
+
                     // Brief pause before retry (transient errors after seek may resolve)
                     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                 }
@@ -246,10 +248,10 @@ pub async fn play(
 #[tauri::command]
 pub async fn pause(
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     {
         let mut is_playing = playback_state.is_playing.lock()
-            .map_err(|e| format!("Failed to lock playing state: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *is_playing = false;
     }
 
@@ -261,7 +263,7 @@ pub async fn pause(
 pub async fn resume(
     app: AppHandle,
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     play(app, playback_state).await
 }
 
@@ -270,11 +272,11 @@ pub async fn resume(
 pub async fn seek(
     position_ms: u64,
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     // Increment generation first to cancel running task
     {
         let mut gen = playback_state.task_generation.lock()
-            .map_err(|e| format!("Failed to lock generation: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *gen += 1;
     }
 
@@ -283,10 +285,11 @@ pub async fn seek(
 
     {
         let mut decoder_lock = playback_state.decoder.lock()
-            .map_err(|e| format!("Failed to lock decoder: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
 
         if let Some(decoder) = decoder_lock.as_mut() {
-            decoder.seek(position_ms)?;
+            decoder.seek(position_ms)
+                .map_err(|e| AppError::Internal(e))?;
         }
     }
 
@@ -297,17 +300,17 @@ pub async fn seek(
 #[tauri::command]
 pub async fn stop(
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     let mut is_playing = playback_state.is_playing.lock()
-        .map_err(|e| format!("Failed to lock playing state: {}", e))?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *is_playing = false;
 
     let mut decoder_lock = playback_state.decoder.lock()
-        .map_err(|e| format!("Failed to lock decoder: {}", e))?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *decoder_lock = None;
 
     let mut track_id_lock = playback_state.current_track_id.lock()
-        .map_err(|e| format!("Failed to lock track ID: {}", e))?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *track_id_lock = None;
 
     Ok(PlaybackStatus {
@@ -323,22 +326,22 @@ pub async fn stop(
 #[tauri::command]
 pub async fn get_playback_status(
     playback_state: State<'_, PlaybackState>,
-) -> Result<PlaybackStatus, String> {
+) -> Result<PlaybackStatus, AppError> {
     let is_playing = {
         let is_playing_lock = playback_state.is_playing.lock()
-            .map_err(|e| format!("Failed to lock playing state: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *is_playing_lock
     };
 
     let track_id = {
         let track_id_lock = playback_state.current_track_id.lock()
-            .map_err(|e| format!("Failed to lock track ID: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *track_id_lock
     };
 
     let (position_ms, duration_ms, sample_rate) = {
         let decoder_lock = playback_state.decoder.lock()
-            .map_err(|e| format!("Failed to lock decoder: {}", e))?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
 
         if let Some(decoder) = decoder_lock.as_ref() {
             (decoder.current_position_ms(), decoder.duration_ms(), decoder.sample_rate())

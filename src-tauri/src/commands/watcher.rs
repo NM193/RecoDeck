@@ -1,7 +1,9 @@
-// File system watcher — watches library folders for new/removed audio files
+// File system watcher -- watches library folders for new/removed audio files
 // and emits Tauri events so the frontend auto-refreshes.
 
+use crate::error::AppError;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -41,8 +43,9 @@ pub fn start_file_watcher(
     app: AppHandle,
     watcher_state: State<WatcherState>,
     folders: Vec<String>,
-) -> Result<(), String> {
-    let mut watcher_lock = watcher_state.watcher.lock().unwrap();
+) -> Result<(), AppError> {
+    let mut watcher_lock = watcher_state.watcher.lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
 
     // Drop any existing watcher first
     *watcher_lock = None;
@@ -57,37 +60,40 @@ pub fn start_file_watcher(
 
     let watcher = RecommendedWatcher::new(
         move |result: Result<Event, notify::Error>| {
-            if let Ok(event) = result {
-                // Only react to create/modify/remove events
-                let dominated = matches!(
-                    event.kind,
-                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-                );
-                if !dominated {
-                    return;
-                }
+            // Catch panics to prevent watcher thread from crashing the app
+            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                if let Ok(event) = result {
+                    // Only react to create/modify/remove events
+                    let dominated = matches!(
+                        event.kind,
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+                    );
+                    if !dominated {
+                        return;
+                    }
 
-                // Check if any affected path is an audio file
-                let has_audio = event.paths.iter().any(|p| is_audio_file(p));
-                if !has_audio {
-                    return;
-                }
+                    // Check if any affected path is an audio file
+                    let has_audio = event.paths.iter().any(|p| is_audio_file(p));
+                    if !has_audio {
+                        return;
+                    }
 
-                // Debounce: at most one event per 2 seconds
-                let mut last = last_emit.lock().unwrap();
-                if last.elapsed() < Duration::from_secs(2) {
-                    return;
-                }
-                *last = Instant::now();
-                drop(last);
+                    // Debounce: at most one event per 2 seconds
+                    if let Ok(mut last) = last_emit.lock() {
+                        if last.elapsed() < Duration::from_secs(2) {
+                            return;
+                        }
+                        *last = Instant::now();
+                    }
 
-                // Emit event to frontend
-                let _ = app_handle.emit("library-changed", ());
-            }
+                    // Emit event to frontend
+                    let _ = app_handle.emit("library-changed", ());
+                }
+            }));
         },
         Config::default().with_poll_interval(Duration::from_secs(2)),
     )
-    .map_err(|e| format!("Failed to create file watcher: {}", e))?;
+    .map_err(|e| AppError::Internal(format!("Failed to create file watcher: {}", e)))?;
 
     *watcher_lock = Some(watcher);
 
@@ -98,7 +104,7 @@ pub fn start_file_watcher(
         if path.is_dir() {
             watcher_ref
                 .watch(path, RecursiveMode::Recursive)
-                .map_err(|e| format!("Failed to watch {}: {}", folder, e))?;
+                .map_err(|e| AppError::Internal(format!("Failed to watch {}: {}", folder, e)))?;
         }
     }
 

@@ -9,6 +9,7 @@
 use crate::ai::{ClaudeClient, TrackContextBuilder, SYSTEM_PROMPT};
 use crate::commands::library::AppState;
 use crate::db::{Track, TrackAnalysis};
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -32,23 +33,23 @@ pub struct ChatMessage {
 const AI_API_KEY_SETTING: &str = "ai_api_key";
 
 /// Helper: get API key from settings DB
-fn get_api_key_from_db(state: &State<'_, AppState>) -> Result<Option<String>, String> {
-    let db_guard = state.db.lock().map_err(|e| format!("Failed to lock database: {}", e))?;
-    let db = db_guard.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+fn get_api_key_from_db(state: &State<'_, AppState>) -> Result<Option<String>, AppError> {
+    let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     match db.get_setting(AI_API_KEY_SETTING) {
         Ok(Some(val)) if !val.is_empty() => Ok(Some(val)),
         Ok(_) => Ok(None),
-        Err(_) => Ok(None),
+        Err(e) => Err(AppError::Database(format!("Failed to read API key setting: {}", e))),
     }
 }
 
 /// Helper: build and cache AI context from current library
-fn rebuild_context_cache(state: &State<'_, AppState>) -> Result<String, String> {
+fn rebuild_context_cache(state: &State<'_, AppState>) -> Result<String, AppError> {
     let context = {
-        let db_guard = state.db.lock().map_err(|e| format!("Failed to lock database: {}", e))?;
-        let db = db_guard.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
-        let tracks = db.get_all_tracks().map_err(|e| format!("Failed to get tracks: {}", e))?;
+        let tracks = db.get_all_tracks().map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
         let tracks_with_analysis: Vec<(Track, Option<TrackAnalysis>)> = tracks
             .into_iter()
@@ -64,17 +65,17 @@ fn rebuild_context_cache(state: &State<'_, AppState>) -> Result<String, String> 
     };
 
     // Store in cache
-    let mut cache = state.ai_context_cache.lock().map_err(|e| format!("Cache lock failed: {}", e))?;
+    let mut cache = state.ai_context_cache.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *cache = Some(context.clone());
 
     Ok(context)
 }
 
 /// Helper: get cached context or rebuild it
-fn get_or_build_context(state: &State<'_, AppState>) -> Result<String, String> {
+fn get_or_build_context(state: &State<'_, AppState>) -> Result<String, AppError> {
     // Try cache first
     {
-        let cache = state.ai_context_cache.lock().map_err(|e| format!("Cache lock failed: {}", e))?;
+        let cache = state.ai_context_cache.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         if let Some(ref cached) = *cache {
             return Ok(cached.clone());
         }
@@ -83,49 +84,46 @@ fn get_or_build_context(state: &State<'_, AppState>) -> Result<String, String> {
     rebuild_context_cache(state)
 }
 
-// ─── Tauri Commands ───
+// --- Tauri Commands ---
 
 /// Set the Claude API key (stores in settings DB)
 #[tauri::command]
-pub async fn set_ai_api_key(state: State<'_, AppState>, api_key: String) -> Result<(), String> {
+pub async fn set_ai_api_key(state: State<'_, AppState>, api_key: String) -> Result<(), AppError> {
     if api_key.trim().is_empty() {
-        return Err("API key cannot be empty".to_string());
+        return Err(AppError::Validation("API key cannot be empty".to_string()));
     }
 
-    let db_guard = state.db.lock().map_err(|e| format!("Failed to lock database: {}", e))?;
-    let db = db_guard.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+    let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     db.set_setting(AI_API_KEY_SETTING, &api_key)
-        .map_err(|e| format!("Failed to save API key: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to save API key: {}", e)))?;
 
     Ok(())
 }
 
-/// Get API key status (whether one is configured)
+/// Get API key status (whether one is configured). Propagates errors to caller.
 #[tauri::command]
-pub async fn get_ai_api_key_status(state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn get_ai_api_key_status(state: State<'_, AppState>) -> Result<bool, AppError> {
     match get_api_key_from_db(&state) {
         Ok(Some(_)) => Ok(true),
         Ok(None) => Ok(false),
-        Err(e) => {
-            eprintln!("Error checking API key status: {}", e);
-            Ok(false)
-        }
+        Err(e) => Err(e), // propagate, don't swallow
     }
 }
 
 /// Delete the stored API key
 #[tauri::command]
-pub async fn delete_ai_api_key(state: State<'_, AppState>) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|e| format!("Failed to lock database: {}", e))?;
-    let db = db_guard.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+pub async fn delete_ai_api_key(state: State<'_, AppState>) -> Result<(), AppError> {
+    let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     db.set_setting(AI_API_KEY_SETTING, "")
-        .map_err(|e| format!("Failed to delete API key: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to delete API key: {}", e)))?;
     Ok(())
 }
 
 /// Rebuild the AI context cache (call after scan/analysis/library changes)
 #[tauri::command]
-pub async fn rebuild_ai_context(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn rebuild_ai_context(state: State<'_, AppState>) -> Result<(), AppError> {
     rebuild_context_cache(&state)?;
     Ok(())
 }
@@ -135,9 +133,9 @@ pub async fn rebuild_ai_context(state: State<'_, AppState>) -> Result<(), String
 pub async fn ai_generate_playlist(
     state: State<'_, AppState>,
     prompt: String,
-) -> Result<GeneratedPlaylist, String> {
+) -> Result<GeneratedPlaylist, AppError> {
     let api_key = get_api_key_from_db(&state)?
-        .ok_or_else(|| "No API key configured. Please set your Claude API key in Settings.".to_string())?;
+        .ok_or(AppError::AiNoApiKey)?;
 
     // Use cached context (instant)
     let track_context = get_or_build_context(&state)?;
@@ -162,9 +160,9 @@ pub async fn ai_chat(
     state: State<'_, AppState>,
     message: String,
     conversation_history: Vec<ChatMessage>,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let api_key = get_api_key_from_db(&state)?
-        .ok_or_else(|| "No API key configured. Please set your Claude API key in Settings.".to_string())?;
+        .ok_or(AppError::AiNoApiKey)?;
 
     // Only include library context if the message is music-related
     let msg_lower = message.to_lowercase();

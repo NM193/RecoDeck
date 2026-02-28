@@ -15,3 +15,4 @@ pub use library::{AppState, TrackDTO};
 pub use playback::PlaybackState;
 pub use server::CompanionState;
 pub use watcher::WatcherState;
+pub use crate::error::AppError;

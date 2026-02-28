@@ -5,12 +5,13 @@
 // - Playlist generation
 // - Rate limiting and error handling
 
+use crate::error::AppError;
 use reqwest::{Client, header};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const CLAUDE_API_URL: &str = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL: &str = "claude-sonnet-4-5-20250929";
+const CLAUDE_MODEL: &str = "claude-sonnet-4-20250514";
 const CLAUDE_VERSION: &str = "2023-06-01";
 const MAX_TOKENS: u32 = 4096;
 
@@ -105,7 +106,7 @@ impl ClaudeClient {
         &self,
         messages: Vec<Message>,
         system_prompt: Option<String>,
-    ) -> Result<String, String> {
+    ) -> Result<String, AppError> {
         let request = ClaudeRequest {
             model: CLAUDE_MODEL.to_string(),
             max_tokens: MAX_TOKENS,
@@ -123,18 +124,31 @@ impl ClaudeClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| format!("API request failed: {}", e))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    AppError::AiNetwork("Request timed out -- check your internet connection and try again".to_string())
+                } else if e.is_connect() {
+                    AppError::AiNetwork("Could not connect to AI service -- check your internet connection".to_string())
+                } else {
+                    AppError::AiNetwork(format!("Network error: {}", e))
+                }
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(format!("API error {}: {}", status, error_text));
+            return Err(match status.as_u16() {
+                401 => AppError::AiInvalidKey,
+                429 => AppError::AiNetwork("Rate limited -- wait a moment and try again".to_string()),
+                _ if status.is_client_error() => AppError::AiInvalidKey,
+                _ => AppError::AiNetwork(format!("AI service error ({}): {}", status, error_text)),
+            });
         }
 
         let claude_response: ClaudeResponse = response
             .json()
             .await
-            .map_err(|e| format!("Failed to parse response: {}", e))?;
+            .map_err(|e| AppError::AiParsing(format!("Failed to parse AI response: {}", e)))?;
 
         // Extract text from content blocks
         let text = claude_response
@@ -154,7 +168,7 @@ impl ClaudeClient {
         prompt: String,
         track_context: String,
         system_prompt: String,
-    ) -> Result<PlaylistResponse, String> {
+    ) -> Result<PlaylistResponse, AppError> {
         // Construct the user message with context
         let user_message = format!(
             "Here is my music library:\n\n{}\n\nUser request: {}\n\nPlease respond with a JSON object containing: name, description, track_ids (array of integers), and reasoning.",
@@ -174,11 +188,11 @@ impl ClaudeClient {
 
         // Parse the JSON response
         serde_json::from_str::<PlaylistResponse>(&json_text)
-            .map_err(|e| format!("Failed to parse playlist response: {}", e))
+            .map_err(|e| AppError::AiParsing(format!("Playlist response invalid: {}", e)))
     }
 
     /// Extract JSON from response text (handles markdown code blocks)
-    fn extract_json(text: &str) -> Result<String, String> {
+    fn extract_json(text: &str) -> Result<String, AppError> {
         // Try to find JSON in markdown code block
         if let Some(start) = text.find("```json") {
             let json_start = start + 7; // Skip "```json"
@@ -204,7 +218,7 @@ impl ClaudeClient {
             }
         }
 
-        Err("No JSON found in response".to_string())
+        Err(AppError::AiParsing("No JSON found in AI response".to_string()))
     }
 }
 

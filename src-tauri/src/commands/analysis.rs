@@ -10,6 +10,7 @@
 use crate::audio::bpm;
 use crate::audio::key;
 use crate::commands::library::AppState;
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::State;
@@ -28,7 +29,7 @@ pub struct KeyResultDTO {
     pub track_id: i64,
     /// Camelot notation (e.g., "8A", "11B")
     pub camelot: String,
-    /// Open Key notation (e.g., "8m", "11d") — used by Traktor
+    /// Open Key notation (e.g., "8m", "11d") -- used by Traktor
     pub open_key: String,
     /// Musical notation (e.g., "Am", "C")
     pub musical_key: String,
@@ -57,26 +58,26 @@ pub struct TrackAnalysisDTO {
 /// 3. Store the result in the track_analysis table
 /// 4. Return the BPM and confidence to the frontend
 #[tauri::command]
-pub fn analyze_bpm(state: State<AppState>, track_id: i64) -> Result<BpmResultDTO, String> {
+pub fn analyze_bpm(state: State<AppState>, track_id: i64) -> Result<BpmResultDTO, AppError> {
     // Get the track's file path from the database
     let file_path = {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         let track = db.get_track(track_id)
-            .map_err(|e| format!("Failed to get track {}: {}", track_id, e))?;
+            .map_err(|e| AppError::Database(format!("Failed to get track {}: {}", track_id, e)))?;
         track.file_path
     };
 
     // Run BPM detection on the audio file
     let path = Path::new(&file_path);
     if !path.exists() {
-        return Err(format!("Audio file not found: {}", file_path));
+        return Err(AppError::NotFound(format!("Audio file not found: {}", file_path)));
     }
 
     eprintln!("[analyze_bpm] Analyzing track {} at: {}", track_id, file_path);
 
     let bpm_result = bpm::detect_bpm(path)
-        .map_err(|e| format!("BPM detection failed for track {}: {}", track_id, e))?;
+        .map_err(|e| AppError::Internal(format!("BPM detection failed for track {}: {}", track_id, e)))?;
 
     eprintln!(
         "[analyze_bpm] Track {}: BPM={:.1}, confidence={:.2}",
@@ -85,10 +86,10 @@ pub fn analyze_bpm(state: State<AppState>, track_id: i64) -> Result<BpmResultDTO
 
     // Save the result to the database
     {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         db.save_bpm_analysis(track_id, bpm_result.bpm, bpm_result.confidence)
-            .map_err(|e| format!("Failed to save BPM analysis: {}", e))?;
+            .map_err(|e| AppError::Database(format!("Failed to save BPM analysis: {}", e)))?;
     }
 
     Ok(BpmResultDTO {
@@ -100,12 +101,12 @@ pub fn analyze_bpm(state: State<AppState>, track_id: i64) -> Result<BpmResultDTO
 
 /// Get the analysis data for a track (returns whatever analysis has been done so far)
 #[tauri::command]
-pub fn get_track_analysis(state: State<AppState>, track_id: i64) -> Result<Option<TrackAnalysisDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_track_analysis(state: State<AppState>, track_id: i64) -> Result<Option<TrackAnalysisDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let analysis = db.get_track_analysis(track_id)
-        .map_err(|e| format!("Failed to get analysis for track {}: {}", track_id, e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get analysis for track {}: {}", track_id, e)))?;
 
     Ok(analysis.map(|a| TrackAnalysisDTO {
         track_id: a.track_id,
@@ -129,26 +130,26 @@ pub fn get_track_analysis(state: State<AppState>, track_id: i64) -> Result<Optio
 /// 4. Store the result (Camelot notation) in the track_analysis table
 /// 5. Return the key and confidence to the frontend
 #[tauri::command]
-pub fn analyze_key(state: State<AppState>, track_id: i64) -> Result<KeyResultDTO, String> {
+pub fn analyze_key(state: State<AppState>, track_id: i64) -> Result<KeyResultDTO, AppError> {
     // Get the track's file path from the database
     let file_path = {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         let track = db.get_track(track_id)
-            .map_err(|e| format!("Failed to get track {}: {}", track_id, e))?;
+            .map_err(|e| AppError::Database(format!("Failed to get track {}: {}", track_id, e)))?;
         track.file_path
     };
 
     // Run key detection on the audio file
     let path = Path::new(&file_path);
     if !path.exists() {
-        return Err(format!("Audio file not found: {}", file_path));
+        return Err(AppError::NotFound(format!("Audio file not found: {}", file_path)));
     }
 
     eprintln!("[analyze_key] Analyzing track {} at: {}", track_id, file_path);
 
     let key_result = key::detect_key(path)
-        .map_err(|e| format!("Key detection failed for track {}: {}", track_id, e))?;
+        .map_err(|e| AppError::Internal(format!("Key detection failed for track {}: {}", track_id, e)))?;
 
     eprintln!(
         "[analyze_key] Track {}: Key={} ({}), confidence={:.2}",
@@ -157,10 +158,10 @@ pub fn analyze_key(state: State<AppState>, track_id: i64) -> Result<KeyResultDTO
 
     // Save the result to the database (stores Camelot notation as the key value)
     {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         db.save_key_analysis(track_id, &key_result.camelot, key_result.confidence)
-            .map_err(|e| format!("Failed to save key analysis: {}", e))?;
+            .map_err(|e| AppError::Database(format!("Failed to save key analysis: {}", e)))?;
     }
 
     Ok(KeyResultDTO {
@@ -176,13 +177,13 @@ pub fn analyze_key(state: State<AppState>, track_id: i64) -> Result<KeyResultDTO
 /// Returns the list of results.
 /// Releases the DB mutex during heavy DSP work so other commands aren't blocked.
 #[tauri::command]
-pub fn analyze_all_keys(state: State<AppState>) -> Result<Vec<KeyResultDTO>, String> {
+pub fn analyze_all_keys(state: State<AppState>) -> Result<Vec<KeyResultDTO>, AppError> {
     // Get all tracks that need key analysis (brief lock)
     let tracks_to_analyze: Vec<(i64, String)> = {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         let all_tracks = db.get_all_tracks()
-            .map_err(|e| format!("Failed to get tracks: {}", e))?;
+            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
         all_tracks
             .into_iter()
@@ -205,7 +206,7 @@ pub fn analyze_all_keys(state: State<AppState>) -> Result<Vec<KeyResultDTO>, Str
             continue;
         }
 
-        // Heavy DSP work — no lock held
+        // Heavy DSP work -- no lock held
         match key::detect_key(path) {
             Ok(key_result) => {
                 eprintln!(
@@ -215,10 +216,10 @@ pub fn analyze_all_keys(state: State<AppState>) -> Result<Vec<KeyResultDTO>, Str
 
                 // Brief lock to save result
                 {
-                    let db_lock = state.db.lock().unwrap();
-                    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+                    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+                    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
                     db.save_key_analysis(*track_id, &key_result.camelot, key_result.confidence)
-                        .map_err(|e| format!("Failed to save key analysis: {}", e))?;
+                        .map_err(|e| AppError::Database(format!("Failed to save key analysis: {}", e)))?;
                 }
 
                 results.push(KeyResultDTO {
@@ -244,13 +245,13 @@ pub fn analyze_all_keys(state: State<AppState>) -> Result<Vec<KeyResultDTO>, Str
 /// Returns the number of tracks analyzed.
 /// Releases the DB mutex during heavy DSP work so other commands aren't blocked.
 #[tauri::command]
-pub fn analyze_all_bpm(state: State<AppState>) -> Result<Vec<BpmResultDTO>, String> {
+pub fn analyze_all_bpm(state: State<AppState>) -> Result<Vec<BpmResultDTO>, AppError> {
     // Get all tracks that need BPM analysis (brief lock)
     let tracks_to_analyze: Vec<(i64, String)> = {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         let all_tracks = db.get_all_tracks()
-            .map_err(|e| format!("Failed to get tracks: {}", e))?;
+            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
         all_tracks
             .into_iter()
@@ -273,7 +274,7 @@ pub fn analyze_all_bpm(state: State<AppState>) -> Result<Vec<BpmResultDTO>, Stri
             continue;
         }
 
-        // Heavy DSP work — no lock held
+        // Heavy DSP work -- no lock held
         match bpm::detect_bpm(path) {
             Ok(bpm_result) => {
                 eprintln!(
@@ -283,10 +284,10 @@ pub fn analyze_all_bpm(state: State<AppState>) -> Result<Vec<BpmResultDTO>, Stri
 
                 // Brief lock to save result
                 {
-                    let db_lock = state.db.lock().unwrap();
-                    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+                    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+                    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
                     db.save_bpm_analysis(*track_id, bpm_result.bpm, bpm_result.confidence)
-                        .map_err(|e| format!("Failed to save BPM analysis: {}", e))?;
+                        .map_err(|e| AppError::Database(format!("Failed to save BPM analysis: {}", e)))?;
                 }
 
                 results.push(BpmResultDTO {
@@ -317,33 +318,33 @@ pub struct WaveformDTO {
 /// Generates both overview (2500 points) and detail (10000 points) waveforms.
 /// This is idempotent - if waveform already exists, it will be regenerated.
 #[tauri::command]
-pub fn analyze_waveform(state: State<AppState>, track_id: i64) -> Result<(), String> {
+pub fn analyze_waveform(state: State<AppState>, track_id: i64) -> Result<(), AppError> {
     use crate::audio::waveform::generate_waveform;
-    
+
     // Get the track's file path from the database
     let file_path = {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         let track = db.get_track(track_id)
-            .map_err(|e| format!("Failed to get track {}: {}", track_id, e))?;
+            .map_err(|e| AppError::Database(format!("Failed to get track {}: {}", track_id, e)))?;
         track.file_path
     };
 
     let path = Path::new(&file_path);
     if !path.exists() {
-        return Err(format!("Audio file not found: {}", file_path));
+        return Err(AppError::NotFound(format!("Audio file not found: {}", file_path)));
     }
 
     eprintln!("[analyze_waveform] Analyzing track {} at: {}", track_id, file_path);
 
     // Generate overview waveform (2500 points - full track view)
     let overview = generate_waveform(path, 2500)
-        .map_err(|e| format!("Failed to generate overview waveform: {}", e))?;
+        .map_err(|e| AppError::Internal(format!("Failed to generate overview waveform: {}", e)))?;
     let overview_blob = overview.to_blob();
 
     // Generate detail waveform (10000 points - for zoom)
     let detail = generate_waveform(path, 10000)
-        .map_err(|e| format!("Failed to generate detail waveform: {}", e))?;
+        .map_err(|e| AppError::Internal(format!("Failed to generate detail waveform: {}", e)))?;
     let detail_blob = detail.to_blob();
 
     eprintln!(
@@ -355,10 +356,10 @@ pub fn analyze_waveform(state: State<AppState>, track_id: i64) -> Result<(), Str
 
     // Save to database
     {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
         db.save_waveform(track_id, &overview_blob, &detail_blob)
-            .map_err(|e| format!("Failed to save waveform: {}", e))?;
+            .map_err(|e| AppError::Database(format!("Failed to save waveform: {}", e)))?;
     }
 
     Ok(())
@@ -368,10 +369,10 @@ pub fn analyze_waveform(state: State<AppState>, track_id: i64) -> Result<(), Str
 /// Level: "overview" or "detail"
 /// Returns binary BLOB that frontend will deserialize.
 #[tauri::command]
-pub fn get_waveform(state: State<AppState>, track_id: i64, level: String) -> Result<Option<Vec<u8>>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_waveform(state: State<AppState>, track_id: i64, level: String) -> Result<Option<Vec<u8>>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.get_waveform(track_id, &level)
-        .map_err(|e| format!("Failed to get waveform: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to get waveform: {}", e)))
 }

@@ -1,6 +1,7 @@
 // Tauri commands for library management
 
 use crate::db::{Database, Track};
+use crate::error::AppError;
 use crate::scanner::{ScanResult, Scanner};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -154,22 +155,22 @@ pub fn init_database(
     state: State<AppState>,
     app_handle: tauri::AppHandle,
     db_path: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let path = Path::new(&db_path);
 
     // Create parent directory if it doesn't exist (e.g., ~/Library/Application Support/com.nemanjamarjanovic.recodeck/)
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create database directory: {}", e))?;
+                .map_err(|e| AppError::Internal(format!("Failed to create database directory: {}", e)))?;
         }
     }
 
     let db = Database::new(path)
-        .map_err(|e| format!("Failed to open database: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to open database: {}", e)))?;
 
     db.run_migrations()
-        .map_err(|e| format!("Failed to run migrations: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to run migrations: {}", e)))?;
 
     // PERFORMANCE: Skip expensive maintenance operations on startup
     // Users can run these manually via settings if needed:
@@ -177,6 +178,7 @@ pub fn init_database(
     // - normalize_all_file_paths() - loads all tracks into memory
     // Both are now exposed as manual commands: cleanup_duplicate_tracks, normalize_file_paths
 
+    // Panic on init is acceptable -- app cannot start without DB
     *state.db_path.lock().unwrap() = Some(db_path);
     *state.db.lock().unwrap() = Some(db);
 
@@ -191,13 +193,13 @@ pub fn init_database(
 /// Get all tracks from the library (includes analysis data like BPM)
 /// WARNING: For large libraries (>1000 tracks), use get_tracks_paginated instead
 #[tauri::command]
-pub fn get_all_tracks(state: State<AppState>) -> Result<Vec<TrackDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_all_tracks(state: State<AppState>) -> Result<Vec<TrackDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     // Use LEFT JOIN query to include analysis data (BPM, key, etc.)
     let rows = db.get_all_tracks_with_analysis()
-        .map_err(|e| format!("Failed to get tracks: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
     Ok(rows.into_iter().map(|(track, bpm, bpm_conf, key, key_conf)| {
         let mut dto = TrackDTO::from(track);
@@ -212,12 +214,12 @@ pub fn get_all_tracks(state: State<AppState>) -> Result<Vec<TrackDTO>, String> {
 /// Get paginated tracks from the library (includes analysis data like BPM)
 /// PERFORMANCE: Use this for initial load and large libraries
 #[tauri::command]
-pub fn get_tracks_paginated(state: State<AppState>, limit: i64, offset: i64) -> Result<Vec<TrackDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_tracks_paginated(state: State<AppState>, limit: i64, offset: i64) -> Result<Vec<TrackDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let rows = db.get_tracks_with_analysis_paginated(limit, offset)
-        .map_err(|e| format!("Failed to get tracks: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
     Ok(rows.into_iter().map(|(track, bpm, bpm_conf, key, key_conf)| {
         let mut dto = TrackDTO::from(track);
@@ -231,55 +233,55 @@ pub fn get_tracks_paginated(state: State<AppState>, limit: i64, offset: i64) -> 
 
 /// Get a single track by ID
 #[tauri::command]
-pub fn get_track(state: State<AppState>, id: i64) -> Result<TrackDTO, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    
+pub fn get_track(state: State<AppState>, id: i64) -> Result<TrackDTO, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
     let track = db.get_track(id)
-        .map_err(|e| format!("Failed to get track: {}", e))?;
-    
+        .map_err(|e| AppError::Database(format!("Failed to get track: {}", e)))?;
+
     Ok(TrackDTO::from(track))
 }
 
 /// Update a track
 #[tauri::command]
-pub fn update_track(state: State<AppState>, track: TrackDTO) -> Result<(), String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    
+pub fn update_track(state: State<AppState>, track: TrackDTO) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
     db.update_track(&Track::from(track))
-        .map_err(|e| format!("Failed to update track: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to update track: {}", e)))
 }
 
 /// Delete a track
 #[tauri::command]
-pub fn delete_track(state: State<AppState>, id: i64) -> Result<(), String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    
+pub fn delete_track(state: State<AppState>, id: i64) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
     db.delete_track(id)
-        .map_err(|e| format!("Failed to delete track: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to delete track: {}", e)))
 }
 
 /// Count total tracks
 #[tauri::command]
-pub fn count_tracks(state: State<AppState>) -> Result<i64, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    
+pub fn count_tracks(state: State<AppState>) -> Result<i64, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
     db.count_tracks()
-        .map_err(|e| format!("Failed to count tracks: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to count tracks: {}", e)))
 }
 
 /// Scan a directory and import tracks.
 /// Releases the DB mutex between file imports so other commands aren't blocked.
 #[tauri::command]
-pub fn scan_directory(state: State<AppState>, path: String) -> Result<ScanResultDTO, String> {
+pub fn scan_directory(state: State<AppState>, path: String) -> Result<ScanResultDTO, AppError> {
     // 1. Load known paths (brief lock)
     let known_paths = {
-        let db_lock = state.db.lock().unwrap();
-        let db = db_lock.as_ref().ok_or("Database not initialized")?;
-        db.get_all_file_paths().map_err(|e| format!("Failed to get file paths: {}", e))?
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+        db.get_all_file_paths().map_err(|e| AppError::Database(format!("Failed to get file paths: {}", e)))?
     }; // lock released
 
     // 2. Scan filesystem for audio files (no lock needed)
@@ -312,8 +314,8 @@ pub fn scan_directory(state: State<AppState>, path: String) -> Result<ScanResult
         // 4. Insert into DB (brief lock per file)
         let (track, tag_bpm, tag_genre) = metadata;
         {
-            let db_lock = state.db.lock().unwrap();
-            let db = db_lock.as_ref().ok_or("Database not initialized")?;
+            let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+            let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
             // Check for duplicate hash
             if track.file_hash != "unknown" {
@@ -358,19 +360,19 @@ pub fn scan_directory(state: State<AppState>, path: String) -> Result<ScanResult
 
 /// Search tracks by query string across all text fields
 #[tauri::command]
-pub fn search_tracks(state: State<AppState>, query: String) -> Result<Vec<TrackDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
-    
+pub fn search_tracks(state: State<AppState>, query: String) -> Result<Vec<TrackDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
     let tracks = db.search_tracks(&query)
-        .map_err(|e| format!("Failed to search tracks: {}", e))?;
-    
+        .map_err(|e| AppError::Database(format!("Failed to search tracks: {}", e)))?;
+
     Ok(tracks.into_iter().map(TrackDTO::from).collect())
 }
 
 /// Get list of audio files in a directory (without importing)
 #[tauri::command]
-pub fn list_audio_files(path: String) -> Result<Vec<String>, String> {
+pub fn list_audio_files(path: String) -> Result<Vec<String>, AppError> {
     let files = Scanner::scan_directory(Path::new(&path));
     Ok(files
         .into_iter()
@@ -389,13 +391,13 @@ pub struct FolderInfoDTO {
 
 /// List immediate subdirectories of a path, with track counts from DB
 #[tauri::command]
-pub fn list_subdirectories(state: State<AppState>, path: String) -> Result<Vec<FolderInfoDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn list_subdirectories(state: State<AppState>, path: String) -> Result<Vec<FolderInfoDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let dir_path = Path::new(&path);
     if !dir_path.is_dir() {
-        return Err(format!("Not a directory: {}", path));
+        return Err(AppError::Validation(format!("Not a directory: {}", path)));
     }
 
     let mut folders = Vec::new();
@@ -446,13 +448,13 @@ pub fn list_subdirectories(state: State<AppState>, path: String) -> Result<Vec<F
 
 /// Get tracks in a specific folder (by file_path prefix), includes analysis data
 #[tauri::command]
-pub fn get_tracks_in_folder(state: State<AppState>, path: String) -> Result<Vec<TrackDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_tracks_in_folder(state: State<AppState>, path: String) -> Result<Vec<TrackDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let rows = db
         .get_tracks_in_folder_with_analysis(&path)
-        .map_err(|e| format!("Failed to get tracks in folder: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get tracks in folder: {}", e)))?;
 
     Ok(rows
         .into_iter()
@@ -469,23 +471,23 @@ pub fn get_tracks_in_folder(state: State<AppState>, path: String) -> Result<Vec<
 
 /// Count tracks in a specific folder (by file_path prefix)
 #[tauri::command]
-pub fn count_tracks_in_folder(state: State<AppState>, path: String) -> Result<i64, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn count_tracks_in_folder(state: State<AppState>, path: String) -> Result<i64, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.count_tracks_in_folder(&path)
-        .map_err(|e| format!("Failed to count tracks: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to count tracks: {}", e)))
 }
 
 /// Get tracks directly in a specific folder (non-recursive, shallow), includes analysis data
 #[tauri::command]
-pub fn get_tracks_in_folder_shallow(state: State<AppState>, path: String) -> Result<Vec<TrackDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_tracks_in_folder_shallow(state: State<AppState>, path: String) -> Result<Vec<TrackDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let rows = db
         .get_tracks_in_folder_shallow_with_analysis(&path)
-        .map_err(|e| format!("Failed to get tracks in folder (shallow): {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get tracks in folder (shallow): {}", e)))?;
 
     Ok(rows
         .into_iter()
@@ -502,12 +504,12 @@ pub fn get_tracks_in_folder_shallow(state: State<AppState>, path: String) -> Res
 
 /// Count tracks directly in a specific folder (non-recursive, shallow)
 #[tauri::command]
-pub fn count_tracks_in_folder_shallow(state: State<AppState>, path: String) -> Result<i64, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn count_tracks_in_folder_shallow(state: State<AppState>, path: String) -> Result<i64, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.count_tracks_in_folder_shallow(&path)
-        .map_err(|e| format!("Failed to count tracks (shallow): {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to count tracks (shallow): {}", e)))
 }
 
 /// Clean up tracks that are not in any of the configured library folders.
@@ -515,13 +517,13 @@ pub fn count_tracks_in_folder_shallow(state: State<AppState>, path: String) -> R
 /// If no folders are configured, removes ALL tracks.
 /// Returns the number of deleted tracks.
 #[tauri::command]
-pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     // Get library folders from settings
     let folders_json = db.get_setting("library_folders")
-        .map_err(|e| format!("Failed to get library folders: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get library folders: {}", e)))?;
 
     let library_folders: Vec<String> = match folders_json {
         Some(json) => serde_json::from_str(&json).unwrap_or_default(),
@@ -531,31 +533,31 @@ pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, String> {
     // If no folders configured, remove ALL tracks (since none are valid)
     // Otherwise, remove tracks not in configured folders
     db.remove_tracks_not_in_folders(&library_folders)
-        .map_err(|e| format!("Failed to cleanup tracks: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to cleanup tracks: {}", e)))
 }
 
 /// Remove duplicate tracks that share the same file content (same hash) or same filename.
 /// Keeps the track with the lowest ID (earliest import) for each duplicate group.
 /// Returns the number of deleted duplicates.
 #[tauri::command]
-pub fn cleanup_duplicate_tracks(state: State<AppState>) -> Result<usize, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn cleanup_duplicate_tracks(state: State<AppState>) -> Result<usize, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.remove_duplicate_tracks()
-        .map_err(|e| format!("Failed to cleanup duplicates: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to cleanup duplicates: {}", e)))
 }
 
 /// Normalize all file paths in the database (remove double slashes, trailing slashes).
 /// Fixes paths that were stored incorrectly during scanning.
 /// Returns the number of tracks updated.
 #[tauri::command]
-pub fn normalize_file_paths(state: State<AppState>) -> Result<usize, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn normalize_file_paths(state: State<AppState>) -> Result<usize, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.normalize_all_file_paths()
-        .map_err(|e| format!("Failed to normalize file paths: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to normalize file paths: {}", e)))
 }
 
 /// Debug info about tracks in database
@@ -569,12 +571,12 @@ pub struct DebugTrackInfo {
 
 /// Get debug info about all tracks (for troubleshooting duplicates)
 #[tauri::command]
-pub fn get_debug_tracks(state: State<AppState>) -> Result<Vec<DebugTrackInfo>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_debug_tracks(state: State<AppState>) -> Result<Vec<DebugTrackInfo>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let tracks = db.get_all_tracks()
-        .map_err(|e| format!("Failed to get tracks: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
     Ok(tracks.into_iter().filter_map(|t| {
         t.id.map(|id| {

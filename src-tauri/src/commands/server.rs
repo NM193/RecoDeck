@@ -2,15 +2,16 @@
 
 use crate::commands::library::AppState;
 use crate::db::Database;
+use crate::error::AppError;
 use crate::server::{self, RunningServer};
 use serde::Serialize;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
-/// Get LAN IP suitable for QR code — avoids 127.0.0.1 so phone can reach desktop.
+/// Get LAN IP suitable for QR code -- avoids 127.0.0.1 so phone can reach desktop.
 fn get_lan_ip_for_qr() -> String {
     // Try local_ip() first
     if let Ok(ip) = local_ip_address::local_ip() {
@@ -28,8 +29,8 @@ fn get_lan_ip_for_qr() -> String {
             }
         }
     }
-    // Last resort — 127.0.0.1 won't work for phone scanning, but at least URL/token copy works
-    eprintln!("[companion] Could not detect LAN IP, using 127.0.0.1 — QR scan from phone will not work");
+    // Last resort -- 127.0.0.1 won't work for phone scanning, but at least URL/token copy works
+    eprintln!("[companion] Could not detect LAN IP, using 127.0.0.1 -- QR scan from phone will not work");
     "127.0.0.1".to_string()
 }
 
@@ -62,7 +63,7 @@ pub struct CompanionServerInfo {
 /// In dev: <project_root>/mobile/dist
 /// In production: uses Tauri PathResolver (Resource) when app_handle given
 fn find_mobile_dist(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
-    // 1. Production: Tauri resource dir (bundled app) — most reliable
+    // 1. Production: Tauri resource dir (bundled app) -- most reliable
     if let Some(handle) = app {
         if let Ok(path) = handle.path().resolve("mobile-dist", BaseDirectory::Resource) {
             if path.join("index.html").exists() {
@@ -98,7 +99,7 @@ fn find_mobile_dist(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
         }
     }
 
-    eprintln!("[companion] No mobile PWA dist found — API-only mode");
+    eprintln!("[companion] No mobile PWA dist found -- API-only mode");
     None
 }
 
@@ -108,17 +109,17 @@ fn start_companion_internal(
     app_state: &AppState,
     companion_state: &CompanionState,
     port: Option<u16>,
-) -> Result<(String, u16, Arc<Mutex<Option<Database>>>), String> {
+) -> Result<(String, u16, Arc<Mutex<Option<Database>>>), AppError> {
     // Load library folders from settings
     {
-        let db_lock = app_state.db.lock().map_err(|e| e.to_string())?;
+        let db_lock = app_state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         if let Some(db) = db_lock.as_ref() {
             if let Ok(Some(json_str)) = db.get_setting("library_folders") {
                 if let Ok(folders) = serde_json::from_str::<Vec<String>>(&json_str) {
                     let mut lf = companion_state
                         .library_folders
                         .lock()
-                        .map_err(|e| e.to_string())?;
+                        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
                     *lf = folders;
                 }
             }
@@ -127,7 +128,7 @@ fn start_companion_internal(
 
     // Determine token: reuse persisted one or generate new
     let token = {
-        let db_lock = app_state.db.lock().map_err(|e| e.to_string())?;
+        let db_lock = app_state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         if let Some(db) = db_lock.as_ref() {
             if let Ok(Some(saved_token)) = db.get_setting("companion_token") {
                 if !saved_token.is_empty() {
@@ -157,14 +158,14 @@ fn start_companion_internal(
     // Open a separate database connection for the companion server.
     let db_arc = Arc::new(Mutex::new(None));
     {
-        let db_path_lock = app_state.db_path.lock().map_err(|e| e.to_string())?;
+        let db_path_lock = app_state.db_path.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         let db_path = db_path_lock
             .as_ref()
-            .ok_or("Database not initialized (no path)")?;
+            .ok_or_else(|| AppError::Database("Database not initialized (no path)".to_string()))?;
 
         let new_db = Database::new(std::path::Path::new(db_path))
-            .map_err(|e| format!("Failed to open database for companion: {}", e))?;
-        let mut db_arc_lock = db_arc.lock().map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::Database(format!("Failed to open database for companion: {}", e)))?;
+        let mut db_arc_lock = db_arc.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         *db_arc_lock = Some(new_db);
     }
 
@@ -188,15 +189,15 @@ pub async fn start_companion_server(
     app_state: State<'_, AppState>,
     companion_state: State<'_, CompanionState>,
     port: Option<u16>,
-) -> Result<CompanionServerInfo, String> {
+) -> Result<CompanionServerInfo, AppError> {
     // Check if already running
     {
         let lock = companion_state
             .running_server
             .lock()
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         if lock.is_some() {
-            return Err("Companion server is already running".to_string());
+            return Err(AppError::Validation("Companion server is already running".to_string()));
         }
     }
 
@@ -208,7 +209,7 @@ pub async fn start_companion_server(
     let mobile_dist = find_mobile_dist(Some(&app));
     let running = server::start_server(port, token, db_arc, library_folders, 3, mobile_dist)
         .await
-        .map_err(|e| format!("Failed to start companion server: {}", e))?;
+        .map_err(|e| AppError::Internal(format!("Failed to start companion server: {}", e)))?;
 
     // Persist token, port, and autostart setting
     persist_companion_settings(&app_state, &running.token, running.addr.port());
@@ -227,8 +228,11 @@ pub async fn start_companion_server(
     let mut lock = companion_state
         .running_server
         .lock()
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     *lock = Some(running);
+
+    // Notify frontend so UI updates (e.g. Settings panel, auto-start)
+    let _ = app.emit("companion-started", &info);
 
     Ok(info)
 }
@@ -237,11 +241,11 @@ pub async fn start_companion_server(
 #[tauri::command]
 pub async fn stop_companion_server(
     companion_state: State<'_, CompanionState>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let mut lock = companion_state
         .running_server
         .lock()
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
 
     match lock.take() {
         Some(server) => {
@@ -249,7 +253,7 @@ pub async fn stop_companion_server(
             eprintln!("[companion] Server shutdown initiated");
             Ok(())
         }
-        None => Err("Companion server is not running".to_string()),
+        None => Err(AppError::Validation("Companion server is not running".to_string())),
     }
 }
 
@@ -257,11 +261,11 @@ pub async fn stop_companion_server(
 #[tauri::command]
 pub fn get_companion_status(
     companion_state: State<'_, CompanionState>,
-) -> Result<CompanionServerInfo, String> {
+) -> Result<CompanionServerInfo, AppError> {
     let lock = companion_state
         .running_server
         .lock()
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
 
     match lock.as_ref() {
         Some(server) => {
@@ -291,13 +295,13 @@ pub async fn regenerate_companion_token(
     app: tauri::AppHandle,
     app_state: State<'_, AppState>,
     companion_state: State<'_, CompanionState>,
-) -> Result<CompanionServerInfo, String> {
+) -> Result<CompanionServerInfo, AppError> {
     // Stop existing server
     {
         let mut lock = companion_state
             .running_server
             .lock()
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         if let Some(server) = lock.take() {
             let _ = server.shutdown_tx.send(());
         }
@@ -305,7 +309,7 @@ pub async fn regenerate_companion_token(
 
     // Clear persisted token so a fresh one is generated
     {
-        let db_lock = app_state.db.lock().map_err(|e| e.to_string())?;
+        let db_lock = app_state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
         if let Some(db) = db_lock.as_ref() {
             let _ = db.set_setting("companion_token", "");
         }
@@ -321,10 +325,13 @@ pub async fn regenerate_companion_token(
 /// Auto-start the companion server if `companion_autostart` is enabled.
 /// Called from `init_database` after the DB is ready.
 pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
+    // Brief delay so app is fully initialized before starting server
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
     let app_state = app_handle.state::<AppState>();
     let companion_state = app_handle.state::<CompanionState>();
 
-    // Check if autostart is enabled
+    // Check if autostart is enabled (default: true for new users)
     let should_start = {
         let db_lock = app_state.db.lock().ok();
         if let Some(guard) = db_lock.as_ref() {
@@ -333,7 +340,7 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
                     .ok()
                     .flatten()
                     .map(|v| v == "true")
-                    .unwrap_or(false)
+                    .unwrap_or(true) // Default to true so server auto-starts for new users
             } else {
                 false
             }
@@ -373,13 +380,15 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
 
     match server::start_server(port, token, db_arc, library_folders, 3, mobile_dist).await {
         Ok(running) => {
-            persist_companion_settings(&app_state, &running.token, running.addr.port());
+            let port = running.addr.port();
+            let token = running.token.clone();
+            persist_companion_settings(&app_state, &token, port);
 
             let lan_ip = get_lan_ip_for_qr();
             eprintln!(
                 "[companion] Auto-started at http://{}:{}",
                 lan_ip,
-                running.addr.port()
+                port
             );
 
             if let Ok(mut lock) = companion_state.running_server.lock() {
@@ -387,6 +396,16 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
             } else {
                 eprintln!("[companion] Failed to acquire lock for auto-start, server may not persist");
             }
+
+            // Notify frontend so UI updates when auto-start completes
+            let info = CompanionServerInfo {
+                running: true,
+                url: Some(format!("http://{}:{}", lan_ip, port)),
+                token: Some(token),
+                port: Some(port),
+                active_streams: 0,
+            };
+            let _ = app_handle.emit("companion-started", &info);
         }
         Err(e) => {
             eprintln!("[companion] Auto-start failed: {}", e);

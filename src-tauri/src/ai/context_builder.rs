@@ -4,6 +4,7 @@
 // for Claude API with intelligent filtering and token optimization
 
 use crate::db::{Track, TrackAnalysis};
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -52,7 +53,7 @@ impl TrackContextBuilder {
     /// Build full context from all tracks and their analysis
     pub fn build_full_context(
         tracks: &[(Track, Option<TrackAnalysis>)]
-    ) -> Result<String, String> {
+    ) -> Result<String, AppError> {
         let track_contexts: Vec<TrackContext> = tracks
             .iter()
             .map(|(track, analysis)| Self::track_to_context(track, analysis.as_ref()))
@@ -66,7 +67,7 @@ impl TrackContextBuilder {
         };
 
         serde_json::to_string_pretty(&context)
-            .map_err(|e| format!("Failed to serialize context: {}", e))
+            .map_err(|e| AppError::Internal(format!("Failed to serialize context: {}", e)))
     }
 
     /// Build smart context with filtering based on prompt keywords
@@ -74,7 +75,7 @@ impl TrackContextBuilder {
     pub fn build_smart_context(
         tracks: &[(Track, Option<TrackAnalysis>)],
         prompt: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, AppError> {
         let prompt_lower = prompt.to_lowercase();
 
         // Extract potential filters from prompt

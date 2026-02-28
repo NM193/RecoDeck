@@ -1,6 +1,7 @@
 // Tauri commands for playlist management
 
 use crate::commands::library::{AppState, TrackDTO};
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -22,17 +23,17 @@ pub fn create_playlist(
     state: State<AppState>,
     name: String,
     parent_id: Option<i64>,
-) -> Result<PlaylistDTO, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+) -> Result<PlaylistDTO, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let id = db
         .create_playlist(&name, "manual", parent_id)
-        .map_err(|e| format!("Failed to create playlist: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to create playlist: {}", e)))?;
 
     let playlist = db
         .get_playlist(id)
-        .map_err(|e| format!("Failed to get playlist: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get playlist: {}", e)))?;
 
     Ok(PlaylistDTO {
         id: playlist.id,
@@ -51,17 +52,17 @@ pub fn create_playlist_folder(
     state: State<AppState>,
     name: String,
     parent_id: Option<i64>,
-) -> Result<PlaylistDTO, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+) -> Result<PlaylistDTO, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let id = db
         .create_playlist(&name, "folder", parent_id)
-        .map_err(|e| format!("Failed to create folder: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to create folder: {}", e)))?;
 
     let playlist = db
         .get_playlist(id)
-        .map_err(|e| format!("Failed to get folder: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get folder: {}", e)))?;
 
     Ok(PlaylistDTO {
         id: playlist.id,
@@ -76,13 +77,13 @@ pub fn create_playlist_folder(
 
 /// Get all playlists and folders (with track counts)
 #[tauri::command]
-pub fn get_all_playlists(state: State<AppState>) -> Result<Vec<PlaylistDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_all_playlists(state: State<AppState>) -> Result<Vec<PlaylistDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let playlists = db
         .get_all_playlists()
-        .map_err(|e| format!("Failed to get playlists: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get playlists: {}", e)))?;
 
     let mut dtos = Vec::new();
     for p in playlists {
@@ -108,33 +109,33 @@ pub fn get_all_playlists(state: State<AppState>) -> Result<Vec<PlaylistDTO>, Str
 
 /// Rename a playlist or folder
 #[tauri::command]
-pub fn rename_playlist(state: State<AppState>, id: i64, name: String) -> Result<(), String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn rename_playlist(state: State<AppState>, id: i64, name: String) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.rename_playlist(id, &name)
-        .map_err(|e| format!("Failed to rename: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to rename: {}", e)))
 }
 
 /// Delete a playlist or folder (and its children/track associations)
 #[tauri::command]
-pub fn delete_playlist(state: State<AppState>, id: i64) -> Result<(), String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn delete_playlist(state: State<AppState>, id: i64) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.delete_playlist(id)
-        .map_err(|e| format!("Failed to delete: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to delete: {}", e)))
 }
 
 /// Get tracks in a playlist (with analysis data)
 #[tauri::command]
-pub fn get_playlist_tracks(state: State<AppState>, playlist_id: i64) -> Result<Vec<TrackDTO>, String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+pub fn get_playlist_tracks(state: State<AppState>, playlist_id: i64) -> Result<Vec<TrackDTO>, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     let rows = db
         .get_playlist_tracks(playlist_id)
-        .map_err(|e| format!("Failed to get playlist tracks: {}", e))?;
+        .map_err(|e| AppError::Database(format!("Failed to get playlist tracks: {}", e)))?;
 
     Ok(rows
         .into_iter()
@@ -155,12 +156,12 @@ pub fn add_track_to_playlist(
     state: State<AppState>,
     playlist_id: i64,
     track_id: i64,
-) -> Result<(), String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.add_track_to_playlist(playlist_id, track_id)
-        .map_err(|e| format!("Failed to add track: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to add track: {}", e)))
 }
 
 /// Remove a track from a playlist
@@ -169,10 +170,10 @@ pub fn remove_track_from_playlist(
     state: State<AppState>,
     playlist_id: i64,
     track_id: i64,
-) -> Result<(), String> {
-    let db_lock = state.db.lock().unwrap();
-    let db = db_lock.as_ref().ok_or("Database not initialized")?;
+) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.remove_track_from_playlist(playlist_id, track_id)
-        .map_err(|e| format!("Failed to remove track: {}", e))
+        .map_err(|e| AppError::Database(format!("Failed to remove track: {}", e)))
 }

@@ -3,6 +3,7 @@ pub mod ai;
 pub mod audio;
 pub mod commands;
 pub mod db;
+pub mod error;
 pub mod scanner;
 pub mod server;
 
