@@ -44,12 +44,12 @@ Plans:
   3. User can browse and search their full music library on the mobile PWA
   4. User can tap a track and hear it streaming with play/pause/seek controls
   5. Unauthorized requests (no token, expired ticket) are rejected — only the user's phone can stream
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Server lifecycle, QR code UI, bearer token auth
-- [ ] 02-02: Mobile PWA — library browse, search, and playback UI
-- [ ] 02-03: Secure audio streaming with single-use tickets
+- [x] 02-01-PLAN.md — Commit existing work, fix active_streams status, verify server lifecycle + QR + auth (MOBL-01, MOBL-02, MOBL-06)
+- [ ] 02-02-PLAN.md — Fix search BPM gap, audit mobile browse/search/playback UI (MOBL-03, MOBL-04, MOBL-05)
+- [ ] 02-03-PLAN.md — Verify streaming security, document MOBL-07 ticket design decision (MOBL-04, MOBL-07)
 
 ### Phase 3: AI Playlists
 **Goal**: Users can generate a smart playlist from any track with AI that understands DJ-compatible BPM, key, and energy flow
@@ -91,6 +91,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Codebase Quality | 2/2 | Complete   | 2026-02-28 |
-| 2. Mobile Companion | 0/3 | Not started | - |
+| 2. Mobile Companion | 1/3 | In Progress | - |
 | 3. AI Playlists | 0/2 | Not started | - |
 | 4. AI Discovery and Mix Prep | 0/2 | Not started | - |

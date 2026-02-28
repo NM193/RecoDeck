@@ -30,12 +30,12 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Mobile Companion
 
-- [ ] **MOBL-01**: User can start/stop the companion HTTP server from desktop app
-- [ ] **MOBL-02**: User can connect to companion server from mobile browser via QR code
+- [x] **MOBL-01**: User can start/stop the companion HTTP server from desktop app
+- [x] **MOBL-02**: User can connect to companion server from mobile browser via QR code
 - [ ] **MOBL-03**: User can browse full music library on mobile device
 - [ ] **MOBL-04**: User can stream tracks from desktop to mobile with playback controls
 - [ ] **MOBL-05**: User can search tracks on mobile
-- [ ] **MOBL-06**: Server authenticates mobile connections with bearer token
+- [x] **MOBL-06**: Server authenticates mobile connections with bearer token
 - [ ] **MOBL-07**: Audio streaming uses secure single-use tickets (30s expiry)
 
 ### Codebase Quality
@@ -86,12 +86,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUAL-02 | Phase 1 | Complete |
 | QUAL-03 | Phase 1 | Complete |
 | QUAL-04 | Phase 1 | Complete |
-| MOBL-01 | Phase 2 | Pending |
-| MOBL-02 | Phase 2 | Pending |
+| MOBL-01 | Phase 2 | Complete |
+| MOBL-02 | Phase 2 | Complete |
 | MOBL-03 | Phase 2 | Pending |
 | MOBL-04 | Phase 2 | Pending |
 | MOBL-05 | Phase 2 | Pending |
-| MOBL-06 | Phase 2 | Pending |
+| MOBL-06 | Phase 2 | Complete |
 | MOBL-07 | Phase 2 | Pending |
 | AIPL-01 | Phase 3 | Pending |
 | AIPL-02 | Phase 3 | Pending |
