@@ -105,6 +105,107 @@ impl TrackContextBuilder {
         Self::build_full_context(&limited_tracks)
     }
 
+    /// Build context filtered by proximity to a seed track's BPM and key.
+    /// Used for structured seed-track playlist generation.
+    ///
+    /// Filtering strategy by energy direction:
+    /// - build_up: include tracks from seed_bpm to seed_bpm + 25
+    /// - wind_down: include tracks from seed_bpm - 25 to seed_bpm
+    /// - maintain: include tracks within ±15 BPM of seed
+    ///
+    /// Key filtering: include tracks within 2 Camelot steps of seed key.
+    /// Always includes the seed track itself.
+    /// Falls back to full context if seed has no BPM/key data.
+    pub fn build_seed_context(
+        tracks: &[(Track, Option<TrackAnalysis>)],
+        seed_bpm: Option<f64>,
+        seed_key: Option<&str>,
+        energy_direction: &str,
+    ) -> Result<String, AppError> {
+        // If no BPM or key info, fall back to full context (limited to 5000)
+        if seed_bpm.is_none() && seed_key.is_none() {
+            let limited: Vec<(Track, Option<TrackAnalysis>)> = tracks
+                .iter()
+                .take(5000)
+                .cloned()
+                .collect();
+            return Self::build_full_context(&limited);
+        }
+
+        let filtered: Vec<(Track, Option<TrackAnalysis>)> = tracks
+            .iter()
+            .filter(|(_track, analysis)| {
+                // Always include tracks even if they lack analysis (Claude can still use metadata)
+                let bpm_ok = match (seed_bpm, analysis.as_ref().and_then(|a| a.bpm)) {
+                    (Some(seed), Some(track_bpm)) => {
+                        match energy_direction {
+                            "build_up" => track_bpm >= seed - 5.0 && track_bpm <= seed + 25.0,
+                            "wind_down" => track_bpm >= seed - 25.0 && track_bpm <= seed + 5.0,
+                            _ => (track_bpm - seed).abs() <= 15.0, // maintain
+                        }
+                    }
+                    (None, _) => true, // No seed BPM, include all
+                    (Some(_), None) => true, // Track not analyzed, include anyway
+                };
+
+                let key_ok = match (seed_key, analysis.as_ref().and_then(|a| a.musical_key.as_deref())) {
+                    (Some(seed_k), Some(track_k)) => {
+                        Self::is_camelot_compatible(seed_k, track_k, 2)
+                    }
+                    _ => true, // No key info, include
+                };
+
+                bpm_ok || key_ok // Include if EITHER matches (not both -- too restrictive)
+            })
+            .take(5000)
+            .cloned()
+            .collect();
+
+        // If filtering was too aggressive, fall back to broader set
+        if filtered.len() < 20 {
+            let broader: Vec<(Track, Option<TrackAnalysis>)> = tracks
+                .iter()
+                .take(5000)
+                .cloned()
+                .collect();
+            return Self::build_full_context(&broader);
+        }
+
+        Self::build_full_context(&filtered)
+    }
+
+    /// Check if two Camelot keys are within `max_steps` of each other.
+    /// Camelot keys are "NL" format: number 1-12, letter A or B.
+    /// Compatible = same letter ± max_steps, or same number different letter.
+    fn is_camelot_compatible(key_a: &str, key_b: &str, max_steps: i32) -> bool {
+        let parse = |k: &str| -> Option<(i32, char)> {
+            let k = k.trim();
+            if k.len() < 2 || k.len() > 3 { return None; }
+            let letter = k.chars().last()?;
+            if letter != 'A' && letter != 'B' { return None; }
+            let num: i32 = k[..k.len()-1].parse().ok()?;
+            if !(1..=12).contains(&num) { return None; }
+            Some((num, letter))
+        };
+
+        let (num_a, let_a) = match parse(key_a) { Some(v) => v, None => return false };
+        let (num_b, let_b) = match parse(key_b) { Some(v) => v, None => return false };
+
+        // Same number, different letter (inner/outer circle) = always compatible
+        if num_a == num_b && let_a != let_b {
+            return true;
+        }
+
+        // Same letter, check distance on the circular wheel (1-12)
+        if let_a == let_b {
+            let diff = (num_a - num_b).abs();
+            let circular_diff = diff.min(12 - diff);
+            return circular_diff <= max_steps;
+        }
+
+        false
+    }
+
     /// Convert Track + TrackAnalysis to condensed TrackContext
     fn track_to_context(track: &Track, analysis: Option<&TrackAnalysis>) -> TrackContext {
         TrackContext {

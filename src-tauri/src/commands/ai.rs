@@ -154,6 +154,111 @@ pub async fn ai_generate_playlist(
     })
 }
 
+/// Generate a playlist from a seed track with energy direction and target duration.
+/// This is the structured entry point (used by the AI Playlist Dialog).
+/// The existing ai_generate_playlist remains for free-text chat flow.
+#[tauri::command]
+pub async fn ai_generate_playlist_from_seed(
+    state: State<'_, AppState>,
+    seed_track_id: i64,
+    energy_direction: String,
+    target_duration_min: i32,
+) -> Result<GeneratedPlaylist, AppError> {
+    let api_key = get_api_key_from_db(&state)?
+        .ok_or(AppError::AiNoApiKey)?;
+
+    // Get seed track info (title, artist) and analysis (BPM, key)
+    let (seed_title, seed_artist, seed_bpm, seed_key) = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let track = db.get_track(seed_track_id)
+            .map_err(|e| AppError::Database(format!("Seed track {} not found: {}", seed_track_id, e)))?;
+
+        let analysis = db.get_track_analysis(seed_track_id)
+            .map_err(|e| AppError::Database(format!("Failed to get track analysis: {}", e)))?;
+
+        (
+            track.title.clone().unwrap_or_else(|| "Unknown".to_string()),
+            track.artist.clone().unwrap_or_else(|| "Unknown".to_string()),
+            analysis.as_ref().and_then(|a| a.bpm),
+            analysis.as_ref().and_then(|a| a.musical_key.clone()),
+        )
+    };
+
+    // Get all tracks with analysis for context building
+    let all_tracks = {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+        let tracks = db.get_all_tracks()
+            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
+
+        let tracks_with_analysis: Vec<(Track, Option<TrackAnalysis>)> = tracks
+            .into_iter()
+            .map(|track| {
+                let analysis = track
+                    .id
+                    .and_then(|id| db.get_track_analysis(id).ok().flatten());
+                (track, analysis)
+            })
+            .collect();
+
+        tracks_with_analysis
+    };
+
+    // Build seed-aware context (filtered by BPM/key neighborhood)
+    let track_context = TrackContextBuilder::build_seed_context(
+        &all_tracks,
+        seed_bpm,
+        seed_key.as_deref(),
+        &energy_direction,
+    )?;
+
+    // Build energy-direction-specific instructions
+    let energy_instruction = match energy_direction.as_str() {
+        "build_up" => "BPM should GRADUALLY INCREASE from the seed track's BPM. Move CLOCKWISE on the Camelot wheel (increasing key numbers). Start near the seed BPM and end 10-20 BPM higher. Energy should build throughout the set.",
+        "wind_down" => "BPM should GRADUALLY DECREASE from the seed track's BPM. Move COUNTER-CLOCKWISE on the Camelot wheel (decreasing key numbers). End 10-20 BPM lower than the seed. Energy should wind down throughout the set.",
+        _ => "Maintain BPM within ±8 BPM of the seed track. Stay in the same Camelot key neighborhood (±1 step). Energy should remain consistent throughout the set.",
+    };
+
+    // Estimate track count from target duration (assume ~5 min average track)
+    let estimated_track_count = (target_duration_min as f64 / 5.0).ceil() as i32;
+
+    // Build the user prompt
+    let seed_info = match (seed_bpm, &seed_key) {
+        (Some(bpm), Some(key)) => format!("BPM: {:.1}, Key: {}", bpm, key),
+        (Some(bpm), None) => format!("BPM: {:.1}, Key: unknown", bpm),
+        (None, Some(key)) => format!("BPM: unknown, Key: {}", key),
+        (None, None) => "BPM: unknown, Key: unknown".to_string(),
+    };
+
+    let prompt = format!(
+        "Generate a {}-minute DJ set starting from seed track: \"{}\" by {} (ID: {}, {}).\n\n\
+        Energy direction: {}\n\n\
+        {}\n\n\
+        Select approximately {} tracks from the library. The seed track (ID {}) MUST be the first track in the list.\n\
+        Order tracks for optimal flow with smooth BPM transitions (max ±10 BPM between adjacent tracks) and Camelot-compatible key transitions.\n\
+        Return track_ids in play order.",
+        target_duration_min, seed_title, seed_artist, seed_track_id, seed_info,
+        energy_direction.replace('_', " "),
+        energy_instruction,
+        estimated_track_count, seed_track_id
+    );
+
+    let client = ClaudeClient::new(api_key);
+    let response = client
+        .generate_playlist(prompt, track_context, SYSTEM_PROMPT.to_string())
+        .await?;
+
+    Ok(GeneratedPlaylist {
+        name: response.name,
+        description: response.description,
+        track_ids: response.track_ids,
+        reasoning: response.reasoning,
+    })
+}
+
 /// Send a chat message to AI (simple, non-streaming)
 #[tauri::command]
 pub async fn ai_chat(

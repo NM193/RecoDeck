@@ -497,6 +497,7 @@ pub fn run() {
             commands::ai::delete_ai_api_key,
             commands::ai::rebuild_ai_context,
             commands::ai::ai_generate_playlist,
+            commands::ai::ai_generate_playlist_from_seed,
             commands::ai::ai_chat,
             // Companion server commands
             commands::server::start_companion_server,
