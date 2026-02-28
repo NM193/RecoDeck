@@ -49,6 +49,7 @@ interface TrackTableProps {
   isLoadingMore?: boolean;
   onGenerateAIPlaylist?: (track: Track) => void;
   onGetPlaylistRecommendations?: (playlistId: number, playlistName: string) => void;
+  onOpenMixPrep?: (playlistId: number, playlistName: string) => void;
 }
 
 export interface TrackTableRef {
@@ -86,6 +87,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
   isLoadingMore = false,
   onGenerateAIPlaylist,
   onGetPlaylistRecommendations,
+  onOpenMixPrep,
 }, ref) {
   const parentRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -429,6 +431,22 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(function Tr
             >
               <Icon name="Compass" size={16} />
               <span>Recommend</span>
+            </button>
+          );
+        })()}
+        {/* Mix Prep for current playlist (MIXP-01, MIXP-02, MIXP-03) */}
+        {onOpenMixPrep && selectedPlaylistId != null && (() => {
+          const playlist = playlists.find((p) => p.id === selectedPlaylistId);
+          if (!playlist) return null;
+          return (
+            <button
+              type="button"
+              className="track-table-ai-rec-btn"
+              onClick={() => onOpenMixPrep(selectedPlaylistId, playlist.name)}
+              title="Mix preparation analysis"
+            >
+              <Icon name="AudioWaveform" size={16} />
+              <span>Mix Prep</span>
             </button>
           );
         })()}

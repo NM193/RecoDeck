@@ -17,6 +17,7 @@ import { AnalysisProgress, type AnalysisProgressData } from "./components/Analys
 import { PlayerAIChat } from "./components/ai/PlayerAIChat";
 import { AIPlaylistDialog } from "./components/ai/AIPlaylistDialog";
 import { RecommendationsPanel } from "./components/ai/RecommendationsPanel";
+import { MixPrepPanel } from "./components/ai/MixPrepPanel";
 import { Icon } from "./components/Icon";
 import { usePlayerStore } from "./store/playerStore";
 import { tauriApi } from "./lib/tauri-api";
@@ -102,6 +103,9 @@ function AppContent() {
     playlistId?: number;
     playlistName?: string;
   } | null>(null);
+
+  // Mix Prep panel state
+  const [mixPrepPlaylist, setMixPrepPlaylist] = useState<{ id: number; name: string } | null>(null);
 
   // Notification state
   const [notification, setNotification] = useState<{
@@ -1062,6 +1066,10 @@ function AppContent() {
     setRecommendationSeed({ playlistId, playlistName });
   }, []);
 
+  const handleOpenMixPrep = useCallback((playlistId: number, playlistName: string) => {
+    setMixPrepPlaylist({ id: playlistId, name: playlistName });
+  }, []);
+
   const {
     setIsLoading,
     setError: setPlayerError,
@@ -1245,6 +1253,7 @@ function AppContent() {
               isLoadingMore={isLoadingMore}
               onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
               onGetPlaylistRecommendations={AI_ENABLED ? handleGetPlaylistRecommendations : undefined}
+              onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
             />
           )}
         </main>
@@ -1350,6 +1359,27 @@ function AppContent() {
           playlistId={recommendationSeed.playlistId}
           playlistName={recommendationSeed.playlistName}
           onClose={() => setRecommendationSeed(null)}
+        />
+      )}
+
+      {/* Mix Prep Panel */}
+      {AI_ENABLED && mixPrepPlaylist && (
+        <MixPrepPanel
+          playlistId={mixPrepPlaylist.id}
+          playlistName={mixPrepPlaylist.name}
+          onClose={() => setMixPrepPlaylist(null)}
+          onPlaylistReordered={() => {
+            const reorderedId = mixPrepPlaylist.id;
+            setMixPrepPlaylist(null);
+            setNotification({
+              message: "Playlist order updated!",
+              type: "success",
+            });
+            // Refresh the playlist tracks if we're currently viewing this playlist
+            if (selectedPlaylistId === reorderedId) {
+              loadTracks(null, reorderedId);
+            }
+          }}
         />
       )}
     </div>
