@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-28T21:36:00.000Z"
+last_updated: "2026-02-28T20:33:00Z"
 progress:
   total_phases: 2
   completed_phases: 1
@@ -51,6 +51,7 @@ Progress: [████░░░░░░] 50%
 | Phase 01-codebase-quality P01 | 9 min | 2 tasks | 16 files |
 | Phase 01-codebase-quality P02 | 6 min | 2 tasks | 12 files |
 | Phase 02-mobile-companion P01 | 8 min | 2 tasks | 14 files |
+| Phase 02-mobile-companion P02 | 5 min | 2 tasks | 3 files |
 | Phase 02-mobile-companion P03 | 5 min | 1 task | 1 file |
 
 ## Accumulated Context
@@ -71,6 +72,7 @@ Recent decisions affecting current work:
 - [Phase 01-codebase-quality]: reqwest stream feature removed -- companion server uses axum Body, not reqwest streaming
 - [Phase 02-mobile-companion]: Arc clone before .with_state() -- axum consumes Arc on .with_state(), clone first to retain reference for RunningServer.server_state
 - [Phase 02-mobile-companion]: Capture active_stream_count() before moving RunningServer into Mutex in auto_start_companion -- avoids deadlock from re-locking while constructing CompanionServerInfo
+- [Phase 02-mobile-companion]: search_tracks_with_analysis JOIN instead of N+1 per-track lookups -- single query consistent with paginated track pattern
 - [Phase 02-mobile-companion]: MOBL-07: 10-minute multi-use stream tickets -- 30s single-use incompatible with HTTP Range audio (browsers make many Range requests for seek/buffer)
 
 ### Pending Todos
@@ -94,5 +96,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 02-03-PLAN.md (streaming security audit + MOBL-07 documentation)
+Stopped at: Completed 02-02-PLAN.md (search BPM fix + MobilePlayer touch-drag seeking)
 Resume file: None
