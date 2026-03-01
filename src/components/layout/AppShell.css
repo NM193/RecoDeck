@@ -1,0 +1,40 @@
+/* AppShell — CSS Grid root layout */
+
+.app-shell {
+  display: grid;
+  grid-template-areas:
+    "sidebar main"
+    "player  player";
+  grid-template-columns: var(--sidebar-width, 240px) 1fr;
+  grid-template-rows: 1fr var(--player-height, 88px);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.app-shell__sidebar {
+  grid-area: sidebar;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell__main {
+  grid-area: main;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell__player {
+  grid-area: player;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}

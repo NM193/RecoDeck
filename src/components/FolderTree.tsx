@@ -26,6 +26,8 @@ interface FolderTreeProps {
   onRenamePlaylist: (id: number, currentName: string) => void
   onDeletePlaylist: (id: number, name: string) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
+  /** When set, render only the given section instead of both sections */
+  section?: 'folders' | 'playlists'
 }
 
 interface FolderNodeData {
@@ -151,6 +153,7 @@ export function FolderTree({
   onRenamePlaylist,
   onDeletePlaylist,
   onSharePlaylist,
+  section,
 }: FolderTreeProps) {
   // ===== TRACK COLLECTION state =====
   const [libraryNodes, setLibraryNodes] = useState<
@@ -417,6 +420,331 @@ export function FolderTree({
     )
   }
 
+  // ===== Render helpers =====
+
+  function renderFoldersContent() {
+    return (
+      <div className="folder-tree-section-body">
+              {/* "All Tracks" node */}
+              <div
+                className={`folder-row root-all ${isAllSelected ? 'selected' : ''}`}
+                onClick={() => onFolderSelect(null)}
+                onContextMenu={(e) =>
+                  showContextMenu(e, { type: 'all-tracks' })
+                }
+              >
+                <span className="folder-arrow" />
+                <Icon name="Music" size={16} className="folder-icon" />
+                <span className="folder-name">All Tracks</span>
+                {totalTrackCount != null && totalTrackCount > 0 && (
+                  <span className="folder-count">({totalTrackCount})</span>
+                )}
+              </div>
+
+              {/* Library folder roots */}
+              {libraryFolders.map((folderPath) => {
+                const isExpanded = libraryExpandedRoots.has(folderPath)
+                const name = getFolderName(folderPath)
+                const count = rootCounts.get(folderPath) ?? 0
+                const children = libraryNodes.get(folderPath)
+                const isRootSelected =
+                  selectedFolder === folderPath && selectedPlaylistId === null
+
+                return (
+                  <div key={folderPath} className="folder-root">
+                    <div
+                      className={`folder-row root-folder ${isRootSelected ? 'selected' : ''}`}
+                      onClick={() => onFolderSelect(folderPath)}
+                      onContextMenu={(e) =>
+                        showContextMenu(e, {
+                          type: 'library',
+                          folderPath,
+                          folderName: name,
+                        })
+                      }
+                    >
+                      <span
+                        className="folder-arrow has-children"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleLibraryRoot(folderPath)
+                        }}
+                      >
+                        <Icon
+                          name={isExpanded ? 'ChevronDown' : 'ChevronRight'}
+                          size={16}
+                        />
+                      </span>
+                      <Icon
+                        name={isExpanded ? 'FolderOpen' : 'Folder'}
+                        size={16}
+                        className="folder-icon"
+                      />
+                      <span className="folder-name">{name}</span>
+                      {count > 0 && (
+                        <span className="folder-count">({count})</span>
+                      )}
+                    </div>
+
+                    {isExpanded && children && (
+                      <div className="folder-children">
+                        {children.map((child) => (
+                          <FolderNode
+                            key={child.info.path}
+                            node={child}
+                            depth={1}
+                            selectedFolder={selectedFolder}
+                            onSelect={(p) => onFolderSelect(p)}
+                            onToggle={toggleLibraryNode}
+                            onContextMenu={(e, path, n) =>
+                              showContextMenu(e, {
+                                type: 'library',
+                                folderPath: path,
+                                folderName: n,
+                              })
+                            }
+                          />
+                        ))}
+                        {children.length === 0 && (
+                          <div
+                            className="folder-empty"
+                            style={{ paddingLeft: '44px' }}
+                          >
+                            No subfolders
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {libraryFolders.length === 0 && (
+                <div className="folder-empty" style={{ paddingLeft: '28px' }}>
+                  No library folders yet
+                </div>
+              )}
+            </div>
+    )
+  }
+
+  function renderPlaylistsContent() {
+    return (
+      <div
+        className="folder-tree-section-body"
+        onContextMenu={(e) =>
+          showContextMenu(e, {
+            type: 'playlist-header',
+          })
+        }
+      >
+        {rootPlaylists.map((p) => renderPlaylistItem(p, 0))}
+        {rootPlaylists.length === 0 && (
+          <div className="folder-empty playlist-empty-hint">
+            Right-click to create a playlist
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // When section prop is provided, render only that section's content (no header, no scroll wrapper)
+  if (section === 'folders') {
+    return (
+      <>
+        {renderFoldersContent()}
+        {contextMenu.visible && (
+          <div
+            ref={contextMenuRef}
+            className="context-menu"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {contextMenu.type === 'all-tracks' && (
+              <>
+                <div className="context-menu-header">All Tracks</div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onAnalyzeAll()
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Zap" size={16} className="context-menu-icon" />
+                  Analyze All Tracks
+                </div>
+              </>
+            )}
+            {contextMenu.type === 'library' && (
+              <>
+                <div className="context-menu-header">{contextMenu.folderName}</div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onAnalyzeFolder(contextMenu.folderPath!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Zap" size={16} className="context-menu-icon" />
+                  Analyze Tracks
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  if (section === 'playlists') {
+    return (
+      <>
+        {renderPlaylistsContent()}
+        {contextMenu.visible && (
+          <div
+            ref={contextMenuRef}
+            className="context-menu"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {contextMenu.type === 'playlist-header' && (
+              <>
+                <div className="context-menu-header">Playlists</div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreatePlaylist(null)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Plus" size={16} className="context-menu-icon" />
+                  Create Playlist
+                </div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreateFolder(null)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="FolderPlus" size={16} className="context-menu-icon" />
+                  Create Folder
+                </div>
+              </>
+            )}
+            {contextMenu.type === 'playlist-item' && (
+              <>
+                <div className="context-menu-header">{contextMenu.playlistName}</div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreatePlaylist(contextMenu.playlistParentId ?? null)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Plus" size={16} className="context-menu-icon" />
+                  Create Playlist
+                </div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreateFolder(contextMenu.playlistParentId ?? null)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="FolderPlus" size={16} className="context-menu-icon" />
+                  Create Folder
+                </div>
+                <div className="context-menu-separator" />
+                {onSharePlaylist && (
+                  <div
+                    className="context-menu-item"
+                    onClick={() => {
+                      onSharePlaylist(contextMenu.playlistId!, contextMenu.playlistName!)
+                      closeContextMenu()
+                    }}
+                  >
+                    <Icon name="Share2" size={16} className="context-menu-icon" />
+                    Share playlist
+                  </div>
+                )}
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onRenamePlaylist(contextMenu.playlistId!, contextMenu.playlistName!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Pencil" size={16} className="context-menu-icon" />
+                  Rename
+                </div>
+                <div
+                  className="context-menu-item context-menu-item-danger"
+                  onClick={() => {
+                    onDeletePlaylist(contextMenu.playlistId!, contextMenu.playlistName!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Trash2" size={16} className="context-menu-icon" />
+                  Delete
+                </div>
+              </>
+            )}
+            {contextMenu.type === 'folder-item' && (
+              <>
+                <div className="context-menu-header">{contextMenu.playlistName}</div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreatePlaylist(contextMenu.playlistId!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Plus" size={16} className="context-menu-icon" />
+                  Create Playlist
+                </div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreateFolder(contextMenu.playlistId!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="FolderPlus" size={16} className="context-menu-icon" />
+                  Create Folder
+                </div>
+                <div className="context-menu-separator" />
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onRenamePlaylist(contextMenu.playlistId!, contextMenu.playlistName!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Pencil" size={16} className="context-menu-icon" />
+                  Rename
+                </div>
+                <div
+                  className="context-menu-item context-menu-item-danger"
+                  onClick={() => {
+                    onDeletePlaylist(contextMenu.playlistId!, contextMenu.playlistName!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Trash2" size={16} className="context-menu-icon" />
+                  Delete
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // Default: render full component (legacy usage without section prop)
   return (
     <div className="folder-tree">
       <div className="folder-tree-scroll">

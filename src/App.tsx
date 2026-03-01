@@ -8,7 +8,6 @@ import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { Player } from './components/Player'
 import { MiniPlayer } from './components/MiniPlayer'
 import { Settings } from './components/Settings'
-import { FolderTree } from './components/FolderTree'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { Notification } from './components/Notification'
@@ -21,7 +20,8 @@ import { PlayerAIChat } from './components/ai/PlayerAIChat'
 import { AIPlaylistDialog } from './components/ai/AIPlaylistDialog'
 import { RecommendationsPanel } from './components/ai/RecommendationsPanel'
 import { MixPrepPanel } from './components/ai/MixPrepPanel'
-import { Icon } from './components/Icon'
+import { AppShell } from './components/layout/AppShell'
+import { Sidebar } from './components/layout/Sidebar'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
@@ -1254,122 +1254,113 @@ function AppContent() {
       ? "This folder doesn't contain any imported tracks"
       : 'Click "Scan Folder" to add music to your library'
 
-  return (
-    <div className="app-container">
-      <header className="app-header">
-        <div className="header-brand">
-          <img
-            src="/recodeck-logo.png"
-            alt="RecoDeck"
-            className="header-logo"
-          />
-          {headerNotification && (
-            <HeaderNotification
-              message={headerNotification}
-              onComplete={() => setHeaderNotification(null)}
-            />
-          )}
-        </div>
-        <div className="header-actions">
-          <button onClick={handleScanDirectory} className="btn-primary">
-            Scan Folder
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="btn-secondary btn-settings"
-            title="Settings"
-          >
-            <Icon name="Settings" size={20} />
-          </button>
-        </div>
-      </header>
+  const sidebarEl = (
+    <Sidebar
+      libraryFolders={libraryFolders}
+      playlists={playlists}
+      selectedFolder={selectedFolder}
+      selectedPlaylistId={selectedPlaylistId}
+      totalTrackCount={totalTrackCount}
+      onFolderSelect={handleFolderSelect}
+      onPlaylistSelect={handlePlaylistSelect}
+      onAnalyzeFolder={handleAnalyzeFolder}
+      onAnalyzeAll={handleAnalyzeAll}
+      onCreatePlaylist={handleCreatePlaylist}
+      onCreateFolder={handleCreateFolder}
+      onRenamePlaylist={handleRenamePlaylist}
+      onDeletePlaylist={handleDeletePlaylist}
+      onSharePlaylist={handleSharePlaylist}
+      onScanDirectory={handleScanDirectory}
+      onOpenSettings={() => setSettingsOpen(true)}
+      onNavigateHome={() => {
+        handleFolderSelect(null)
+      }}
+    />
+  )
 
+  const mainEl = (
+    <>
       {/* Analysis progress bar (Traktor-style) */}
       <AnalysisProgress
         progress={analysisProgress}
         onCancel={handleCancelAnalysis}
       />
 
-      <div className="app-body">
-        {/* Left sidebar — Folder Tree + Playlists */}
-        <aside className="app-sidebar">
-          <FolderTree
-            libraryFolders={libraryFolders}
-            playlists={playlists}
-            selectedFolder={selectedFolder}
-            selectedPlaylistId={selectedPlaylistId}
-            totalTrackCount={totalTrackCount}
-            onFolderSelect={handleFolderSelect}
-            onPlaylistSelect={handlePlaylistSelect}
-            onAnalyzeFolder={handleAnalyzeFolder}
-            onAnalyzeAll={handleAnalyzeAll}
-            onCreatePlaylist={handleCreatePlaylist}
-            onCreateFolder={handleCreateFolder}
-            onRenamePlaylist={handleRenamePlaylist}
-            onDeletePlaylist={handleDeletePlaylist}
-            onSharePlaylist={handleSharePlaylist}
+      {/* Header notification above track table */}
+      {headerNotification && (
+        <div style={{ padding: '4px 16px', flexShrink: 0 }}>
+          <HeaderNotification
+            message={headerNotification}
+            onComplete={() => setHeaderNotification(null)}
           />
-        </aside>
+        </div>
+      )}
 
-        {/* Main content — Track Table */}
-        <main className="app-main">
-          {tracks.length === 0 ? (
-            <div className="empty-state">
-              <h2>{emptyTitle}</h2>
-              <p>{emptySubtitle}</p>
-            </div>
-          ) : (
-            <TrackTable
-              ref={trackTableRef}
-              tracks={tracks}
-              playlists={playlists}
-              keyNotation={keyNotation}
-              selectedPlaylistId={selectedPlaylistId}
-              onTrackClick={handleTrackClick}
-              onTrackDoubleClick={handlePlayTrack}
-              onAnalyzeTrack={handleAnalyzeTrack}
-              onAnalyzeBpm={handleAnalyzeBpm}
-              onAnalyzeKey={handleAnalyzeKey}
-              onAddToPlaylist={handleAddToPlaylist}
-              onRemoveFromPlaylist={handleRemoveFromPlaylist}
-              onSetGenre={handleSetGenre}
-              onClearGenre={handleClearGenre}
-              genreDefinitions={genreDefinitions}
-              onLoadMore={loadMoreTracks}
-              hasMoreTracks={hasMoreTracks}
-              isLoadingMore={isLoadingMore}
-              onGenerateAIPlaylist={
-                AI_ENABLED ? handleGenerateAIPlaylist : undefined
-              }
-              onGetPlaylistRecommendations={
-                AI_ENABLED ? handleGetPlaylistRecommendations : undefined
-              }
-              onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
-            />
-          )}
-        </main>
+      {/* Main content — Track Table */}
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {tracks.length === 0 ? (
+          <div className="empty-state">
+            <h2>{emptyTitle}</h2>
+            <p>{emptySubtitle}</p>
+          </div>
+        ) : (
+          <TrackTable
+            ref={trackTableRef}
+            tracks={tracks}
+            playlists={playlists}
+            keyNotation={keyNotation}
+            selectedPlaylistId={selectedPlaylistId}
+            onTrackClick={handleTrackClick}
+            onTrackDoubleClick={handlePlayTrack}
+            onAnalyzeTrack={handleAnalyzeTrack}
+            onAnalyzeBpm={handleAnalyzeBpm}
+            onAnalyzeKey={handleAnalyzeKey}
+            onAddToPlaylist={handleAddToPlaylist}
+            onRemoveFromPlaylist={handleRemoveFromPlaylist}
+            onSetGenre={handleSetGenre}
+            onClearGenre={handleClearGenre}
+            genreDefinitions={genreDefinitions}
+            onLoadMore={loadMoreTracks}
+            hasMoreTracks={hasMoreTracks}
+            isLoadingMore={isLoadingMore}
+            onGenerateAIPlaylist={
+              AI_ENABLED ? handleGenerateAIPlaylist : undefined
+            }
+            onGetPlaylistRecommendations={
+              AI_ENABLED ? handleGetPlaylistRecommendations : undefined
+            }
+            onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
+          />
+        )}
       </div>
+    </>
+  )
 
-      {/* Player bar */}
-      <Player
-        playlists={playlists}
-        onTrackMetaClick={handleScrollToCurrentTrack}
-        onAddToPlaylist={async (trackId, playlistId) => {
-          try {
-            await tauriApi.addTrackToPlaylist(playlistId, trackId)
-            await loadPlaylists()
-            const playlist = playlists.find((p) => p.id === playlistId)
-            setHeaderNotification(`Added to ${playlist?.name ?? 'playlist'}`)
-          } catch (err) {
-            setNotification({
-              message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-              type: 'error',
-            })
-          }
-        }}
-        onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
-        onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
-      />
+  const playerEl = (
+    <Player
+      playlists={playlists}
+      onTrackMetaClick={handleScrollToCurrentTrack}
+      onAddToPlaylist={async (trackId, playlistId) => {
+        try {
+          await tauriApi.addTrackToPlaylist(playlistId, trackId)
+          await loadPlaylists()
+          const playlist = playlists.find((p) => p.id === playlistId)
+          setHeaderNotification(`Added to ${playlist?.name ?? 'playlist'}`)
+        } catch (err) {
+          setNotification({
+            message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
+            type: 'error',
+          })
+        }
+      }}
+      onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
+      onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
+    />
+  )
+
+  return (
+    <>
+      <AppShell sidebar={sidebarEl} main={mainEl} player={playerEl} />
 
       {/* Settings panel */}
       <Settings
@@ -1473,7 +1464,7 @@ function AppContent() {
           }}
         />
       )}
-    </div>
+    </>
   )
 }
 
