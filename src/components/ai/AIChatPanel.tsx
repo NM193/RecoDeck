@@ -270,6 +270,15 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
                 <p className="font-bold">Error</p>
               </div>
               <p className="opacity-90">{error}</p>
+              {error.includes('Settings') && (
+                <button
+                  type="button"
+                  className="mt-2 px-3 py-1 text-xs font-medium rounded bg-red-500/20 hover:bg-red-500/30 border border-red-400/50 text-red-200 transition-colors cursor-pointer"
+                  onClick={() => useAIStore.getState().openSettingsCallback?.()}
+                >
+                  Open Settings
+                </button>
+              )}
             </div>
           )}
 

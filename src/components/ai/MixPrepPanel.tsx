@@ -13,6 +13,7 @@ import { tauriApi } from '../../lib/tauri-api';
 import type { Track } from '../../types/track';
 import type { RecommendedOrder } from '../../types/ai';
 import { getErrorMessage } from '../../types/ai';
+import { useAIStore } from '../../store/aiStore';
 import { getKeyCompatibility, getBpmIssue } from '../../lib/musicUtils';
 import './MixPrepPanel.css';
 
@@ -366,7 +367,18 @@ export function MixPrepPanel({
                     )}
 
                     {orderError && (
-                      <div className="mix-prep-error">{orderError}</div>
+                      <div className="mix-prep-error">
+                        {orderError}
+                        {orderError.includes('Settings') && (
+                          <button
+                            type="button"
+                            onClick={() => useAIStore.getState().openSettingsCallback?.()}
+                            style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.85em', cursor: 'pointer', borderRadius: '4px', border: '1px solid currentColor', background: 'transparent', color: 'inherit' }}
+                          >
+                            Open Settings
+                          </button>
+                        )}
+                      </div>
                     )}
 
                     {suggestedOrder && suggestedTracks.length > 0 && (

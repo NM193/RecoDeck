@@ -20,6 +20,7 @@ import { RecommendationsPanel } from "./components/ai/RecommendationsPanel";
 import { MixPrepPanel } from "./components/ai/MixPrepPanel";
 import { Icon } from "./components/Icon";
 import { usePlayerStore } from "./store/playerStore";
+import { useAIStore } from "./store/aiStore";
 import { tauriApi } from "./lib/tauri-api";
 import type { Track, Playlist } from "./types/track";
 import "./App.css";
@@ -128,6 +129,11 @@ function AppContent() {
 
   useEffect(() => {
     initializeApp();
+  }, []);
+
+  // Register Settings callback so AI error messages can open the Settings panel
+  useEffect(() => {
+    useAIStore.getState().registerOpenSettings(() => setSettingsOpen(true));
   }, []);
 
   // Check for app updates on startup (after a delay to not block UI)

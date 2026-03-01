@@ -12,6 +12,7 @@ import { usePlayerStore } from '../../store/playerStore';
 import type { Track } from '../../types/track';
 import type { RecommendationResult } from '../../types/ai';
 import { getErrorMessage } from '../../types/ai';
+import { useAIStore } from '../../store/aiStore';
 import './RecommendationsPanel.css';
 
 interface RecommendationsPanelProps {
@@ -161,6 +162,15 @@ export function RecommendationsPanel({
           {step === 'error' && (
             <div className="recommendations-panel__error">
               <span>{error}</span>
+              {error?.includes('Settings') && (
+                <button
+                  type="button"
+                  className="recommendations-panel__retry-btn"
+                  onClick={() => useAIStore.getState().openSettingsCallback?.()}
+                >
+                  Open Settings
+                </button>
+              )}
               <button
                 type="button"
                 className="recommendations-panel__retry-btn"

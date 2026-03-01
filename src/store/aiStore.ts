@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getErrorMessage, isAppError } from '../types/ai';
 import type { ChatMessage, GeneratedPlaylist } from '../types/ai';
 import { tauriApi } from '../lib/tauri-api';
 
@@ -15,6 +16,10 @@ interface AIState {
 
   // Playlist generation
   pendingPlaylist: GeneratedPlaylist | null;
+
+  // Settings navigation callback
+  openSettingsCallback: (() => void) | null;
+  registerOpenSettings: (callback: () => void) => void;
 
   // Actions
   setIsOpen: (isOpen: boolean) => void;
@@ -41,9 +46,13 @@ export const useAIStore = create<AIState>((set, get) => ({
   streamingMessage: '',
   error: null,
   pendingPlaylist: null,
+  openSettingsCallback: null,
 
   // UI actions
   setIsOpen: (isOpen) => set({ isOpen }),
+
+  // Settings callback registration
+  registerOpenSettings: (callback) => set({ openSettingsCallback: callback }),
 
   // API key management
   checkApiKeyStatus: async () => {
@@ -52,8 +61,8 @@ export const useAIStore = create<AIState>((set, get) => ({
       const isConfigured = await tauriApi.getAIApiKeyStatus();
       console.log('[AI Store] API key status result:', isConfigured);
       set({ isApiKeyConfigured: isConfigured });
-    } catch (error) {
-      console.error('[AI Store] Failed to check API key status:', error);
+    } catch (e) {
+      console.error('[AI Store] Failed to check API key status:', e);
       set({ isApiKeyConfigured: false });
     }
   },
@@ -64,11 +73,10 @@ export const useAIStore = create<AIState>((set, get) => ({
       await tauriApi.setAIApiKey(key);
       console.log('[AI Store] API key saved successfully, setting isApiKeyConfigured=true');
       set({ isApiKeyConfigured: true, error: null });
-    } catch (error) {
-      console.error('[AI Store] Failed to save API key:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      set({ error: errorMessage });
-      throw error;
+    } catch (e) {
+      console.error('[AI Store] Failed to save API key:', e);
+      set({ error: getErrorMessage(e) });
+      throw e;
     }
   },
 
@@ -76,17 +84,16 @@ export const useAIStore = create<AIState>((set, get) => ({
     try {
       await tauriApi.deleteAIApiKey();
       set({ isApiKeyConfigured: false, error: null });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      set({ error: errorMessage });
-      throw error;
+    } catch (e) {
+      set({ error: getErrorMessage(e) });
+      throw e;
     }
   },
 
   // Chat actions
   sendMessage: async (message: string) => {
-    const { chatHistory, isApiKeyConfigured } = get();
-    console.log('[AI Store] sendMessage called, isApiKeyConfigured:', isApiKeyConfigured);
+    const { chatHistory } = get();
+    console.log('[AI Store] sendMessage called');
 
     // Add user message to history
     const userMessage: ChatMessage = {
@@ -117,12 +124,33 @@ export const useAIStore = create<AIState>((set, get) => ({
         chatHistory: [...state.chatHistory, assistantMessage],
         isGenerating: false,
       }));
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      set({
-        error: errorMessage,
-        isGenerating: false,
-      });
+    } catch (e) {
+      if (isAppError(e) && e.kind === 'AiNetwork' && e.message?.includes('Rate limited')) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          set({ error: `Rate limited \u2014 retrying in 30 seconds... (attempt ${attempt}/2)` });
+          await new Promise((resolve) => setTimeout(resolve, 30_000));
+          try {
+            const retryResponse = await tauriApi.aiChat(message, chatHistory);
+            const retryAssistantMessage: ChatMessage = {
+              role: 'assistant',
+              content: retryResponse,
+              timestamp: new Date().toISOString(),
+            };
+            set((state) => ({
+              chatHistory: [...state.chatHistory, retryAssistantMessage],
+              isGenerating: false,
+              error: null,
+            }));
+            return;
+          } catch (retryErr) {
+            if (attempt === 2) {
+              set({ error: getErrorMessage(retryErr), isGenerating: false });
+            }
+          }
+        }
+      } else {
+        set({ error: getErrorMessage(e), isGenerating: false });
+      }
     }
   },
 
@@ -140,12 +168,24 @@ export const useAIStore = create<AIState>((set, get) => ({
         pendingPlaylist: playlist,
         isGenerating: false,
       });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      set({
-        error: errorMessage,
-        isGenerating: false,
-      });
+    } catch (e) {
+      if (isAppError(e) && e.kind === 'AiNetwork' && e.message?.includes('Rate limited')) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          set({ error: `Rate limited \u2014 retrying in 30 seconds... (attempt ${attempt}/2)` });
+          await new Promise((resolve) => setTimeout(resolve, 30_000));
+          try {
+            const retryPlaylist = await tauriApi.aiGeneratePlaylist(prompt);
+            set({ pendingPlaylist: retryPlaylist, isGenerating: false, error: null });
+            return;
+          } catch (retryErr) {
+            if (attempt === 2) {
+              set({ error: getErrorMessage(retryErr), isGenerating: false });
+            }
+          }
+        }
+      } else {
+        set({ error: getErrorMessage(e), isGenerating: false });
+      }
     }
   },
 

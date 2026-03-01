@@ -11,6 +11,7 @@ import { usePlayerStore } from '../../store/playerStore';
 import type { Track } from '../../types/track';
 import type { EnergyDirection, GeneratedPlaylist } from '../../types/ai';
 import { getErrorMessage } from '../../types/ai';
+import { useAIStore } from '../../store/aiStore';
 import { getKeyCompatibility } from '../../lib/musicUtils';
 import './AIPlaylistDialog.css';
 
@@ -298,7 +299,21 @@ export function AIPlaylistDialog({ seedTrack, onClose, onPlaylistSaved }: AIPlay
                 </div>
 
                 {/* Error */}
-                {error && <div className="ai-playlist-error">{error}</div>}
+                {error && (
+                  <div className="ai-playlist-error">
+                    {error}
+                    {error.includes('Settings') && (
+                      <button
+                        type="button"
+                        className="ai-playlist-error__settings-btn"
+                        onClick={() => useAIStore.getState().openSettingsCallback?.()}
+                        style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.85em', cursor: 'pointer', borderRadius: '4px', border: '1px solid currentColor', background: 'transparent', color: 'inherit' }}
+                      >
+                        Open Settings
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -433,7 +448,21 @@ export function AIPlaylistDialog({ seedTrack, onClose, onPlaylistSaved }: AIPlay
                 )}
 
                 {/* Error */}
-                {error && <div className="ai-playlist-error">{error}</div>}
+                {error && (
+                  <div className="ai-playlist-error">
+                    {error}
+                    {error.includes('Settings') && (
+                      <button
+                        type="button"
+                        className="ai-playlist-error__settings-btn"
+                        onClick={() => useAIStore.getState().openSettingsCallback?.()}
+                        style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.85em', cursor: 'pointer', borderRadius: '4px', border: '1px solid currentColor', background: 'transparent', color: 'inherit' }}
+                      >
+                        Open Settings
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -457,7 +486,21 @@ export function AIPlaylistDialog({ seedTrack, onClose, onPlaylistSaved }: AIPlay
                   placeholder="Playlist name..."
                   autoFocus
                 />
-                {error && <div className="ai-playlist-error">{error}</div>}
+                {error && (
+                  <div className="ai-playlist-error">
+                    {error}
+                    {error.includes('Settings') && (
+                      <button
+                        type="button"
+                        className="ai-playlist-error__settings-btn"
+                        onClick={() => useAIStore.getState().openSettingsCallback?.()}
+                        style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.85em', cursor: 'pointer', borderRadius: '4px', border: '1px solid currentColor', background: 'transparent', color: 'inherit' }}
+                      >
+                        Open Settings
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
