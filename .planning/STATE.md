@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 ## Current Position
 
 Phase: 8 of 9 (UI Layout) — In Progress
-Plan: 2 of 3 in current phase — 08-02 complete
-Status: 08-02 complete — NowPlayingBar 3-column layout + HomeView + PlaylistDetailHeader
-Last activity: 2026-03-01 — 08-02 complete
+Plan: 3 of 3 in current phase — 08-03 Task 1 complete, awaiting human verification (Task 2)
+Status: 08-03 in progress — AnimatePresence crossfade transitions + expandable now-playing implemented
+Last activity: 2026-03-01 — 08-03 Task 1 complete
 
-Progress: [█████████░] 67%
+Progress: [█████████░] 78%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [█████████░] 67%
 | Phase 07-ui-foundation P02 | 30m | 5 tasks | 12 files |
 | Phase 08-ui-layout P01 | 35m | 2 tasks | 11 files |
 | Phase 08-ui-layout P02 | 8m | 2 tasks | 7 files |
+| Phase 08-ui-layout P03 | 2m | 1/2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 25. [08-02] NowPlayingBar replaces Player.tsx inline (approach b) — all audio logic inlined, no separate logic layer
 26. [08-02] HomeView uses gradient placeholders for playlist cards (not N+1 artwork API calls) — better performance on home view load
 27. [08-02] PlaylistDetailHeader sentinel div placed inside component — keeps IntersectionObserver logic self-contained
+28. [08-03] AnimatePresence mode=wait chosen to prevent layout conflicts with state-driven view changes
+29. [08-03] viewKey uses full identity (playlist-{id}, folder-{path}) so switching between playlists also transitions
+30. [08-03] Album art click opens expanded overlay (separate from track info click which scrolls to track in library)
 
 ### Pending Todos
 
@@ -96,5 +100,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 08-02-PLAN.md
+Stopped at: 08-03 Task 2 checkpoint:human-verify — awaiting visual verification of complete Phase 8 layout
 Resume file: .planning/phases/08-ui-layout/08-03-PLAN.md
