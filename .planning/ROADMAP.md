@@ -23,7 +23,7 @@
 
 - [x] **Phase 5: Foundation Cleanup** — Eliminate tech debt and enforce code quality tooling (completed 2026-03-01)
 - [x] **Phase 6: Test Coverage** — Rust backend tests and frontend Vitest coverage (completed 2026-03-01)
-- [ ] **Phase 7: UI Foundation** — Spotify dark theme, typography, spacing, and component system
+- [x] **Phase 7: UI Foundation** — Spotify dark theme, typography, spacing, and component system (completed 2026-03-01)
 - [ ] **Phase 8: UI Layout** — Sidebar navigation, album art grids, now-playing bar, view transitions
 - [ ] **Phase 9: UI Views and Mobile** — Track table, playlist view, search, and mobile PWA update
 
@@ -115,6 +115,6 @@ Plans:
 | 4. AI Discovery and Mix Prep | v1.0 | 2/2 | Complete | 2026-02-28 |
 | 5. Foundation Cleanup | 2/2 | Complete   | 2026-03-01 | - |
 | 6. Test Coverage | 2/2 | Complete   | 2026-03-01 | - |
-| 7. UI Foundation | 1/2 | In Progress|  | - |
+| 7. UI Foundation | 2/2 | Complete   | 2026-03-01 | - |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |
 | 9. UI Views and Mobile | v1.1 | 0/3 | Not started | - |

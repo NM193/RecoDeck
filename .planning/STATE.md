@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Spotify Redesign
 status: unknown
-last_updated: "2026-03-01T13:41:55.178Z"
+last_updated: "2026-03-01T13:52:32.232Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 
 ## Current Position
 
-Phase: 7 of 9 (UI Foundation) — IN PROGRESS
-Plan: 1 of 2 in current phase — 07-01 complete, 07-02 pending
-Status: 07-01 (design tokens/font/typography) complete — ready for 07-02 (component CSS migration)
-Last activity: 2026-03-01 — 07-01 complete
+Phase: 7 of 9 (UI Foundation) — COMPLETE
+Plan: 2 of 2 in current phase — 07-01 and 07-02 both complete
+Status: Phase 7 complete — all component CSS files migrated to design tokens
+Last activity: 2026-03-01 — 07-02 complete
 
-Progress: [████░░░░░░] 44%
+Progress: [████████░░] 56%
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [████░░░░░░] 44%
 
 *Updated after each plan completion*
 | Phase 07-ui-foundation P01 | 3 | 3 tasks | 5 files |
+| Phase 07-ui-foundation P02 | 30 | 5 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,9 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 15. [07-01] Midnight theme migrated from blue-tinted (#0a0a0f) to Spotify warm blacks (#121212) while keeping indigo (#6366f1) as accent
 16. [07-01] Custom theme omits functional tokens (cue/energy/mood/vocal) because applyCustomTheme() JS override provides them at runtime
 17. [07-01] Test files excluded from tsconfig.json production compilation to prevent Vitest globals causing TS errors during build
+18. [07-02] Settings.css theme preview swatch hex colors preserved — they display literal color values, not theme-dependent styling
+19. [07-02] --bg-hover undefined token replaced with --bg-tertiary in TrackTable.css (was silently failing)
+20. [07-02] Notification.css broken --accent-primary fixed to --accent; --border-color fixed to --border
 
 ### Pending Todos
 
@@ -83,5 +87,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 07-01-PLAN.md
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
