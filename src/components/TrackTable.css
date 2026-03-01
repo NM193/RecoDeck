@@ -6,9 +6,6 @@
   height: 100%;
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
 }
 
 /* --- Search Bar (integrated into table header area) --- */
@@ -31,14 +28,14 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  background: rgba(74, 222, 128, 0.1);
-  border: 1px solid rgba(74, 222, 128, 0.25);
-  border-radius: 6px;
+  background: rgba(var(--color-success-rgb), 0.1);
+  border: 1px solid rgba(var(--color-success-rgb), 0.25);
+  border-radius: var(--radius-md);
   padding: 0 10px;
   height: 32px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
-  color: #4ade80;
+  color: var(--color-success);
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -47,8 +44,8 @@
 }
 
 .track-table-ai-rec-btn:hover {
-  background: rgba(74, 222, 128, 0.18);
-  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(var(--color-success-rgb), 0.18);
+  border-color: rgba(var(--color-success-rgb), 0.4);
 }
 
 .search-input-wrapper {
@@ -64,7 +61,7 @@
 
 .search-input-wrapper:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
 }
 
 .search-icon {
@@ -334,8 +331,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -464,7 +461,7 @@
 
 /* Ensure context menu and button items are readable (no white-on-white) */
 .track-table-container .context-menu {
-  background: var(--bg-secondary, #1a1a24);
+  background: var(--bg-secondary);
 }
 
 button.context-menu-item {
@@ -475,7 +472,7 @@ button.context-menu-item {
   font-size: 12px;
   line-height: 1.5;
   text-align: left;
-  color: var(--text-primary, #e0e0e8);
+  color: var(--text-primary);
   padding: 7px 12px;
   margin: 0;
   display: flex;
