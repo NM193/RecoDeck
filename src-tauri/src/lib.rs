@@ -11,12 +11,6 @@ use commands::{library::AppState, playback::PlaybackState, server::CompanionStat
 use std::sync::Mutex;
 use tauri::{Emitter, Listener};
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 /// Percent-decode a URI path string (e.g. "%20" → " ")
 fn percent_decode(input: &str) -> String {
     let mut output = Vec::with_capacity(input.len());
@@ -408,7 +402,6 @@ pub fn run() {
         .manage(WatcherState::new())
         .manage(CompanionState::new())
         .invoke_handler(tauri::generate_handler![
-            greet,
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,

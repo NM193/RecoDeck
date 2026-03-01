@@ -121,13 +121,6 @@ export const httpApi = {
     return mobileTracks.map(mobileTrackToTrack);
   },
 
-  /** Get a single track */
-  async getTrack(id: number): Promise<Track> {
-    const res = await authFetch(`/api/tracks/${id}`);
-    const mt: MobileTrack = await res.json();
-    return mobileTrackToTrack(mt);
-  },
-
   /** Get tracks in a playlist */
   async getPlaylistTracks(playlistId: number): Promise<Track[]> {
     const res = await authFetch(`/api/playlists/${playlistId}/tracks`);
