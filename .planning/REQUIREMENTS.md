@@ -23,12 +23,12 @@ Requirements for v1.1 Spotify Redesign. Each maps to roadmap phases.
 
 ### Test Coverage
 
-- [ ] **TEST-01**: Expand Rust tests for database CRUD operations (db/mod.rs)
-- [ ] **TEST-02**: Add Rust tests for AI context builder output (ai/context_builder.rs)
-- [ ] **TEST-03**: Add Rust tests for audio analysis functions (key detection, BPM)
-- [ ] **TEST-04**: Configure Vitest 3 with global Tauri IPC mock for frontend
-- [ ] **TEST-05**: Add frontend tests for musicUtils.ts (key compatibility, BPM quality)
-- [ ] **TEST-06**: Add frontend tests for Zustand stores
+- [x] **TEST-01**: Expand Rust tests for database CRUD operations (db/mod.rs)
+- [x] **TEST-02**: Add Rust tests for AI context builder output (ai/context_builder.rs)
+- [x] **TEST-03**: Add Rust tests for audio analysis functions (key detection, BPM)
+- [x] **TEST-04**: Configure Vitest 3 with global Tauri IPC mock for frontend
+- [x] **TEST-05**: Add frontend tests for musicUtils.ts (key compatibility, BPM quality)
+- [x] **TEST-06**: Add frontend tests for Zustand stores
 
 ### UI/UX Spotify Redesign
 
@@ -91,12 +91,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUAL-01 | Phase 5 | Complete |
 | QUAL-02 | Phase 5 | Complete |
 | QUAL-03 | Phase 5 | Complete |
-| TEST-01 | Phase 6 | Pending |
-| TEST-02 | Phase 6 | Pending |
-| TEST-03 | Phase 6 | Pending |
-| TEST-04 | Phase 6 | Pending |
-| TEST-05 | Phase 6 | Pending |
-| TEST-06 | Phase 6 | Pending |
+| TEST-01 | Phase 6 | Complete |
+| TEST-02 | Phase 6 | Complete |
+| TEST-03 | Phase 6 | Complete |
+| TEST-04 | Phase 6 | Complete |
+| TEST-05 | Phase 6 | Complete |
+| TEST-06 | Phase 6 | Complete |
 | UIUX-01 | Phase 7 | Pending |
 | UIUX-02 | Phase 8 | Pending |
 | UIUX-03 | Phase 8 | Pending |

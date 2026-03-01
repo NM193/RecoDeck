@@ -63,6 +63,10 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 8. [06-01] Test helpers added inline in #[cfg(test)] block rather than a separate test utilities module — context_builder tests are self-contained
 9. [06-01] is_camelot_compatible changed from private fn to pub(crate) fn — minimal visibility change enabling direct unit testing without exposing publicly
 10. [06-01] Test scenarios adjusted to match actual production filter thresholds: build_smart_context requires filtered.len() < total/2 (integer division), minimum 4 tracks needed for filter to apply; build_seed_context falls back when filtered < 20
+11. [06-02] Vitest 4 (not 3) required for Vite 7.x — v3 peer-dep caps at Vite 6, v4 supports Vite 6+7
+12. [06-02] Separate vitest.config.ts from vite.config.ts to avoid polluting Tauri dev server configuration
+13. [06-02] Zustand v5 getInitialState() used for store reset in beforeEach — cleaner than manual initialState reconstruction
+14. [06-02] globals: true in vitest config avoids import boilerplate for test globals (describe/it/expect)
 
 ### Pending Todos
 
@@ -70,12 +74,10 @@ None.
 
 ### Blockers/Concerns
 
-- [Phase 6] Verify exact Vitest 3 + Vite 7 version compatibility before installing (`npm info vitest version`)
-- [Phase 6] Verify Zustand v5.0.11 `store.setState(initialState)` reset pattern before writing store tests
-- [Phase 6] Consider addressing remaining ESLint warnings: react-hooks/exhaustive-deps in multiple files, react-hooks/incompatible-library for TanStack Virtual useVirtualizer
+- [Future] Consider addressing remaining ESLint warnings: react-hooks/exhaustive-deps in multiple files, react-hooks/incompatible-library for TanStack Virtual useVirtualizer
 
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 6 Plan 01 complete — committed 03a9bd7
+Stopped at: Phase 6 Plan 02 complete — committed 412af4b, 9745b3b
 Resume file: None
