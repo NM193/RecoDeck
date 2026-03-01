@@ -42,7 +42,7 @@
 **Plans**: TBD
 
 Plans:
-- [ ] 05-01: Fix aiStore error handling and consolidate audio_mime_type
+- [x] 05-01: Fix aiStore error handling and consolidate audio_mime_type — completed 2026-03-01
 - [ ] 05-02: Remove dead code, configure ESLint 9 + Prettier 3, run full lint pass
 
 ### Phase 6: Test Coverage
@@ -113,7 +113,7 @@ Plans:
 | 2. Mobile Companion | v1.0 | 3/3 | Complete | 2026-02-28 |
 | 3. AI Playlists | v1.0 | 2/2 | Complete | 2026-02-28 |
 | 4. AI Discovery and Mix Prep | v1.0 | 2/2 | Complete | 2026-02-28 |
-| 5. Foundation Cleanup | v1.1 | 0/2 | Not started | - |
+| 5. Foundation Cleanup | v1.1 | 1/2 | In progress | - |
 | 6. Test Coverage | v1.1 | 0/2 | Not started | - |
 | 7. UI Foundation | v1.1 | 0/2 | Not started | - |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |

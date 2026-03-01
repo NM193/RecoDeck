@@ -9,11 +9,11 @@ Requirements for v1.1 Spotify Redesign. Each maps to roadmap phases.
 
 ### Tech Debt
 
-- [ ] **DEBT-01**: Fix aiStore.ts to use isAppError/getErrorMessage instead of instanceof Error for Tauri IPC error handling
-- [ ] **DEBT-02**: Extract duplicated audio_mime_type function to shared module (used in lib.rs and streaming.rs)
+- [x] **DEBT-01**: Fix aiStore.ts to use isAppError/getErrorMessage instead of instanceof Error for Tauri IPC error handling
+- [x] **DEBT-02**: Extract duplicated audio_mime_type function to shared module (used in lib.rs and streaming.rs)
 - [ ] **DEBT-03**: Remove orphaned /api/tracks/{id} route and httpApi.getTrack() wrapper (verify no mobile PWA usage first)
 - [ ] **DEBT-04**: Remove greet command and handler from lib.rs
-- [ ] **DEBT-05**: Run cargo clippy and fix any remaining warnings
+- [x] **DEBT-05**: Run cargo clippy and fix any remaining warnings
 
 ### Code Quality
 
@@ -83,11 +83,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEBT-01 | Phase 5 | Pending |
-| DEBT-02 | Phase 5 | Pending |
+| DEBT-01 | Phase 5 | Complete (05-01) |
+| DEBT-02 | Phase 5 | Complete (05-01) |
 | DEBT-03 | Phase 5 | Pending |
 | DEBT-04 | Phase 5 | Pending |
-| DEBT-05 | Phase 5 | Pending |
+| DEBT-05 | Phase 5 | Complete (05-01) |
 | QUAL-01 | Phase 5 | Pending |
 | QUAL-02 | Phase 5 | Pending |
 | QUAL-03 | Phase 5 | Pending |
