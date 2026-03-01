@@ -177,7 +177,7 @@ impl TrackContextBuilder {
     /// Check if two Camelot keys are within `max_steps` of each other.
     /// Camelot keys are "NL" format: number 1-12, letter A or B.
     /// Compatible = same letter ± max_steps, or same number different letter.
-    fn is_camelot_compatible(key_a: &str, key_b: &str, max_steps: i32) -> bool {
+    pub(crate) fn is_camelot_compatible(key_a: &str, key_b: &str, max_steps: i32) -> bool {
         let parse = |k: &str| -> Option<(i32, char)> {
             let k = k.trim();
             if k.len() < 2 || k.len() > 3 { return None; }
@@ -322,6 +322,63 @@ impl TrackContextBuilder {
 mod tests {
     use super::*;
 
+    // -------------------------------------------------------------------------
+    // Helper functions for concise test construction
+    // -------------------------------------------------------------------------
+
+    fn make_test_track(id: i64, title: &str) -> Track {
+        Track {
+            id: Some(id),
+            file_path: format!("/test/{}.mp3", id),
+            file_hash: format!("hash{}", id),
+            title: Some(title.to_string()),
+            artist: None,
+            album: None,
+            album_artist: None,
+            track_number: None,
+            year: None,
+            label: None,
+            duration_ms: Some(240000),
+            file_format: Some("mp3".to_string()),
+            bitrate: None,
+            sample_rate: None,
+            file_size: None,
+            date_added: None,
+            date_modified: None,
+            play_count: 0,
+            rating: 0,
+            comment: None,
+            artwork_path: None,
+            genre: None,
+            genre_source: None,
+        }
+    }
+
+    fn make_test_track_with_artist(id: i64, title: &str, artist: &str) -> Track {
+        Track {
+            artist: Some(artist.to_string()),
+            ..make_test_track(id, title)
+        }
+    }
+
+    fn make_test_analysis(bpm: f64, key: &str) -> TrackAnalysis {
+        TrackAnalysis {
+            track_id: 0,
+            bpm: Some(bpm),
+            bpm_confidence: Some(0.9),
+            musical_key: Some(key.to_string()),
+            key_confidence: Some(0.85),
+            loudness_lufs: None,
+            dynamic_range: None,
+            spectral_centroid: None,
+            analyzed_at: None,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Existing serialization test
+    // -------------------------------------------------------------------------
+
     #[test]
     fn test_track_context_serialization() {
         let context = TrackContext {
@@ -339,5 +396,181 @@ mod tests {
         let json = serde_json::to_string(&context).unwrap();
         assert!(json.contains("Test Track"));
         assert!(json.contains("128.5"));
+    }
+
+    // -------------------------------------------------------------------------
+    // build_full_context tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_build_full_context_empty_library() {
+        let result = TrackContextBuilder::build_full_context(&[]);
+        assert!(result.is_ok());
+        let json_str = result.unwrap();
+        let ctx: AIContext = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(ctx.library_stats.total_tracks, 0);
+        assert!(ctx.tracks.is_empty());
+    }
+
+    #[test]
+    fn test_build_full_context_with_tracks() {
+        let tracks = vec![
+            (make_test_track(1, "Deep Tech"), Some(make_test_analysis(128.0, "8A"))),
+            (make_test_track(2, "Minimal"), None),
+        ];
+        let result = TrackContextBuilder::build_full_context(&tracks);
+        assert!(result.is_ok());
+        let json_str = result.unwrap();
+        assert!(json_str.contains("Deep Tech"));
+        assert!(json_str.contains("128"));
+        assert!(json_str.contains("total_tracks"));
+        let ctx: AIContext = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(ctx.library_stats.total_tracks, 2);
+        assert_eq!(ctx.library_stats.analyzed_tracks, 1);
+    }
+
+    #[test]
+    fn test_build_full_context_bpm_rounding() {
+        let tracks = vec![
+            (make_test_track(1, "Roundabout"), Some(make_test_analysis(128.456, "5A"))),
+        ];
+        let result = TrackContextBuilder::build_full_context(&tracks);
+        assert!(result.is_ok());
+        let ctx: AIContext = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(ctx.tracks.len(), 1);
+        let bpm = ctx.tracks[0].bpm.expect("BPM should be present");
+        assert!((bpm - 128.5).abs() < f64::EPSILON, "BPM should be rounded to 128.5, got {}", bpm);
+    }
+
+    // -------------------------------------------------------------------------
+    // build_smart_context tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_build_smart_context_filters_by_artist() {
+        // Use 4 tracks so that 1 filtered < 4/2=2 triggers the filter
+        let tracks = vec![
+            (make_test_track_with_artist(1, "Track A", "Boris Brejcha"), Some(make_test_analysis(128.0, "8A"))),
+            (make_test_track_with_artist(2, "Track B", "Charlotte de Witte"), Some(make_test_analysis(140.0, "3A"))),
+            (make_test_track_with_artist(3, "Track C", "Adam Beyer"), Some(make_test_analysis(133.0, "6A"))),
+            (make_test_track_with_artist(4, "Track D", "Sven Vath"), Some(make_test_analysis(130.0, "7A"))),
+        ];
+        let result = TrackContextBuilder::build_smart_context(&tracks, "boris brejcha set");
+        assert!(result.is_ok());
+        let json_str = result.unwrap();
+        assert!(json_str.contains("Boris Brejcha"));
+        let ctx: AIContext = serde_json::from_str(&json_str).unwrap();
+        // 1 filtered < 4/2=2, so filter applies: expect 1 track
+        assert_eq!(ctx.tracks.len(), 1);
+    }
+
+    #[test]
+    fn test_build_smart_context_falls_back_on_generic_prompt() {
+        let tracks = vec![
+            (make_test_track_with_artist(1, "Track A", "Boris Brejcha"), Some(make_test_analysis(128.0, "8A"))),
+            (make_test_track_with_artist(2, "Track B", "Charlotte de Witte"), Some(make_test_analysis(140.0, "3A"))),
+            (make_test_track_with_artist(3, "Track C", "Adam Beyer"), Some(make_test_analysis(133.0, "6A"))),
+        ];
+        let result = TrackContextBuilder::build_smart_context(&tracks, "make me a playlist");
+        assert!(result.is_ok());
+        let ctx: AIContext = serde_json::from_str(&result.unwrap()).unwrap();
+        // No keyword matches → filtered is empty, falls back to all tracks
+        assert_eq!(ctx.tracks.len(), 3);
+    }
+
+    #[test]
+    fn test_build_smart_context_filters_by_genre_keyword() {
+        // Use 4 tracks: 1 with "techno" in comment → 1 filtered < 4/2=2 → filter applies
+        let mut track_with_comment = make_test_track(1, "Dark Room");
+        track_with_comment.comment = Some("Deep progressive techno".to_string());
+
+        let tracks = vec![
+            (track_with_comment, None),
+            (make_test_track(2, "Ambient Drift"), None),
+            (make_test_track(3, "Jazz Funk"), None),
+            (make_test_track(4, "Acoustic Blues"), None),
+        ];
+        let result = TrackContextBuilder::build_smart_context(&tracks, "I want techno tracks");
+        assert!(result.is_ok());
+        let ctx: AIContext = serde_json::from_str(&result.unwrap()).unwrap();
+        // 1 filtered < 4/2=2, filter applies → only the techno-tagged track
+        assert_eq!(ctx.tracks.len(), 1);
+        assert_eq!(ctx.tracks[0].title.as_deref(), Some("Dark Room"));
+    }
+
+    // -------------------------------------------------------------------------
+    // build_seed_context tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_build_seed_context_build_up_filters_bpm_and_key() {
+        // Seed: BPM=128, key="8A", direction="build_up"
+        // BPM range for build_up: seed-5 to seed+25 → 123-153
+        // We need enough tracks (>=20 passing) to avoid the fallback-to-full-context (<20 filter)
+        // Strategy: 20 tracks with BPM=130 and key="8A" (all pass), plus 5 excluded tracks.
+        // The 5 excluded tracks have BPM=160 (out of range) and key="1A" (distance 7, incompatible)
+        let mut tracks = Vec::new();
+        for i in 1..=20 {
+            tracks.push((make_test_track(i, "In Range"), Some(make_test_analysis(130.0, "8A"))));
+        }
+        for i in 21..=25 {
+            tracks.push((make_test_track(i, "Excluded"), Some(make_test_analysis(160.0, "1A"))));
+        }
+
+        let result = TrackContextBuilder::build_seed_context(
+            &tracks,
+            Some(128.0),
+            Some("8A"),
+            "build_up",
+        );
+        assert!(result.is_ok());
+        let ctx: AIContext = serde_json::from_str(&result.unwrap()).unwrap();
+        // 20 tracks pass (BPM in range OR key compatible), 5 excluded (BPM=160 out of 123-153 AND key 1A incompatible with 8A at max_steps=2)
+        assert_eq!(ctx.library_stats.total_tracks, 20, "Expected 20 filtered tracks, got {}", ctx.library_stats.total_tracks);
+    }
+
+    #[test]
+    fn test_build_seed_context_no_seed_data_falls_back() {
+        let tracks = vec![
+            (make_test_track(1, "Alpha"), None),
+            (make_test_track(2, "Beta"), None),
+            (make_test_track(3, "Gamma"), None),
+        ];
+        let result = TrackContextBuilder::build_seed_context(&tracks, None, None, "maintain");
+        assert!(result.is_ok());
+        let ctx: AIContext = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(ctx.library_stats.total_tracks, 3);
+    }
+
+    // -------------------------------------------------------------------------
+    // is_camelot_compatible tests (pub(crate) visibility)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_is_camelot_compatible_same_number_diff_letter() {
+        assert!(TrackContextBuilder::is_camelot_compatible("8A", "8B", 2));
+    }
+
+    #[test]
+    fn test_is_camelot_compatible_adjacent_same_letter() {
+        assert!(TrackContextBuilder::is_camelot_compatible("5A", "6A", 1));
+    }
+
+    #[test]
+    fn test_is_camelot_compatible_circular_wrap() {
+        // 12A and 1A: circular distance = 1
+        assert!(TrackContextBuilder::is_camelot_compatible("12A", "1A", 1));
+    }
+
+    #[test]
+    fn test_is_camelot_compatible_incompatible() {
+        // 1A and 6A: distance = 5, exceeds max_steps=2
+        assert!(!TrackContextBuilder::is_camelot_compatible("1A", "6A", 2));
+    }
+
+    #[test]
+    fn test_is_camelot_compatible_invalid_key() {
+        assert!(!TrackContextBuilder::is_camelot_compatible("XY", "8A", 2));
+        assert!(!TrackContextBuilder::is_camelot_compatible("8A", "", 2));
     }
 }
