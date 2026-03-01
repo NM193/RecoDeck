@@ -18,6 +18,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use crate::audio::audio_mime_type;
 use super::CompanionServerState;
 
 #[derive(serde::Deserialize)]
@@ -210,21 +211,3 @@ fn parse_range(range_header: &str, total_len: usize) -> Option<(usize, usize)> {
     Some((start, end.min(total_len)))
 }
 
-/// Get MIME type for an audio file based on its extension
-fn audio_mime_type(path: &str) -> &'static str {
-    match std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase())
-        .as_deref()
-    {
-        Some("mp3") => "audio/mpeg",
-        Some("flac") => "audio/flac",
-        Some("wav") => "audio/wav",
-        Some("ogg") => "audio/ogg",
-        Some("m4a") => "audio/mp4",
-        Some("aac") => "audio/aac",
-        Some("aiff") | Some("aif") => "audio/aiff",
-        _ => "application/octet-stream",
-    }
-}

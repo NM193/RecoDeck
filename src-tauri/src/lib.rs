@@ -62,24 +62,7 @@ fn hex_val(byte: u8) -> Option<u8> {
     }
 }
 
-/// Get MIME type for an audio file based on its extension
-fn audio_mime_type(path: &str) -> &'static str {
-    match std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase())
-        .as_deref()
-    {
-        Some("mp3") => "audio/mpeg",
-        Some("flac") => "audio/flac",
-        Some("wav") => "audio/wav",
-        Some("ogg") => "audio/ogg",
-        Some("m4a") => "audio/mp4",
-        Some("aac") => "audio/aac",
-        Some("aiff") | Some("aif") => "audio/aiff",
-        _ => "application/octet-stream",
-    }
-}
+use audio::audio_mime_type;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
