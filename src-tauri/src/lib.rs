@@ -422,6 +422,7 @@ pub fn run() {
             commands::library::cleanup_duplicate_tracks,
             commands::library::normalize_file_paths,
             commands::library::get_debug_tracks,
+            commands::library::get_track_artwork,
             // Playback commands
             commands::playback::load_track,
             commands::playback::play,

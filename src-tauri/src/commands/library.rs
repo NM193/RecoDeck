@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 use tauri::State;
+use tauri::ipc::Response;
 
 /// Application state with database connection
 pub struct AppState {
@@ -592,4 +593,52 @@ pub fn get_debug_tracks(state: State<AppState>) -> Result<Vec<DebugTrackInfo>, A
             }
         })
     }).collect())
+}
+
+/// Extract embedded album artwork from an audio file.
+/// Returns binary image data (JPEG or PNG) from the file's embedded tags,
+/// or falls back to a folder cover image (cover.jpg, folder.jpg, etc.).
+/// Returns an error string "no_artwork" if no artwork is found.
+#[tauri::command]
+pub async fn get_track_artwork(
+    track_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Response, String> {
+    use lofty::file::TaggedFileExt;
+
+    let file_path = {
+        let db = state.db.lock().unwrap();
+        let db = db.as_ref().ok_or("Database not initialized")?;
+        let track = db.get_track(track_id).map_err(|e| e.to_string())?;
+        track.file_path.clone()
+    };
+
+    // Try embedded art via lofty
+    if let Ok(tagged_file) = lofty::read_from_path(&file_path) {
+        for tag in tagged_file.tags() {
+            if let Some(picture) = tag.pictures().first() {
+                let data: Vec<u8> = picture.data().to_vec();
+                return Ok(Response::new(data));
+            }
+        }
+    }
+
+    // Try folder cover images
+    if let Some(folder) = std::path::Path::new(&file_path).parent() {
+        for name in &[
+            "cover.jpg", "cover.png",
+            "folder.jpg", "folder.png",
+            "Cover.jpg", "Cover.png",
+            "Folder.jpg", "Folder.png",
+        ] {
+            let cover_path = folder.join(name);
+            if cover_path.exists() {
+                if let Ok(bytes) = std::fs::read(&cover_path) {
+                    return Ok(Response::new(bytes));
+                }
+            }
+        }
+    }
+
+    Err("no_artwork".to_string())
 }

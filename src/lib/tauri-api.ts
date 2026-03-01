@@ -421,6 +421,11 @@ export const tauriApi = {
     return await invoke('bulk_set_genre', { trackIds, genre })
   },
 
+  // Artwork command
+  async getTrackArtwork(trackId: number): Promise<ArrayBuffer> {
+    return await invoke<ArrayBuffer>('get_track_artwork', { trackId })
+  },
+
   // Companion server commands
   async startCompanionServer(port?: number): Promise<{
     running: boolean
