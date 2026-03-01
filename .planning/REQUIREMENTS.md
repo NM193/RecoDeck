@@ -11,15 +11,15 @@ Requirements for v1.1 Spotify Redesign. Each maps to roadmap phases.
 
 - [x] **DEBT-01**: Fix aiStore.ts to use isAppError/getErrorMessage instead of instanceof Error for Tauri IPC error handling
 - [x] **DEBT-02**: Extract duplicated audio_mime_type function to shared module (used in lib.rs and streaming.rs)
-- [ ] **DEBT-03**: Remove orphaned /api/tracks/{id} route and httpApi.getTrack() wrapper (verify no mobile PWA usage first)
-- [ ] **DEBT-04**: Remove greet command and handler from lib.rs
+- [x] **DEBT-03**: Remove orphaned /api/tracks/{id} route and httpApi.getTrack() wrapper (verify no mobile PWA usage first)
+- [x] **DEBT-04**: Remove greet command and handler from lib.rs
 - [x] **DEBT-05**: Run cargo clippy and fix any remaining warnings
 
 ### Code Quality
 
-- [ ] **QUAL-01**: Configure ESLint 9 with flat config + typescript-eslint v8
-- [ ] **QUAL-02**: Configure Prettier 3 for consistent code formatting
-- [ ] **QUAL-03**: Fix all ESLint warnings/errors across the frontend codebase
+- [x] **QUAL-01**: Configure ESLint 9 with flat config + typescript-eslint v8
+- [x] **QUAL-02**: Configure Prettier 3 for consistent code formatting
+- [x] **QUAL-03**: Fix all ESLint warnings/errors across the frontend codebase
 
 ### Test Coverage
 
@@ -85,12 +85,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | DEBT-01 | Phase 5 | Complete (05-01) |
 | DEBT-02 | Phase 5 | Complete (05-01) |
-| DEBT-03 | Phase 5 | Pending |
-| DEBT-04 | Phase 5 | Pending |
+| DEBT-03 | Phase 5 | Complete |
+| DEBT-04 | Phase 5 | Complete |
 | DEBT-05 | Phase 5 | Complete (05-01) |
-| QUAL-01 | Phase 5 | Pending |
-| QUAL-02 | Phase 5 | Pending |
-| QUAL-03 | Phase 5 | Pending |
+| QUAL-01 | Phase 5 | Complete |
+| QUAL-02 | Phase 5 | Complete |
+| QUAL-03 | Phase 5 | Complete |
 | TEST-01 | Phase 6 | Pending |
 | TEST-02 | Phase 6 | Pending |
 | TEST-03 | Phase 6 | Pending |

@@ -21,7 +21,7 @@
 
 **Milestone Goal:** Stabilize the codebase (tech debt, testing, linting) then redesign the entire UI to match Spotify's desktop design language.
 
-- [ ] **Phase 5: Foundation Cleanup** — Eliminate tech debt and enforce code quality tooling
+- [x] **Phase 5: Foundation Cleanup** — Eliminate tech debt and enforce code quality tooling (completed 2026-03-01)
 - [ ] **Phase 6: Test Coverage** — Rust backend tests and frontend Vitest coverage
 - [ ] **Phase 7: UI Foundation** — Spotify dark theme, typography, spacing, and component system
 - [ ] **Phase 8: UI Layout** — Sidebar navigation, album art grids, now-playing bar, view transitions
@@ -113,7 +113,7 @@ Plans:
 | 2. Mobile Companion | v1.0 | 3/3 | Complete | 2026-02-28 |
 | 3. AI Playlists | v1.0 | 2/2 | Complete | 2026-02-28 |
 | 4. AI Discovery and Mix Prep | v1.0 | 2/2 | Complete | 2026-02-28 |
-| 5. Foundation Cleanup | v1.1 | 1/2 | In progress | - |
+| 5. Foundation Cleanup | 2/2 | Complete   | 2026-03-01 | - |
 | 6. Test Coverage | v1.1 | 0/2 | Not started | - |
 | 7. UI Foundation | v1.1 | 0/2 | Not started | - |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |
