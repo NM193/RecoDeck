@@ -40,7 +40,15 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-(None — next milestone requirements to be defined via `/gsd:new-milestone`)
+## Current Milestone: v1.1 Stabilization & Polish
+
+**Goal:** Make the existing codebase rock solid — fix tech debt, improve code quality, polish UI/UX, and add test coverage before building new features.
+
+**Target features:**
+- Fix known tech debt (unused type guards, duplicated `audio_mime_type`, orphaned route)
+- Full code quality pass — architecture cleanup, error handling consistency, performance optimization
+- General UI/UX polish — spacing, colors, animations, consistency across desktop and mobile
+- Test coverage for core functionality (Rust backend priority, then frontend)
 
 ### Out of Scope
 
@@ -94,4 +102,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-01 after v1.0 milestone*
+*Last updated: 2026-03-01 after v1.1 milestone started*
