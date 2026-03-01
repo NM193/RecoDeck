@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 ## Current Position
 
 Phase: 8 of 9 (UI Layout) — In Progress
-Plan: 1 of 3 in current phase — 08-01 complete
-Status: 08-01 complete — CSS Grid AppShell + resizable Sidebar + artwork pipeline
-Last activity: 2026-03-01 — 08-01 complete
+Plan: 2 of 3 in current phase — 08-02 complete
+Status: 08-02 complete — NowPlayingBar 3-column layout + HomeView + PlaylistDetailHeader
+Last activity: 2026-03-01 — 08-02 complete
 
-Progress: [█████████░] 62%
+Progress: [█████████░] 67%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [█████████░] 62%
 | Phase 07-ui-foundation P01 | 3m | 3 tasks | 5 files |
 | Phase 07-ui-foundation P02 | 30m | 5 tasks | 12 files |
 | Phase 08-ui-layout P01 | 35m | 2 tasks | 11 files |
+| Phase 08-ui-layout P02 | 8m | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 22. [08-01] --sidebar-width CSS custom property updated on documentElement during drag (not React state) for 60fps
 23. [08-01] lofty::ipc::Response binary response used for artwork bytes — avoids base64 overhead
 24. [08-01] lucide-react House icon used instead of Home (Home not in icons export for this version)
+25. [08-02] NowPlayingBar replaces Player.tsx inline (approach b) — all audio logic inlined, no separate logic layer
+26. [08-02] HomeView uses gradient placeholders for playlist cards (not N+1 artwork API calls) — better performance on home view load
+27. [08-02] PlaylistDetailHeader sentinel div placed inside component — keeps IntersectionObserver logic self-contained
 
 ### Pending Todos
 
@@ -92,5 +96,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 08-01-PLAN.md
-Resume file: .planning/phases/08-ui-layout/08-02-PLAN.md
+Stopped at: Completed 08-02-PLAN.md
+Resume file: .planning/phases/08-ui-layout/08-03-PLAN.md

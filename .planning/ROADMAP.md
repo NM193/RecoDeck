@@ -85,8 +85,8 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: CSS Grid AppShell, resizable sidebar with collapsible sections, Rust album art extraction command (UIUX-02, UIUX-03)
-- [ ] 08-02: 3-column NowPlayingBar, HomeView with playlist card grid, PlaylistDetailHeader with scroll compression (UIUX-03, UIUX-04)
+- [x] 08-01: CSS Grid AppShell, resizable sidebar with collapsible sections, Rust album art extraction command (UIUX-02, UIUX-03)
+- [x] 08-02: 3-column NowPlayingBar, HomeView with playlist card grid, PlaylistDetailHeader with scroll compression (UIUX-03, UIUX-04)
 - [ ] 08-03: Framer Motion AnimatePresence crossfade transitions, expandable now-playing view, visual verification (UIUX-05)
 
 ### Phase 9: UI Views and Mobile

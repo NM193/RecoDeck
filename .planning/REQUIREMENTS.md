@@ -35,7 +35,7 @@ Requirements for v1.1 Spotify Redesign. Each maps to roadmap phases.
 - [x] **UIUX-01**: Implement Spotify-style dark theme (color palette, typography, spacing system)
 - [x] **UIUX-02**: Redesign sidebar navigation with library sections and playlist list
 - [x] **UIUX-03**: Implement album art grid views for library browsing
-- [ ] **UIUX-04**: Redesign now-playing bar fixed at bottom with track info, controls, progress
+- [x] **UIUX-04**: Redesign now-playing bar fixed at bottom with track info, controls, progress
 - [ ] **UIUX-05**: Add smooth Framer Motion transitions across all view changes
 - [ ] **UIUX-06**: Redesign track table/list with Spotify-style hover states and selection
 - [ ] **UIUX-07**: Redesign playlist view with header art, metadata, and track listing
@@ -100,7 +100,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UIUX-01 | Phase 7 | Complete |
 | UIUX-02 | Phase 8 | Complete |
 | UIUX-03 | Phase 8 | Complete |
-| UIUX-04 | Phase 8 | Pending |
+| UIUX-04 | Phase 8 | Complete |
 | UIUX-05 | Phase 8 | Pending |
 | UIUX-06 | Phase 9 | Pending |
 | UIUX-07 | Phase 9 | Pending |
