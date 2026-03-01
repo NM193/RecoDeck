@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Spotify Redesign
-status: planning
-last_updated: "2026-03-01T12:00:00.000Z"
+status: unknown
+last_updated: "2026-03-01T13:41:55.178Z"
 progress:
-  total_phases: 5
+  total_phases: 3
   completed_phases: 2
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-03-01)
 
 ## Current Position
 
-Phase: 7 of 9 (UI Foundation) — PLANNED
-Plan: 0 of 2 in current phase — ready for execution
-Status: Phase 7 plans created — 07-01 (tokens/font/typography) and 07-02 (component CSS migration)
-Last activity: 2026-03-01 — Phase 7 plans created
+Phase: 7 of 9 (UI Foundation) — IN PROGRESS
+Plan: 1 of 2 in current phase — 07-01 complete, 07-02 pending
+Status: 07-01 (design tokens/font/typography) complete — ready for 07-02 (component CSS migration)
+Last activity: 2026-03-01 — 07-01 complete
 
 Progress: [████░░░░░░] 44%
 
@@ -44,6 +44,7 @@ Progress: [████░░░░░░] 44%
 | Phase 6 | 2/2 | ~25m | ~13m |
 
 *Updated after each plan completion*
+| Phase 07-ui-foundation P01 | 3 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 12. [06-02] Separate vitest.config.ts from vite.config.ts to avoid polluting Tauri dev server configuration
 13. [06-02] Zustand v5 getInitialState() used for store reset in beforeEach — cleaner than manual initialState reconstruction
 14. [06-02] globals: true in vitest config avoids import boilerplate for test globals (describe/it/expect)
+15. [07-01] Midnight theme migrated from blue-tinted (#0a0a0f) to Spotify warm blacks (#121212) while keeping indigo (#6366f1) as accent
+16. [07-01] Custom theme omits functional tokens (cue/energy/mood/vocal) because applyCustomTheme() JS override provides them at runtime
+17. [07-01] Test files excluded from tsconfig.json production compilation to prevent Vitest globals causing TS errors during build
 
 ### Pending Todos
 
@@ -79,5 +83,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 7 plans created — ready for execution
+Stopped at: Completed 07-01-PLAN.md
 Resume file: None
