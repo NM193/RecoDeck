@@ -1,20 +1,24 @@
 // Floating AI chat button - appears in bottom-right corner when chat is closed
 
-import { motion } from 'framer-motion';
-import { Icon } from '../Icon';
+import { motion } from 'framer-motion'
+import { Icon } from '../Icon'
 
 interface FloatingButtonProps {
-  onClick: () => void;
-  hasUnread?: boolean;
+  onClick: () => void
+  hasUnread?: boolean
 }
 
-export function FloatingButton({ onClick, hasUnread = false }: FloatingButtonProps) {
+export function FloatingButton({
+  onClick,
+  hasUnread = false,
+}: FloatingButtonProps) {
   return (
     <motion.button
       onClick={onClick}
       className="fixed bottom-28 right-8 z-50 w-20 h-20 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center group"
       style={{
-        boxShadow: '0 0 60px rgba(6, 182, 212, 0.8), 0 0 30px rgba(59, 130, 246, 0.6), 0 10px 40px rgba(0, 0, 0, 0.5)',
+        boxShadow:
+          '0 0 60px rgba(6, 182, 212, 0.8), 0 0 30px rgba(59, 130, 246, 0.6), 0 10px 40px rgba(0, 0, 0, 0.5)',
         border: '3px solid rgba(255, 255, 255, 0.3)',
       }}
       initial={{ scale: 0, opacity: 0, rotate: -180 }}
@@ -22,7 +26,8 @@ export function FloatingButton({ onClick, hasUnread = false }: FloatingButtonPro
       exit={{ scale: 0, opacity: 0, rotate: 180 }}
       whileHover={{
         scale: 1.15,
-        boxShadow: '0 0 80px rgba(6, 182, 212, 1), 0 0 40px rgba(59, 130, 246, 0.8), 0 15px 50px rgba(0, 0, 0, 0.6)',
+        boxShadow:
+          '0 0 80px rgba(6, 182, 212, 1), 0 0 40px rgba(59, 130, 246, 0.8), 0 15px 50px rgba(0, 0, 0, 0.6)',
       }}
       whileTap={{ scale: 0.9 }}
       transition={{ type: 'spring', stiffness: 260, damping: 20 }}
@@ -55,5 +60,5 @@ export function FloatingButton({ onClick, hasUnread = false }: FloatingButtonPro
         }}
       />
     </motion.button>
-  );
+  )
 }

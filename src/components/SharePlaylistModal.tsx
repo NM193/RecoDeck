@@ -1,16 +1,16 @@
-import { useCallback } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { QRCodeSVG } from "qrcode.react";
-import { Icon } from "./Icon";
-import "./SharePlaylistModal.css";
+import { useCallback } from 'react'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { QRCodeSVG } from 'qrcode.react'
+import { Icon } from './Icon'
+import './SharePlaylistModal.css'
 
 interface SharePlaylistModalProps {
-  open: boolean;
-  playlistId: number;
-  playlistName: string;
-  companionUrl: string;
-  companionToken: string;
-  onClose: () => void;
+  open: boolean
+  playlistId: number
+  playlistName: string
+  companionUrl: string
+  companionToken: string
+  onClose: () => void
 }
 
 export function SharePlaylistModal({
@@ -21,13 +21,13 @@ export function SharePlaylistModal({
   companionToken,
   onClose,
 }: SharePlaylistModalProps) {
-  const shareUrl = `${companionUrl}/?token=${companionToken}&playlist=${playlistId}&name=${encodeURIComponent(playlistName)}`;
+  const shareUrl = `${companionUrl}/?token=${companionToken}&playlist=${playlistId}&name=${encodeURIComponent(playlistName)}`
 
   const handleOpenLink = useCallback(() => {
-    openUrl(shareUrl);
-  }, [shareUrl]);
+    openUrl(shareUrl)
+  }, [shareUrl])
 
-  if (!open) return null;
+  if (!open) return null
 
   return (
     <div className="share-playlist-backdrop" onClick={onClose}>
@@ -55,7 +55,8 @@ export function SharePlaylistModal({
         <div className="share-playlist-qr">
           <QRCodeSVG value={shareUrl} size={180} level="M" />
           <span className="share-playlist-qr-hint">
-            Pošalji link ili skeniraj QR — pri otvaranju linka automatski se povezuje i otvara playlista
+            Pošalji link ili skeniraj QR — pri otvaranju linka automatski se
+            povezuje i otvara playlista
           </span>
         </div>
 
@@ -68,5 +69,5 @@ export function SharePlaylistModal({
         </button>
       </div>
     </div>
-  );
+  )
 }

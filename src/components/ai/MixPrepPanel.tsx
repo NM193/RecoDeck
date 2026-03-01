@@ -6,22 +6,22 @@
 //
 // loudness_lufs not implemented -- BPM used as energy proxy for Phase 4
 
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Icon } from '../Icon';
-import { tauriApi } from '../../lib/tauri-api';
-import type { Track } from '../../types/track';
-import type { RecommendedOrder } from '../../types/ai';
-import { getErrorMessage } from '../../types/ai';
-import { useAIStore } from '../../store/aiStore';
-import { getKeyCompatibility, getBpmIssue } from '../../lib/musicUtils';
-import './MixPrepPanel.css';
+import { useState, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Icon } from '../Icon'
+import { tauriApi } from '../../lib/tauri-api'
+import type { Track } from '../../types/track'
+import type { RecommendedOrder } from '../../types/ai'
+import { getErrorMessage } from '../../types/ai'
+import { useAIStore } from '../../store/aiStore'
+import { getKeyCompatibility, getBpmIssue } from '../../lib/musicUtils'
+import './MixPrepPanel.css'
 
 interface MixPrepPanelProps {
-  playlistId: number;
-  playlistName: string;
-  onClose: () => void;
-  onPlaylistReordered: () => void;
+  playlistId: number
+  playlistName: string
+  onClose: () => void
+  onPlaylistReordered: () => void
 }
 
 // --- Energy Arc Component ---
@@ -29,17 +29,17 @@ interface MixPrepPanelProps {
 // Color: green (low BPM) to red (high BPM) using HSL hue 120→0.
 // Tracks with no BPM show minimum-height (4px) gray bars.
 function EnergyArc({ tracks }: { tracks: Track[] }) {
-  const bpms = tracks.map(t => t.bpm ?? 0);
-  const validBpms = bpms.filter(b => b > 0);
-  const min = validBpms.length > 0 ? Math.min(...validBpms) : 0;
-  const max = validBpms.length > 0 ? Math.max(...validBpms) : 1;
-  const range = max - min || 1;
+  const bpms = tracks.map((t) => t.bpm ?? 0)
+  const validBpms = bpms.filter((b) => b > 0)
+  const min = validBpms.length > 0 ? Math.min(...validBpms) : 0
+  const max = validBpms.length > 0 ? Math.max(...validBpms) : 1
+  const range = max - min || 1
 
-  const BAR_WIDTH = 24;
-  const BAR_GAP = 4;
-  const MAX_HEIGHT = 80;
-  const LABEL_HEIGHT = 40;
-  const svgWidth = Math.max(tracks.length * (BAR_WIDTH + BAR_GAP), 100);
+  const BAR_WIDTH = 24
+  const BAR_GAP = 4
+  const MAX_HEIGHT = 80
+  const LABEL_HEIGHT = 40
+  const svgWidth = Math.max(tracks.length * (BAR_WIDTH + BAR_GAP), 100)
 
   return (
     <svg
@@ -50,13 +50,14 @@ function EnergyArc({ tracks }: { tracks: Track[] }) {
       className="mix-prep-energy-arc"
     >
       {tracks.map((track, i) => {
-        const bpm = track.bpm ?? 0;
+        const bpm = track.bpm ?? 0
         // Minimum bar height of 4px for tracks without BPM data
-        const height = bpm > 0 ? Math.max(4, ((bpm - min) / range) * MAX_HEIGHT) : 4;
-        const y = MAX_HEIGHT - height;
+        const height =
+          bpm > 0 ? Math.max(4, ((bpm - min) / range) * MAX_HEIGHT) : 4
+        const y = MAX_HEIGHT - height
         // Color: green (low energy, hue 120) to red (high energy, hue 0)
-        const hue = bpm > 0 ? Math.round((1 - (bpm - min) / range) * 120) : 0;
-        const x = i * (BAR_WIDTH + BAR_GAP);
+        const hue = bpm > 0 ? Math.round((1 - (bpm - min) / range) * 120) : 0
+        const x = i * (BAR_WIDTH + BAR_GAP)
         return (
           <g key={track.id ?? i}>
             <rect
@@ -68,7 +69,8 @@ function EnergyArc({ tracks }: { tracks: Track[] }) {
               rx={3}
             />
             <title>
-              {track.title || 'Unknown'}: {bpm > 0 ? `${Math.round(bpm)} BPM` : 'No BPM data'}
+              {track.title || 'Unknown'}:{' '}
+              {bpm > 0 ? `${Math.round(bpm)} BPM` : 'No BPM data'}
             </title>
             {/* Track number label */}
             <text
@@ -93,10 +95,10 @@ function EnergyArc({ tracks }: { tracks: Track[] }) {
               </text>
             )}
           </g>
-        );
+        )
       })}
     </svg>
-  );
+  )
 }
 
 // --- Main Panel ---
@@ -106,102 +108,112 @@ export function MixPrepPanel({
   onClose,
   onPlaylistReordered,
 }: MixPrepPanelProps) {
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [loadingTracks, setLoadingTracks] = useState(true);
-  const [tracksError, setTracksError] = useState<string | null>(null);
+  const [tracks, setTracks] = useState<Track[]>([])
+  const [loadingTracks, setLoadingTracks] = useState(true)
+  const [tracksError, setTracksError] = useState<string | null>(null)
 
   // AI suggested order state
-  const [suggestedOrder, setSuggestedOrder] = useState<RecommendedOrder | null>(null);
-  const [isGeneratingOrder, setIsGeneratingOrder] = useState(false);
-  const [orderError, setOrderError] = useState<string | null>(null);
-  const [isApplying, setIsApplying] = useState(false);
+  const [suggestedOrder, setSuggestedOrder] = useState<RecommendedOrder | null>(
+    null,
+  )
+  const [isGeneratingOrder, setIsGeneratingOrder] = useState(false)
+  const [orderError, setOrderError] = useState<string | null>(null)
+  const [isApplying, setIsApplying] = useState(false)
 
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   // Load playlist tracks on mount
   useEffect(() => {
     async function load() {
       try {
-        setLoadingTracks(true);
-        const result = await tauriApi.getPlaylistTracks(playlistId);
-        setTracks(result);
+        setLoadingTracks(true)
+        const result = await tauriApi.getPlaylistTracks(playlistId)
+        setTracks(result)
       } catch (err) {
-        setTracksError(getErrorMessage(err));
+        setTracksError(getErrorMessage(err))
       } finally {
-        setLoadingTracks(false);
+        setLoadingTracks(false)
       }
     }
-    load();
-  }, [playlistId]);
+    load()
+  }, [playlistId])
 
   // Computed values from tracks
-  const analyzedCount = tracks.filter(t => t.bpm != null && t.bpm > 0).length;
-  const totalCount = tracks.length;
-  const showBpmWarning = totalCount > 0 && analyzedCount < totalCount * 0.5;
+  const analyzedCount = tracks.filter((t) => t.bpm != null && t.bpm > 0).length
+  const totalCount = tracks.length
+  const showBpmWarning = totalCount > 0 && analyzedCount < totalCount * 0.5
 
   // --- Section 2: Transition Issues ---
   // Only pairs with at least one issue are shown.
-  const transitionIssues = tracks.slice(0, -1).map((trackA, i) => {
-    const trackB = tracks[i + 1];
-    const bpmIssue = getBpmIssue(trackA.bpm, trackB.bpm);
-    const keyCompat = getKeyCompatibility(trackA.musical_key, trackB.musical_key);
-    return { trackA, trackB, bpmIssue, keyCompat };
-  }).filter(({ bpmIssue, keyCompat }) => bpmIssue === 'bad' || keyCompat === 'clash');
+  const transitionIssues = tracks
+    .slice(0, -1)
+    .map((trackA, i) => {
+      const trackB = tracks[i + 1]
+      const bpmIssue = getBpmIssue(trackA.bpm, trackB.bpm)
+      const keyCompat = getKeyCompatibility(
+        trackA.musical_key,
+        trackB.musical_key,
+      )
+      return { trackA, trackB, bpmIssue, keyCompat }
+    })
+    .filter(
+      ({ bpmIssue, keyCompat }) => bpmIssue === 'bad' || keyCompat === 'clash',
+    )
 
   // --- Section 3: AI Suggested Order ---
   const handleGetSuggestedOrder = useCallback(async () => {
-    setIsGeneratingOrder(true);
-    setOrderError(null);
-    setSuggestedOrder(null);
+    setIsGeneratingOrder(true)
+    setOrderError(null)
+    setSuggestedOrder(null)
     try {
-      const result = await tauriApi.aiOptimizePlaylistOrder(playlistId);
-      setSuggestedOrder(result);
+      const result = await tauriApi.aiOptimizePlaylistOrder(playlistId)
+      setSuggestedOrder(result)
     } catch (err) {
-      setOrderError(getErrorMessage(err));
+      setOrderError(getErrorMessage(err))
     } finally {
-      setIsGeneratingOrder(false);
+      setIsGeneratingOrder(false)
     }
-  }, [playlistId]);
+  }, [playlistId])
 
   const handleApplyOrder = useCallback(async () => {
-    if (!suggestedOrder) return;
-    setIsApplying(true);
+    if (!suggestedOrder) return
+    setIsApplying(true)
     try {
-      await tauriApi.reorderPlaylistTracks(playlistId, suggestedOrder.track_ids);
-      onPlaylistReordered();
+      await tauriApi.reorderPlaylistTracks(playlistId, suggestedOrder.track_ids)
+      onPlaylistReordered()
     } catch (err) {
-      setOrderError(getErrorMessage(err));
-      setIsApplying(false);
+      setOrderError(getErrorMessage(err))
+      setIsApplying(false)
     }
-  }, [suggestedOrder, playlistId, onPlaylistReordered]);
+  }, [suggestedOrder, playlistId, onPlaylistReordered])
 
   // Resolve suggested order track IDs to full Track objects
   const suggestedTracks: Track[] = suggestedOrder
-    ? suggestedOrder.track_ids.flatMap(id => {
-        const found = tracks.find(t => t.id === id);
-        return found ? [found] : [];
+    ? suggestedOrder.track_ids.flatMap((id) => {
+        const found = tracks.find((t) => t.id === id)
+        return found ? [found] : []
       })
-    : [];
+    : []
 
   // Helper: BPM badge class
   function bpmBadgeClass(issue: 'ok' | 'warn' | 'bad') {
-    if (issue === 'ok') return 'mix-prep-badge mix-prep-badge--ok';
-    if (issue === 'warn') return 'mix-prep-badge mix-prep-badge--warn';
-    return 'mix-prep-badge mix-prep-badge--bad';
+    if (issue === 'ok') return 'mix-prep-badge mix-prep-badge--ok'
+    if (issue === 'warn') return 'mix-prep-badge mix-prep-badge--warn'
+    return 'mix-prep-badge mix-prep-badge--bad'
   }
 
   // Helper: key badge class
   function keyBadgeClass(compat: 'perfect' | 'compatible' | 'clash') {
-    if (compat === 'perfect') return 'mix-prep-badge mix-prep-badge--ok';
-    if (compat === 'compatible') return 'mix-prep-badge mix-prep-badge--warn';
-    return 'mix-prep-badge mix-prep-badge--bad';
+    if (compat === 'perfect') return 'mix-prep-badge mix-prep-badge--ok'
+    if (compat === 'compatible') return 'mix-prep-badge mix-prep-badge--warn'
+    return 'mix-prep-badge mix-prep-badge--bad'
   }
 
   return (
@@ -211,7 +223,9 @@ export function MixPrepPanel({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
       >
         <motion.div
           className="mix-prep-panel"
@@ -227,7 +241,10 @@ export function MixPrepPanel({
             </div>
             <div className="mix-prep-header__title">
               Mix Prep
-              <span className="mix-prep-header__subtitle"> — {playlistName}</span>
+              <span className="mix-prep-header__subtitle">
+                {' '}
+                — {playlistName}
+              </span>
             </div>
             <button
               className="mix-prep-header__close"
@@ -244,8 +261,8 @@ export function MixPrepPanel({
               <div className="mix-prep-empty">
                 <span className="mix-prep-spinner">
                   <Icon name="Loader" size={18} />
-                </span>
-                {' '}Loading tracks...
+                </span>{' '}
+                Loading tracks...
               </div>
             ) : tracksError ? (
               <div className="mix-prep-error">{tracksError}</div>
@@ -267,7 +284,8 @@ export function MixPrepPanel({
                   {showBpmWarning && (
                     <div className="mix-prep-warning">
                       <Icon name="TriangleAlert" size={14} />
-                      Only {analyzedCount} of {totalCount} tracks have BPM data. Analyze more tracks for an accurate energy arc.
+                      Only {analyzedCount} of {totalCount} tracks have BPM data.
+                      Analyze more tracks for an accurate energy arc.
                     </div>
                   )}
 
@@ -290,46 +308,54 @@ export function MixPrepPanel({
                   {transitionIssues.length === 0 ? (
                     <div className="mix-prep-success">
                       <Icon name="CircleCheck" size={16} />
-                      No transition issues detected — all adjacent pairs have compatible BPM and keys.
+                      No transition issues detected — all adjacent pairs have
+                      compatible BPM and keys.
                     </div>
                   ) : (
                     <div className="mix-prep-transitions">
-                      {transitionIssues.map(({ trackA, trackB, bpmIssue, keyCompat }, i) => {
-                        const bpmDelta = trackA.bpm != null && trackB.bpm != null
-                          ? Math.abs(trackA.bpm - trackB.bpm).toFixed(0)
-                          : null;
-                        return (
-                          <div
-                            key={i}
-                            className="mix-prep-transition-row mix-prep-transition-row--issue"
-                          >
-                            <div className="mix-prep-transition__track">
-                              {trackA.title || trackA.artist || 'Unknown'}
-                            </div>
-                            <span className="mix-prep-transition__arrow">
-                              <Icon name="ArrowRight" size={12} />
-                            </span>
-                            <div className="mix-prep-transition__track">
-                              {trackB.title || trackB.artist || 'Unknown'}
-                            </div>
-                            <div className="mix-prep-transition-badges">
-                              {bpmDelta && (
-                                <span className={bpmBadgeClass(bpmIssue)}>
-                                  {bpmDelta} BPM
-                                </span>
-                              )}
-                              {(!trackA.bpm || !trackB.bpm) && (
-                                <span className="mix-prep-badge mix-prep-badge--bad">
-                                  No BPM
-                                </span>
-                              )}
-                              <span className={keyBadgeClass(keyCompat)}>
-                                {keyCompat === 'perfect' ? 'Perfect key' : keyCompat === 'compatible' ? 'Compat. key' : 'Key clash'}
+                      {transitionIssues.map(
+                        ({ trackA, trackB, bpmIssue, keyCompat }, i) => {
+                          const bpmDelta =
+                            trackA.bpm != null && trackB.bpm != null
+                              ? Math.abs(trackA.bpm - trackB.bpm).toFixed(0)
+                              : null
+                          return (
+                            <div
+                              key={i}
+                              className="mix-prep-transition-row mix-prep-transition-row--issue"
+                            >
+                              <div className="mix-prep-transition__track">
+                                {trackA.title || trackA.artist || 'Unknown'}
+                              </div>
+                              <span className="mix-prep-transition__arrow">
+                                <Icon name="ArrowRight" size={12} />
                               </span>
+                              <div className="mix-prep-transition__track">
+                                {trackB.title || trackB.artist || 'Unknown'}
+                              </div>
+                              <div className="mix-prep-transition-badges">
+                                {bpmDelta && (
+                                  <span className={bpmBadgeClass(bpmIssue)}>
+                                    {bpmDelta} BPM
+                                  </span>
+                                )}
+                                {(!trackA.bpm || !trackB.bpm) && (
+                                  <span className="mix-prep-badge mix-prep-badge--bad">
+                                    No BPM
+                                  </span>
+                                )}
+                                <span className={keyBadgeClass(keyCompat)}>
+                                  {keyCompat === 'perfect'
+                                    ? 'Perfect key'
+                                    : keyCompat === 'compatible'
+                                      ? 'Compat. key'
+                                      : 'Key clash'}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          )
+                        },
+                      )}
                     </div>
                   )}
                 </div>
@@ -372,8 +398,19 @@ export function MixPrepPanel({
                         {orderError.includes('Settings') && (
                           <button
                             type="button"
-                            onClick={() => useAIStore.getState().openSettingsCallback?.()}
-                            style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.85em', cursor: 'pointer', borderRadius: '4px', border: '1px solid currentColor', background: 'transparent', color: 'inherit' }}
+                            onClick={() =>
+                              useAIStore.getState().openSettingsCallback?.()
+                            }
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '0.85em',
+                              cursor: 'pointer',
+                              borderRadius: '4px',
+                              border: '1px solid currentColor',
+                              background: 'transparent',
+                              color: 'inherit',
+                            }}
                           >
                             Open Settings
                           </button>
@@ -392,13 +429,16 @@ export function MixPrepPanel({
 
                         <div className="mix-prep-suggested__track-list">
                           {suggestedTracks.map((track, i) => {
-                            const nextTrack = suggestedTracks[i + 1];
+                            const nextTrack = suggestedTracks[i + 1]
                             const bpmIssue = nextTrack
                               ? getBpmIssue(track.bpm, nextTrack.bpm)
-                              : null;
+                              : null
                             const keyCompat = nextTrack
-                              ? getKeyCompatibility(track.musical_key, nextTrack.musical_key)
-                              : null;
+                              ? getKeyCompatibility(
+                                  track.musical_key,
+                                  nextTrack.musical_key,
+                                )
+                              : null
                             return (
                               <div key={track.id ?? i}>
                                 <div className="mix-prep-suggested__track-row">
@@ -411,8 +451,12 @@ export function MixPrepPanel({
                                     </div>
                                     <div className="mix-prep-suggested__track-meta">
                                       {track.artist || ''}
-                                      {track.bpm ? ` · ${Math.round(track.bpm)} BPM` : ''}
-                                      {track.musical_key ? ` · ${track.musical_key}` : ''}
+                                      {track.bpm
+                                        ? ` · ${Math.round(track.bpm)} BPM`
+                                        : ''}
+                                      {track.musical_key
+                                        ? ` · ${track.musical_key}`
+                                        : ''}
                                     </div>
                                   </div>
                                   {bpmIssue && keyCompat && (
@@ -420,16 +464,23 @@ export function MixPrepPanel({
                                       <span className={bpmBadgeClass(bpmIssue)}>
                                         {track.bpm && nextTrack.bpm
                                           ? `${Math.abs(track.bpm - nextTrack.bpm).toFixed(0)}`
-                                          : '?'} BPM
+                                          : '?'}{' '}
+                                        BPM
                                       </span>
-                                      <span className={keyBadgeClass(keyCompat)}>
-                                        {keyCompat === 'perfect' ? 'Key' : keyCompat === 'compatible' ? 'Compat.' : 'Clash'}
+                                      <span
+                                        className={keyBadgeClass(keyCompat)}
+                                      >
+                                        {keyCompat === 'perfect'
+                                          ? 'Key'
+                                          : keyCompat === 'compatible'
+                                            ? 'Compat.'
+                                            : 'Clash'}
                                       </span>
                                     </div>
                                   )}
                                 </div>
                               </div>
-                            );
+                            )
                           })}
                         </div>
 
@@ -472,5 +523,5 @@ export function MixPrepPanel({
         </motion.div>
       </motion.div>
     </AnimatePresence>
-  );
+  )
 }

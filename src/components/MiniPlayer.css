@@ -35,7 +35,9 @@
   border-radius: 50%;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .mini-player__close:hover {
@@ -62,7 +64,11 @@
   width: 200px;
   height: 200px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 100%
+  );
   display: flex;
   align-items: center;
   justify-content: center;
@@ -117,7 +123,9 @@
   border-radius: 50%;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .mini-player__btn:hover:not(:disabled) {

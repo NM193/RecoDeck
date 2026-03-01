@@ -33,7 +33,11 @@
   align-items: center;
   gap: 10px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.3) 0%, rgba(59, 130, 246, 0.2) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.3) 0%,
+    rgba(59, 130, 246, 0.2) 100%
+  );
   border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
 }
@@ -60,7 +64,9 @@
   align-items: center;
   padding: 4px;
   border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .ai-playlist-header__close:hover {
@@ -159,11 +165,15 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary, rgba(255, 255, 255, 0.5));
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   text-align: center;
 }
 
-.ai-playlist-segmented__option:hover:not(.ai-playlist-segmented__option--active) {
+.ai-playlist-segmented__option:hover:not(
+    .ai-playlist-segmented__option--active
+  ) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary, #e2e8f0);
 }
@@ -189,7 +199,10 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary, rgba(255, 255, 255, 0.5));
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
   text-align: center;
 }
 
@@ -234,7 +247,9 @@
 }
 
 @keyframes ai-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ai-playlist-generating__text {
@@ -330,7 +345,9 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   flex-shrink: 0;
 }
 
@@ -394,7 +411,9 @@
   width: 24px;
   height: 24px;
   border-radius: 4px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   flex-shrink: 0;
 }
 
@@ -454,7 +473,10 @@
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    opacity 0.15s;
 }
 
 .ai-playlist-actions__btn:disabled {

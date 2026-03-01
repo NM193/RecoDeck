@@ -33,7 +33,11 @@
   align-items: center;
   gap: 10px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(59, 130, 246, 0.2) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(16, 185, 129, 0.25) 0%,
+    rgba(59, 130, 246, 0.2) 100%
+  );
   border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   flex-shrink: 0;
 }
@@ -65,7 +69,9 @@
   align-items: center;
   padding: 4px;
   border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .mix-prep-header__close:hover {
@@ -222,7 +228,11 @@
 }
 
 .mix-prep-suggested__generate-btn {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.4) 0%, rgba(59, 130, 246, 0.3) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.4) 0%,
+    rgba(59, 130, 246, 0.3) 100%
+  );
   border: 1px solid rgba(124, 58, 237, 0.4);
   border-radius: 8px;
   padding: 12px 20px;
@@ -234,11 +244,17 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .mix-prep-suggested__generate-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.6) 0%, rgba(59, 130, 246, 0.5) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.6) 0%,
+    rgba(59, 130, 246, 0.5) 100%
+  );
   border-color: rgba(124, 58, 237, 0.6);
 }
 
@@ -347,7 +363,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: background 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
 }
 
 .mix-prep-btn-primary:hover:not(:disabled) {
@@ -372,7 +390,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .mix-prep-btn-secondary:hover:not(:disabled) {
@@ -403,8 +423,12 @@
 
 /* Spinner animation for loading state */
 @keyframes mix-prep-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mix-prep-spinner {

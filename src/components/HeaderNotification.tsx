@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import "./HeaderNotification.css";
+import { useEffect, useRef, useState } from 'react'
+import './HeaderNotification.css'
 
 interface HeaderNotificationProps {
-  message: string;
-  onComplete?: () => void;
-  typingSpeed?: number;
-  visibleDuration?: number;
+  message: string
+  onComplete?: () => void
+  typingSpeed?: number
+  visibleDuration?: number
 }
 
 export function HeaderNotification({
@@ -14,47 +14,47 @@ export function HeaderNotification({
   typingSpeed = 40,
   visibleDuration = 2500,
 }: HeaderNotificationProps) {
-  const [displayedText, setDisplayedText] = useState("");
-  const [isTyping, setIsTyping] = useState(true);
-  const cancelledRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [displayedText, setDisplayedText] = useState('')
+  const [isTyping, setIsTyping] = useState(true)
+  const cancelledRef = useRef(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!message) return;
+    if (!message) return
 
-    setDisplayedText("");
-    setIsTyping(true);
-    cancelledRef.current = false;
+    setDisplayedText('')
+    setIsTyping(true)
+    cancelledRef.current = false
 
-    let i = 0;
+    let i = 0
     const typeNext = () => {
-      if (cancelledRef.current) return;
+      if (cancelledRef.current) return
       if (i < message.length) {
-        setDisplayedText(message.slice(0, i + 1));
-        i++;
-        timerRef.current = setTimeout(typeNext, typingSpeed);
+        setDisplayedText(message.slice(0, i + 1))
+        i++
+        timerRef.current = setTimeout(typeNext, typingSpeed)
       } else {
-        setIsTyping(false);
+        setIsTyping(false)
         timerRef.current = setTimeout(() => {
-          if (!cancelledRef.current) onComplete?.();
-        }, visibleDuration);
+          if (!cancelledRef.current) onComplete?.()
+        }, visibleDuration)
       }
-    };
+    }
 
-    timerRef.current = setTimeout(typeNext, typingSpeed);
+    timerRef.current = setTimeout(typeNext, typingSpeed)
 
     return () => {
-      cancelledRef.current = true;
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [message, typingSpeed, visibleDuration, onComplete]);
+      cancelledRef.current = true
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [message, typingSpeed, visibleDuration, onComplete])
 
-  if (!message) return null;
+  if (!message) return null
 
   return (
     <span className="header-notification">
       <span className="header-notification-text">{displayedText}</span>
       {isTyping && <span className="header-notification-cursor">|</span>}
     </span>
-  );
+  )
 }

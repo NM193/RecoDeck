@@ -1,17 +1,17 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { listen, emit } from '@tauri-apps/api/event';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { Icon } from './Icon';
-import './MiniPlayer.css';
-import type { Track } from '../types/track';
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { listen, emit } from '@tauri-apps/api/event'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { convertFileSrc } from '@tauri-apps/api/core'
+import { Icon } from './Icon'
+import './MiniPlayer.css'
+import type { Track } from '../types/track'
 
 interface PlayerState {
-  currentTrack: Track | null;
-  isPlaying: boolean;
-  position: number;
-  duration: number;
-  isLoading: boolean;
+  currentTrack: Track | null
+  isPlaying: boolean
+  position: number
+  duration: number
+  isLoading: boolean
 }
 
 export function MiniPlayer() {
@@ -21,115 +21,127 @@ export function MiniPlayer() {
     position: 0,
     duration: 0,
     isLoading: false,
-  });
+  })
 
   // Local drag position for immediate visual feedback during seeking
-  const [dragPosition, setDragPosition] = useState<number | null>(null);
+  const [dragPosition, setDragPosition] = useState<number | null>(null)
 
-  const progressRef = useRef<HTMLDivElement>(null);
-  const isDraggingRef = useRef(false);
+  const progressRef = useRef<HTMLDivElement>(null)
+  const isDraggingRef = useRef(false)
 
   useEffect(() => {
     const unlistenState = listen<PlayerState>('player-state', (ev) => {
       // Don't override position while user is dragging
       if (isDraggingRef.current) {
-        setState((prev) => ({ ...ev.payload, position: prev.position }));
+        setState((prev) => ({ ...ev.payload, position: prev.position }))
       } else {
-        setState(ev.payload);
+        setState(ev.payload)
       }
-    });
+    })
 
     // Lightweight position-only updates (~10x/sec, avoids serializing the full queue)
-    const unlistenPos = listen<{ position: number; duration: number }>('player-position', (ev) => {
-      if (!isDraggingRef.current) {
-        setState((prev) => ({ ...prev, position: ev.payload.position, duration: ev.payload.duration }));
-      }
-    });
+    const unlistenPos = listen<{ position: number; duration: number }>(
+      'player-position',
+      (ev) => {
+        if (!isDraggingRef.current) {
+          setState((prev) => ({
+            ...prev,
+            position: ev.payload.position,
+            duration: ev.payload.duration,
+          }))
+        }
+      },
+    )
 
-    emit('request-player-state', null);
+    emit('request-player-state', null)
 
     return () => {
-      unlistenState.then((fn) => fn());
-      unlistenPos.then((fn) => fn());
-    };
-  }, []);
+      unlistenState.then((fn) => fn())
+      unlistenPos.then((fn) => fn())
+    }
+  }, [])
 
   const handleClose = useCallback(async () => {
-    const win = getCurrentWebviewWindow();
-    await win.close();
-  }, []);
+    const win = getCurrentWebviewWindow()
+    await win.close()
+  }, [])
 
   const handlePlayPause = useCallback(() => {
-    emit('player-action', { type: 'playPause' });
-  }, []);
+    emit('player-action', { type: 'playPause' })
+  }, [])
 
   const handlePrevious = useCallback(() => {
-    emit('player-action', { type: 'previous' });
-  }, []);
+    emit('player-action', { type: 'previous' })
+  }, [])
 
   const handleNext = useCallback(() => {
-    emit('player-action', { type: 'next' });
-  }, []);
+    emit('player-action', { type: 'next' })
+  }, [])
 
   const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
+    const totalSeconds = Math.floor(ms / 1000)
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
 
-  const effectiveDuration = state.duration || (state.currentTrack?.duration_ms ?? 0);
-  const displayPosition = dragPosition ?? state.position;
-  const progress = effectiveDuration > 0
-    ? Math.min(100, Math.max(0, (displayPosition / effectiveDuration) * 100))
-    : 0;
+  const effectiveDuration =
+    state.duration || (state.currentTrack?.duration_ms ?? 0)
+  const displayPosition = dragPosition ?? state.position
+  const progress =
+    effectiveDuration > 0
+      ? Math.min(100, Math.max(0, (displayPosition / effectiveDuration) * 100))
+      : 0
 
   const calcSeekPosition = useCallback(
     (clientX: number) => {
-      if (!progressRef.current || effectiveDuration === 0) return 0;
-      const rect = progressRef.current.getBoundingClientRect();
-      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      return ratio * effectiveDuration;
+      if (!progressRef.current || effectiveDuration === 0) return 0
+      const rect = progressRef.current.getBoundingClientRect()
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+      return ratio * effectiveDuration
     },
-    [effectiveDuration]
-  );
+    [effectiveDuration],
+  )
 
   const handleProgressMouseDown = (e: React.MouseEvent) => {
-    if (!state.currentTrack || effectiveDuration === 0) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const DRAG_THRESHOLD = 5;
+    if (!state.currentTrack || effectiveDuration === 0) return
+    e.preventDefault()
+    const startX = e.clientX
+    const DRAG_THRESHOLD = 5
 
     const onMove = (ev: MouseEvent) => {
-      if (!isDraggingRef.current && Math.abs(ev.clientX - startX) > DRAG_THRESHOLD) {
-        isDraggingRef.current = true;
+      if (
+        !isDraggingRef.current &&
+        Math.abs(ev.clientX - startX) > DRAG_THRESHOLD
+      ) {
+        isDraggingRef.current = true
       }
       if (isDraggingRef.current) {
         // Update local position immediately for visual feedback
-        setDragPosition(calcSeekPosition(ev.clientX));
+        setDragPosition(calcSeekPosition(ev.clientX))
       }
-    };
+    }
 
     const onUp = (ev: MouseEvent) => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      isDraggingRef.current = false;
-      const seekPos = Math.floor(calcSeekPosition(ev.clientX));
-      setDragPosition(null);
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      isDraggingRef.current = false
+      const seekPos = Math.floor(calcSeekPosition(ev.clientX))
+      setDragPosition(null)
       // Send seek action to main window only on release
-      emit('player-action', { type: 'seek', payload: seekPos });
-    };
+      emit('player-action', { type: 'seek', payload: seekPos })
+    }
 
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
-  let artworkUrl: string | null = null;
+  let artworkUrl: string | null = null
   if (state.currentTrack?.artwork_path) {
     try {
-      artworkUrl = convertFileSrc(state.currentTrack.artwork_path);
+      artworkUrl = convertFileSrc(state.currentTrack.artwork_path)
     } catch {
-      artworkUrl = null;
+      artworkUrl = null
     }
   }
 
@@ -153,12 +165,20 @@ export function MiniPlayer() {
             <img src={artworkUrl} alt="" className="mini-player__artwork-img" />
           ) : (
             <div className="mini-player__artwork-placeholder">
-              <Icon name="Music" size={64} className="mini-player__artwork-icon" />
+              <Icon
+                name="Music"
+                size={64}
+                className="mini-player__artwork-icon"
+              />
             </div>
           )
         ) : (
           <div className="mini-player__artwork-placeholder mini-player__artwork-placeholder--empty">
-            <Icon name="Music" size={64} className="mini-player__artwork-icon" />
+            <Icon
+              name="Music"
+              size={64}
+              className="mini-player__artwork-icon"
+            />
           </div>
         )}
       </div>
@@ -221,12 +241,16 @@ export function MiniPlayer() {
             style={{ left: `${progress}%` }}
           />
         </div>
-        <span className="mini-player__time">{formatTime(effectiveDuration)}</span>
+        <span className="mini-player__time">
+          {formatTime(effectiveDuration)}
+        </span>
       </div>
 
       {!state.currentTrack && (
-        <p className="mini-player__empty">No track loaded. Play from the main window.</p>
+        <p className="mini-player__empty">
+          No track loaded. Play from the main window.
+        </p>
       )}
     </div>
-  );
+  )
 }

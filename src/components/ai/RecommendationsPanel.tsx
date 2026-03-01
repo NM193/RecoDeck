@@ -3,26 +3,26 @@
 //   - seedTrack: find similar tracks (DISC-01)
 //   - playlistId: find tracks that complement an existing playlist (DISC-02)
 
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Icon } from '../Icon';
-import { tauriApi } from '../../lib/tauri-api';
-import { audioPlayer } from '../../lib/audioPlayer';
-import { usePlayerStore } from '../../store/playerStore';
-import type { Track } from '../../types/track';
-import type { RecommendationResult } from '../../types/ai';
-import { getErrorMessage } from '../../types/ai';
-import { useAIStore } from '../../store/aiStore';
-import './RecommendationsPanel.css';
+import { useState, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Icon } from '../Icon'
+import { tauriApi } from '../../lib/tauri-api'
+import { audioPlayer } from '../../lib/audioPlayer'
+import { usePlayerStore } from '../../store/playerStore'
+import type { Track } from '../../types/track'
+import type { RecommendationResult } from '../../types/ai'
+import { getErrorMessage } from '../../types/ai'
+import { useAIStore } from '../../store/aiStore'
+import './RecommendationsPanel.css'
 
 interface RecommendationsPanelProps {
-  seedTrack?: Track;       // For DISC-01 (by track)
-  playlistId?: number;     // For DISC-02 (by playlist)
-  playlistName?: string;   // Display name for playlist mode
-  onClose: () => void;
+  seedTrack?: Track // For DISC-01 (by track)
+  playlistId?: number // For DISC-02 (by playlist)
+  playlistName?: string // Display name for playlist mode
+  onClose: () => void
 }
 
-type PanelStep = 'generating' | 'results' | 'error';
+type PanelStep = 'generating' | 'results' | 'error'
 
 export function RecommendationsPanel({
   seedTrack,
@@ -30,86 +30,91 @@ export function RecommendationsPanel({
   playlistName,
   onClose,
 }: RecommendationsPanelProps) {
-  const [step, setStep] = useState<PanelStep>('generating');
-  const [result, setResult] = useState<RecommendationResult | null>(null);
-  const [resultTracks, setResultTracks] = useState<Track[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<PanelStep>('generating')
+  const [result, setResult] = useState<RecommendationResult | null>(null)
+  const [resultTracks, setResultTracks] = useState<Track[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   // Fetch recommendations on mount
   const fetchRecommendations = useCallback(async () => {
-    setStep('generating');
-    setError(null);
+    setStep('generating')
+    setError(null)
 
     try {
-      let recommendation: RecommendationResult;
+      let recommendation: RecommendationResult
 
       if (seedTrack?.id) {
-        recommendation = await tauriApi.aiRecommendSimilar(seedTrack.id, 10);
+        recommendation = await tauriApi.aiRecommendSimilar(seedTrack.id, 10)
       } else if (playlistId != null) {
-        recommendation = await tauriApi.aiRecommendForPlaylist(playlistId, 10);
+        recommendation = await tauriApi.aiRecommendForPlaylist(playlistId, 10)
       } else {
-        setError('No seed track or playlist provided');
-        setStep('error');
-        return;
+        setError('No seed track or playlist provided')
+        setStep('error')
+        return
       }
 
       // Fetch full Track objects for returned IDs (filter nulls for hallucinated IDs)
       const trackResults = await Promise.all(
-        recommendation.track_ids.map((id) => tauriApi.getTrack(id).catch(() => null)),
-      );
-      const tracks = trackResults.filter((t): t is Track => t !== null);
+        recommendation.track_ids.map((id) =>
+          tauriApi.getTrack(id).catch(() => null),
+        ),
+      )
+      const tracks = trackResults.filter((t): t is Track => t !== null)
 
-      setResult(recommendation);
-      setResultTracks(tracks);
-      setStep('results');
+      setResult(recommendation)
+      setResultTracks(tracks)
+      setStep('results')
     } catch (e) {
-      setError(getErrorMessage(e));
-      setStep('error');
+      setError(getErrorMessage(e))
+      setStep('error')
     }
-  }, [seedTrack, playlistId]);
+  }, [seedTrack, playlistId])
 
   useEffect(() => {
-    fetchRecommendations();
+    fetchRecommendations()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [])
 
   // Play a track from the results list
   const handlePlayTrack = useCallback(async (track: Track) => {
-    if (!track.file_path) return;
+    if (!track.file_path) return
     try {
-      usePlayerStore.getState().setCurrentTrack(track);
-      await audioPlayer.loadTrack(track.file_path, track.id);
-      await audioPlayer.play();
+      usePlayerStore.getState().setCurrentTrack(track)
+      await audioPlayer.loadTrack(track.file_path, track.id)
+      await audioPlayer.play()
     } catch (e) {
-      console.error('[RecommendationsPanel] Play error:', e);
+      console.error('[RecommendationsPanel] Play error:', e)
     }
-  }, []);
+  }, [])
 
   // Add track to currently selected playlist (if available)
-  const handleAddTrack = useCallback(async (track: Track) => {
-    if (playlistId == null) return;
-    try {
-      await tauriApi.addTrackToPlaylist(playlistId, track.id);
-    } catch (e) {
-      console.error('[RecommendationsPanel] Add to playlist error:', e);
-    }
-  }, [playlistId]);
+  const handleAddTrack = useCallback(
+    async (track: Track) => {
+      if (playlistId == null) return
+      try {
+        await tauriApi.addTrackToPlaylist(playlistId, track.id)
+      } catch (e) {
+        console.error('[RecommendationsPanel] Add to playlist error:', e)
+      }
+    },
+    [playlistId],
+  )
 
   // Derive header subtitle
   const seedLabel = seedTrack
     ? `Similar to: ${seedTrack.title || 'Unknown'}`
     : playlistName
       ? `For playlist: ${playlistName}`
-      : 'Playlist recommendations';
+      : 'Playlist recommendations'
 
   return (
     <AnimatePresence>
@@ -215,14 +220,21 @@ export function RecommendationsPanel({
               ) : (
                 <div className="recommendations-panel__track-list">
                   {resultTracks.map((track) => (
-                    <div key={track.id} className="recommendations-panel__track-row">
+                    <div
+                      key={track.id}
+                      className="recommendations-panel__track-row"
+                    >
                       {/* Play button */}
                       <button
                         type="button"
                         className="recommendations-panel__track-play"
                         onClick={() => handlePlayTrack(track)}
                         disabled={!track.file_path}
-                        title={track.file_path ? 'Preview track' : 'No file available'}
+                        title={
+                          track.file_path
+                            ? 'Preview track'
+                            : 'No file available'
+                        }
                       >
                         <Icon name="Play" size={13} />
                       </button>
@@ -240,7 +252,9 @@ export function RecommendationsPanel({
                       {/* BPM + Key badges */}
                       <div className="recommendations-panel__track-badges">
                         <span className="recommendations-panel__track-badge">
-                          {track.bpm != null ? `${Math.round(track.bpm)} BPM` : '--'}
+                          {track.bpm != null
+                            ? `${Math.round(track.bpm)} BPM`
+                            : '--'}
                         </span>
                         <span className="recommendations-panel__track-badge">
                           {track.musical_key ?? '--'}
@@ -269,5 +283,5 @@ export function RecommendationsPanel({
         </div>
       </motion.div>
     </AnimatePresence>
-  );
+  )
 }

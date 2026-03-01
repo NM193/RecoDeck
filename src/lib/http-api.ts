@@ -2,52 +2,52 @@
 // Mirrors the tauriApi interface but uses fetch() over HTTP instead of Tauri IPC.
 // Only includes read-only methods needed by the mobile PWA.
 
-import type { Track } from "../types/track";
+import type { Track } from '../types/track'
 
 // Mobile track type — matches MobileTrackDTO from the server (no file_path)
 export interface MobileTrack {
-  id: number;
-  title?: string;
-  artist?: string;
-  album?: string;
-  album_artist?: string;
-  track_number?: number;
-  year?: number;
-  label?: string;
-  duration_ms?: number;
-  file_format?: string;
-  bitrate?: number;
-  sample_rate?: number;
-  file_size?: number;
-  play_count: number;
-  rating: number;
-  genre?: string;
-  filename: string;
-  bpm?: number;
-  musical_key?: string;
+  id: number
+  title?: string
+  artist?: string
+  album?: string
+  album_artist?: string
+  track_number?: number
+  year?: number
+  label?: string
+  duration_ms?: number
+  file_format?: string
+  bitrate?: number
+  sample_rate?: number
+  file_size?: number
+  play_count: number
+  rating: number
+  genre?: string
+  filename: string
+  bpm?: number
+  musical_key?: string
 }
 
 interface ServerStatus {
-  name: string;
-  version: string;
-  track_count: number;
+  name: string
+  version: string
+  track_count: number
 }
 
 interface StreamTicketResponse {
-  ticket: string;
-  expires_in: number;
-  stream_url: string;
+  ticket: string
+  expires_in: number
+  stream_url: string
 }
 
-let _baseUrl = "";
-let _token = "";
+let _baseUrl = ''
+let _token = ''
 
 /** Convert MobileTrack to Track interface (filling in missing fields with defaults) */
 function mobileTrackToTrack(mt: MobileTrack): Track {
   return {
     id: mt.id,
-    file_path: "", // not exposed by server
-    file_hash: "",
+    file_path: '', // not exposed by server
+    file_hash: '',
     title: mt.title,
     artist: mt.artist,
     album: mt.album,
@@ -65,81 +65,84 @@ function mobileTrackToTrack(mt: MobileTrack): Track {
     genre: mt.genre,
     bpm: mt.bpm,
     musical_key: mt.musical_key,
-  };
+  }
 }
 
-async function authFetch(path: string, options?: RequestInit): Promise<Response> {
+async function authFetch(
+  path: string,
+  options?: RequestInit,
+): Promise<Response> {
   const res = await fetch(`${_baseUrl}${path}`, {
     ...options,
     headers: {
       ...options?.headers,
       Authorization: `Bearer ${_token}`,
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
-  });
+  })
 
   if (res.status === 401) {
-    throw new Error("Unauthorized — invalid or expired token");
+    throw new Error('Unauthorized — invalid or expired token')
   }
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
   }
-  return res;
+  return res
 }
 
 export const httpApi = {
   /** Configure the server connection */
   configure(baseUrl: string, token: string) {
-    _baseUrl = baseUrl.replace(/\/+$/, "");
-    _token = token;
+    _baseUrl = baseUrl.replace(/\/+$/, '')
+    _token = token
   },
 
   /** Get base URL */
   getBaseUrl(): string {
-    return _baseUrl;
+    return _baseUrl
   },
 
   /** Check connection to the server */
   async getStatus(): Promise<ServerStatus> {
-    const res = await authFetch("/api/status");
-    return res.json();
+    const res = await authFetch('/api/status')
+    return res.json()
   },
 
   /** Get paginated tracks */
   async getTracksPaginated(limit: number, offset: number): Promise<Track[]> {
-    const res = await authFetch(`/api/tracks?limit=${limit}&offset=${offset}`);
-    const mobileTracks: MobileTrack[] = await res.json();
-    return mobileTracks.map(mobileTrackToTrack);
+    const res = await authFetch(`/api/tracks?limit=${limit}&offset=${offset}`)
+    const mobileTracks: MobileTrack[] = await res.json()
+    return mobileTracks.map(mobileTrackToTrack)
   },
 
   /** Search tracks */
   async searchTracks(query: string): Promise<Track[]> {
     const res = await authFetch(
-      `/api/tracks/search?q=${encodeURIComponent(query)}`
-    );
-    const mobileTracks: MobileTrack[] = await res.json();
-    return mobileTracks.map(mobileTrackToTrack);
+      `/api/tracks/search?q=${encodeURIComponent(query)}`,
+    )
+    const mobileTracks: MobileTrack[] = await res.json()
+    return mobileTracks.map(mobileTrackToTrack)
   },
 
   /** Get tracks in a playlist */
   async getPlaylistTracks(playlistId: number): Promise<Track[]> {
-    const res = await authFetch(`/api/playlists/${playlistId}/tracks`);
-    const mobileTracks: MobileTrack[] = await res.json();
-    return mobileTracks.map(mobileTrackToTrack);
+    const res = await authFetch(`/api/playlists/${playlistId}/tracks`)
+    const mobileTracks: MobileTrack[] = await res.json()
+    return mobileTracks.map(mobileTrackToTrack)
   },
 
   /** Request a stream ticket for audio playback */
   async getStreamTicket(trackId: number): Promise<StreamTicketResponse> {
-    const res = await authFetch("/api/stream-ticket", {
-      method: "POST",
+    const res = await authFetch('/api/stream-ticket', {
+      method: 'POST',
       body: JSON.stringify({ track_id: trackId }),
-    });
-    return res.json();
+    })
+    return res.json()
   },
 
   /** Get the full stream URL with ticket for an audio element */
   async getStreamUrl(trackId: number): Promise<string> {
-    const ticket = await this.getStreamTicket(trackId);
-    return `${_baseUrl}/stream/${trackId}?ticket=${ticket.ticket}`;
+    const ticket = await this.getStreamTicket(trackId)
+    return `${_baseUrl}/stream/${trackId}?ticket=${ticket.ticket}`
   },
-};
+}

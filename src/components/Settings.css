@@ -620,7 +620,7 @@
   cursor: pointer;
 }
 
-.settings-checkbox input[type="checkbox"] {
+.settings-checkbox input[type='checkbox'] {
   margin-right: 8px;
   cursor: pointer;
 }
@@ -767,6 +767,10 @@
 }
 
 @keyframes settings-progress-indeterminate {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(233%); }
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(233%);
+  }
 }

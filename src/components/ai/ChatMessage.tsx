@@ -1,22 +1,22 @@
 // Individual chat message component with markdown rendering
 
-import Markdown from 'markdown-to-jsx';
-import type { ChatMessage as ChatMessageType } from '../../types/ai';
+import Markdown from 'markdown-to-jsx'
+import type { ChatMessage as ChatMessageType } from '../../types/ai'
 
 interface ChatMessageProps {
-  message: ChatMessageType;
+  message: ChatMessageType
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
-  const isUser = message.role === 'user';
+  const isUser = message.role === 'user'
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+    <div
+      className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300`}
+    >
       <div
         className={`max-w-[80%] rounded-xl px-4 py-3 shadow-lg ${
-          isUser
-            ? 'text-white'
-            : 'text-gray-100 border border-blue-500/20'
+          isUser ? 'text-white' : 'text-gray-100 border border-blue-500/20'
         }`}
         style={
           isUser
@@ -25,13 +25,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 boxShadow: '0 4px 15px rgba(59, 130, 246, 0.3)',
               }
             : {
-                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3), 0 0 20px rgba(59, 130, 246, 0.1)',
+                background:
+                  'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                boxShadow:
+                  '0 4px 15px rgba(0, 0, 0, 0.3), 0 0 20px rgba(59, 130, 246, 0.1)',
               }
         }
       >
         {isUser ? (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+            {message.content}
+          </p>
         ) : (
           <div className="text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
             <Markdown
@@ -46,7 +50,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
                   },
                   code: {
                     props: {
-                      className: 'bg-gray-800 px-1 py-0.5 rounded text-xs font-mono',
+                      className:
+                        'bg-gray-800 px-1 py-0.5 rounded text-xs font-mono',
                     },
                   },
                   pre: {
@@ -72,5 +77,5 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
       </div>
     </div>
-  );
+  )
 }

@@ -1,39 +1,40 @@
-import { useEffect, useRef, useState } from "react";
-import "./PromptModal.css";
+import { useEffect, useRef, useState } from 'react'
+import './PromptModal.css'
 
 interface PromptModalProps {
-  open: boolean;
-  title: string;
-  defaultValue?: string;
-  onConfirm: (value: string) => void;
-  onCancel: () => void;
+  open: boolean
+  title: string
+  defaultValue?: string
+  onConfirm: (value: string) => void
+  onCancel: () => void
 }
 
 export function PromptModal({
   open,
   title,
-  defaultValue = "",
+  defaultValue = '',
   onConfirm,
   onCancel,
 }: PromptModalProps) {
-  const [value, setValue] = useState(defaultValue);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState(defaultValue)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
-      setValue(defaultValue);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setValue(defaultValue) // Reset form field when modal opens — intentional sync reset
+      requestAnimationFrame(() => inputRef.current?.focus())
     }
-  }, [open, defaultValue]);
+  }, [open, defaultValue])
 
-  if (!open) return null;
+  if (!open) return null
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = value.trim();
-    if (trimmed) onConfirm(trimmed);
-    else onCancel();
-  };
+    e.preventDefault()
+    const trimmed = value.trim()
+    if (trimmed) onConfirm(trimmed)
+    else onCancel()
+  }
 
   return (
     <div className="prompt-modal-backdrop" onClick={onCancel}>
@@ -54,7 +55,7 @@ export function PromptModal({
             className="prompt-modal-input"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && onCancel()}
+            onKeyDown={(e) => e.key === 'Escape' && onCancel()}
             aria-label={title}
           />
           <div className="prompt-modal-actions">
@@ -68,5 +69,5 @@ export function PromptModal({
         </form>
       </div>
     </div>
-  );
+  )
 }

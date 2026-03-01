@@ -4,52 +4,52 @@
  * Chat message in conversation history
  */
 export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp?: string;
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: string
 }
 
 /**
  * Generated playlist from AI
  */
 export interface GeneratedPlaylist {
-  name: string;
-  description: string;
-  track_ids: number[];
-  reasoning: string;
+  name: string
+  description: string
+  track_ids: number[]
+  reasoning: string
 }
 
 /**
  * Energy direction for AI seed-track playlist generation.
  */
-export type EnergyDirection = 'build_up' | 'maintain' | 'wind_down';
+export type EnergyDirection = 'build_up' | 'maintain' | 'wind_down'
 
 /**
  * Result from AI track recommendation commands.
  */
 export interface RecommendationResult {
-  track_ids: number[];
-  reasoning: string;
+  track_ids: number[]
+  reasoning: string
 }
 
 /**
  * AI-optimized track order for key-compatible mixing.
  */
 export interface RecommendedOrder {
-  track_ids: number[];
-  reasoning: string;
+  track_ids: number[]
+  reasoning: string
 }
 
 /**
  * AI chat state
  */
 export interface AIChatState {
-  isOpen: boolean;
-  messages: ChatMessage[];
-  isGenerating: boolean;
-  streamingMessage: string;
-  pendingPlaylist: GeneratedPlaylist | null;
-  error: string | null;
+  isOpen: boolean
+  messages: ChatMessage[]
+  isGenerating: boolean
+  streamingMessage: string
+  pendingPlaylist: GeneratedPlaylist | null
+  error: string | null
 }
 
 /**
@@ -65,11 +65,11 @@ export type AppErrorKind =
   | 'AiNetwork'
   | 'AiParsing'
   | 'Internal'
-  | 'Validation';
+  | 'Validation'
 
 export interface AppError {
-  kind: AppErrorKind;
-  message?: string;
+  kind: AppErrorKind
+  message?: string
 }
 
 /**
@@ -77,7 +77,7 @@ export interface AppError {
  * Tauri IPC catch blocks receive either a string or an AppError object.
  */
 export function isAppError(e: unknown): e is AppError {
-  return typeof e === 'object' && e !== null && 'kind' in e;
+  return typeof e === 'object' && e !== null && 'kind' in e
 }
 
 /**
@@ -89,13 +89,13 @@ export function getErrorMessage(e: unknown): string {
     // Unit variants without message field -- use kind as the message source
     switch (e.kind) {
       case 'AiNoApiKey':
-        return 'No API key configured -- add your Claude API key in Settings';
+        return 'No API key configured -- add your Claude API key in Settings'
       case 'AiInvalidKey':
-        return 'API key is invalid -- check your key in Settings';
+        return 'API key is invalid -- check your key in Settings'
       default:
-        return e.message ?? 'An unexpected error occurred';
+        return e.message ?? 'An unexpected error occurred'
     }
   }
-  if (typeof e === 'string') return e;
-  return 'An unexpected error occurred';
+  if (typeof e === 'string') return e
+  return 'An unexpected error occurred'
 }

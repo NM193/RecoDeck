@@ -1,15 +1,15 @@
 // Main AI chat panel component - expandable chat interface
 
-import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import TextareaAutosize from 'react-textarea-autosize';
-import { useAIStore } from '../../store/aiStore';
-import { ChatMessage } from './ChatMessage';
-import { FloatingButton } from './FloatingButton';
-import { tauriApi } from '../../lib/tauri-api';
+import { useState, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import TextareaAutosize from 'react-textarea-autosize'
+import { useAIStore } from '../../store/aiStore'
+import { ChatMessage } from './ChatMessage'
+import { FloatingButton } from './FloatingButton'
+import { tauriApi } from '../../lib/tauri-api'
 
 interface AIChatPanelProps {
-  onPlaylistCreated?: (playlistId: number) => void;
+  onPlaylistCreated?: (playlistId: number) => void
 }
 
 export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
@@ -26,93 +26,97 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
     pendingPlaylist,
     generatePlaylist,
     clearPendingPlaylist,
-  } = useAIStore();
+  } = useAIStore()
 
-  const [inputValue, setInputValue] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [inputValue, setInputValue] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Check API key status on mount and when panel opens
   useEffect(() => {
-    checkApiKeyStatus();
-  }, [checkApiKeyStatus]);
+    checkApiKeyStatus()
+  }, [checkApiKeyStatus])
 
   useEffect(() => {
     if (isOpen) {
-      checkApiKeyStatus();
+      checkApiKeyStatus()
     }
-  }, [isOpen, checkApiKeyStatus]);
+  }, [isOpen, checkApiKeyStatus])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, isGenerating]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatHistory, isGenerating])
 
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Cmd+K or Ctrl+K to toggle
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsOpen(!isOpen);
+        e.preventDefault()
+        setIsOpen(!isOpen)
       }
       // Escape to close
       if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
+        setIsOpen(false)
       }
-    };
+    }
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, setIsOpen]);
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, setIsOpen])
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isGenerating) return;
+    if (!inputValue.trim() || isGenerating) return
 
     // Re-check API key status before sending
-    await checkApiKeyStatus();
+    await checkApiKeyStatus()
 
-    const message = inputValue.trim();
-    setInputValue('');
+    const message = inputValue.trim()
+    setInputValue('')
 
     // Detect if user is asking for a playlist
-    const isPlaylistRequest = /create|make|generate|build.*playlist/i.test(message);
+    const isPlaylistRequest = /create|make|generate|build.*playlist/i.test(
+      message,
+    )
 
     if (isPlaylistRequest) {
-      await generatePlaylist(message);
+      await generatePlaylist(message)
     } else {
-      await sendMessage(message);
+      await sendMessage(message)
     }
-  };
+  }
 
   const handleCreatePlaylist = async () => {
-    if (!pendingPlaylist) return;
+    if (!pendingPlaylist) return
 
     try {
       // Create playlist in database
-      const playlist = await tauriApi.createPlaylist(pendingPlaylist.name, null);
+      const playlist = await tauriApi.createPlaylist(pendingPlaylist.name, null)
 
       // Add tracks to playlist
       for (const trackId of pendingPlaylist.track_ids) {
-        await tauriApi.addTrackToPlaylist(playlist.id!, trackId);
+        await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
       }
 
       // Notify parent
       if (onPlaylistCreated && playlist.id) {
-        onPlaylistCreated(playlist.id);
+        onPlaylistCreated(playlist.id)
       }
 
       // Clear pending playlist
-      clearPendingPlaylist();
+      clearPendingPlaylist()
 
       // Add success message to chat
-      await sendMessage(`Great! Created playlist "${pendingPlaylist.name}" with ${pendingPlaylist.track_ids.length} tracks.`);
+      await sendMessage(
+        `Great! Created playlist "${pendingPlaylist.name}" with ${pendingPlaylist.track_ids.length} tracks.`,
+      )
     } catch (error) {
-      console.error('Failed to create playlist:', error);
+      console.error('Failed to create playlist:', error)
     }
-  };
+  }
 
   if (!isOpen) {
-    return <FloatingButton onClick={() => setIsOpen(true)} />;
+    return <FloatingButton onClick={() => setIsOpen(true)} />
   }
 
   return (
@@ -120,9 +124,11 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
       <motion.div
         className="fixed bottom-28 right-8 z-50 w-[420px] h-[650px] rounded-2xl flex flex-col overflow-hidden backdrop-blur-xl"
         style={{
-          background: 'linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(31, 41, 55, 0.95) 100%)',
+          background:
+            'linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(31, 41, 55, 0.95) 100%)',
           border: '2px solid rgba(59, 130, 246, 0.3)',
-          boxShadow: '0 25px 80px rgba(0, 0, 0, 0.9), 0 0 60px rgba(6, 182, 212, 0.4), 0 0 30px rgba(59, 130, 246, 0.3)',
+          boxShadow:
+            '0 25px 80px rgba(0, 0, 0, 0.9), 0 0 60px rgba(6, 182, 212, 0.4), 0 0 30px rgba(59, 130, 246, 0.3)',
         }}
         initial={{ opacity: 0, scale: 0.9, y: 40 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -133,7 +139,8 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
         <div
           className="flex items-center justify-between px-5 py-4 text-white relative overflow-hidden"
           style={{
-            background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
+            background:
+              'linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%)',
             boxShadow: '0 4px 20px rgba(6, 182, 212, 0.3)',
           }}
         >
@@ -141,7 +148,8 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
           <div
             className="absolute inset-0 opacity-20"
             style={{
-              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+              background:
+                'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
               animation: 'shimmer 3s infinite',
             }}
           />
@@ -152,7 +160,12 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
             }
           `}</style>
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -169,7 +182,12 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
                 className="p-1 hover:bg-white/20 rounded transition-colors"
                 title="Clear chat history"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -183,8 +201,18 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
               onClick={() => setIsOpen(false)}
               className="p-1 hover:bg-white/20 rounded transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -194,24 +222,33 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
         <div
           className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-thin scrollbar-thumb-blue-500/50 scrollbar-track-gray-800/30"
           style={{
-            background: 'linear-gradient(180deg, rgba(17, 24, 39, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
+            background:
+              'linear-gradient(180deg, rgba(17, 24, 39, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
           }}
         >
           {!isApiKeyConfigured && (
             <div
               className="rounded-xl p-5 text-yellow-200 text-sm border border-yellow-500/40"
               style={{
-                background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(202, 138, 4, 0.15) 100%)',
+                background:
+                  'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(202, 138, 4, 0.15) 100%)',
                 boxShadow: '0 4px 15px rgba(234, 179, 8, 0.2)',
               }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                <svg
+                  className="w-5 h-5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                 </svg>
                 <p className="font-bold">API Key Required</p>
               </div>
-              <p className="opacity-90">Please configure your Claude API key in Settings to use the AI assistant.</p>
+              <p className="opacity-90">
+                Please configure your Claude API key in Settings to use the AI
+                assistant.
+              </p>
             </div>
           )}
 
@@ -242,14 +279,36 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
           ))}
 
           {isGenerating && (
-            <div className="flex items-center gap-3 text-blue-300 text-sm px-4 py-3 rounded-xl" style={{
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.15) 100%)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-            }}>
+            <div
+              className="flex items-center gap-3 text-blue-300 text-sm px-4 py-3 rounded-xl"
+              style={{
+                background:
+                  'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.15) 100%)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+              }}
+            >
               <div className="flex gap-1.5">
-                <span className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg" style={{ animationDelay: '0ms', boxShadow: '0 0 10px rgba(96, 165, 250, 0.8)' }} />
-                <span className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg" style={{ animationDelay: '150ms', boxShadow: '0 0 10px rgba(96, 165, 250, 0.8)' }} />
-                <span className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg" style={{ animationDelay: '300ms', boxShadow: '0 0 10px rgba(96, 165, 250, 0.8)' }} />
+                <span
+                  className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg"
+                  style={{
+                    animationDelay: '0ms',
+                    boxShadow: '0 0 10px rgba(96, 165, 250, 0.8)',
+                  }}
+                />
+                <span
+                  className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg"
+                  style={{
+                    animationDelay: '150ms',
+                    boxShadow: '0 0 10px rgba(96, 165, 250, 0.8)',
+                  }}
+                />
+                <span
+                  className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce shadow-lg"
+                  style={{
+                    animationDelay: '300ms',
+                    boxShadow: '0 0 10px rgba(96, 165, 250, 0.8)',
+                  }}
+                />
               </div>
               <span className="font-medium">AI is thinking...</span>
             </div>
@@ -259,13 +318,18 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
             <div
               className="rounded-xl p-4 text-red-200 text-sm border border-red-500/40"
               style={{
-                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.15) 100%)',
+                background:
+                  'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.15) 100%)',
                 boxShadow: '0 4px 15px rgba(239, 68, 68, 0.2)',
               }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                <svg
+                  className="w-5 h-5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                 </svg>
                 <p className="font-bold">Error</p>
               </div>
@@ -286,22 +350,37 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
             <div
               className="rounded-xl p-5 border border-green-500/40"
               style={{
-                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.15) 100%)',
+                background:
+                  'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.15) 100%)',
                 boxShadow: '0 4px 20px rgba(34, 197, 94, 0.25)',
               }}
             >
               <div className="flex items-center gap-2 mb-3">
-                <svg className="w-6 h-6 text-green-400" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                <svg
+                  className="w-6 h-6 text-green-400"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                 </svg>
-                <p className="text-green-200 font-bold text-lg">{pendingPlaylist.name}</p>
+                <p className="text-green-200 font-bold text-lg">
+                  {pendingPlaylist.name}
+                </p>
               </div>
-              <p className="text-gray-200 text-sm mb-3 leading-relaxed">{pendingPlaylist.description}</p>
+              <p className="text-gray-200 text-sm mb-3 leading-relaxed">
+                {pendingPlaylist.description}
+              </p>
               <div className="flex items-center gap-2 text-gray-300 text-xs mb-4 bg-black/20 rounded-lg px-3 py-2">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                <svg
+                  className="w-4 h-4"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                 </svg>
-                <span className="font-semibold">{pendingPlaylist.track_ids.length} tracks</span>
+                <span className="font-semibold">
+                  {pendingPlaylist.track_ids.length} tracks
+                </span>
                 <span className="opacity-60">•</span>
                 <span className="opacity-90">{pendingPlaylist.reasoning}</span>
               </div>
@@ -309,7 +388,8 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
                 onClick={handleCreatePlaylist}
                 className="w-full py-3 text-white rounded-xl transition-all text-sm font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
                 style={{
-                  background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                  background:
+                    'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                   boxShadow: '0 4px 15px rgba(34, 197, 94, 0.4)',
                 }}
               >
@@ -325,7 +405,8 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
         <div
           className="p-5"
           style={{
-            background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(17, 24, 39, 0.98) 100%)',
+            background:
+              'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(17, 24, 39, 0.98) 100%)',
             borderTop: '1px solid rgba(6, 182, 212, 0.3)',
             boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.5)',
           }}
@@ -336,8 +417,8 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
+                  e.preventDefault()
+                  handleSend()
                 }
               }}
               placeholder={
@@ -357,25 +438,41 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
             />
             <button
               onClick={handleSend}
-              disabled={!inputValue.trim() || !isApiKeyConfigured || isGenerating}
+              disabled={
+                !inputValue.trim() || !isApiKeyConfigured || isGenerating
+              }
               className="p-3 text-white rounded-xl transition-all disabled:cursor-not-allowed"
               style={{
-                background: !inputValue.trim() || !isApiKeyConfigured || isGenerating
-                  ? 'rgba(75, 85, 99, 0.5)'
-                  : 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
-                boxShadow: !inputValue.trim() || !isApiKeyConfigured || isGenerating
-                  ? 'none'
-                  : '0 4px 15px rgba(6, 182, 212, 0.4)',
+                background:
+                  !inputValue.trim() || !isApiKeyConfigured || isGenerating
+                    ? 'rgba(75, 85, 99, 0.5)'
+                    : 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+                boxShadow:
+                  !inputValue.trim() || !isApiKeyConfigured || isGenerating
+                    ? 'none'
+                    : '0 4px 15px rgba(6, 182, 212, 0.4)',
               }}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.5}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                />
               </svg>
             </button>
           </div>
-          <p className="text-xs text-gray-500 mt-2">Press Enter to send, Shift+Enter for new line</p>
+          <p className="text-xs text-gray-500 mt-2">
+            Press Enter to send, Shift+Enter for new line
+          </p>
         </div>
       </motion.div>
     </AnimatePresence>
-  );
+  )
 }

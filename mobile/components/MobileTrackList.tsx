@@ -1,21 +1,21 @@
 // Mobile track list — search + infinite scroll list
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { httpApi } from "../../src/lib/http-api";
-import type { Track } from "../../src/types/track";
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { httpApi } from '../../src/lib/http-api'
+import type { Track } from '../../src/types/track'
 
 interface MobileTrackListProps {
-  onPlayTrack: (track: Track, tracks: Track[], index: number) => void;
-  playlistId?: number;
-  playlistName?: string;
+  onPlayTrack: (track: Track, tracks: Track[], index: number) => void
+  playlistId?: number
+  playlistName?: string
 }
 
 function formatDuration(ms?: number): string {
-  if (!ms) return "--:--";
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  if (!ms) return '--:--'
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 export function MobileTrackList({
@@ -23,117 +23,126 @@ export function MobileTrackList({
   playlistId,
   playlistName,
 }: MobileTrackListProps) {
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const listRef = useRef<HTMLDivElement>(null);
-  const PAGE_SIZE = 50;
-  const isPlaylistMode = playlistId != null;
+  const [tracks, setTracks] = useState<Track[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+  const PAGE_SIZE = 50
+  const isPlaylistMode = playlistId != null
 
   // Load initial tracks
   useEffect(() => {
     if (isPlaylistMode && playlistId != null) {
-      let cancelled = false;
-      setLoading(true);
+      let cancelled = false
+      setLoading(true)
       httpApi
         .getPlaylistTracks(playlistId)
         .then((result) => {
           if (!cancelled) {
-            setTracks(result);
-            setHasMore(false);
+            setTracks(result)
+            setHasMore(false)
           }
         })
         .catch((err) => {
           if (!cancelled) {
-            console.error("Failed to load playlist:", err);
-            setTracks([]);
+            console.error('Failed to load playlist:', err)
+            setTracks([])
           }
         })
         .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
+          if (!cancelled) setLoading(false)
+        })
       return () => {
-        cancelled = true;
-      };
+        cancelled = true
+      }
     } else if (!isPlaylistMode) {
-      loadTracks(true);
+      loadTracks(true)
     }
-  }, [playlistId]);
+  }, [playlistId])
 
   // Search debounce (only when not in playlist mode)
   useEffect(() => {
-    if (isPlaylistMode) return;
+    if (isPlaylistMode) return
     const timer = setTimeout(() => {
       if (searchQuery.trim()) {
-        searchTracks();
+        searchTracks()
       } else {
-        loadTracks(true);
+        loadTracks(true)
       }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery, isPlaylistMode]);
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, isPlaylistMode])
 
   async function loadTracks(reset: boolean) {
-    if (loading) return;
-    setLoading(true);
+    if (loading) return
+    setLoading(true)
     try {
-      const newOffset = reset ? 0 : offset;
-      const result = await httpApi.getTracksPaginated(PAGE_SIZE, newOffset);
+      const newOffset = reset ? 0 : offset
+      const result = await httpApi.getTracksPaginated(PAGE_SIZE, newOffset)
       if (reset) {
-        setTracks(result);
-        setOffset(PAGE_SIZE);
+        setTracks(result)
+        setOffset(PAGE_SIZE)
       } else {
-        setTracks((prev) => [...prev, ...result]);
-        setOffset((prev) => prev + PAGE_SIZE);
+        setTracks((prev) => [...prev, ...result])
+        setOffset((prev) => prev + PAGE_SIZE)
       }
-      setHasMore(result.length === PAGE_SIZE);
+      setHasMore(result.length === PAGE_SIZE)
     } catch (err) {
-      console.error("Failed to load tracks:", err);
+      console.error('Failed to load tracks:', err)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
   async function searchTracks() {
-    setLoading(true);
+    setLoading(true)
     try {
-      const result = await httpApi.searchTracks(searchQuery);
-      setTracks(result);
-      setHasMore(false);
+      const result = await httpApi.searchTracks(searchQuery)
+      setTracks(result)
+      setHasMore(false)
     } catch (err) {
-      console.error("Failed to search:", err);
+      console.error('Failed to search:', err)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
   // Infinite scroll (only when not in playlist mode)
   const handleScroll = useCallback(() => {
-    if (isPlaylistMode || !listRef.current || loading || !hasMore || searchQuery.trim())
-      return;
-    const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+    if (
+      isPlaylistMode ||
+      !listRef.current ||
+      loading ||
+      !hasMore ||
+      searchQuery.trim()
+    )
+      return
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current
     if (scrollHeight - scrollTop - clientHeight < 200) {
-      loadTracks(false);
+      loadTracks(false)
     }
-  }, [isPlaylistMode, loading, hasMore, searchQuery, offset]);
+  }, [isPlaylistMode, loading, hasMore, searchQuery, offset])
 
-  const displayedTracks = isPlaylistMode && searchQuery.trim()
-    ? tracks.filter(
-        (t) =>
-          (t.title ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (t.artist ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (t.album ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : tracks;
+  const displayedTracks =
+    isPlaylistMode && searchQuery.trim()
+      ? tracks.filter(
+          (t) =>
+            (t.title ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (t.artist ?? '')
+              .toLowerCase()
+              .includes(searchQuery.toLowerCase()) ||
+            (t.album ?? '').toLowerCase().includes(searchQuery.toLowerCase()),
+        )
+      : tracks
 
   // Pull to refresh
   function handleRefresh() {
     if (searchQuery.trim()) {
-      searchTracks();
+      searchTracks()
     } else {
-      loadTracks(true);
+      loadTracks(true)
     }
   }
 
@@ -141,7 +150,7 @@ export function MobileTrackList({
     <div className="mobile-track-list">
       {isPlaylistMode && (
         <div className="mobile-playlist-title">
-          Playlist: {playlistName || "Shared playlist"}
+          Playlist: {playlistName || 'Shared playlist'}
         </div>
       )}
       <div className="mobile-search">
@@ -155,7 +164,7 @@ export function MobileTrackList({
         {searchQuery && (
           <button
             className="mobile-search-clear"
-            onClick={() => setSearchQuery("")}
+            onClick={() => setSearchQuery('')}
           >
             &times;
           </button>
@@ -175,11 +184,11 @@ export function MobileTrackList({
           >
             <div className="mobile-track-info">
               <span className="mobile-track-title">
-                {track.title || "Unknown"}
+                {track.title || 'Unknown'}
               </span>
               <span className="mobile-track-artist">
-                {track.artist || "Unknown Artist"}
-                {track.album ? ` — ${track.album}` : ""}
+                {track.artist || 'Unknown Artist'}
+                {track.album ? ` — ${track.album}` : ''}
               </span>
             </div>
             <div className="mobile-track-meta">
@@ -195,22 +204,20 @@ export function MobileTrackList({
           </button>
         ))}
 
-        {loading && (
-          <div className="mobile-loading">Loading...</div>
-        )}
+        {loading && <div className="mobile-loading">Loading...</div>}
 
         {!loading && displayedTracks.length === 0 && (
           <div className="mobile-empty">
             {isPlaylistMode
               ? searchQuery
-                ? "No tracks found"
-                : "No tracks in this playlist"
+                ? 'No tracks found'
+                : 'No tracks in this playlist'
               : searchQuery
-                ? "No tracks found"
-                : "No tracks in library"}
+                ? 'No tracks found'
+                : 'No tracks in library'}
           </div>
         )}
       </div>
     </div>
-  );
+  )
 }

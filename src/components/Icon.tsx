@@ -1,13 +1,13 @@
-import { icons, type LucideIcon } from 'lucide-react';
+import { icons, type LucideIcon } from 'lucide-react'
 
-export type IconName = keyof typeof icons;
+export type IconName = keyof typeof icons
 
 interface IconProps {
-  name: IconName;
-  size?: number;
-  className?: string;
-  strokeWidth?: number;
-  style?: React.CSSProperties;
+  name: IconName
+  size?: number
+  className?: string
+  strokeWidth?: number
+  style?: React.CSSProperties
 }
 
 export function Icon({
@@ -15,13 +15,13 @@ export function Icon({
   size = 20,
   className = '',
   strokeWidth = 1.5,
-  style
+  style,
 }: IconProps) {
-  const LucideIcon = icons[name] as LucideIcon;
+  const LucideIcon = icons[name] as LucideIcon
 
   if (!LucideIcon) {
-    console.warn(`Icon "${name}" not found in Lucide icons`);
-    return null;
+    console.warn(`Icon "${name}" not found in Lucide icons`)
+    return null
   }
 
   return (
@@ -35,9 +35,9 @@ export function Icon({
         display: 'inline-flex',
         alignItems: 'center',
         flexShrink: 0,
-        ...style
+        ...style,
       }}
       aria-hidden="true"
     />
-  );
+  )
 }

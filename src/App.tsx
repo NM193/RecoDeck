@@ -1,147 +1,162 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { listen } from "@tauri-apps/api/event";
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { open, confirm } from '@tauri-apps/plugin-dialog'
+import { appDataDir, join } from '@tauri-apps/api/path'
+import { listen } from '@tauri-apps/api/event'
 // import { check } from "@tauri-apps/plugin-updater";
 // import { relaunch } from "@tauri-apps/plugin-process";
-import { TrackTable, type TrackTableRef } from "./components/TrackTable";
-import { Player } from "./components/Player";
-import { MiniPlayer } from "./components/MiniPlayer";
-import { Settings } from "./components/Settings";
-import { FolderTree } from "./components/FolderTree";
-import { PromptModal } from "./components/PromptModal";
-import { SharePlaylistModal } from "./components/SharePlaylistModal";
-import { Notification } from "./components/Notification";
-import { HeaderNotification } from "./components/HeaderNotification";
-import { AnalysisProgress, type AnalysisProgressData } from "./components/AnalysisProgress";
-import { PlayerAIChat } from "./components/ai/PlayerAIChat";
-import { AIPlaylistDialog } from "./components/ai/AIPlaylistDialog";
-import { RecommendationsPanel } from "./components/ai/RecommendationsPanel";
-import { MixPrepPanel } from "./components/ai/MixPrepPanel";
-import { Icon } from "./components/Icon";
-import { usePlayerStore } from "./store/playerStore";
-import { useAIStore } from "./store/aiStore";
-import { tauriApi } from "./lib/tauri-api";
-import type { Track, Playlist } from "./types/track";
-import "./App.css";
-import "./components/TrackTable.css";
+import { TrackTable, type TrackTableRef } from './components/TrackTable'
+import { Player } from './components/Player'
+import { MiniPlayer } from './components/MiniPlayer'
+import { Settings } from './components/Settings'
+import { FolderTree } from './components/FolderTree'
+import { PromptModal } from './components/PromptModal'
+import { SharePlaylistModal } from './components/SharePlaylistModal'
+import { Notification } from './components/Notification'
+import { HeaderNotification } from './components/HeaderNotification'
+import {
+  AnalysisProgress,
+  type AnalysisProgressData,
+} from './components/AnalysisProgress'
+import { PlayerAIChat } from './components/ai/PlayerAIChat'
+import { AIPlaylistDialog } from './components/ai/AIPlaylistDialog'
+import { RecommendationsPanel } from './components/ai/RecommendationsPanel'
+import { MixPrepPanel } from './components/ai/MixPrepPanel'
+import { Icon } from './components/Icon'
+import { usePlayerStore } from './store/playerStore'
+import { useAIStore } from './store/aiStore'
+import { tauriApi } from './lib/tauri-api'
+import type { Track, Playlist } from './types/track'
+import './App.css'
+import './components/TrackTable.css'
 
-const AI_ENABLED = true;
+const AI_ENABLED = true
 
 type PromptAction =
-  | { kind: "create-playlist"; parentId: number | null }
-  | { kind: "create-folder"; parentId: number | null }
-  | { kind: "rename"; id: number; currentName: string };
+  | { kind: 'create-playlist'; parentId: number | null }
+  | { kind: 'create-folder'; parentId: number | null }
+  | { kind: 'rename'; id: number; currentName: string }
 
 function App() {
-  const [hash, setHash] = useState(() => window.location.hash);
+  const [hash, setHash] = useState(() => window.location.hash)
 
   useEffect(() => {
-    const onHashChange = () => setHash(window.location.hash);
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    const onHashChange = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
 
-  if (hash === "#mini-player") {
-    return <MiniPlayer />;
+  if (hash === '#mini-player') {
+    return <MiniPlayer />
   }
 
-  return <AppContent />;
+  return <AppContent />
 }
 
 function AppContent() {
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [keyNotation, setKeyNotation] = useState<"camelot" | "openkey">("camelot");
-  const [, setWaveformStyle] = useState<string>("traktor_rgb");
+  const [tracks, setTracks] = useState<Track[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [keyNotation, setKeyNotation] = useState<'camelot' | 'openkey'>(
+    'camelot',
+  )
+  const [, setWaveformStyle] = useState<string>('traktor_rgb')
 
   // Folder tree state
-  const [libraryFolders, setLibraryFolders] = useState<string[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [libraryFolders, setLibraryFolders] = useState<string[]>([])
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
 
   // Playlist state
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
-    null
-  );
+    null,
+  )
 
   // Genre state
-  const [genreDefinitions, setGenreDefinitions] = useState<Array<{ id: number; name: string; color?: string }>>([]);
+  const [genreDefinitions, setGenreDefinitions] = useState<
+    Array<{ id: number; name: string; color?: string }>
+  >([])
 
   // Total track count for "All Tracks" display
-  const [totalTrackCount, setTotalTrackCount] = useState<number>(0);
+  const [totalTrackCount, setTotalTrackCount] = useState<number>(0)
 
   // Pagination state for lazy loading
-  const [hasMoreTracks, setHasMoreTracks] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreTracks, setHasMoreTracks] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   // Name prompt modal (works in Tauri where window.prompt is not available)
   const [promptState, setPromptState] = useState<{
-    open: boolean;
-    title: string;
-    defaultValue: string;
-    action: PromptAction | null;
-  }>({ open: false, title: "", defaultValue: "", action: null });
+    open: boolean
+    title: string
+    defaultValue: string
+    action: PromptAction | null
+  }>({ open: false, title: '', defaultValue: '', action: null })
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
-    open: boolean;
-    playlistId: number;
-    playlistName: string;
-    companionUrl: string;
-    companionToken: string;
-  } | null>(null);
+    open: boolean
+    playlistId: number
+    playlistName: string
+    companionUrl: string
+    companionToken: string
+  } | null>(null)
 
   // AI Playlist dialog seed track
-  const [aiPlaylistSeedTrack, setAiPlaylistSeedTrack] = useState<Track | null>(null);
+  const [aiPlaylistSeedTrack, setAiPlaylistSeedTrack] = useState<Track | null>(
+    null,
+  )
 
   // AI Recommendations panel state
   const [recommendationSeed, setRecommendationSeed] = useState<{
-    track?: Track;
-    playlistId?: number;
-    playlistName?: string;
-  } | null>(null);
+    track?: Track
+    playlistId?: number
+    playlistName?: string
+  } | null>(null)
 
   // Mix Prep panel state
-  const [mixPrepPlaylist, setMixPrepPlaylist] = useState<{ id: number; name: string } | null>(null);
+  const [mixPrepPlaylist, setMixPrepPlaylist] = useState<{
+    id: number
+    name: string
+  } | null>(null)
 
   // Notification state
   const [notification, setNotification] = useState<{
-    message: string;
-    type: "info" | "success" | "warning" | "error";
-  } | null>(null);
+    message: string
+    type: 'info' | 'success' | 'warning' | 'error'
+  } | null>(null)
 
   // Header notification (small text next to logo, typing animation)
-  const [headerNotification, setHeaderNotification] = useState<string | null>(null);
+  const [headerNotification, setHeaderNotification] = useState<string | null>(
+    null,
+  )
 
   // Analysis progress state
-  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgressData | null>(null);
-  const [analysisCancelled, setAnalysisCancelled] = useState(false);
+  const [analysisProgress, setAnalysisProgress] =
+    useState<AnalysisProgressData | null>(null)
+  const [analysisCancelled, setAnalysisCancelled] = useState(false)
 
   // Cancel analysis
   function handleCancelAnalysis() {
-    setAnalysisCancelled(true);
-    setAnalysisProgress(null);
+    setAnalysisCancelled(true)
+    setAnalysisProgress(null)
   }
 
   useEffect(() => {
-    initializeApp();
-  }, []);
+    initializeApp()
+  }, [])
 
   // Register Settings callback so AI error messages can open the Settings panel
   useEffect(() => {
-    useAIStore.getState().registerOpenSettings(() => setSettingsOpen(true));
-  }, []);
+    useAIStore.getState().registerOpenSettings(() => setSettingsOpen(true))
+  }, [])
 
   // Check for app updates on startup (after a delay to not block UI)
   // Skip in dev mode - updater can cause unexpected relaunch during development
   // NOTE: Temporarily disabled - tauri-plugin-updater has known crash issues on macOS
   // (cross-device link, restart failures). Re-enable when upstream is fixed.
   useEffect(() => {
-    if (import.meta.env.DEV) return;
+    if (import.meta.env.DEV) return
     // Disabled: update check was causing "quit unexpectedly" crashes on macOS
     // const timer = setTimeout(async () => {
     //   try {
@@ -159,57 +174,57 @@ function AppContent() {
     //   }
     // }, 2000);
     // return () => clearTimeout(timer);
-  }, []);
+  }, [])
 
   async function initializeApp() {
     try {
-      const dataDir = await appDataDir();
-      const dbPath = await join(dataDir, "recodeck.db");
-      await tauriApi.initDatabase(dbPath);
+      const dataDir = await appDataDir()
+      const dbPath = await join(dataDir, 'recodeck.db')
+      await tauriApi.initDatabase(dbPath)
 
       // PERFORMANCE: Skip expensive path normalization on startup
       // This operation loads all tracks into memory - users can run it manually via settings if needed
 
       // Load saved theme
       try {
-        const savedTheme = await tauriApi.getTheme();
-        if (savedTheme === "custom") {
-          const customColors = await tauriApi.getCustomThemeColors();
-          applyTheme(savedTheme, customColors ?? undefined);
+        const savedTheme = await tauriApi.getTheme()
+        if (savedTheme === 'custom') {
+          const customColors = await tauriApi.getCustomThemeColors()
+          applyTheme(savedTheme, customColors ?? undefined)
         } else {
-          applyTheme(savedTheme);
+          applyTheme(savedTheme)
         }
       } catch {
-        console.warn("Failed to load saved theme, using default");
+        console.warn('Failed to load saved theme, using default')
       }
 
       // Load saved key notation preference
       try {
-        const savedKeyNotation = await tauriApi.getSetting("key_notation");
-        if (savedKeyNotation === "openkey" || savedKeyNotation === "camelot") {
-          setKeyNotation(savedKeyNotation);
+        const savedKeyNotation = await tauriApi.getSetting('key_notation')
+        if (savedKeyNotation === 'openkey' || savedKeyNotation === 'camelot') {
+          setKeyNotation(savedKeyNotation)
         }
       } catch {
-        console.warn("Failed to load key notation preference, using default");
+        console.warn('Failed to load key notation preference, using default')
       }
 
       // Load saved waveform style preference
       try {
-        const savedWaveformStyle = await tauriApi.getSetting("waveform_style");
+        const savedWaveformStyle = await tauriApi.getSetting('waveform_style')
         if (savedWaveformStyle) {
-          setWaveformStyle(savedWaveformStyle);
+          setWaveformStyle(savedWaveformStyle)
         }
       } catch {
-        console.warn("Failed to load waveform style preference, using default");
+        console.warn('Failed to load waveform style preference, using default')
       }
 
       // Load library folders
-      let folders: string[] = [];
+      let folders: string[] = []
       try {
-        folders = await tauriApi.getLibraryFolders();
-        setLibraryFolders(folders);
+        folders = await tauriApi.getLibraryFolders()
+        setLibraryFolders(folders)
       } catch {
-        console.warn("Failed to load library folders");
+        console.warn('Failed to load library folders')
       }
 
       // PERFORMANCE: Skip stray track cleanup on startup - will be optimized to use SQL
@@ -219,36 +234,36 @@ function AppContent() {
       // Users can manually scan via settings if needed
 
       // Load playlists
-      await loadPlaylists();
+      await loadPlaylists()
 
       // Load genre definitions
-      await loadGenreDefinitions();
+      await loadGenreDefinitions()
 
       // PERFORMANCE: Don't load all tracks on startup - load only total count
       // Tracks will be loaded when user selects a folder or playlist
       try {
-        const total = await tauriApi.countTracks();
-        setTotalTrackCount(total);
+        const total = await tauriApi.countTracks()
+        setTotalTrackCount(total)
       } catch {
-        console.warn("Failed to get track count");
+        console.warn('Failed to get track count')
       }
 
       // Set empty tracks array initially
-      setTracks([]);
+      setTracks([])
 
       // Start file watcher on library folders
       if (folders.length > 0) {
         try {
-          await tauriApi.startFileWatcher(folders);
-          console.log("File watcher started for", folders.length, "folders");
+          await tauriApi.startFileWatcher(folders)
+          console.log('File watcher started for', folders.length, 'folders')
         } catch (watchErr) {
-          console.warn("Failed to start file watcher:", watchErr);
+          console.warn('Failed to start file watcher:', watchErr)
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
@@ -256,480 +271,519 @@ function AppContent() {
   const loadTracks = useCallback(
     async (folderPath?: string | null, playlistId?: number | null) => {
       try {
-        const folder =
-          folderPath !== undefined ? folderPath : selectedFolder;
+        const folder = folderPath !== undefined ? folderPath : selectedFolder
         const playlist =
-          playlistId !== undefined ? playlistId : selectedPlaylistId;
+          playlistId !== undefined ? playlistId : selectedPlaylistId
 
-        let result: Track[];
-        let total = 0;
+        let result: Track[]
+        let total = 0
 
         if (playlist) {
-          result = await tauriApi.getPlaylistTracks(playlist);
-          setHasMoreTracks(false); // Playlists load all tracks at once
+          result = await tauriApi.getPlaylistTracks(playlist)
+          setHasMoreTracks(false) // Playlists load all tracks at once
         } else if (folder) {
           // Use recursive query for library root folders, shallow for subfolders
-          const isRootFolder = libraryFolders.includes(folder);
+          const isRootFolder = libraryFolders.includes(folder)
           result = isRootFolder
             ? await tauriApi.getTracksInFolder(folder)
-            : await tauriApi.getTracksInFolderShallow(folder);
-          setHasMoreTracks(false); // Folder views load all tracks at once
+            : await tauriApi.getTracksInFolderShallow(folder)
+          setHasMoreTracks(false) // Folder views load all tracks at once
         } else {
           // PERFORMANCE: For "All Tracks" view, load in batches
           // Load first 1000 tracks initially - good balance between performance and UX
-          const batchSize = 1000;
-          result = await tauriApi.getTracksPaginated(batchSize, 0);
+          const batchSize = 1000
+          result = await tauriApi.getTracksPaginated(batchSize, 0)
 
           // Get total count to determine if there are more tracks
-          total = await tauriApi.countTracks();
-          setHasMoreTracks(result.length < total);
+          total = await tauriApi.countTracks()
+          setHasMoreTracks(result.length < total)
         }
 
-        setTracks(result);
+        setTracks(result)
 
         // Always update total track count
         try {
           if (total === 0) {
-            total = await tauriApi.countTracks();
+            total = await tauriApi.countTracks()
           }
-          setTotalTrackCount(total);
+          setTotalTrackCount(total)
         } catch {
           // Ignore count errors
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(err instanceof Error ? err.message : String(err))
       }
     },
-    [selectedFolder, selectedPlaylistId, libraryFolders]
-  );
+    [selectedFolder, selectedPlaylistId, libraryFolders],
+  )
 
   // Load more tracks (for "All Tracks" pagination)
   const loadMoreTracks = useCallback(async () => {
-    if (isLoadingMore || !hasMoreTracks || selectedFolder || selectedPlaylistId) {
-      return;
+    if (
+      isLoadingMore ||
+      !hasMoreTracks ||
+      selectedFolder ||
+      selectedPlaylistId
+    ) {
+      return
     }
 
     try {
-      setIsLoadingMore(true);
-      const batchSize = 1000;
-      const currentOffset = tracks.length;
+      setIsLoadingMore(true)
+      const batchSize = 1000
+      const currentOffset = tracks.length
 
-      const moreTracks = await tauriApi.getTracksPaginated(batchSize, currentOffset);
+      const moreTracks = await tauriApi.getTracksPaginated(
+        batchSize,
+        currentOffset,
+      )
 
       if (moreTracks.length > 0) {
-        setTracks(prev => [...prev, ...moreTracks]);
-        setHasMoreTracks(tracks.length + moreTracks.length < totalTrackCount);
+        setTracks((prev) => [...prev, ...moreTracks])
+        setHasMoreTracks(tracks.length + moreTracks.length < totalTrackCount)
       } else {
-        setHasMoreTracks(false);
+        setHasMoreTracks(false)
       }
     } catch (err) {
-      console.error("Failed to load more tracks:", err);
+      console.error('Failed to load more tracks:', err)
     } finally {
-      setIsLoadingMore(false);
+      setIsLoadingMore(false)
     }
-  }, [isLoadingMore, hasMoreTracks, selectedFolder, selectedPlaylistId, tracks.length, totalTrackCount]);
+  }, [
+    isLoadingMore,
+    hasMoreTracks,
+    selectedFolder,
+    selectedPlaylistId,
+    tracks.length,
+    totalTrackCount,
+  ])
 
   // Load playlists from backend
   const loadPlaylists = useCallback(async () => {
     try {
-      const all = await tauriApi.getAllPlaylists();
-      setPlaylists(all);
+      const all = await tauriApi.getAllPlaylists()
+      setPlaylists(all)
     } catch (err) {
-      console.warn("Failed to load playlists:", err);
+      console.warn('Failed to load playlists:', err)
     }
-  }, []);
+  }, [])
 
   // Load genre definitions from backend
   const loadGenreDefinitions = useCallback(async () => {
     try {
-      const defs = await tauriApi.getGenreDefinitions();
-      setGenreDefinitions(defs);
+      const defs = await tauriApi.getGenreDefinitions()
+      setGenreDefinitions(defs)
     } catch (err) {
-      console.warn("Failed to load genre definitions:", err);
+      console.warn('Failed to load genre definitions:', err)
     }
-  }, []);
+  }, [])
 
   // Keep a ref to loadTracks so the event listener always uses the latest version
-  const loadTracksRef = useRef(loadTracks);
-  loadTracksRef.current = loadTracks;
-  const libraryFoldersRef = useRef(libraryFolders);
-  libraryFoldersRef.current = libraryFolders;
+  const loadTracksRef = useRef(loadTracks)
+  loadTracksRef.current = loadTracks
+  const libraryFoldersRef = useRef(libraryFolders)
+  libraryFoldersRef.current = libraryFolders
 
   // Ref for TrackTable to access scroll methods
-  const trackTableRef = useRef<TrackTableRef>(null);
+  const trackTableRef = useRef<TrackTableRef>(null)
 
   // Listen for file system changes and auto-refresh
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlisten: (() => void) | undefined
 
-    listen("library-changed", async () => {
-      console.log("Library changed detected, re-scanning...");
+    listen('library-changed', async () => {
+      console.log('Library changed detected, re-scanning...')
       // Re-scan all library folders to pick up new files
       for (const folder of libraryFoldersRef.current) {
         try {
-          await tauriApi.scanDirectory(folder);
+          await tauriApi.scanDirectory(folder)
         } catch (err) {
-          console.warn(`Failed to re-scan folder ${folder}:`, err);
+          console.warn(`Failed to re-scan folder ${folder}:`, err)
         }
       }
       // Reload tracks
-      await loadTracksRef.current();
+      await loadTracksRef.current()
       // Rebuild AI context cache
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     }).then((fn) => {
-      unlisten = fn;
-    });
+      unlisten = fn
+    })
 
     return () => {
-      unlisten?.();
-    };
-  }, []);
+      unlisten?.()
+    }
+  }, [])
 
   function hexToRgb(hex: string): string {
-    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-    if (!m) return "99, 102, 241";
-    return `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`;
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i)
+    if (!m) return '99, 102, 241'
+    return `${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}`
   }
 
   function lightenHex(hex: string, amount: number): string {
-    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-    if (!m) return hex;
-    const r = Math.min(255, parseInt(m[1], 16) + amount);
-    const g = Math.min(255, parseInt(m[2], 16) + amount);
-    const b = Math.min(255, parseInt(m[3], 16) + amount);
-    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+    const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i)
+    if (!m) return hex
+    const r = Math.min(255, parseInt(m[1], 16) + amount)
+    const g = Math.min(255, parseInt(m[2], 16) + amount)
+    const b = Math.min(255, parseInt(m[3], 16) + amount)
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
   }
 
   const CUSTOM_THEME_VARS = [
-    "accent", "accent-hover", "accent-rgb", "bg-primary", "bg-secondary", "bg-tertiary",
-    "text-primary", "text-secondary", "border", "surface", "waveform-color", "waveform-played",
-    "spectrogram-bg",
-  ];
+    'accent',
+    'accent-hover',
+    'accent-rgb',
+    'bg-primary',
+    'bg-secondary',
+    'bg-tertiary',
+    'text-primary',
+    'text-secondary',
+    'border',
+    'surface',
+    'waveform-color',
+    'waveform-played',
+    'spectrogram-bg',
+  ]
 
   function applyTheme(theme: string, customColors?: Record<string, string>) {
-    const root = document.documentElement.style;
-    document.documentElement.setAttribute("data-theme", theme);
-    if (theme === "custom" && customColors) {
-      const validHex = /^#[0-9A-Fa-f]{6}$/;
+    const root = document.documentElement.style
+    document.documentElement.setAttribute('data-theme', theme)
+    if (theme === 'custom' && customColors) {
+      const validHex = /^#[0-9A-Fa-f]{6}$/
       for (const [key, value] of Object.entries(customColors)) {
         if (validHex.test(value)) {
-          root.setProperty("--" + key, value);
+          root.setProperty('--' + key, value)
         }
       }
       if (customColors.accent && validHex.test(customColors.accent)) {
-        root.setProperty("--accent-hover", lightenHex(customColors.accent, 30));
-        root.setProperty("--accent-rgb", hexToRgb(customColors.accent));
-        root.setProperty("--waveform-color", customColors.accent);
-        root.setProperty("--waveform-played", lightenHex(customColors.accent, 60));
+        root.setProperty('--accent-hover', lightenHex(customColors.accent, 30))
+        root.setProperty('--accent-rgb', hexToRgb(customColors.accent))
+        root.setProperty('--waveform-color', customColors.accent)
+        root.setProperty(
+          '--waveform-played',
+          lightenHex(customColors.accent, 60),
+        )
       }
-      if (customColors["bg-primary"]) {
-        root.setProperty("--spectrogram-bg", customColors["bg-primary"]);
+      if (customColors['bg-primary']) {
+        root.setProperty('--spectrogram-bg', customColors['bg-primary'])
       }
     } else {
       for (const name of CUSTOM_THEME_VARS) {
-        root.removeProperty("--" + name);
+        root.removeProperty('--' + name)
       }
     }
   }
 
   // Settings callbacks
   async function handleFoldersChanged() {
-    let folders: string[] = [];
+    let folders: string[] = []
     try {
-      folders = await tauriApi.getLibraryFolders();
-      setLibraryFolders(folders);
+      folders = await tauriApi.getLibraryFolders()
+      setLibraryFolders(folders)
     } catch {
-      console.warn("Failed to refresh library folders");
+      console.warn('Failed to refresh library folders')
     }
     // Restart file watcher with updated folders
     try {
-      await tauriApi.startFileWatcher(folders);
+      await tauriApi.startFileWatcher(folders)
     } catch {
-      console.warn("Failed to restart file watcher");
+      console.warn('Failed to restart file watcher')
     }
-    loadTracks();
+    loadTracks()
   }
 
-  function handleThemeChanged(theme: string, customColors?: Record<string, string>) {
-    applyTheme(theme, customColors);
+  function handleThemeChanged(
+    theme: string,
+    customColors?: Record<string, string>,
+  ) {
+    applyTheme(theme, customColors)
   }
 
   function handleKeyNotationChanged(notation: string) {
-    if (notation === "openkey" || notation === "camelot") {
-      setKeyNotation(notation);
+    if (notation === 'openkey' || notation === 'camelot') {
+      setKeyNotation(notation)
     }
   }
 
   function handleWaveformStyleChanged(style: string) {
-    setWaveformStyle(style);
+    setWaveformStyle(style)
   }
 
   // Folder selection from Track Collection
   async function handleFolderSelect(folderPath: string | null) {
-    setSelectedFolder(folderPath);
-    setSelectedPlaylistId(null);
+    setSelectedFolder(folderPath)
+    setSelectedPlaylistId(null)
 
     // Debug: show what we're searching for
     if (folderPath) {
-      console.log(`=== Selecting folder: ${folderPath} ===`);
+      console.log(`=== Selecting folder: ${folderPath} ===`)
       try {
-        const debugTracks = await tauriApi.getDebugTracks();
-        const pattern = `${folderPath}/`;
-        console.log(`Looking for tracks starting with: ${pattern}`);
-        const matching = debugTracks.filter(t => t.file_path.startsWith(pattern));
-        console.log(`Found ${matching.length} matching tracks:`);
-        matching.forEach(t => console.log(`  - ${t.file_path}`));
-        const nonMatching = debugTracks.filter(t => !t.file_path.startsWith(pattern));
-        console.log(`Non-matching tracks (${nonMatching.length}):`);
-        nonMatching.forEach(t => console.log(`  - ${t.file_path}`));
+        const debugTracks = await tauriApi.getDebugTracks()
+        const pattern = `${folderPath}/`
+        console.log(`Looking for tracks starting with: ${pattern}`)
+        const matching = debugTracks.filter((t) =>
+          t.file_path.startsWith(pattern),
+        )
+        console.log(`Found ${matching.length} matching tracks:`)
+        matching.forEach((t) => console.log(`  - ${t.file_path}`))
+        const nonMatching = debugTracks.filter(
+          (t) => !t.file_path.startsWith(pattern),
+        )
+        console.log(`Non-matching tracks (${nonMatching.length}):`)
+        nonMatching.forEach((t) => console.log(`  - ${t.file_path}`))
       } catch {
         // ignore
       }
     }
 
-    await loadTracks(folderPath, null);
+    await loadTracks(folderPath, null)
   }
 
   // Playlist selection
   async function handlePlaylistSelect(playlistId: number) {
-    setSelectedPlaylistId(playlistId);
-    setSelectedFolder(null);
-    await loadTracks(null, playlistId);
+    setSelectedPlaylistId(playlistId)
+    setSelectedFolder(null)
+    await loadTracks(null, playlistId)
   }
 
   // Analyze folder — BPM and Key for tracks that don't have them yet
   async function handleAnalyzeFolder(folderPath: string) {
     try {
-      setAnalyzing(true);
-      setAnalysisCancelled(false);
-      setError(null);
+      setAnalyzing(true)
+      setAnalysisCancelled(false)
+      setError(null)
 
-      const folderTracks = await tauriApi.getTracksInFolder(folderPath);
-      
+      const folderTracks = await tauriApi.getTracksInFolder(folderPath)
+
       // Filter tracks that need analysis
       const tracksToAnalyze = folderTracks.filter(
-        (t) => t.id && (!t.bpm || !t.musical_key)
-      );
+        (t) => t.id && (!t.bpm || !t.musical_key),
+      )
 
       if (tracksToAnalyze.length === 0) {
         if (folderTracks.length === 0) {
           setNotification({
-            message: "No audio tracks found in this folder",
-            type: "info",
-          });
+            message: 'No audio tracks found in this folder',
+            type: 'info',
+          })
         } else {
           setNotification({
-            message: "All tracks in this folder already have BPM and Key analysis",
-            type: "info",
-          });
+            message:
+              'All tracks in this folder already have BPM and Key analysis',
+            type: 'info',
+          })
         }
-        return;
+        return
       }
 
       // Calculate total duration and size
       const totalDurationMs = tracksToAnalyze.reduce(
         (sum, t) => sum + (t.duration_ms || 0),
-        0
-      );
+        0,
+      )
       const totalSizeBytes = tracksToAnalyze.reduce(
         (sum, t) => sum + (t.file_size || 0),
-        0
-      );
+        0,
+      )
 
-      const startTime = Date.now();
-      let bpmCount = 0;
-      let keyCount = 0;
+      const startTime = Date.now()
+      let bpmCount = 0
+      let keyCount = 0
 
       for (let i = 0; i < tracksToAnalyze.length; i++) {
         if (analysisCancelled) {
           setNotification({
             message: `Analysis cancelled. Analyzed ${bpmCount + keyCount} tracks.`,
-            type: "warning",
-          });
-          break;
+            type: 'warning',
+          })
+          break
         }
 
-        const track = tracksToAnalyze[i];
-        if (!track.id) continue;
+        const track = tracksToAnalyze[i]
+        if (!track.id) continue
 
         // Update progress
         setAnalysisProgress({
           currentIndex: i + 1,
           totalTracks: tracksToAnalyze.length,
-          currentTrackName: track.title || track.file_path.split("/").pop() || "Unknown",
+          currentTrackName:
+            track.title || track.file_path.split('/').pop() || 'Unknown',
           totalDurationMs,
           totalSizeBytes,
           startTime,
-        });
+        })
 
         // Allow UI to update by yielding to the event loop
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0))
 
         try {
           if (!track.bpm) {
-            await tauriApi.analyzeBpm(track.id);
-            bpmCount++;
+            await tauriApi.analyzeBpm(track.id)
+            bpmCount++
           }
           if (!track.musical_key) {
-            await tauriApi.analyzeKey(track.id);
-            keyCount++;
+            await tauriApi.analyzeKey(track.id)
+            keyCount++
           }
         } catch (err) {
-          console.warn(`Failed to analyze track ${track.id}:`, err);
+          console.warn(`Failed to analyze track ${track.id}:`, err)
         }
       }
 
-      setAnalysisProgress(null);
-      await loadTracks();
+      setAnalysisProgress(null)
+      await loadTracks()
 
       if (!analysisCancelled && (bpmCount > 0 || keyCount > 0)) {
-        const parts = [];
-        if (bpmCount > 0) parts.push(`BPM: ${bpmCount}`);
-        if (keyCount > 0) parts.push(`Key: ${keyCount}`);
+        const parts = []
+        if (bpmCount > 0) parts.push(`BPM: ${bpmCount}`)
+        if (keyCount > 0) parts.push(`Key: ${keyCount}`)
         setNotification({
-          message: `Analyzed ${parts.join(", ")} tracks in folder`,
-          type: "success",
-        });
+          message: `Analyzed ${parts.join(', ')} tracks in folder`,
+          type: 'success',
+        })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setAnalyzing(false);
-      setAnalysisProgress(null);
-      setAnalysisCancelled(false);
+      setAnalyzing(false)
+      setAnalysisProgress(null)
+      setAnalysisCancelled(false)
       // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
   // Analyze a single track (BPM + Key)
   async function handleAnalyzeTrack(track: Track) {
     try {
-      setAnalyzing(true);
-      setAnalysisCancelled(false);
-      setError(null);
+      setAnalyzing(true)
+      setAnalysisCancelled(false)
+      setError(null)
 
       // Show progress for single track
       setAnalysisProgress({
         currentIndex: 1,
         totalTracks: 1,
-        currentTrackName: track.title || track.file_path.split("/").pop() || "Unknown",
+        currentTrackName:
+          track.title || track.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: track.duration_ms || 0,
         totalSizeBytes: track.file_size || 0,
         startTime: Date.now(),
-      });
+      })
 
       // Allow UI to update
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       // Always analyze both BPM and Key (re-analyze if already exists)
-      await tauriApi.analyzeBpm(track.id);
-      await tauriApi.analyzeKey(track.id);
+      await tauriApi.analyzeBpm(track.id)
+      await tauriApi.analyzeKey(track.id)
 
-      setAnalysisProgress(null);
-      await loadTracks();
+      setAnalysisProgress(null)
+      await loadTracks()
 
-      setHeaderNotification(`Analysis complete for "${track.title || "track"}"`);
+      setHeaderNotification(`Analysis complete for "${track.title || 'track'}"`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
       setNotification({
         message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: "error",
-      });
+        type: 'error',
+      })
     } finally {
-      setAnalyzing(false);
-      setAnalysisProgress(null);
-      setAnalysisCancelled(false);
+      setAnalyzing(false)
+      setAnalysisProgress(null)
+      setAnalysisCancelled(false)
       // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
   // Analyze BPM only for a single track
   async function handleAnalyzeBpm(track: Track) {
     try {
-      setAnalyzing(true);
-      setAnalysisCancelled(false);
-      setError(null);
+      setAnalyzing(true)
+      setAnalysisCancelled(false)
+      setError(null)
 
       // Show progress for single track
       setAnalysisProgress({
         currentIndex: 1,
         totalTracks: 1,
-        currentTrackName: track.title || track.file_path.split("/").pop() || "Unknown",
+        currentTrackName:
+          track.title || track.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: track.duration_ms || 0,
         totalSizeBytes: track.file_size || 0,
         startTime: Date.now(),
-      });
+      })
 
       // Allow UI to update
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
-      await tauriApi.analyzeBpm(track.id);
+      await tauriApi.analyzeBpm(track.id)
 
-      setAnalysisProgress(null);
-      await loadTracks();
+      setAnalysisProgress(null)
+      await loadTracks()
 
       setNotification({
-        message: `BPM analysis complete for "${track.title || "track"}"`,
-        type: "success",
-      });
+        message: `BPM analysis complete for "${track.title || 'track'}"`,
+        type: 'success',
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
       setNotification({
         message: `BPM analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: "error",
-      });
+        type: 'error',
+      })
     } finally {
-      setAnalyzing(false);
-      setAnalysisProgress(null);
-      setAnalysisCancelled(false);
+      setAnalyzing(false)
+      setAnalysisProgress(null)
+      setAnalysisCancelled(false)
       // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
   // Analyze Key only for a single track
   async function handleAnalyzeKey(track: Track) {
     try {
-      setAnalyzing(true);
-      setAnalysisCancelled(false);
-      setError(null);
+      setAnalyzing(true)
+      setAnalysisCancelled(false)
+      setError(null)
 
       // Show progress for single track
       setAnalysisProgress({
         currentIndex: 1,
         totalTracks: 1,
-        currentTrackName: track.title || track.file_path.split("/").pop() || "Unknown",
+        currentTrackName:
+          track.title || track.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: track.duration_ms || 0,
         totalSizeBytes: track.file_size || 0,
         startTime: Date.now(),
-      });
+      })
 
       // Allow UI to update
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
-      await tauriApi.analyzeKey(track.id);
+      await tauriApi.analyzeKey(track.id)
 
-      setAnalysisProgress(null);
-      await loadTracks();
+      setAnalysisProgress(null)
+      await loadTracks()
 
       setNotification({
-        message: `Key analysis complete for "${track.title || "track"}"`,
-        type: "success",
-      });
+        message: `Key analysis complete for "${track.title || 'track'}"`,
+        type: 'success',
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
       setNotification({
         message: `Key analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: "error",
-      });
+        type: 'error',
+      })
     } finally {
-      setAnalyzing(false);
-      setAnalysisProgress(null);
-      setAnalysisCancelled(false);
+      setAnalyzing(false)
+      setAnalysisProgress(null)
+      setAnalysisCancelled(false)
       // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
@@ -737,49 +791,49 @@ function AppContent() {
   function handleCreatePlaylist(parentId: number | null) {
     setPromptState({
       open: true,
-      title: "Playlist name",
-      defaultValue: "",
-      action: { kind: "create-playlist", parentId },
-    });
+      title: 'Playlist name',
+      defaultValue: '',
+      action: { kind: 'create-playlist', parentId },
+    })
   }
 
   // Create folder — open name modal
   function handleCreateFolder(parentId: number | null) {
     setPromptState({
       open: true,
-      title: "Folder name",
-      defaultValue: "",
-      action: { kind: "create-folder", parentId },
-    });
+      title: 'Folder name',
+      defaultValue: '',
+      action: { kind: 'create-folder', parentId },
+    })
   }
 
   // Rename playlist/folder — open name modal
   function handleRenamePlaylist(id: number, currentName: string) {
     setPromptState({
       open: true,
-      title: "New name",
+      title: 'New name',
       defaultValue: currentName,
-      action: { kind: "rename", id, currentName },
-    });
+      action: { kind: 'rename', id, currentName },
+    })
   }
 
   async function handlePromptConfirm(value: string) {
-    const { action } = promptState;
-    setPromptState((p) => ({ ...p, open: false, action: null }));
-    if (!action) return;
+    const { action } = promptState
+    setPromptState((p) => ({ ...p, open: false, action: null }))
+    if (!action) return
 
     try {
-      if (action.kind === "create-playlist") {
-        await tauriApi.createPlaylist(value, action.parentId);
-      } else if (action.kind === "create-folder") {
-        await tauriApi.createPlaylistFolder(value, action.parentId);
-      } else if (action.kind === "rename") {
-        if (value === action.currentName) return;
-        await tauriApi.renamePlaylist(action.id, value);
+      if (action.kind === 'create-playlist') {
+        await tauriApi.createPlaylist(value, action.parentId)
+      } else if (action.kind === 'create-folder') {
+        await tauriApi.createPlaylistFolder(value, action.parentId)
+      } else if (action.kind === 'rename') {
+        if (value === action.currentName) return
+        await tauriApi.renamePlaylist(action.id, value)
       }
-      await loadPlaylists();
+      await loadPlaylists()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -787,35 +841,35 @@ function AppContent() {
   async function handleDeletePlaylist(id: number, name: string) {
     const confirmed = await confirm(
       `Delete "${name}"? This cannot be undone.`,
-      { title: "Delete", kind: "warning" }
-    );
-    if (!confirmed) return;
+      { title: 'Delete', kind: 'warning' },
+    )
+    if (!confirmed) return
 
     try {
-      await tauriApi.deletePlaylist(id);
+      await tauriApi.deletePlaylist(id)
 
       if (selectedPlaylistId === id) {
-        setSelectedPlaylistId(null);
-        setSelectedFolder(null);
-        await loadTracks(null, null);
+        setSelectedPlaylistId(null)
+        setSelectedFolder(null)
+        await loadTracks(null, null)
       }
 
-      await loadPlaylists();
+      await loadPlaylists()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   // Share playlist — open modal with QR code if Companion is running
   async function handleSharePlaylist(playlistId: number, playlistName: string) {
     try {
-      const status = await tauriApi.getCompanionStatus();
+      const status = await tauriApi.getCompanionStatus()
       if (!status.running || !status.url || !status.token) {
         setNotification({
-          message: "Enable Companion in Settings first",
-          type: "warning",
-        });
-        return;
+          message: 'Enable Companion in Settings first',
+          type: 'warning',
+        })
+        return
       }
       setSharePlaylistModal({
         open: true,
@@ -823,72 +877,73 @@ function AppContent() {
         playlistName,
         companionUrl: status.url,
         companionToken: status.token,
-      });
+      })
     } catch (err) {
       setNotification({
-        message: err instanceof Error ? err.message : "Failed to get Companion status",
-        type: "error",
-      });
+        message:
+          err instanceof Error ? err.message : 'Failed to get Companion status',
+        type: 'error',
+      })
     }
   }
 
   // Add track to playlist
   async function handleAddToPlaylist(track: Track, playlistId: number) {
     try {
-      await tauriApi.addTrackToPlaylist(playlistId, track.id);
-      await loadPlaylists(); // Refresh playlist counts
-      const playlist = playlists.find((p) => p.id === playlistId);
-      setHeaderNotification(`Added to ${playlist?.name ?? "playlist"}`);
+      await tauriApi.addTrackToPlaylist(playlistId, track.id)
+      await loadPlaylists() // Refresh playlist counts
+      const playlist = playlists.find((p) => p.id === playlistId)
+      setHeaderNotification(`Added to ${playlist?.name ?? 'playlist'}`)
     } catch (err) {
       setNotification({
         message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-        type: "error",
-      });
+        type: 'error',
+      })
     }
   }
 
   // Remove track from playlist (when viewing a playlist)
   async function handleRemoveFromPlaylist(track: Track) {
-    if (selectedPlaylistId == null) return;
+    if (selectedPlaylistId == null) return
     try {
-      await tauriApi.removeTrackFromPlaylist(selectedPlaylistId, track.id);
-      await loadTracks(null, selectedPlaylistId); // Refresh playlist tracks
-      await loadPlaylists(); // Refresh playlist counts
-      setHeaderNotification(`Removed from playlist`);
+      await tauriApi.removeTrackFromPlaylist(selectedPlaylistId, track.id)
+      await loadTracks(null, selectedPlaylistId) // Refresh playlist tracks
+      await loadPlaylists() // Refresh playlist counts
+      setHeaderNotification(`Removed from playlist`)
     } catch (err) {
       setNotification({
         message: `Failed to remove: ${err instanceof Error ? err.message : String(err)}`,
-        type: "error",
-      });
+        type: 'error',
+      })
     }
   }
 
   // Set genre for track
   async function handleSetGenre(track: Track, genre: string) {
     try {
-      await tauriApi.setTrackGenre(track.id, genre);
-      await loadTracks(); // Refresh tracks to show updated genre
-      await loadGenreDefinitions(); // Refresh in case it's a new genre
+      await tauriApi.setTrackGenre(track.id, genre)
+      await loadTracks() // Refresh tracks to show updated genre
+      await loadGenreDefinitions() // Refresh in case it's a new genre
       setNotification({
-        message: `Genre set to "${genre}" for ${track.title || "track"}`,
-        type: "success",
-      });
+        message: `Genre set to "${genre}" for ${track.title || 'track'}`,
+        type: 'success',
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   // Clear genre for track
   async function handleClearGenre(track: Track) {
     try {
-      await tauriApi.clearTrackGenre(track.id);
-      await loadTracks(); // Refresh tracks to show cleared genre
+      await tauriApi.clearTrackGenre(track.id)
+      await loadTracks() // Refresh tracks to show cleared genre
       setNotification({
-        message: `Genre cleared for ${track.title || "track"}`,
-        type: "info",
-      });
+        message: `Genre cleared for ${track.title || 'track'}`,
+        type: 'info',
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -898,245 +953,267 @@ function AppContent() {
       const selectedPath = await open({
         directory: true,
         multiple: false,
-        title: "Select Music Folder",
-      });
+        title: 'Select Music Folder',
+      })
 
-      if (!selectedPath) return;
+      if (!selectedPath) return
 
-      setLoading(true);
-      setError(null);
+      setLoading(true)
+      setError(null)
 
       try {
-        await tauriApi.addLibraryFolder(selectedPath as string);
+        await tauriApi.addLibraryFolder(selectedPath as string)
       } catch {
         // Folder might already exist
       }
 
-      const result = await tauriApi.scanDirectory(selectedPath as string);
-      console.log("Scan result:", result);
+      const result = await tauriApi.scanDirectory(selectedPath as string)
+      console.log('Scan result:', result)
 
       alert(
-        `Scanned ${result.total_files} files\nImported: ${result.imported}\nSkipped: ${result.skipped}`
-      );
+        `Scanned ${result.total_files} files\nImported: ${result.imported}\nSkipped: ${result.skipped}`,
+      )
 
-      let folders: string[] = [];
+      let folders: string[] = []
       try {
-        folders = await tauriApi.getLibraryFolders();
-        setLibraryFolders(folders);
+        folders = await tauriApi.getLibraryFolders()
+        setLibraryFolders(folders)
       } catch {
-        console.warn("Failed to refresh library folders");
+        console.warn('Failed to refresh library folders')
       }
 
       // Restart file watcher with updated folder list
       try {
-        await tauriApi.startFileWatcher(folders);
+        await tauriApi.startFileWatcher(folders)
       } catch {
-        console.warn("Failed to restart file watcher");
+        console.warn('Failed to restart file watcher')
       }
 
-      await loadTracks();
-      await loadPlaylists();
+      await loadTracks()
+      await loadPlaylists()
 
       // Rebuild AI context cache in background
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
   // Analyze all BPM
   async function handleAnalyzeAll() {
-    if (analyzing) return;
+    if (analyzing) return
     try {
-      setAnalyzing(true);
-      setAnalysisCancelled(false);
-      setError(null);
+      setAnalyzing(true)
+      setAnalysisCancelled(false)
+      setError(null)
 
       // Get all tracks
-      const allTracks = await tauriApi.getAllTracks();
-      
+      const allTracks = await tauriApi.getAllTracks()
+
       // Filter tracks that need analysis
       const tracksToAnalyze = allTracks.filter(
-        (t) => t.id && (!t.bpm || !t.musical_key)
-      );
+        (t) => t.id && (!t.bpm || !t.musical_key),
+      )
 
       if (tracksToAnalyze.length === 0) {
         setNotification({
-          message: "All tracks already have BPM and Key analysis",
-          type: "info",
-        });
-        return;
+          message: 'All tracks already have BPM and Key analysis',
+          type: 'info',
+        })
+        return
       }
 
       // Calculate total duration and size
       const totalDurationMs = tracksToAnalyze.reduce(
         (sum, t) => sum + (t.duration_ms || 0),
-        0
-      );
+        0,
+      )
       const totalSizeBytes = tracksToAnalyze.reduce(
         (sum, t) => sum + (t.file_size || 0),
-        0
-      );
+        0,
+      )
 
-      const startTime = Date.now();
-      let bpmCount = 0;
-      let keyCount = 0;
+      const startTime = Date.now()
+      let bpmCount = 0
+      let keyCount = 0
 
       for (let i = 0; i < tracksToAnalyze.length; i++) {
         if (analysisCancelled) {
           setNotification({
             message: `Analysis cancelled. Analyzed ${bpmCount + keyCount} tracks.`,
-            type: "warning",
-          });
-          break;
+            type: 'warning',
+          })
+          break
         }
 
-        const track = tracksToAnalyze[i];
-        if (!track.id) continue;
+        const track = tracksToAnalyze[i]
+        if (!track.id) continue
 
         // Update progress
         setAnalysisProgress({
           currentIndex: i + 1,
           totalTracks: tracksToAnalyze.length,
-          currentTrackName: track.title || track.file_path.split("/").pop() || "Unknown",
+          currentTrackName:
+            track.title || track.file_path.split('/').pop() || 'Unknown',
           totalDurationMs,
           totalSizeBytes,
           startTime,
-        });
+        })
 
         // Allow UI to update by yielding to the event loop
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0))
 
         try {
           if (!track.bpm) {
-            await tauriApi.analyzeBpm(track.id);
-            bpmCount++;
+            await tauriApi.analyzeBpm(track.id)
+            bpmCount++
           }
           if (!track.musical_key) {
-            await tauriApi.analyzeKey(track.id);
-            keyCount++;
+            await tauriApi.analyzeKey(track.id)
+            keyCount++
           }
         } catch (err) {
-          console.warn(`Failed to analyze track ${track.id}:`, err);
+          console.warn(`Failed to analyze track ${track.id}:`, err)
         }
       }
 
-      setAnalysisProgress(null);
-      await loadTracks();
+      setAnalysisProgress(null)
+      await loadTracks()
 
       if (!analysisCancelled && (bpmCount > 0 || keyCount > 0)) {
-        const parts = [];
-        if (bpmCount > 0) parts.push(`BPM: ${bpmCount}`);
-        if (keyCount > 0) parts.push(`Key: ${keyCount}`);
+        const parts = []
+        if (bpmCount > 0) parts.push(`BPM: ${bpmCount}`)
+        if (keyCount > 0) parts.push(`Key: ${keyCount}`)
         setNotification({
-          message: `Analyzed ${parts.join(", ")} tracks`,
-          type: "success",
-        });
+          message: `Analyzed ${parts.join(', ')} tracks`,
+          type: 'success',
+        })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err))
       setNotification({
         message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: "error",
-      });
+        type: 'error',
+      })
     } finally {
-      setAnalyzing(false);
-      setAnalysisProgress(null);
-      setAnalysisCancelled(false);
+      setAnalyzing(false)
+      setAnalysisProgress(null)
+      setAnalysisCancelled(false)
       // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {});
+      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
   // Handler for when user clicks on track metadata in player
   const handleScrollToCurrentTrack = useCallback(() => {
     if (trackTableRef.current) {
-      console.log('[App] Scrolling to current track in table');
-      trackTableRef.current.scrollToCurrentTrack();
+      console.log('[App] Scrolling to current track in table')
+      trackTableRef.current.scrollToCurrentTrack()
     } else {
-      console.warn('[App] TrackTable ref not available');
+      console.warn('[App] TrackTable ref not available')
     }
-  }, []);
+  }, [])
 
   const handleGenerateAIPlaylist = useCallback((track: Track) => {
-    setAiPlaylistSeedTrack(track);
-  }, []);
+    setAiPlaylistSeedTrack(track)
+  }, [])
 
   const handleGetRecommendations = useCallback((track: Track) => {
-    setRecommendationSeed({ track });
-  }, []);
+    setRecommendationSeed({ track })
+  }, [])
 
-  const handleGetPlaylistRecommendations = useCallback((playlistId: number, playlistName: string) => {
-    setRecommendationSeed({ playlistId, playlistName });
-  }, []);
+  const handleGetPlaylistRecommendations = useCallback(
+    (playlistId: number, playlistName: string) => {
+      setRecommendationSeed({ playlistId, playlistName })
+    },
+    [],
+  )
 
-  const handleOpenMixPrep = useCallback((playlistId: number, playlistName: string) => {
-    setMixPrepPlaylist({ id: playlistId, name: playlistName });
-  }, []);
+  const handleOpenMixPrep = useCallback(
+    (playlistId: number, playlistName: string) => {
+      setMixPrepPlaylist({ id: playlistId, name: playlistName })
+    },
+    [],
+  )
 
-  const {
-    setIsLoading,
-    setError: setPlayerError,
-    setQueue,
-  } = usePlayerStore();
+  const { setIsLoading, setError: setPlayerError, setQueue } = usePlayerStore()
 
   const handleTrackClick = (track: Track) => {
-    console.log("Clicked track:", track);
-  };
+    console.log('Clicked track:', track)
+  }
 
-  const handlePlayTrack = async (track: Track, sortedTracks: Track[], trackIndex: number) => {
+  const handlePlayTrack = async (
+    track: Track,
+    sortedTracks: Track[],
+    trackIndex: number,
+  ) => {
     if (!track.file_path) {
-      console.error("[App] Track has no file path");
-      return;
+      console.error('[App] Track has no file path')
+      return
     }
 
     if (!track.id) {
-      console.error("[App] Track has no ID");
-      return;
+      console.error('[App] Track has no ID')
+      return
     }
 
     // Validate the index before proceeding
     if (trackIndex < 0 || trackIndex >= sortedTracks.length) {
-      console.error(`[App] Invalid track index: ${trackIndex} (queue length: ${sortedTracks.length})`);
-      setPlayerError("Invalid track index");
-      return;
+      console.error(
+        `[App] Invalid track index: ${trackIndex} (queue length: ${sortedTracks.length})`,
+      )
+      setPlayerError('Invalid track index')
+      return
     }
 
     // Double-check that the track at the index matches what we expect
-    const trackAtIndex = sortedTracks[trackIndex];
-    if (trackAtIndex.id !== track.id || trackAtIndex.file_path !== track.file_path) {
-      console.error(`[App] Track mismatch! Expected track ${track.id} at index ${trackIndex}, but found ${trackAtIndex.id}`);
-      setPlayerError("Track index mismatch");
-      return;
+    const trackAtIndex = sortedTracks[trackIndex]
+    if (
+      trackAtIndex.id !== track.id ||
+      trackAtIndex.file_path !== track.file_path
+    ) {
+      console.error(
+        `[App] Track mismatch! Expected track ${track.id} at index ${trackIndex}, but found ${trackAtIndex.id}`,
+      )
+      setPlayerError('Track index mismatch')
+      return
     }
 
     try {
-      setIsLoading(true);
-      setPlayerError(null);
+      setIsLoading(true)
+      setPlayerError(null)
 
       // Use the index passed directly from TrackTable to avoid searching
       // This ensures we play the exact track the user clicked, even if there are duplicates
-      console.log(`[App] Playing track at index ${trackIndex}/${sortedTracks.length}: "${track.title || track.file_path}"`);
-      console.log(`[App] Queue verification: track at index ${trackIndex} is "${sortedTracks[trackIndex].title || sortedTracks[trackIndex].file_path}"`);
+      console.log(
+        `[App] Playing track at index ${trackIndex}/${sortedTracks.length}: "${track.title || track.file_path}"`,
+      )
+      console.log(
+        `[App] Queue verification: track at index ${trackIndex} is "${sortedTracks[trackIndex].title || sortedTracks[trackIndex].file_path}"`,
+      )
 
       // Set the queue with the sorted/filtered tracks array and start at the clicked track
       // This way next/previous buttons will work in the sorted order
-      setQueue(sortedTracks, trackIndex);
+      setQueue(sortedTracks, trackIndex)
     } catch (err) {
-      console.error("[App] Play error:", err);
-      setPlayerError(err instanceof Error ? err.message : String(err));
+      console.error('[App] Play error:', err)
+      setPlayerError(err instanceof Error ? err.message : String(err))
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   if (loading) {
     return (
       <div className="app-container loading">
         <div className="loading-screen">
-          <img src="/recodeck-logo.png" alt="RecoDeck" className="loading-logo" />
+          <img
+            src="/recodeck-logo.png"
+            alt="RecoDeck"
+            className="loading-logo"
+          />
           <p className="loading-subtitle">Preparing your library</p>
           <div className="loading-progress-track">
             <div className="loading-progress-fill" />
@@ -1149,7 +1226,7 @@ function AppContent() {
           </div>
         </div>
       </div>
-    );
+    )
   }
 
   if (error) {
@@ -1161,27 +1238,31 @@ function AppContent() {
           <button onClick={initializeApp}>Retry</button>
         </div>
       </div>
-    );
+    )
   }
 
   // Determine empty state message
   const emptyTitle = selectedPlaylistId
-    ? "Playlist is empty"
+    ? 'Playlist is empty'
     : selectedFolder
-      ? "No tracks in this folder"
-      : "No tracks in library";
+      ? 'No tracks in this folder'
+      : 'No tracks in library'
 
   const emptySubtitle = selectedPlaylistId
-    ? "Add tracks to this playlist from the track table"
+    ? 'Add tracks to this playlist from the track table'
     : selectedFolder
       ? "This folder doesn't contain any imported tracks"
-      : 'Click "Scan Folder" to add music to your library';
+      : 'Click "Scan Folder" to add music to your library'
 
   return (
     <div className="app-container">
       <header className="app-header">
         <div className="header-brand">
-          <img src="/recodeck-logo.png" alt="RecoDeck" className="header-logo" />
+          <img
+            src="/recodeck-logo.png"
+            alt="RecoDeck"
+            className="header-logo"
+          />
           {headerNotification && (
             <HeaderNotification
               message={headerNotification}
@@ -1204,8 +1285,8 @@ function AppContent() {
       </header>
 
       {/* Analysis progress bar (Traktor-style) */}
-      <AnalysisProgress 
-        progress={analysisProgress} 
+      <AnalysisProgress
+        progress={analysisProgress}
         onCancel={handleCancelAnalysis}
       />
 
@@ -1257,8 +1338,12 @@ function AppContent() {
               onLoadMore={loadMoreTracks}
               hasMoreTracks={hasMoreTracks}
               isLoadingMore={isLoadingMore}
-              onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
-              onGetPlaylistRecommendations={AI_ENABLED ? handleGetPlaylistRecommendations : undefined}
+              onGenerateAIPlaylist={
+                AI_ENABLED ? handleGenerateAIPlaylist : undefined
+              }
+              onGetPlaylistRecommendations={
+                AI_ENABLED ? handleGetPlaylistRecommendations : undefined
+              }
               onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
             />
           )}
@@ -1271,15 +1356,15 @@ function AppContent() {
         onTrackMetaClick={handleScrollToCurrentTrack}
         onAddToPlaylist={async (trackId, playlistId) => {
           try {
-            await tauriApi.addTrackToPlaylist(playlistId, trackId);
-            await loadPlaylists();
-            const playlist = playlists.find((p) => p.id === playlistId);
-            setHeaderNotification(`Added to ${playlist?.name ?? "playlist"}`);
+            await tauriApi.addTrackToPlaylist(playlistId, trackId)
+            await loadPlaylists()
+            const playlist = playlists.find((p) => p.id === playlistId)
+            setHeaderNotification(`Added to ${playlist?.name ?? 'playlist'}`)
           } catch (err) {
             setNotification({
               message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-              type: "error",
-            });
+              type: 'error',
+            })
           }
         }}
         onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
@@ -1333,11 +1418,11 @@ function AppContent() {
       {AI_ENABLED && (
         <PlayerAIChat
           onPlaylistCreated={() => {
-            loadPlaylists();
+            loadPlaylists()
             setNotification({
-              message: "Playlist created successfully!",
-              type: "success",
-            });
+              message: 'Playlist created successfully!',
+              type: 'success',
+            })
           }}
         />
       )}
@@ -1348,12 +1433,12 @@ function AppContent() {
           seedTrack={aiPlaylistSeedTrack}
           onClose={() => setAiPlaylistSeedTrack(null)}
           onPlaylistSaved={(_playlistId) => {
-            setAiPlaylistSeedTrack(null);
-            loadPlaylists();
+            setAiPlaylistSeedTrack(null)
+            loadPlaylists()
             setNotification({
-              message: "AI playlist created successfully!",
-              type: "success",
-            });
+              message: 'AI playlist created successfully!',
+              type: 'success',
+            })
           }}
         />
       )}
@@ -1375,21 +1460,21 @@ function AppContent() {
           playlistName={mixPrepPlaylist.name}
           onClose={() => setMixPrepPlaylist(null)}
           onPlaylistReordered={() => {
-            const reorderedId = mixPrepPlaylist.id;
-            setMixPrepPlaylist(null);
+            const reorderedId = mixPrepPlaylist.id
+            setMixPrepPlaylist(null)
             setNotification({
-              message: "Playlist order updated!",
-              type: "success",
-            });
+              message: 'Playlist order updated!',
+              type: 'success',
+            })
             // Refresh the playlist tracks if we're currently viewing this playlist
             if (selectedPlaylistId === reorderedId) {
-              loadTracks(null, reorderedId);
+              loadTracks(null, reorderedId)
             }
           }}
         />
       )}
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
