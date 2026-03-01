@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Spotify Redesign
-status: unknown
-last_updated: "2026-03-01T13:56:55.223Z"
+status: in_progress
+last_updated: "2026-03-01T14:35:00Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 8
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-01)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** Phase 7 — UI Foundation
+**Current focus:** Phase 8 — UI Layout
 
 ## Current Position
 
-Phase: 7 of 9 (UI Foundation) — COMPLETE
-Plan: 2 of 2 in current phase — 07-01 and 07-02 both complete
-Status: Phase 7 complete — all component CSS files migrated to design tokens
-Last activity: 2026-03-01 — 07-02 complete
+Phase: 8 of 9 (UI Layout) — In Progress
+Plan: 1 of 3 in current phase — 08-01 complete
+Status: 08-01 complete — CSS Grid AppShell + resizable Sidebar + artwork pipeline
+Last activity: 2026-03-01 — 08-01 complete
 
-Progress: [████████░░] 56%
+Progress: [█████████░] 62%
 
 ## Performance Metrics
 
@@ -44,8 +44,9 @@ Progress: [████████░░] 56%
 | Phase 6 | 2/2 | ~25m | ~13m |
 
 *Updated after each plan completion*
-| Phase 07-ui-foundation P01 | 3 | 3 tasks | 5 files |
-| Phase 07-ui-foundation P02 | 30 | 5 tasks | 12 files |
+| Phase 07-ui-foundation P01 | 3m | 3 tasks | 5 files |
+| Phase 07-ui-foundation P02 | 30m | 5 tasks | 12 files |
+| Phase 08-ui-layout P01 | 35m | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,10 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 18. [07-02] Settings.css theme preview swatch hex colors preserved — they display literal color values, not theme-dependent styling
 19. [07-02] --bg-hover undefined token replaced with --bg-tertiary in TrackTable.css (was silently failing)
 20. [07-02] Notification.css broken --accent-primary fixed to --accent; --border-color fixed to --border
+21. [08-01] FolderTree section prop (not split) chosen to minimize risk to complex context menu/tree state
+22. [08-01] --sidebar-width CSS custom property updated on documentElement during drag (not React state) for 60fps
+23. [08-01] lofty::ipc::Response binary response used for artwork bytes — avoids base64 overhead
+24. [08-01] lucide-react House icon used instead of Home (Home not in icons export for this version)
 
 ### Pending Todos
 
@@ -87,5 +92,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-ui-layout/08-CONTEXT.md
+Stopped at: Completed 08-01-PLAN.md
+Resume file: .planning/phases/08-ui-layout/08-02-PLAN.md
