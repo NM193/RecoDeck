@@ -83,36 +83,36 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEBT-01 | — | Pending |
-| DEBT-02 | — | Pending |
-| DEBT-03 | — | Pending |
-| DEBT-04 | — | Pending |
-| DEBT-05 | — | Pending |
-| QUAL-01 | — | Pending |
-| QUAL-02 | — | Pending |
-| QUAL-03 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| TEST-04 | — | Pending |
-| TEST-05 | — | Pending |
-| TEST-06 | — | Pending |
-| UIUX-01 | — | Pending |
-| UIUX-02 | — | Pending |
-| UIUX-03 | — | Pending |
-| UIUX-04 | — | Pending |
-| UIUX-05 | — | Pending |
-| UIUX-06 | — | Pending |
-| UIUX-07 | — | Pending |
-| UIUX-08 | — | Pending |
-| UIUX-09 | — | Pending |
-| UIUX-10 | — | Pending |
+| DEBT-01 | Phase 5 | Pending |
+| DEBT-02 | Phase 5 | Pending |
+| DEBT-03 | Phase 5 | Pending |
+| DEBT-04 | Phase 5 | Pending |
+| DEBT-05 | Phase 5 | Pending |
+| QUAL-01 | Phase 5 | Pending |
+| QUAL-02 | Phase 5 | Pending |
+| QUAL-03 | Phase 5 | Pending |
+| TEST-01 | Phase 6 | Pending |
+| TEST-02 | Phase 6 | Pending |
+| TEST-03 | Phase 6 | Pending |
+| TEST-04 | Phase 6 | Pending |
+| TEST-05 | Phase 6 | Pending |
+| TEST-06 | Phase 6 | Pending |
+| UIUX-01 | Phase 7 | Pending |
+| UIUX-02 | Phase 8 | Pending |
+| UIUX-03 | Phase 8 | Pending |
+| UIUX-04 | Phase 8 | Pending |
+| UIUX-05 | Phase 8 | Pending |
+| UIUX-06 | Phase 9 | Pending |
+| UIUX-07 | Phase 9 | Pending |
+| UIUX-08 | Phase 9 | Pending |
+| UIUX-09 | Phase 7 | Pending |
+| UIUX-10 | Phase 9 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 24 total
-- Mapped to phases: 0
-- Unmapped: 24 (roadmap not yet created)
+- Mapped to phases: 24
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-01*
-*Last updated: 2026-03-01 after initial definition*
+*Last updated: 2026-03-01 — traceability populated after roadmap creation*
