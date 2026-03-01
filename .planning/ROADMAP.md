@@ -54,11 +54,11 @@ Plans:
   2. Vitest is configured with a global Tauri IPC mock so `npm test` runs without `__TAURI_IPC__` errors
   3. `musicUtils.ts` key compatibility and BPM quality functions are covered by passing Vitest tests
   4. Zustand store action logic for playerStore and aiStore is covered by passing Vitest tests
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Expand Rust tests for db CRUD, AI context builder, audio analysis
-- [ ] 06-02: Configure Vitest with global IPC mock, add musicUtils and store tests
+- [ ] 06-01: Expand Rust context_builder tests (TEST-01, TEST-02, TEST-03 — db/audio already covered, context_builder gap closed)
+- [ ] 06-02: Configure Vitest 4 + jsdom + global IPC mock, add musicUtils and store tests (TEST-04, TEST-05, TEST-06)
 
 ### Phase 7: UI Foundation
 **Goal**: A consistent Spotify-style visual language is established as design tokens and a component library that every screen in the app uses
