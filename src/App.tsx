@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event'
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { NowPlayingBar } from './components/layout/NowPlayingBar'
 import { HomeView } from './components/views/HomeView'
+import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
 import { Settings } from './components/Settings'
 import { PromptModal } from './components/PromptModal'
@@ -1311,33 +1312,48 @@ function AppContent() {
             <p>{emptySubtitle}</p>
           </div>
         ) : (
-          <TrackTable
-            ref={trackTableRef}
-            tracks={tracks}
-            playlists={playlists}
-            keyNotation={keyNotation}
-            selectedPlaylistId={selectedPlaylistId}
-            onTrackClick={handleTrackClick}
-            onTrackDoubleClick={handlePlayTrack}
-            onAnalyzeTrack={handleAnalyzeTrack}
-            onAnalyzeBpm={handleAnalyzeBpm}
-            onAnalyzeKey={handleAnalyzeKey}
-            onAddToPlaylist={handleAddToPlaylist}
-            onRemoveFromPlaylist={handleRemoveFromPlaylist}
-            onSetGenre={handleSetGenre}
-            onClearGenre={handleClearGenre}
-            genreDefinitions={genreDefinitions}
-            onLoadMore={loadMoreTracks}
-            hasMoreTracks={hasMoreTracks}
-            isLoadingMore={isLoadingMore}
-            onGenerateAIPlaylist={
-              AI_ENABLED ? handleGenerateAIPlaylist : undefined
-            }
-            onGetPlaylistRecommendations={
-              AI_ENABLED ? handleGetPlaylistRecommendations : undefined
-            }
-            onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
-          />
+          <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            {/* Playlist detail header with scroll compression */}
+            {selectedPlaylistId != null && (() => {
+              const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId)
+              return selectedPlaylist ? (
+                <PlaylistDetailHeader
+                  playlist={selectedPlaylist}
+                  tracks={tracks}
+                />
+              ) : null
+            })()}
+
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              <TrackTable
+                ref={trackTableRef}
+                tracks={tracks}
+                playlists={playlists}
+                keyNotation={keyNotation}
+                selectedPlaylistId={selectedPlaylistId}
+                onTrackClick={handleTrackClick}
+                onTrackDoubleClick={handlePlayTrack}
+                onAnalyzeTrack={handleAnalyzeTrack}
+                onAnalyzeBpm={handleAnalyzeBpm}
+                onAnalyzeKey={handleAnalyzeKey}
+                onAddToPlaylist={handleAddToPlaylist}
+                onRemoveFromPlaylist={handleRemoveFromPlaylist}
+                onSetGenre={handleSetGenre}
+                onClearGenre={handleClearGenre}
+                genreDefinitions={genreDefinitions}
+                onLoadMore={loadMoreTracks}
+                hasMoreTracks={hasMoreTracks}
+                isLoadingMore={isLoadingMore}
+                onGenerateAIPlaylist={
+                  AI_ENABLED ? handleGenerateAIPlaylist : undefined
+                }
+                onGetPlaylistRecommendations={
+                  AI_ENABLED ? handleGetPlaylistRecommendations : undefined
+                }
+                onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
+              />
+            </div>
+          </div>
         )}
       </div>
     </>
