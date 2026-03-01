@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import '@fontsource-variable/inter'
 import './styles/globals.css'
 
 // Set default theme (will be overridden by saved setting on app init)
