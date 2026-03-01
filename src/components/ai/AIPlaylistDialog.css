@@ -5,8 +5,8 @@
 .ai-playlist-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(2px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
   z-index: 9000;
   display: flex;
   align-items: center;
@@ -15,9 +15,9 @@
 
 /* Main dialog panel */
 .ai-playlist-dialog {
-  background: var(--bg-secondary, #1a1a2e);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
   width: 100%;
   max-width: 600px;
   max-height: 80vh;
@@ -35,23 +35,23 @@
   padding: 16px 20px;
   background: linear-gradient(
     135deg,
-    rgba(124, 58, 237, 0.3) 0%,
-    rgba(59, 130, 246, 0.2) 100%
+    rgba(var(--accent-rgb), 0.3) 0%,
+    rgba(var(--accent-rgb), 0.2) 100%
   );
-  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .ai-playlist-header__icon {
-  color: #a78bfa;
+  color: var(--accent-hover);
   display: flex;
   align-items: center;
 }
 
 .ai-playlist-header__title {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
   flex: 1;
 }
 
@@ -59,11 +59,11 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   transition:
     background 0.15s,
     color 0.15s;
@@ -71,7 +71,7 @@
 
 .ai-playlist-header__close:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
 }
 
 /* Scrollable body */
@@ -94,24 +94,24 @@
 /* Seed track info */
 .ai-playlist-seed-info {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 14px 16px;
 }
 
 .ai-playlist-seed-info__label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
 .ai-playlist-seed-info__title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -119,8 +119,8 @@
 }
 
 .ai-playlist-seed-info__artist {
-  font-size: 13px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-base);
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -130,18 +130,18 @@
 }
 
 .ai-playlist-seed-info__badge {
-  font-size: 12px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 2px 7px;
 }
 
 /* Control group label */
 .ai-playlist-control-label {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   margin-bottom: 8px;
 }
 
@@ -149,8 +149,8 @@
 .ai-playlist-segmented {
   display: flex;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 4px;
   gap: 4px;
 }
@@ -161,10 +161,10 @@
   border: none;
   cursor: pointer;
   padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
   font-weight: 500;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   transition:
     background 0.15s,
     color 0.15s;
@@ -175,11 +175,11 @@
     .ai-playlist-segmented__option--active
   ) {
   background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
 }
 
 .ai-playlist-segmented__option--active {
-  background: var(--accent, #7c3aed);
+  background: var(--accent);
   color: #fff;
 }
 
@@ -192,13 +192,13 @@
 .ai-playlist-duration-btn {
   flex: 1;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   padding: 10px 0;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   transition:
     background 0.15s,
     color 0.15s,
@@ -208,23 +208,23 @@
 
 .ai-playlist-duration-btn:hover:not(.ai-playlist-duration-btn--active) {
   background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
 }
 
 .ai-playlist-duration-btn--active {
-  background: rgba(124, 58, 237, 0.2);
-  border-color: rgba(124, 58, 237, 0.5);
-  color: #a78bfa;
+  background: rgba(var(--accent-rgb), 0.2);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent-hover);
 }
 
 /* Error message */
 .ai-playlist-error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  background: rgba(var(--color-danger-rgb), 0.1);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.3);
+  border-radius: var(--radius-lg);
   padding: 12px 16px;
-  font-size: 13px;
-  color: #fca5a5;
+  font-size: var(--text-base);
+  color: var(--color-danger);
 }
 
 /* Generating state */
@@ -240,8 +240,8 @@
 .ai-playlist-generating__spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(124, 58, 237, 0.2);
-  border-top-color: #7c3aed;
+  border: 3px solid rgba(var(--accent-rgb), 0.2);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: ai-spin 0.8s linear infinite;
 }
@@ -253,8 +253,8 @@
 }
 
 .ai-playlist-generating__text {
-  font-size: 14px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-md);
+  color: var(--text-secondary);
 }
 
 /* Results step */
@@ -267,17 +267,17 @@
 /* AI reasoning collapsible */
 .ai-playlist-reasoning {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
 .ai-playlist-reasoning__summary {
   padding: 10px 14px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   user-select: none;
   list-style: none;
 }
@@ -288,19 +288,19 @@
 
 .ai-playlist-reasoning__content {
   padding: 0 14px 14px;
-  font-size: 12px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
 /* Duration warning */
 .ai-playlist-warning {
-  background: rgba(234, 179, 8, 0.1);
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  border-radius: 8px;
+  background: rgba(var(--color-warning-rgb), 0.1);
+  border: 1px solid rgba(var(--color-warning-rgb), 0.3);
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
-  font-size: 12px;
-  color: #fde047;
+  font-size: var(--text-sm);
+  color: var(--color-warning);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -308,8 +308,8 @@
 
 /* Duration summary line */
 .ai-playlist-duration-info {
-  font-size: 12px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
 
 /* Track list */
@@ -325,7 +325,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   transition: background 0.1s;
 }
 
@@ -338,7 +338,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -352,8 +352,8 @@
 }
 
 .ai-playlist-track-play:hover:not(:disabled) {
-  background: rgba(124, 58, 237, 0.2);
-  color: #a78bfa;
+  background: rgba(var(--accent-rgb), 0.2);
+  color: var(--accent-hover);
 }
 
 .ai-playlist-track-play:disabled {
@@ -367,17 +367,17 @@
 }
 
 .ai-playlist-track-title {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 500;
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .ai-playlist-track-artist {
-  font-size: 12px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -391,10 +391,10 @@
 }
 
 .ai-playlist-track-badge {
-  font-size: 11px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 2px 6px;
   white-space: nowrap;
 }
@@ -404,13 +404,13 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.3));
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition:
     background 0.15s,
     color 0.15s;
@@ -418,8 +418,8 @@
 }
 
 .ai-playlist-track-remove:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(var(--color-danger-rgb), 0.15);
+  color: var(--color-danger);
 }
 
 /* Transition indicator between tracks */
@@ -432,7 +432,7 @@
 
 .ai-playlist-transition__bpm,
 .ai-playlist-transition__key {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
   border-radius: 3px;
   padding: 1px 6px;
@@ -440,20 +440,20 @@
 
 .ai-playlist-transition__bpm--green,
 .ai-playlist-transition__key--perfect {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
+  color: var(--color-success);
+  background: rgba(var(--color-success-rgb), 0.1);
 }
 
 .ai-playlist-transition__bpm--yellow,
 .ai-playlist-transition__key--compatible {
-  color: #eab308;
-  background: rgba(234, 179, 8, 0.1);
+  color: var(--color-warning);
+  background: rgba(var(--color-warning-rgb), 0.1);
 }
 
 .ai-playlist-transition__bpm--red,
 .ai-playlist-transition__key--clash {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+  background: rgba(var(--color-danger-rgb), 0.1);
 }
 
 /* Action buttons row */
@@ -461,15 +461,15 @@
   display: flex;
   gap: 8px;
   padding: 16px 20px;
-  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .ai-playlist-actions__btn {
   flex: 1;
   padding: 9px 16px;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
@@ -485,19 +485,19 @@
 }
 
 .ai-playlist-actions__btn--primary {
-  background: var(--accent, #7c3aed);
+  background: var(--accent);
   color: #fff;
   border-color: transparent;
 }
 
 .ai-playlist-actions__btn--primary:hover:not(:disabled) {
-  background: #6d28d9;
+  background: var(--accent-hover);
 }
 
 .ai-playlist-actions__btn--secondary {
   background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary, #e2e8f0);
-  border-color: var(--border, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary);
+  border-color: var(--border);
 }
 
 .ai-playlist-actions__btn--secondary:hover:not(:disabled) {
@@ -506,12 +506,12 @@
 
 .ai-playlist-actions__btn--ghost {
   background: none;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+  color: var(--text-secondary);
   border-color: transparent;
 }
 
 .ai-playlist-actions__btn--ghost:hover:not(:disabled) {
-  color: var(--text-primary, #e2e8f0);
+  color: var(--text-primary);
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -519,17 +519,17 @@
 .ai-playlist-save-input {
   width: 100%;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
-  font-size: 14px;
-  color: var(--text-primary, #e2e8f0);
+  font-size: var(--text-md);
+  color: var(--text-primary);
   outline: none;
   transition: border-color 0.15s;
 }
 
 .ai-playlist-save-input:focus {
-  border-color: var(--accent, #7c3aed);
+  border-color: var(--accent);
 }
 
 .ai-playlist-save-input::placeholder {
@@ -544,8 +544,8 @@
 }
 
 .ai-playlist-save__label {
-  font-size: 13px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+  font-size: var(--text-base);
+  color: var(--text-secondary);
 }
 
 /* Energy control in results */
@@ -559,6 +559,6 @@
 .ai-playlist-empty {
   text-align: center;
   padding: 32px;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.4));
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
 }
