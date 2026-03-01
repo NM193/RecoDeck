@@ -82,12 +82,12 @@ Plans:
   2. The library main area displays tracks and albums in an album art grid
   3. The now-playing bar is fixed at the bottom of every view with track info, playback controls, and a progress bar
   4. All view changes animate smoothly with Framer Motion transitions — no jarring instant swaps
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: Redesign sidebar navigation with library sections and playlist list
-- [ ] 08-02: Implement album art grid views and redesign now-playing bar
-- [ ] 08-03: Add Framer Motion transitions across all view changes
+- [ ] 08-01: CSS Grid AppShell, resizable sidebar with collapsible sections, Rust album art extraction command (UIUX-02, UIUX-03)
+- [ ] 08-02: 3-column NowPlayingBar, HomeView with playlist card grid, PlaylistDetailHeader with scroll compression (UIUX-03, UIUX-04)
+- [ ] 08-03: Framer Motion AnimatePresence crossfade transitions, expandable now-playing view, visual verification (UIUX-05)
 
 ### Phase 9: UI Views and Mobile
 **Goal**: Every remaining content view — track table, playlist detail, search results — matches the Spotify design language, and the mobile PWA reflects the new desktop design
