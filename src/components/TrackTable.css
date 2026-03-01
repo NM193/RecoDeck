@@ -429,7 +429,7 @@
 }
 
 .modal-button-secondary:hover {
-  background: var(--bg-hover);
+  background: var(--bg-tertiary);
 }
 
 .modal-button-primary {
@@ -449,7 +449,7 @@
 
 /* Context menu improvements (track table uses same classes as FolderTree) */
 .context-menu-item-active {
-  background: var(--bg-hover);
+  background: var(--bg-tertiary);
   font-weight: 500;
 }
 
