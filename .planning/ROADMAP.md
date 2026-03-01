@@ -57,7 +57,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Expand Rust context_builder tests (TEST-01, TEST-02, TEST-03 — db/audio already covered, context_builder gap closed)
+- [x] 06-01: Expand Rust context_builder tests (TEST-01, TEST-02, TEST-03 — db/audio already covered, context_builder gap closed) — completed 2026-03-01
 - [ ] 06-02: Configure Vitest 4 + jsdom + global IPC mock, add musicUtils and store tests (TEST-04, TEST-05, TEST-06)
 
 ### Phase 7: UI Foundation
@@ -114,7 +114,7 @@ Plans:
 | 3. AI Playlists | v1.0 | 2/2 | Complete | 2026-02-28 |
 | 4. AI Discovery and Mix Prep | v1.0 | 2/2 | Complete | 2026-02-28 |
 | 5. Foundation Cleanup | 2/2 | Complete   | 2026-03-01 | - |
-| 6. Test Coverage | v1.1 | 0/2 | Not started | - |
+| 6. Test Coverage | v1.1 | 1/2 | In progress | - |
 | 7. UI Foundation | v1.1 | 0/2 | Not started | - |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |
 | 9. UI Views and Mobile | v1.1 | 0/3 | Not started | - |
