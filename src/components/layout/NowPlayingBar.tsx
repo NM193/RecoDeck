@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { emit, listen } from '@tauri-apps/api/event'
 import { usePlayerStore } from '../../store/playerStore'
 import { audioPlayer } from '../../lib/audioPlayer'
@@ -59,6 +60,7 @@ export function NowPlayingBar({
   const [crossfadeDurationSec, setCrossfadeDurationSec] = useState(8)
   const [crossfadeTriggered, setCrossfadeTriggered] = useState(false)
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   const progressRef = useRef<HTMLDivElement>(null)
   const playlistMenuRef = useRef<HTMLDivElement>(null)
@@ -253,6 +255,18 @@ export function NowPlayingBar({
       }
     }
   }, [])
+
+  // Close expanded view on Escape key
+  useEffect(() => {
+    if (!expanded) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setExpanded(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [expanded])
 
   // Load and play track when currentTrackIndex changes
   const loadGenRef = useRef(0)
@@ -632,6 +646,54 @@ export function NowPlayingBar({
 
   return (
     <div className={`now-playing-bar ${!currentTrack ? 'now-playing-bar--empty' : ''}`}>
+      {/* Expanded now-playing overlay */}
+      <AnimatePresence>
+        {expanded && currentTrack && (
+          <motion.div
+            className="now-playing-expanded"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.25 }}
+            onClick={() => setExpanded(false)}
+          >
+            <button
+              className="now-playing-expanded__close"
+              onClick={(e) => { e.stopPropagation(); setExpanded(false) }}
+              title="Close (Escape)"
+            >
+              <Icon name="X" size={20} />
+            </button>
+
+            <div className="now-playing-expanded__art-wrap" onClick={(e) => e.stopPropagation()}>
+              {artworkUrl ? (
+                <img
+                  src={artworkUrl}
+                  alt="Album art"
+                  className="now-playing-expanded__art"
+                />
+              ) : (
+                <div className="now-playing-expanded__art now-playing-expanded__art--placeholder">
+                  <Icon name="Music" size={64} className="opacity-30" />
+                </div>
+              )}
+            </div>
+
+            <div className="now-playing-expanded__info" onClick={(e) => e.stopPropagation()}>
+              <div className="now-playing-expanded__title">
+                {currentTrack.title || 'Unknown'}
+              </div>
+              <div className="now-playing-expanded__artist">
+                {currentTrack.artist || 'Unknown Artist'}
+              </div>
+              {metadataLine && (
+                <div className="now-playing-expanded__meta">{metadataLine}</div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {error && (
         <div className="now-playing-bar__error">
           {error}
@@ -649,8 +711,8 @@ export function NowPlayingBar({
         <div className="now-playing-bar__left">
           <div
             className="now-playing-bar__artwork"
-            onClick={() => currentTrack && onTrackMetaClick?.()}
-            title={currentTrack ? 'Click to scroll to track in library' : undefined}
+            onClick={() => currentTrack && setExpanded(true)}
+            title={currentTrack ? 'Click to expand now playing' : undefined}
             style={{ cursor: currentTrack ? 'pointer' : 'default' }}
           >
             {artworkUrl ? (

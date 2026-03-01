@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { open, confirm } from '@tauri-apps/plugin-dialog'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
@@ -1256,6 +1257,13 @@ function AppContent() {
       ? "This folder doesn't contain any imported tracks"
       : 'Click "Scan Folder" to add music to your library'
 
+  // Derive a unique view key so AnimatePresence knows when to animate
+  const viewKey = selectedPlaylistId
+    ? `playlist-${selectedPlaylistId}`
+    : selectedFolder
+      ? `folder-${selectedFolder}`
+      : 'home'
+
   const sidebarEl = (
     <Sidebar
       libraryFolders={libraryFolders}
@@ -1299,62 +1307,74 @@ function AppContent() {
       )}
 
       {/* Main content — Home view when nothing selected, TrackTable otherwise */}
+      {/* AnimatePresence mode="wait" ensures old view fully exits before new view enters */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {!selectedFolder && !selectedPlaylistId ? (
-          <HomeView
-            playlists={playlists}
-            totalTrackCount={totalTrackCount}
-            onPlaylistSelect={handlePlaylistSelect}
-          />
-        ) : tracks.length === 0 ? (
-          <div className="empty-state">
-            <h2>{emptyTitle}</h2>
-            <p>{emptySubtitle}</p>
-          </div>
-        ) : (
-          <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-            {/* Playlist detail header with scroll compression */}
-            {selectedPlaylistId != null && (() => {
-              const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId)
-              return selectedPlaylist ? (
-                <PlaylistDetailHeader
-                  playlist={selectedPlaylist}
-                  tracks={tracks}
-                />
-              ) : null
-            })()}
-
-            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-              <TrackTable
-                ref={trackTableRef}
-                tracks={tracks}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={viewKey}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            style={{ height: '100%', overflow: 'auto' }}
+          >
+            {!selectedFolder && !selectedPlaylistId ? (
+              <HomeView
                 playlists={playlists}
-                keyNotation={keyNotation}
-                selectedPlaylistId={selectedPlaylistId}
-                onTrackClick={handleTrackClick}
-                onTrackDoubleClick={handlePlayTrack}
-                onAnalyzeTrack={handleAnalyzeTrack}
-                onAnalyzeBpm={handleAnalyzeBpm}
-                onAnalyzeKey={handleAnalyzeKey}
-                onAddToPlaylist={handleAddToPlaylist}
-                onRemoveFromPlaylist={handleRemoveFromPlaylist}
-                onSetGenre={handleSetGenre}
-                onClearGenre={handleClearGenre}
-                genreDefinitions={genreDefinitions}
-                onLoadMore={loadMoreTracks}
-                hasMoreTracks={hasMoreTracks}
-                isLoadingMore={isLoadingMore}
-                onGenerateAIPlaylist={
-                  AI_ENABLED ? handleGenerateAIPlaylist : undefined
-                }
-                onGetPlaylistRecommendations={
-                  AI_ENABLED ? handleGetPlaylistRecommendations : undefined
-                }
-                onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
+                totalTrackCount={totalTrackCount}
+                onPlaylistSelect={handlePlaylistSelect}
               />
-            </div>
-          </div>
-        )}
+            ) : tracks.length === 0 ? (
+              <div className="empty-state">
+                <h2>{emptyTitle}</h2>
+                <p>{emptySubtitle}</p>
+              </div>
+            ) : (
+              <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                {/* Playlist detail header with scroll compression */}
+                {selectedPlaylistId != null && (() => {
+                  const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId)
+                  return selectedPlaylist ? (
+                    <PlaylistDetailHeader
+                      playlist={selectedPlaylist}
+                      tracks={tracks}
+                    />
+                  ) : null
+                })()}
+
+                <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                  <TrackTable
+                    ref={trackTableRef}
+                    tracks={tracks}
+                    playlists={playlists}
+                    keyNotation={keyNotation}
+                    selectedPlaylistId={selectedPlaylistId}
+                    onTrackClick={handleTrackClick}
+                    onTrackDoubleClick={handlePlayTrack}
+                    onAnalyzeTrack={handleAnalyzeTrack}
+                    onAnalyzeBpm={handleAnalyzeBpm}
+                    onAnalyzeKey={handleAnalyzeKey}
+                    onAddToPlaylist={handleAddToPlaylist}
+                    onRemoveFromPlaylist={handleRemoveFromPlaylist}
+                    onSetGenre={handleSetGenre}
+                    onClearGenre={handleClearGenre}
+                    genreDefinitions={genreDefinitions}
+                    onLoadMore={loadMoreTracks}
+                    hasMoreTracks={hasMoreTracks}
+                    isLoadingMore={isLoadingMore}
+                    onGenerateAIPlaylist={
+                      AI_ENABLED ? handleGenerateAIPlaylist : undefined
+                    }
+                    onGetPlaylistRecommendations={
+                      AI_ENABLED ? handleGetPlaylistRecommendations : undefined
+                    }
+                    onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
+                  />
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </>
   )
