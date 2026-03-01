@@ -5,7 +5,8 @@ import { listen } from '@tauri-apps/api/event'
 // import { check } from "@tauri-apps/plugin-updater";
 // import { relaunch } from "@tauri-apps/plugin-process";
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
-import { Player } from './components/Player'
+import { NowPlayingBar } from './components/layout/NowPlayingBar'
+import { HomeView } from './components/views/HomeView'
 import { MiniPlayer } from './components/MiniPlayer'
 import { Settings } from './components/Settings'
 import { PromptModal } from './components/PromptModal'
@@ -1296,9 +1297,15 @@ function AppContent() {
         </div>
       )}
 
-      {/* Main content — Track Table */}
+      {/* Main content — Home view when nothing selected, TrackTable otherwise */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {tracks.length === 0 ? (
+        {!selectedFolder && !selectedPlaylistId ? (
+          <HomeView
+            playlists={playlists}
+            totalTrackCount={totalTrackCount}
+            onPlaylistSelect={handlePlaylistSelect}
+          />
+        ) : tracks.length === 0 ? (
           <div className="empty-state">
             <h2>{emptyTitle}</h2>
             <p>{emptySubtitle}</p>
@@ -1337,7 +1344,7 @@ function AppContent() {
   )
 
   const playerEl = (
-    <Player
+    <NowPlayingBar
       playlists={playlists}
       onTrackMetaClick={handleScrollToCurrentTrack}
       onAddToPlaylist={async (trackId, playlistId) => {

@@ -1,0 +1,185 @@
+/* ============================================================
+   HomeView — Dashboard with stats + playlist card grid
+   ============================================================ */
+
+.home-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+  gap: var(--space-6);
+  background: var(--bg-primary);
+}
+
+/* ---- Stats section ---- */
+.home-view__stats {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.home-view__stat-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  min-width: 160px;
+}
+
+.home-view__stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.home-view__stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-view__stat-value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.home-view__stat-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ---- Section header ---- */
+.home-view__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-view__section-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* ---- Playlist grid ---- */
+.home-view__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-5);
+}
+
+/* ---- Playlist card ---- */
+.home-view__card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+}
+
+.home-view__card:hover {
+  background: var(--bg-tertiary);
+  transform: scale(1.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.home-view__card:active {
+  transform: scale(1.01);
+}
+
+/* Card artwork area — square with gradient placeholder */
+.home-view__card-art {
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+  width: 100%;
+}
+
+.home-view__card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.home-view__card-initial {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Card text info */
+.home-view__card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-view__card-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.home-view__card-count {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Empty state ---- */
+.home-view__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--space-4);
+  color: var(--text-muted);
+  padding: var(--space-12);
+  text-align: center;
+}
+
+.home-view__empty-title {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.home-view__empty-subtitle {
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  margin: 0;
+}
