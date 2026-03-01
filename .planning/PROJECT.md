@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A desktop music library manager built for DJs, powered by Tauri v2 with a React frontend and Rust backend. RecoDeck organizes music collections with automatic BPM/key detection, genre tagging, and AI-powered playlist generation via the Claude API. It includes an in-progress mobile companion app for streaming your library on the go.
+A desktop music library manager built for DJs, powered by Tauri v2 with a React frontend and Rust backend. RecoDeck organizes music collections with automatic BPM/key detection, genre tagging, and AI-powered playlist generation, track recommendations, and mix preparation tools via the Claude API. It includes a mobile companion PWA for streaming your library on the go.
 
 ## Core Value
 
@@ -25,33 +25,47 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 - ✓ SQLite database for library persistence — existing
 - ✓ Settings management — existing
 - ✓ Folder tree navigation — existing
+- ✓ Unified AppError enum with typed error handling — v1.0
+- ✓ Zero clippy warnings, dead code removed — v1.0
+- ✓ Mobile companion server start/stop with QR code connect — v1.0
+- ✓ Mobile library browsing, search, and audio streaming — v1.0
+- ✓ Bearer token + 10-min multi-use stream tickets for mobile auth — v1.0
+- ✓ AI smart playlist generation from seed track with energy direction — v1.0
+- ✓ BPM and Camelot key-aware playlist ordering — v1.0
+- ✓ AI track recommendations (similar track + playlist-based) — v1.0
+- ✓ Mix prep: energy arc visualization and transition issue detection — v1.0
+- ✓ AI-optimized playlist reorder for key-compatible mixing — v1.0
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] AI-powered smart playlist generation (energy flow, key matching, mood awareness)
-- [ ] AI track discovery and recommendations within library
-- [ ] AI mix preparation (transition points, key compatibility, energy arcs)
-- [ ] Mobile companion app (PWA streaming via Axum HTTP server)
-- [ ] Codebase cleanup and architecture improvements
-- [ ] Bug fixes and stability improvements
+(None — next milestone requirements to be defined via `/gsd:new-milestone`)
 
 ### Out of Scope
 
 - Full DJ mixing/performance software — RecoDeck is a library manager, not a CDJ replacement
-- Cloud sync / multi-device library — local-first for now
+- Cloud sync / multi-device library — local-first architecture
 - Music purchasing / streaming service integration — works with files you own
-- Public App Store release — targeting small group of DJ friends for now
+- Public App Store release — targeting small group of DJ friends
+- Separate native mobile app — PWA served from desktop is the approach
+- Non-Claude AI providers — Claude API is the established AI backend
+- AI learning from user curation history — deferred to v2+
+- AI suggesting tracks to acquire — deferred to v2+
+- Playlist export to M3U/Rekordbox XML — deferred to v2+
+- Offline mobile caching — deferred to v2+
 
 ## Context
 
 - **Tech stack:** Tauri v2, React 19, Rust backend, SQLite, Zustand state management, TailwindCSS 4
 - **Audio pipeline:** HTML5 Audio + custom `stream://` protocol, Symphonia decoder, Aubio BPM detection
-- **AI integration:** Claude API via `src-tauri/src/commands/ai.rs` — currently broken/incomplete
-- **Mobile companion:** In progress — PWA + Axum HTTP server architecture, Bearer token auth, stream tickets (30s single-use)
+- **AI integration:** Claude API via `src-tauri/src/commands/ai.rs` — fully operational with playlist generation, recommendations, and mix optimization
+- **Mobile companion:** Shipped — PWA + Axum HTTP server, Bearer token auth, 10-min multi-use stream tickets, QR code connect
 - **Server module:** `src-tauri/src/server/` (mod.rs, routes.rs, streaming.rs)
 - **Key directories:** Commands in `src-tauri/src/commands/`, frontend API in `src/lib/tauri-api.ts`, audio player in `src/lib/audioPlayer.ts`
+- **AI components:** `src/components/ai/` (AIPlaylistDialog, RecommendationsPanel, MixPrepPanel)
+- **Shared utils:** `src/lib/musicUtils.ts` (BPM compatibility, Camelot key matching)
+- **Codebase:** ~26,500 LOC across Rust + TypeScript + CSS
 - **Audience:** Small group of DJ friends, personal use expanding to small community
 
 ## Constraints
@@ -68,10 +82,16 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 |----------|-----------|---------|
 | Tauri v2 over Electron | Better performance, smaller bundle, native Rust backend | ✓ Good |
 | SQLite over external DB | Local-first, no server dependency, simple deployment | ✓ Good |
-| Claude API for AI | High quality reasoning for playlist intelligence | — Pending |
-| PWA for mobile companion | Reuse web stack, no app store needed, served from desktop | — Pending |
-| Axum HTTP server embedded | Stream library to mobile without external server | — Pending |
-| Stream tickets for auth | 30s single-use tokens for secure mobile streaming | — Pending |
+| Claude API for AI | High quality reasoning for playlist intelligence | ✓ Good — powers playlists, recommendations, mix prep |
+| PWA for mobile companion | Reuse web stack, no app store needed, served from desktop | ✓ Good — functional mobile experience |
+| Axum HTTP server embedded | Stream library to mobile without external server | ✓ Good — clean integration with Tauri |
+| 10-min multi-use stream tickets | HTTP Range audio requires multiple requests per seek; 30s single-use was incompatible | ✓ Good — documented deviation from original spec |
+| thiserror v2 for AppError | Cleaner derivation than manual Display impls | ✓ Good |
+| Tagged serde enum for IPC errors | Enables frontend switch-based error discrimination | ✓ Good |
+| OR logic for seed context filtering | AND (bpm_ok && key_ok) too restrictive for small libraries | ✓ Good |
+| BPM as energy proxy in mix prep | loudness_lufs never populated; BPM is only available signal | ⚠️ Revisit — add loudness analysis later |
+| execute_batch for playlist reorder | Avoids &mut self constraint from rusqlite transaction() | ✓ Good |
+| Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-02-28 after initialization*
+*Last updated: 2026-03-01 after v1.0 milestone*
