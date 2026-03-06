@@ -1,9 +1,365 @@
 # Architecture Patterns
 
-**Project:** RecoDeck v1.1 Stabilization & Polish / v1.2 Playback & UX Polish
+**Project:** RecoDeck — v1.1 Stabilization / v1.2 Playback & UX Polish / v1.3 Library UX & Duplicate Management
 **Domain:** Desktop music library manager with DJ workflow features
-**Researched:** 2026-03-06 (v1.2 integration section added)
+**Researched:** 2026-03-06 (v1.3 integration section added)
 **Confidence:** HIGH — based on direct codebase inspection
+
+---
+
+## v1.3 Integration Analysis
+
+This section answers the integration questions for the 3 new v1.3 features. All findings are from direct inspection of the source files listed in the milestone context.
+
+---
+
+### Feature 1: Track Table Responsive Layout Fix
+
+#### Root Cause Diagnosis
+
+The layout DOM structure in `TrackTable.tsx`:
+
+```html
+<div class="track-table-container">          <!-- flex column, height:100%, min-width:0 -->
+  <div class="track-table-search">           <!-- fixed search bar -->
+  <div class="track-table-scroll-area">      <!-- flex:1, overflow:auto, min-width:0 -->
+    <div class="track-table-holder">         <!-- *** NO CSS RULE DEFINED ***  -->
+      <div class="track-table-header">       <!-- position:sticky, top:0, bg:--bg-secondary -->
+        <div class="track-table-row header-row">   <!-- display:flex, width:100% -->
+      </div>
+      <div class="track-table-body">         <!-- position:relative -->
+        [virtualized rows — each: display:flex, width:100%, min-width:fit-content]
+      </div>
+    </div>
+  </div>
+  <div class="track-table-footer">
+```
+
+`.track-table-holder` has no CSS rule in `TrackTable.css`. The scroll area has `overflow:auto` and `min-width:0`, but the holder div expands to `min-content` width (driven by `min-width: fit-content` on rows). The header's `background: var(--bg-secondary)` only covers the header's computed width — it does not stretch to fill the full scroll-area width when the window is wider than the minimum column content.
+
+**The fix is CSS-only. No JS, no logic changes.**
+
+```css
+/* Add to TrackTable.css */
+.track-table-holder {
+  min-width: 100%;        /* stretch holder to scroll-area width when window is wide */
+  display: flex;
+  flex-direction: column;
+}
+```
+
+With this rule, the holder (and therefore the header and rows inside it) always fills the available width. When columns have a combined min-width wider than the window, `min-width: fit-content` on rows already handles horizontal scroll correctly.
+
+#### Integration Points
+
+| Location | Change Type | What Changes |
+|----------|-------------|-------------|
+| `src/components/TrackTable.css` | CSS addition | Add `.track-table-holder { min-width: 100%; display: flex; flex-direction: column; }` |
+| `src/components/TrackTable.tsx` | None | No changes needed |
+| Rust backend | None | Not involved |
+
+---
+
+### Feature 2: Duplicate Tracks Review Dialog
+
+#### Current State (Existing "Blind Delete" Flow)
+
+```
+DatabaseSection.tsx button "Remove Duplicate Tracks"
+  → SettingsContext::handleCleanupDuplicates()
+    → tauriApi.cleanupDuplicateTracks()
+      → invoke('cleanup_duplicate_tracks')
+        → db.remove_duplicate_tracks()
+          — finds dups: by file_hash OR by (lowercase filename + file_size)
+          — keeps lowest ID per group, deletes the rest
+          — cascades: deletes track_analysis + playlist_tracks rows
+          — returns: count deleted (just a number)
+    → shows notification: "Removed N duplicate tracks"
+    → calls onFoldersChanged() → App.tsx loadTracks() re-runs
+```
+
+The problem: no preview. User cannot see what will be deleted before it is deleted.
+
+#### New Backend Commands Required
+
+**`find_duplicate_tracks`** — read-only detection, returns grouped data. The existing `remove_duplicate_tracks()` in `db/mod.rs` mixes detection and deletion — the detection logic needs to be extracted into a separate read-only method.
+
+New DB method in `db/mod.rs`:
+
+```rust
+pub fn find_duplicate_tracks_grouped(&self) -> Result<Vec<DuplicateGroup>> {
+    // Same detection logic as remove_duplicate_tracks():
+    // 1. Find dups by file_hash (excluding 'unknown')
+    // 2. Find dups by (lowercase filename + file_size)
+    // Return grouped: { keep: Track, duplicates: Vec<Track>, match_reason: String }
+    // Does NOT delete anything
+}
+```
+
+New DTO struct in `commands/library.rs`:
+
+```rust
+#[derive(Debug, Serialize)]
+pub struct DuplicateGroup {
+    pub keep: TrackDTO,            // track with lowest ID (would be kept)
+    pub duplicates: Vec<TrackDTO>, // tracks that would be deleted
+    pub match_reason: String,      // "file_hash" or "filename_size"
+}
+
+#[tauri::command]
+pub fn find_duplicate_tracks(state: State<AppState>) -> Result<Vec<DuplicateGroup>, AppError> {
+    let db_lock = state.db.lock()...;
+    let db = db_lock.as_ref()...;
+    let groups = db.find_duplicate_tracks_grouped()
+        .map_err(|e| AppError::Database(format!(...)))?;
+    // Convert Track → TrackDTO inside each group
+    Ok(groups)
+}
+```
+
+**`delete_tracks_batch`** — for selective deletion of user-chosen track IDs:
+
+```rust
+#[tauri::command]
+pub fn delete_tracks_batch(state: State<AppState>, track_ids: Vec<i64>) -> Result<usize, AppError> {
+    let db_lock = state.db.lock()...;
+    let db = db_lock.as_ref()...;
+    let mut count = 0;
+    for id in &track_ids {
+        // cascade: delete track_analysis, playlist_tracks, then tracks row
+        db.conn.execute("DELETE FROM track_analysis WHERE track_id = ?", [id])?;
+        db.conn.execute("DELETE FROM playlist_tracks WHERE track_id = ?", [id])?;
+        db.conn.execute("DELETE FROM tracks WHERE id = ?", [id])?;
+        count += 1;
+    }
+    Ok(count)
+}
+```
+
+Alternatively, reuse `db.delete_track(id)` if it already cascades — check the existing `delete_track` DB method.
+
+Both commands must be registered in `src-tauri/src/lib.rs` `invoke_handler![]`.
+
+#### New Frontend Component
+
+**`src/components/settings/DuplicatesDialog.tsx`** — new file, self-contained modal.
+
+```
+DuplicatesDialog (local state only, no SettingsContext changes)
+├── props: { isOpen: boolean, onClose: () => void, onDeleted: () => void }
+├── on mount (when isOpen): calls tauriApi.findDuplicateTracks()
+│   → loading state while fetching
+│   → renders list of DuplicateGroup[]
+│     ├── each group: "Keep" row (highlighted, not selectable for deletion)
+│     ├── each group: duplicate rows with checkboxes (pre-checked = will delete)
+│     └── fields shown: title, artist, file_path, file_size, date_added
+├── footer:
+│   ├── "Delete N Selected" button → tauriApi.deleteTracksBatch(selectedIds) → onDeleted()
+│   └── "Cancel" button → onClose()
+└── zero-duplicates state: "No duplicates found" message
+```
+
+Local state inside the dialog:
+- `groups: DuplicateGroup[]` — from the find call
+- `loading: boolean`
+- `selectedIds: Set<number>` — IDs the user has marked for deletion (pre-seeded with all duplicate IDs)
+- `deleting: boolean`
+
+**`DatabaseSection.tsx` changes:**
+
+Replace the existing "Remove Duplicate Tracks" button behavior — or add a second button. Recommended: change the button label to "Review Duplicates" and open the dialog. The old blind-delete path can be removed or kept as an "Advanced" option.
+
+Add local `useState<boolean>` for dialog open state:
+
+```tsx
+const [showDuplicatesDialog, setShowDuplicatesDialog] = useState(false)
+
+// In JSX:
+<button onClick={() => setShowDuplicatesDialog(true)}>Review Duplicates</button>
+<DuplicatesDialog
+  isOpen={showDuplicatesDialog}
+  onClose={() => setShowDuplicatesDialog(false)}
+  onDeleted={() => { setShowDuplicatesDialog(false); onFoldersChanged() }}
+/>
+```
+
+`onFoldersChanged` is available via `useSettingsContext()`. `DuplicatesDialog` does not need to be inside `SettingsContext` — it reads directly from `tauriApi`.
+
+#### Integration Points
+
+| Location | Change Type | What Changes |
+|----------|-------------|-------------|
+| `src-tauri/src/db/mod.rs` | Rust addition | Add `find_duplicate_tracks_grouped()` method (read-only) |
+| `src-tauri/src/commands/library.rs` | Rust additions | Add `DuplicateGroup` struct, `find_duplicate_tracks` command, `delete_tracks_batch` command |
+| `src-tauri/src/lib.rs` | Registration | Add `find_duplicate_tracks`, `delete_tracks_batch` to `invoke_handler![]` |
+| `src/lib/tauri-api.ts` | API additions | Add `findDuplicateTracks(): Promise<DuplicateGroup[]>` and `deleteTracksBatch(ids: number[]): Promise<number>` |
+| `src/components/settings/DatabaseSection.tsx` | UI change | Replace/augment button to open dialog; add local `showDuplicatesDialog` state |
+| `src/components/settings/DuplicatesDialog.tsx` | New file | Dialog component with full duplicate review + selective delete UX |
+| `src/components/settings/SettingsContext.tsx` | None | No changes — dialog manages its own state |
+
+#### Data Flow (new)
+
+```
+User clicks "Review Duplicates"
+  → DatabaseSection: setShowDuplicatesDialog(true)
+  → DuplicatesDialog mounts, calls tauriApi.findDuplicateTracks()
+  → Rust: find_duplicate_tracks() reads DB (no delete), returns Vec<DuplicateGroup>
+  → Dialog renders groups; user adjusts checkboxes
+  → User clicks "Delete N Selected"
+  → tauriApi.deleteTracksBatch(selectedIds)
+  → Rust: delete_tracks_batch() cascades deletes, returns count
+  → onDeleted() fires → dialog closes → onFoldersChanged()
+  → App.tsx loadTracks() re-runs → TrackTable re-renders with updated list
+```
+
+---
+
+### Feature 3: Full Library Load on Startup
+
+#### Current Pagination State
+
+`App.tsx` `loadTracks()` function (lines ~339-386) has three branches:
+
+1. `if (playlist)` → `getPlaylistTracks()` — loads all (no pagination)
+2. `else if (folder)` → `getTracksInFolder()` / `getTracksInFolderShallow()` — loads all (no pagination)
+3. `else` ("All Tracks") → **`getTracksPaginated(1000, 0)` + `countTracks()`** — paginated
+
+Only the third branch needs to change. `getAllTracks()` already exists in both the Rust backend (`get_all_tracks` command) and `tauri-api.ts`. No new backend code is needed.
+
+The `loadMoreTracks` callback (lines ~389-427) is only triggered in the "All Tracks" view when `hasMoreTracks === true`. Once `hasMoreTracks` is always false, `loadMoreTracks` is never called — it can be removed or left as unreachable dead code.
+
+#### Changes in App.tsx
+
+In `loadTracks()`, replace the `else` branch:
+
+```typescript
+// Remove:
+const batchSize = 1000
+result = await tauriApi.getTracksPaginated(batchSize, 0)
+total = await tauriApi.countTracks()
+setHasMoreTracks(result.length < total)
+
+// Replace with:
+result = await tauriApi.getAllTracks()
+setHasMoreTracks(false)
+```
+
+Remove (or keep as dead code):
+- `loadMoreTracks` callback (lines ~389-427)
+- `isLoadingMore` state and `setIsLoadingMore`
+- `hasMoreTracks` state (can be kept at constant `false` or removed)
+- The `onLoadMore={loadMoreTracks}` prop passed to `TrackTable`
+
+The `handleSearch` clear path currently calls `loadTracks()` to "restore paginated view" — that comment becomes stale but the behavior is correct: `loadTracks()` will now call `getAllTracks()`, which is fine.
+
+#### Changes in TrackTable.tsx
+
+The `onLoadMore`, `hasMoreTracks`, `isLoadingMore` props are already typed as optional (`hasMoreTracks = false` as default). If `App.tsx` stops passing them, `TrackTable` works without changes.
+
+Optional cleanup (safe to do, cosmetically cleaner):
+- Remove scroll intersection observer block (lines ~416-430) — it guards `if (!onLoadMore || !hasMoreTracks)` so it's already inert without the props
+- Remove "Scroll for more" footer text (lines ~998-1000)
+- Remove the three props from the interface definition
+
+#### No Backend Changes Required
+
+`get_all_tracks` in `library.rs` is already registered and working. `tauriApi.getAllTracks()` in `tauri-api.ts` is already implemented. Nothing to add.
+
+#### Performance Note
+
+`get_all_tracks` does `SELECT * FROM tracks LEFT JOIN track_analysis`. For a typical DJ library (500–5,000 tracks), this query completes in under 100ms. IPC serialization of the resulting array adds another 50–100ms. TanStack Virtual renders only visible rows — memory footprint for 5,000 tracks in JS is negligible (~2MB). The "WARNING: large libraries" comment in `library.rs` was conservative; it is safe to ignore for this audience.
+
+#### Integration Points
+
+| Location | Change Type | What Changes |
+|----------|-------------|-------------|
+| `src/App.tsx` | Logic change | Replace `getTracksPaginated` call with `getAllTracks()`; `setHasMoreTracks(false)` always; optionally remove `loadMoreTracks`, `isLoadingMore` |
+| `src/components/TrackTable.tsx` | Optional cleanup | Remove scroll observer, "Scroll for more" text, unused props |
+| `src/components/TrackTable.css` | Optional cleanup | `.footer-loading-info` becomes unused |
+| `src-tauri/src/commands/library.rs` | None | `get_all_tracks` already exists |
+| `src/lib/tauri-api.ts` | None | `getAllTracks()` already exists |
+
+---
+
+### Build Order Within v1.3 Milestone
+
+Feature dependencies:
+
+```
+Feature 1 (CSS layout fix)     — independent, no deps on other features
+Feature 3 (Full library load)  — independent from 1 and 2; touches App.tsx/TrackTable
+Feature 2 (Duplicates dialog)  — backend-first dependency within itself
+                                  (find_duplicate_tracks must exist before DuplicatesDialog)
+```
+
+**Recommended order:**
+
+1. **Feature 1 — CSS layout fix** first.
+   - Single file change (`TrackTable.css`).
+   - Verifiable in seconds by resizing the window.
+   - Zero risk of breaking other features.
+
+2. **Feature 3 — Full library load** second.
+   - Localized to the `loadTracks()` function in `App.tsx`.
+   - Removes pagination complexity before Feature 2 lands (Feature 2 calls `onFoldersChanged()` which triggers `loadTracks()` — cleaner if that already uses full load).
+   - Test: open app, verify all tracks appear without "Scroll for more", check search works, check queue is complete.
+
+3. **Feature 2 — Duplicates dialog** last.
+   - Requires backend before frontend. Build in this sub-order:
+     - a. `db/mod.rs`: add `find_duplicate_tracks_grouped()` read-only method
+     - b. `commands/library.rs`: add `DuplicateGroup` struct + both commands
+     - c. `lib.rs`: register both commands
+     - d. `tauri-api.ts`: add `findDuplicateTracks()` and `deleteTracksBatch()`
+     - e. `DuplicatesDialog.tsx`: build the dialog component
+     - f. `DatabaseSection.tsx`: wire up the button and dialog
+
+---
+
+### New vs Modified Files Summary (v1.3)
+
+#### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/components/settings/DuplicatesDialog.tsx` | Modal dialog for reviewing and selectively deleting duplicates |
+
+#### Modified Files
+
+| File | Change Scope | What Changes |
+|------|-------------|-------------|
+| `src/components/TrackTable.css` | 4-5 lines added | `.track-table-holder` CSS rule |
+| `src/App.tsx` | 5-10 lines changed | `loadTracks()` else branch; remove `loadMoreTracks` and `isLoadingMore` |
+| `src/components/TrackTable.tsx` | Optional 10-15 lines removed | Scroll observer, footer text, unused props |
+| `src/components/settings/DatabaseSection.tsx` | 10-15 lines changed | New button + dialog open state |
+| `src/lib/tauri-api.ts` | 10 lines added | Two new method wrappers |
+| `src-tauri/src/db/mod.rs` | 40-60 lines added | `find_duplicate_tracks_grouped()` method |
+| `src-tauri/src/commands/library.rs` | 50-70 lines added | `DuplicateGroup` struct + 2 new commands |
+| `src-tauri/src/lib.rs` | 2 lines added | Register 2 new commands in `invoke_handler![]` |
+
+#### Unchanged Files
+
+| File | Reason |
+|------|--------|
+| `src/components/settings/SettingsContext.tsx` | Dialog manages its own local state |
+| `src/components/views/SettingsView.tsx` | `DatabaseSection` already included; no structural change |
+| All Zustand stores | No new global state needed for any of the 3 features |
+| `src-tauri/src/commands/library.rs` existing commands | `cleanup_duplicate_tracks` and `get_all_tracks` stay untouched |
+
+---
+
+### Anti-Patterns to Avoid (v1.3)
+
+**Anti-Pattern 1: JS layout measurement for the CSS fix**
+Using `ResizeObserver` + `useEffect` to programmatically set header width is async and causes visual flicker. The problem is purely CSS — `min-width: 100%` on `.track-table-holder` solves it declaratively.
+
+**Anti-Pattern 2: Dialog state in SettingsContext**
+Adding `duplicateGroups`, `showDuplicatesDialog`, etc. to `SettingsContextValue` is unnecessary. Dialog state is ephemeral. Keep it local to `DatabaseSection` (open/closed boolean) and `DuplicatesDialog` (groups, selection, loading).
+
+**Anti-Pattern 3: Holding the DB Mutex during the full duplicate scan**
+`find_duplicate_tracks_grouped()` will call `get_all_tracks()` internally — this could be slow for large libraries. Acquire the lock, load all tracks into a `Vec`, drop the lock, then do in-memory grouping without the lock. This is the pattern already used in `remove_duplicate_tracks()`.
+
+**Anti-Pattern 4: Deleting `getTracksPaginated` from backend**
+`get_tracks_paginated` may be useful for future large-library support. Do not delete the registered command — just stop calling it from the frontend.
 
 ---
 
@@ -565,27 +921,29 @@ Add new commands to appropriate `commands/*.rs` module, register in `lib.rs` `in
 
 ## Scalability Considerations
 
-| Concern | Current | Implication for v1.2 |
-|---------|---------|----------------------|
-| Full library load | Paginated to 1000 initially | Switch to `getAllTracks()` — acceptable for small DJ libraries |
-| Large libraries (10K+ tracks) | Paginated guards | Full load will be slow; monitor startup time |
+| Concern | Current | Implication |
+|---------|---------|-------------|
+| Full library load | Switching to `getAllTracks()` in v1.3 | Acceptable for DJ libraries (< 10K tracks); monitor startup time |
+| Large libraries (10K+ tracks) | Paginated guards removed in v1.3 | Full load will be slow; revisit if audience grows |
 | AI context size | Truncates to token budget | No change needed |
 | stream:// memory | Reads entire file into Vec<u8> | Deferred optimization |
 | Mobile streaming concurrency | Capped via `active_streams` | No change needed |
+| Duplicate scan | In-memory grouping after DB load | Fast for any realistic library size |
 
 ---
 
 ## Sources
 
 All findings based on direct inspection of:
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/audioPlayer.ts` (full, ~1350 lines)
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/App.tsx` (lines 1-550)
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/store/playerStore.ts`
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/tauri-api.ts`
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/AppearanceSection.tsx`
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/SettingsContext.tsx`
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/constants.ts`
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/commands/library.rs` (relevant sections)
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/.planning/PROJECT.md`
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/TrackTable.tsx` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/TrackTable.css` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/App.tsx` (lines 330-450 track loading logic)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/SettingsContext.tsx` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/DatabaseSection.tsx` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/views/SettingsView.tsx` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/tauri-api.ts` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/commands/library.rs` (full)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/db/mod.rs` (lines 830-922, duplicate detection)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/.planning/PROJECT.md` (full)
 
-Confidence: HIGH — answers derived from reading the exact lines that will be modified.
+Confidence: HIGH — all findings from direct source code inspection, no reliance on training data inference.

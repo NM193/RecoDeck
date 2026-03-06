@@ -1,241 +1,172 @@
 # Project Research Summary
 
-**Project:** RecoDeck v1.2 Playback & UX Polish
-**Domain:** DJ desktop music library manager — Tauri v2 + React 19 + Rust
+**Project:** RecoDeck v1.3 — Library UX & Duplicate Management
+**Domain:** Desktop music library manager (DJ-focused), Tauri v2 + React 19 + Rust
 **Researched:** 2026-03-06
 **Confidence:** HIGH
 
 ## Executive Summary
 
-RecoDeck v1.2 is a polish milestone targeting four concrete improvements to an already-functional desktop app: full async library loading, beatmatch crossfade with gradual tempo ramp, settings simplification, and an end-of-track audio glitch fix. All four features are partially or fully scaffolded in the codebase. Research was codebase-inspection-first, not blue-sky design — every finding is tied to a specific file and line range. No new dependencies are required for any of the four targets.
+RecoDeck v1.3 targets three well-scoped improvements to the existing music library: a CSS layout correctness fix for the track table, full library loading on startup to remove pagination friction, and a review-before-delete duplicate management dialog. All three features build on the existing stack — no new frontend dependencies are required. The research is grounded entirely in direct codebase inspection, giving it unusually high confidence. Every integration point, file location, and API call was verified in source code before this summary was written.
 
-The recommended approach is surgical: three of the four features require changes to a single file each (`audioPlayer.ts` for crossfade and end-of-track, `App.tsx` for library loading), with a four-file cleanup sweep for settings. The most significant architectural decision is replacing the paginated `getTracksPaginated(1000, 0)` startup call with a single `getAllTracks()` call and removing the scroll-to-load-more infrastructure entirely. This is appropriate for the target audience (small DJ friend group, likely <5K tracks) and eliminates the incomplete-queue bugs that motivated the feature in the first place.
+The recommended approach is to implement in dependency order: CSS layout fix first (zero risk, immediate visual improvement), full library load second (simplifies App.tsx before adding new UI complexity), and the duplicate review dialog third (the only feature requiring new Rust commands). The duplicate dialog is the only medium-complexity item. It requires extracting duplicate detection logic from the existing `remove_duplicate_tracks()` into a new read-only `find_duplicate_tracks_grouped()` DB method, then building a modal component that reuses established patterns already present in the codebase.
 
-The primary risk area is crossfade: pitch artifacts from `playbackRate` changes were flagged as a critical concern by PITFALLS research, but STACK research confirmed that `HTMLMediaElement.preservesPitch` defaults to `true` in WKWebView (MDN Baseline 2023), making rate ramps safe without additional pitch-shift libraries. The end-of-track glitch has a one-line root cause fix: `SEEK_MARGIN_MS` is `10000` ms and must be reduced to `3000`. Settings cleanup must use TypeScript's type system as a guide — remove from interfaces first so the compiler surfaces all remaining read sites.
+Key risks are narrow and concrete: applying the CSS fix to the wrong DOM element can break TanStack Virtual row sizing; the duplicate batch delete must replicate the cascade delete logic from the existing `db.delete_track()` or it will leave orphaned rows in `track_analysis` and `playlist_tracks`; and loading 7K+ tracks in one call must not trigger a React re-render storm on every settings change. All three risks have known, low-effort mitigations documented in PITFALLS.md.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new dependencies are required for v1.2. The existing stack (Tauri v2, React 19, Rust, SQLite, Zustand, TailwindCSS 4, HTMLAudioElement) is fully sufficient for all four target features.
+No new dependencies are required for v1.3. The entire feature set is implementable with what is already installed.
 
-**Core technologies:**
-- `HTMLMediaElement.playbackRate` — drives the beatmatch tempo ramp; mutating mid-playback is spec-compliant in WKWebView
-- `HTMLMediaElement.preservesPitch` — defaults to `true` (WKWebView, MDN Baseline 2023); eliminates chipmunk effect from rate changes without any library
-- `requestAnimationFrame` — already used for crossfade volume animation in `audioPlayer.ts`; the rate ramp adds one linear interpolation line to the same loop
-- Tauri IPC `invoke('get_all_tracks')` — existing command and wrapper; handles thousands of TrackDTO objects in a single JSON round-trip; adequate for <5K track libraries without Channel streaming
-- Zustand `playerStore` — flat array queue; once fully loaded, `setQueue(tracks, index)` always has the complete library
+**Core technologies used in v1.3:**
+- **CSS `min-width: 100%` on `.track-table-holder`**: layout fix — applies to the wrapper div, not individual rows, to avoid breaking TanStack Virtual measurements
+- **`.modal-overlay` / `.modal-content` CSS classes** (TrackTable.css): dialog container for duplicate review — already styled with backdrop blur, slide-in animation, and button variants
+- **`useState<Set<number>>`** (React 19): checkbox selection state in duplicate dialog — same pattern as `removedTrackIds` in AIPlaylistDialog.tsx
+- **`tauriApi.getAllTracks()`** (tauri-api.ts line 29): full library load — already exists, replaces paginated `getTracksPaginated(1000, 0)` call
+- **`tauriApi.deleteTrack(id)`** (tauri-api.ts line 47): per-track deletion from duplicate dialog — existing IPC wrapper
+- **New Rust command `find_duplicate_tracks`** (library.rs + db/mod.rs): the only new backend code — a read-only extraction of detection logic already in `db.remove_duplicate_tracks()`
 
 **What NOT to add:**
-- SoundTouchJS or WASM pitch correction — `preservesPitch=true` default makes this unnecessary
-- Tauri `Channel` IPC streaming — appropriate for >10K records or binary payloads; standard invoke is adequate here
-- Web Audio API or AudioContext — would break the existing HTMLAudioElement viz pipeline and require full-file buffering before playback
+- Headless UI / Radix / shadcn: the project has a working modal pattern in TrackTable.css; a dialog library adds bundle weight and requires restyling work
+- `react-window` or `@tanstack/react-table`: the layout bug is CSS, not a missing library
+- `delete_tracks_batch` Rust command: at typical duplicate counts (2-20 tracks), sequential `deleteTrack` IPC calls complete in under 100ms
 
-See `.planning/research/STACK.md` for full rationale and memory sizing estimates by library size.
+See `.planning/research/STACK.md` for full rationale and integration point details.
 
 ### Expected Features
 
 **Must have (table stakes):**
-- App usable on startup with library loading in background — current pagination produces an incomplete library visible to queue-building and AI context
-- Visual indicator during background library load — prevents blank-library confusion on larger collections
-- End-of-track plays to clean completion then advances — the current 3-5 second repeat is the most visible bug and makes the app feel broken
-- Settings removal is transparent — existing users get Camelot and Traktor RGB defaults; no migration needed; dead SQLite rows are harmless
+- Row and header backgrounds extend to full window width at all window sizes — currently broken by `min-width: fit-content` on `.track-table-row`
+- All tracks visible in "All Tracks" view on startup without pagination — desktop apps do not paginate local data; sort, scroll-to-track, and search are broken with partial loads
+- Review duplicate groups before any deletion — music library files are irreplaceable; silent delete is unacceptable (industry norm: Rekordbox, Music.app, Swinsian all show duplicates before deleting)
+- File path, duration, and file size shown per duplicate — sufficient signals to identify which copy to keep
+- Pre-select the recommended delete target — lowest-ID track is suggested keeper; duplicates pre-checked but uncheceable
 
 **Should have (differentiators):**
-- Beatmatch crossfade with gradual tempo ramp — incoming track plays at matched BPM, ramping to native BPM over the crossfade window; DJ-centric behavior that makes transitions feel intentional
-- NowPlayingBar shows incoming track name during crossfade — wire `isCrossfadingState` getter through player store into the bar; currently unconnected
-- Full library available for queue-building and AI context — side effect of async full-library load; no extra work
+- BPM and key shown per duplicate in dialog — DJs care whether a copy has been analyzed
+- Date added shown per duplicate — helps identify intentional vs. accidental imports
+- Empty state "No duplicates found" — prevents confusion when button appears to do nothing
 
-**Defer to v1.3+:**
-- Crossfade in native (Rust PCM) decoder mode — dual backend decoder, PCM mixing in Rust; high complexity for marginal benefit
-- Beat-grid-level beatmatch — Aubio produces average BPM, not a beat grid; true sync requires a downbeat detection milestone
-- Key Notation toggle restoration — if users request it, add as a simple display toggle, not a settings screen entry
+**Defer to v2+:**
+- Audio fingerprinting for cross-format duplicates (MP3 vs. FLAC of the same song)
+- Metadata merge from duplicate to keeper
+- Batch delete Rust command (only worth adding if sequential per-ID calls become slow, which requires >50 duplicates in a single run)
 
-See `.planning/research/FEATURES.md` for UX behavior tables and competitor reference behavior (Rekordbox, Traktor Pro).
+See `.planning/research/FEATURES.md` for UX flow diagrams, competitor comparison table, and full feature prioritization matrix.
 
 ### Architecture Approach
 
-All v1.2 changes touch two primary files (`audioPlayer.ts`, `App.tsx`) and a four-file settings sweep. No new Rust commands, no new components, no new IPC wrappers are needed. The existing component boundaries are correct. The `get_all_tracks` Rust command already exists in `library.rs` with a `LEFT JOIN` to `track_analysis`, returning populated `TrackDTO[]` including BPM and key.
+All three features are self-contained with minimal cross-cutting concerns. The layout fix touches one CSS file. The full library load changes one branch in `loadTracks()` and removes three state variables. The duplicate dialog adds two Rust commands, two IPC wrappers, and one new React component — none of which require changes to SettingsContext, Zustand stores, or the audio player.
 
-**Files modified per feature:**
-1. **End-of-track fix** — `src/lib/audioPlayer.ts`: change `SEEK_MARGIN_MS` constant from `10000` to `3000` (one line); also add `this.abortCrossfade()` at top of `loadTrack()` to prevent orphaned audio elements
-2. **Beatmatch rate ramp** — `src/lib/audioPlayer.ts`: add `beatmatchStartRate` private field; store it in `startCrossfadeToNext()`; add per-frame linear interpolation `lerp(beatmatchStartRate, 1.0, progress)` in `updateCrossfadeVolumes()` RAF loop; reset in `abortCrossfade()` and `completeCrossfade()`
-3. **Full library load** — `src/App.tsx`: replace `setTracks([])` in `initializeApp()` with `getAllTracks()` call; add `allTracksRef` for zero-round-trip search-clear restore; remove `hasMoreTracks`, `isLoadingMore`, `loadMoreTracks`, and scroll trigger in `TrackTable`
-4. **Settings cleanup** — 4-file sweep: `AppearanceSection.tsx` (remove subsections), `constants.ts` (remove arrays), `SettingsContext.tsx` (remove state and callbacks from interfaces), `App.tsx` (remove reads and prop threading)
+**Major components involved:**
+1. **`src/components/TrackTable.css`** — one new CSS rule block for `.track-table-holder`; no TSX changes needed
+2. **`src/App.tsx`** — `loadTracks()` "All Tracks" branch replaced with `getAllTracks()`; `loadMoreTracks`, `hasMoreTracks`, `isLoadingMore` state removed
+3. **`src-tauri/src/db/mod.rs`** — new `find_duplicate_tracks_grouped()` read-only method extracted from `remove_duplicate_tracks()`
+4. **`src-tauri/src/commands/library.rs`** — new `find_duplicate_tracks` Tauri command with `DuplicateGroup` DTO; optionally `delete_tracks_batch`
+5. **`src/components/settings/DuplicatesDialog.tsx`** — new self-contained modal; manages its own loading, selection, and deletion state
 
-**One integration gap found by research:** `SettingsContext` loads `crossfade_enabled` from DB on mount but does NOT push the loaded value to the `AudioPlayer` singleton. Result: crossfade appears enabled in Settings on relaunch but does not activate until the user toggles it. This must be fixed as part of the crossfade phase.
+**Data flow for duplicate dialog:**
+```
+User clicks "Review Duplicates"
+  → find_duplicate_tracks (Rust, read-only) → Vec<DuplicateGroup>
+  → Dialog renders groups, user adjusts checkboxes
+  → deleteTrack per ID (Rust, cascade delete) → count
+  → onDeleted() → loadTracks() (getAllTracks) → TrackTable re-renders
+```
 
-**Major components unchanged:** `db/mod.rs`, `commands/library.rs`, `playerStore.ts`, `tauri-api.ts`, all AI components, mobile server, stream protocol handler.
-
-See `.planning/research/ARCHITECTURE.md` for the complete component boundary diagram and recommended build order.
+See `.planning/research/ARCHITECTURE.md` for precise DOM structure diagnosis, exact Rust struct definitions, and the complete integration point table per feature.
 
 ### Critical Pitfalls
 
-1. **Chipmunk effect is resolved by `preservesPitch=true`** — PITFALLS raised pitch shift as a critical blocker. STACK research confirmed `preservesPitch` defaults to `true` in WKWebView (Baseline 2023). Rate ramps within the existing `[0.5, 2.0]` clamp are safe. The clamp rationale must be documented in code comments. No library needed.
+1. **CSS fix applied to the wrong element** — `min-width: 100%` must go on `.track-table-holder`, not `.track-table-row`. Applying it to rows breaks TanStack Virtual's width measurement, causing erratic horizontal scrollbars or row overflow. Test at 800px, 1280px, and 1920px window widths before committing.
 
-2. **End-of-track root cause is `SEEK_MARGIN_MS = 10000`** — the native recovery path seeks 10 seconds back when WebKit fires a premature `ended` event on VBR MP3 files. VBR premature-end typically fires 1-3s from true EOF, so users hear 7-9 seconds of replay. Reduce to `3000` ms. Do not use `timeupdate` pre-arming — it adds state complexity and crossfade race conditions.
+2. **Duplicate batch delete missing cascade** — any new delete path must replicate the cascade: delete `track_analysis`, delete `playlist_tracks`, then delete `tracks` rows in that order. The safest approach is calling the existing `db.delete_track(id)` in a loop. A missed cascade leaves orphaned FK rows causing silent data inconsistency.
 
-3. **`crossfadeAudio` orphaned on manual skip** — `loadTrack()` does not call `abortCrossfade()`. If the user skips during an active crossfade, two audio streams play simultaneously and the RAF loop continues consuming CPU. Fix: add `this.abortCrossfade()` as the first call in `loadTrack()`.
+3. **Re-render storm on 7K track load** — `getAllTracks()` returns ~7,339 items as one JSON array. If `setTracks()` is triggered by a broad Context change (e.g., SettingsContext), all consumers re-render. Mitigation: call `getAllTracks()` exactly once on startup; keep `tracks` in App-level state, not a Context.
 
-4. **`onTrackEnded` can fire twice on VBR MP3** — WebKit fires `ended` multiple times. The native recovery path is protected by `_nativeRecoveryAttempted`. The crossfade completion path is not equivalently protected. If double-advance persists after the `SEEK_MARGIN_MS` fix, add a `_trackEndedFired` boolean flag reset in `loadTrack()`, gating `onTrackEnded?.()`.
+4. **Stale UI after duplicate deletion** — the dialog must call `onDeleted()` which triggers `loadTracks()` in App.tsx. Without this, the track table shows ghost entries until manual refresh.
 
-5. **Settings cleanup requires full-codebase grep** — `key_notation` is read in BOTH `SettingsContext.tsx` AND `App.tsx` independently. Removing the UI without removing both read sites leaves the setting silently controlling behavior with no UI to change it. Verification: `grep -r "key_notation\|waveform_style" src/` must return zero hits after cleanup.
-
-6. **Crossfade settings not synced to AudioPlayer on init** — `loadSettings()` sets React state but never calls `audioPlayer.setCrossfadeEnabled()`. Push loaded settings to the singleton at `loadSettings()` completion.
-
-See `.planning/research/PITFALLS.md` for the full 12-pitfall catalog with warning signs, recovery strategies, and a "Looks Done But Isn't" checklist.
+See `.planning/research/PITFALLS.md` for a full checklist including the "Looks Done But Isn't" verification steps per feature.
 
 ## Implications for Roadmap
 
-Research converges on a build order driven by three constraints: (1) smallest blast radius first, (2) independent tasks before interdependent ones, (3) end-of-track fix before crossfade because both share the `onTrackEnded` code path.
+Research converges on three phases with clear dependency ordering: zero-risk CSS change first, App.tsx simplification second, new-Rust-command feature third.
 
-### Phase 1: Settings Cleanup
+### Phase 1: CSS Layout Fix
 
-**Rationale:** Fully independent of all other features. No audio code changes. TypeScript-verifiable — remove from interfaces first, let compile errors surface all remaining read sites. Removes prop-chain noise from subsequent testing of audio features. Delivers immediate visible product change (simpler settings panel) at near-zero risk.
+**Rationale:** Zero-risk, zero-dependency change. Delivers immediate visual correctness and can be validated in isolation before any other v1.3 code is written. If the fix breaks TanStack Virtual, the problem is isolated and trivially reversible.
+**Delivers:** Track table rows and header extend to full window width at all sizes; horizontal scroll activates only when columns are narrower than the window.
+**Addresses:** Table-stakes layout correctness; parity with Rekordbox, Music.app, and Swinsian table behavior.
+**Avoids:** TanStack Virtual sizing breakage (PITFALLS.md Pitfall 1) — verified by testing at multiple window widths before proceeding to Phase 2.
+**Scope:** One CSS file, one new rule block. No Rust, no TypeScript changes.
 
-**Delivers:** Smaller SettingsContext. Hardcoded Camelot + Traktor RGB defaults. Removal of `keyNotation` / `waveformStyle` prop chains from `App.tsx`. TypeScript zero-reference verification.
+### Phase 2: Full Library Load
 
-**Addresses:** Settings simplification target (P1 priority, FEATURES.md)
+**Rationale:** Simplifies App.tsx state management before the duplicate dialog adds new complexity. Removing `hasMoreTracks`, `isLoadingMore`, and `loadMoreTracks` reduces the prop chain into TrackTable and eliminates partial-list bugs affecting sort, scroll-to-track, and search. Also establishes the `getAllTracks()` startup call that the duplicate dialog's `onDeleted()` refresh will depend on.
+**Delivers:** All tracks visible on startup in "All Tracks" view; sort and scroll-to-track work correctly on the full library; "Scroll for more" UX removed; net code reduction in App.tsx and TrackTable.
+**Uses:** Existing `tauriApi.getAllTracks()` — no new backend code.
+**Avoids:** Re-render storm (PITFALLS.md Pitfall 3) — call once on startup; stabilize with `useCallback`/`useMemo` if needed.
+**Scope:** `src/App.tsx` (one branch replaced, three state vars removed), `src/components/TrackTable.tsx` (remove `onLoadMore` prop and scroll trigger), `src/components/TrackTable.css` (remove "Scroll for more" footer if present).
 
-**Avoids:** Pitfall 7 (stale DB keys silently controlling behavior if reads remain in App.tsx), Pitfall 8 (dead state in SettingsContext confusing future developers)
+### Phase 3: Duplicate Review Dialog
 
-**Implementation notes:** 4-file sweep. Verify with grep returning zero hits for `key_notation` and `waveform_style` in `src/`. SQLite rows left in place — harmless, no migration needed.
-
-**Research flag:** None — standard TypeScript cleanup pattern, fully specified.
-
-### Phase 2: End-of-Track Repeat Fix
-
-**Rationale:** One-line root cause fix (`SEEK_MARGIN_MS` 10000 to 3000). Testable immediately with any VBR MP3. Does not touch crossfade logic. Must be fixed before crossfade verification because both features share the `onTrackEnded` callback path and the crossfade can re-introduce the double-advance bug if the underlying path is not stable.
-
-**Delivers:** Clean track advancement without 3-5 second repeat on VBR MP3 files. Orphaned crossfadeAudio protection via `abortCrossfade()` at top of `loadTrack()`.
-
-**Addresses:** End-of-track glitch (P1 priority, highest-impact visible bug, FEATURES.md)
-
-**Avoids:** Pitfall 4 (double-fire `ended` during crossfade cleanup), Pitfall 9 (VBR MP3 multiple `ended` events), Pitfall 10 (orphaned crossfadeAudio memory and CPU leak on manual skip)
-
-**Implementation notes:** `audioPlayer.ts` only. Change constant. Add `abortCrossfade()` call. Both changes in the same commit. Test with VBR MP3 files of varying lengths and bitrates.
-
-**Research flag:** None — root cause identified by direct code inspection with HIGH confidence.
-
-### Phase 3: Beatmatch Crossfade Rate Ramp
-
-**Rationale:** Builds on the stable `onTrackEnded` path from Phase 2. The core crossfade volume animation already works. This phase adds the gradual rate ramp alongside it and resolves the settings-to-AudioPlayer sync gap discovered during research.
-
-**Delivers:** Incoming track ramps from matched BPM to native BPM over the crossfade window via per-frame `playbackRate` interpolation in the existing RAF loop. Crossfade settings applied on app startup without requiring the user to toggle the switch.
-
-**Addresses:** Beatmatch crossfade (P1 for edge-case verification and completion), optional NowPlayingBar crossfade indicator (P2)
-
-**Avoids:** Pitfall 1 (chipmunk — resolved by `preservesPitch=true`; rate ramp is safe), Pitfall 2 (WebKit rate limits — existing [0.5, 2.0] clamp is correct, needs documenting comment), Pitfall 11 (crossfade settings not synced to AudioPlayer on startup)
-
-**Implementation notes:**
-- `audioPlayer.ts`: add `private beatmatchStartRate: number = 1.0`; store in `startCrossfadeToNext()`; add `lerp(beatmatchStartRate, 1.0, progress)` in `updateCrossfadeVolumes()`; reset in `abortCrossfade()` and `completeCrossfade()`
-- `SettingsContext.tsx` or `App.tsx`: call `audioPlayer.setCrossfadeEnabled(loaded === 'true')` and `audioPlayer.setCrossfadeDuration(loadedSeconds)` at end of `loadSettings()` completion
-- Optional: wire `isCrossfadingState` getter through player store into `NowPlayingBar` for crossfade indicator
-
-**Testing:** Listen test at ±5, ±10, ±20 BPM differences. Verify no audible pitch shift. Verify crossfade activates on fresh app launch without toggling Settings.
-
-**Research flag:** None — implementation fully specified by ARCHITECTURE.md with exact code snippets.
-
-### Phase 4: Async Full-Library Load
-
-**Rationale:** Widest surface area — touches `App.tsx` state management, pagination infrastructure removal, search restore logic, and queue integrity. Goes last because it validates against the clean, stable audio foundations from Phases 2 and 3. The queue must be correct before verifying crossfade look-ahead works on the full library.
-
-**Delivers:** Complete library in memory after startup (estimated <1s for 1K tracks, <3s for 5K tracks). Scroll-to-load-more infrastructure removed. Queue always contains the full library for AI and "Play All". `allTracksRef` for zero-round-trip search-clear restore. Subtle loading indicator in sidebar track count.
-
-**Addresses:** Async full-library load (P1), Library loading indicator (P2), Queue completeness for AI context
-
-**Avoids:** Pitfall 5 (rerender storm — non-issue for <5K tracks; test with realistic library and measure startup time), Pitfall 6 (search must stay on backend SQL via `tauriApi.searchTracks()`, not `tracks.filter()`), Pitfall 12 (stale closure offset — eliminated by removing `loadMoreTracks` entirely)
-
-**Implementation notes:**
-- `App.tsx`: in `initializeApp()`, replace `setTracks([])` block with `getAllTracks()` call; populate `allTracksRef.current` for search-clear; set `hasMoreTracks = false`
-- Remove `loadMoreTracks`, `isLoadingMore`, `hasMoreTracks` state and the scroll trigger in `TrackTable`
-- `handleSearch` clear path: restore from `allTracksRef.current` instead of re-fetching from Rust
-- Add loading indicator visible only during the `getAllTracks()` call (subtle text or animated count in sidebar header)
-- Verify `handleSearch` still calls `tauriApi.searchTracks()` backend SQL — not `tracks.filter()`
-
-**Testing:** (a) startup latency acceptable on target hardware, (b) SearchView still uses backend SQL after full load, (c) queue correct when clicking a track in All Tracks view after a search-and-clear, (d) no duplicate tracks.
-
-**Research flag:** Startup time with realistic 5K library — measure actual IPC round-trip to validate the <50ms STACK estimate. If startup latency exceeds 300ms, add a loading spinner in the track list area rather than only in the sidebar count.
+**Rationale:** Highest implementation complexity; depends on Phase 2 completing because the `onDeleted()` callback will call the simplified `loadTracks()` established in Phase 2. Backend work (new Rust DB method + Tauri command) is a prerequisite for the frontend dialog and must be built and tested first.
+**Delivers:** Non-destructive duplicate review flow — user sees all groups before deletion, controls which tracks are removed, library refreshes with accurate count confirmation.
+**Addresses:** All duplicate management table stakes; replaces the existing unsafe one-click blind delete.
+**Avoids:** Missing cascade on delete (PITFALLS.md Pitfall 2) — reuse `db.delete_track()` loop; stale UI after deletion (PITFALLS.md Pitfall 4) — `onDeleted()` triggers `loadTracks()`.
+**Scope:** New Rust DB method + two Tauri commands + two IPC wrappers + one React dialog component + minor changes to `DatabaseSection.tsx`.
 
 ### Phase Ordering Rationale
 
-- Settings cleanup first: zero audio risk, TypeScript-verifiable, removes prop-chain noise before any audio testing
-- End-of-track before crossfade: both share `onTrackEnded`; fix the shared path before building more logic on top of it
-- Crossfade before full-library load: crossfade uses BPM from queue; full library load changes queue population; validate crossfade against the current queue before changing queue infrastructure
-- Full library load last: widest blast radius; requires all other features stable to validate queue integrity end-to-end
+- Phase 1 before Phase 2: CSS fix has zero state-management risk; confirms the rendering environment is correct before touching pagination infrastructure.
+- Phase 2 before Phase 3: the duplicate dialog's post-deletion library refresh relies on the simplified `getAllTracks()` call. Building Phase 3 against the old paginated App.tsx would require retrofitting the refresh callback later.
+- Phase 3 last: it has the most files and the only new Rust code. With state simplified (Phase 2) and CSS verified (Phase 1), integration testing is cleaner.
 
 ### Research Flags
 
-All open technical questions were resolved by codebase inspection and STACK research. No phase requires `/gsd:research-phase`.
+Phases with standard, well-documented patterns (no deeper research needed):
+- **Phase 1 (CSS fix):** The exact fix (`min-width: 100%` on `.track-table-holder`) was verified by DOM structure inspection in ARCHITECTURE.md. Standard flex layout behavior.
+- **Phase 2 (full library load):** Replacing one IPC call with another. Command exists, wrapper exists, performance validated in prior v1.2 research.
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (Settings Cleanup):** Mechanical TypeScript cleanup fully documented in FEATURES.md and ARCHITECTURE.md
-- **Phase 2 (End-of-Track Fix):** Root cause identified; fix is one constant change
-- **Phase 3 (Beatmatch Rate Ramp):** Implementation fully specified in ARCHITECTURE.md with exact code snippets; `preservesPitch` behavior confirmed in STACK.md
-- **Phase 4 (Full Library Load):** Pattern specified in ARCHITECTURE.md; only open question is startup latency, which is a measurement task not a research task
-
-## Conflict Resolutions
-
-Three research files produced conflicting recommendations. All three are resolved here with a clear winner.
-
-**Conflict 1 — Full library load strategy:**
-PITFALLS warned against `getAllTracks()` citing rerender storm and IPC latency for 10K+ libraries. ARCHITECTURE (from live codebase inspection) recommends `getAllTracks()` and explicitly removes pagination infrastructure, noting the target audience is a small DJ friend group unlikely to exceed 5K tracks. STACK confirms JSON invoke handles thousands of objects and provides memory sizing estimates (5K tracks ~3MB JSON, ~25-40MB JS heap — well within range).
-
-**Resolution: Use `getAllTracks()` per ARCHITECTURE.** The rerender storm concern in PITFALLS applies to the abstract 10K+ case. For the actual target audience (<5K tracks), the single call is correct and eliminates the incomplete-queue bugs. Measure startup latency during Phase 4 implementation; document a 300ms threshold for showing a loading spinner.
-
-**Conflict 2 — Beatmatch crossfade: snap vs. gradual ramp:**
-FEATURES said the snap-at-start is correct because continuous ramp causes WebKit audio artifacts. ARCHITECTURE said implement per-frame ramp in the RAF loop (gradual behavior). STACK confirmed `preservesPitch=true` eliminates pitch distortion from rate changes in WKWebView.
-
-**Resolution: Implement per-frame ramp per ARCHITECTURE.** FEATURES' concern was specifically about pitch artifacts, which STACK research resolved. The gradual ramp from matched BPM to native BPM over the crossfade window is the user-perceived improvement over the current snap. The RAF loop linear interpolation is the correct implementation path and is safe with pitch correction on by default.
-
-**Conflict 3 — End-of-track repeat fix approach:**
-PITFALLS discussed the bug and suggested a `_trackEndedFired` boolean guard as primary fix. ARCHITECTURE identified the actual root cause: `SEEK_MARGIN_MS = 10000` causes 10 seconds of seek-back, producing audible replay.
-
-**Resolution: Reduce `SEEK_MARGIN_MS` from `10000` to `3000` per ARCHITECTURE.** This is the direct fix for the root cause. The `_trackEndedFired` guard from PITFALLS remains valid as a secondary defense if the constant reduction alone does not eliminate all double-advance symptoms, but it should not be the primary approach.
+Phases where targeted implementation checks are needed before coding:
+- **Phase 3 (duplicate dialog) — backend step:** Before writing `delete_tracks_batch` or the per-ID delete loop, inspect `db.delete_track()` in `db/mod.rs` to confirm it already cascades to `track_analysis` and `playlist_tracks`. If it does, reuse the existing method; if not, replicate the cascade explicitly. This is a one-file read, not a research spike, but skipping it risks silent data corruption.
+- **Phase 3 (duplicate dialog) — SQL index check:** PITFALLS.md notes that `file_hash` and `filename` columns should be indexed for detection queries to perform well on large libraries. Confirm whether these indexes exist in the current SQLite schema before writing the detection query.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All findings from MDN official documentation + direct codebase inspection. `preservesPitch` Baseline 2023 is authoritative. IPC payload estimates are conservative estimates, not benchmarks — sufficient for the go/no-go decision. |
-| Features | HIGH | Based on direct code inspection of all affected files. DJ app UX conventions are well-established. One MEDIUM claim: specific crossfade pitch behavior conventions (domain knowledge, not spec). |
-| Architecture | HIGH | All recommendations tied to specific file paths and line ranges from live codebase inspection. Build order derived from actual dependency analysis, not speculation. |
-| Pitfalls | HIGH | Core pitfalls identified by reading the exact lines that will be modified. One MEDIUM: WebKit VBR MP3 double-ended-event from community reports, corroborated by the existing `_nativeRecoveryAttempted` recovery code in `audioPlayer.ts`. |
+| Stack | HIGH | All three features use existing installed dependencies. No library was evaluated speculatively — every tool cited was verified as installed and in active use in the codebase. |
+| Features | HIGH | Grounded in direct code inspection of current feature behavior, plus competitive analysis of Rekordbox, Music.app, and Swinsian. |
+| Architecture | HIGH | Based on line-level DOM structure inspection, Rust method signatures, and component tree traversal. Integration points reference specific file paths. |
+| Pitfalls | HIGH | Each pitfall was derived from the exact code pattern that causes it, with prevention strategies referencing existing methods or verified patterns. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Startup latency with 5K library:** The <50ms IPC estimate for `getAllTracks()` is architectural inference, not a benchmark. Measure actual startup time during Phase 4. If it exceeds 300ms, add a loading spinner in the track list area (not just the sidebar count).
-
-- **`preservesPitch` on macOS 12 (Monterey):** Confirmed Baseline 2023, supported Safari 17+ / macOS 14+. If any target user is on macOS 12, verify `preservesPitch` defaults to `true` on that WKWebView version. Fallback if needed: clamp rate ramp to [0.95, 1.05] range where pitch shift is imperceptible regardless.
-
-- **`onTrackEnded` double-fire protection:** The `_trackEndedFired` boolean guard (Pitfall 9) is recommended but not implemented. If the `SEEK_MARGIN_MS` reduction resolves the symptom completely, defer the guard. If double-advance persists, add it in Phase 2.
-
-- **NowPlayingBar crossfade indicator (P2 optional):** `isCrossfadingState` getter exists on `AudioPlayer` but is not wired to the Zustand player store. Include in Phase 3 if time allows — requires one store slice addition and one NowPlayingBar conditional render. Not blocking for audio correctness.
+- **`db.delete_track()` cascade coverage:** Research did not inspect `db.delete_track()` line-by-line to confirm cascade behavior. Before writing the Phase 3 backend delete path, read `db/mod.rs`'s `delete_track` implementation. If it cascades, reuse it in a loop. If it doesn't, write the cascade explicitly.
+- **SQLite index coverage for duplicate detection:** PITFALLS.md flags `file_hash` and `filename` indexing as important for performance on large libraries. ARCHITECTURE.md did not confirm whether these indexes exist in the current schema. Check migrations or `CREATE TABLE` statements before the Phase 3 backend step.
+- **`hasMoreTracks` prop consumers outside TrackTable:** STACK.md and ARCHITECTURE.md identified the primary removal targets, but did not exhaustively audit all prop consumers. Run a grep for `hasMoreTracks` and `isLoadingMore` in `src/` before beginning Phase 2 to confirm the full removal scope.
 
 ## Sources
 
 ### Primary (HIGH confidence — direct codebase inspection)
-- `src/lib/audioPlayer.ts` (~1350 lines) — crossfade logic, `ended` handler, `SEEK_MARGIN_MS` constant, `updateCrossfadeVolumes()` RAF loop, all v1.2 change points
-- `src/App.tsx` (lines 1-550) — `initializeApp()`, `loadTracks()` pagination, `handleSearch()`, `key_notation` reads in both `initializeApp` and state
-- `src/components/settings/AppearanceSection.tsx` — Key Notation and Waveform Style subsection locations
-- `src/components/settings/SettingsContext.tsx` — settings state shape, `loadSettings()`, `SettingsCallbacks` interface
-- `src/components/settings/constants.ts` — `KEY_NOTATIONS`, `WAVEFORM_STYLES` arrays
-- `src-tauri/src/commands/library.rs` — `get_all_tracks` command, LEFT JOIN with track_analysis, TrackDTO shape
-- `src/lib/tauri-api.ts` — `getAllTracks`, `getTracksPaginated`, `countTracks` wrappers (line 29)
-- `src/store/playerStore.ts` — queue management, flat array queue structure
-- `.planning/PROJECT.md` — v1.2 feature targets, audience, constraints
-- MDN: `HTMLMediaElement.preservesPitch` — defaults `true`, Baseline 2023
-- MDN: `HTMLMediaElement.playbackRate` — mid-playback mutation is spec-compliant
+- `src/components/TrackTable.tsx` and `TrackTable.css` — layout DOM structure, virtualizer integration, `.modal-overlay`/`.modal-content` CSS classes
+- `src/App.tsx` lines 309-427 — pagination state, `loadTracks()`, `loadMoreTracks`, `initializeApp()`
+- `src-tauri/src/db/mod.rs` lines 835-920 — `remove_duplicate_tracks()` detection logic and deletion cascade
+- `src-tauri/src/commands/library.rs` lines 592-602 — `cleanup_duplicate_tracks` command structure
+- `src/lib/tauri-api.ts` — `getAllTracks()` (line 29), `deleteTrack()` (line 47), `cleanupDuplicateTracks()`
+- `src/components/ai/AIPlaylistDialog.tsx` — `useState<Set<number>>` pattern for `removedTrackIds`, Framer Motion overlay structure
+- `src/components/settings/DatabaseSection.tsx` — existing "Remove Duplicate Tracks" button and SettingsContext integration
 
 ### Secondary (MEDIUM confidence)
-- WebKit VBR MP3 double `ended` event — community reports and WPT test suite failures; corroborated by existing `_nativeRecoveryAttempted` recovery pattern in `audioPlayer.ts`
-- Tauri IPC JSON payload performance at scale — architectural inference from documented invoke vs. Channel use case split; not a direct benchmark
-- IPC round-trip timing estimates (<50ms for 1K tracks) — conservative estimate consistent with JSON serialization at this scale
+- Competitive analysis: Rekordbox 6, iTunes/Music.app, Swinsian duplicate detection UX — industry standard for review-before-delete workflow
+- v1.2 STACK.md: prior validation that `getAllTracks()` performs acceptably for DJ library sizes (5K-30K tracks) over Tauri IPC
 
 ### Tertiary (LOW confidence)
-- macOS 12 (Monterey) WKWebView `preservesPitch` behavior — Baseline 2023 implies macOS 14+ / Safari 17+; older WKWebView behavior not directly verified
+- Startup load time projections for 20K+ track libraries — estimated from library size assumptions and prior v1.2 research; not benchmarked in production for v1.3
 
 ---
 *Research completed: 2026-03-06*

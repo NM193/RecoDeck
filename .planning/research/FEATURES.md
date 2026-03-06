@@ -1,201 +1,237 @@
 # Feature Research
 
-**Domain:** DJ music library desktop app — Playback & UX Polish (v1.2)
+**Domain:** Desktop music library manager — DJ-focused, Tauri v2 + React 19
 **Researched:** 2026-03-06
-**Confidence:** HIGH (codebase inspection + established DJ app UX conventions)
-
----
-
-## Scope Note
-
-This is a SUBSEQUENT MILESTONE research file. All three features under investigation are
-already partially or fully scaffolded in the codebase. Research answers "what should the
-completed behavior look and feel like, and what are the implementation edge cases?" — not
-"should we build it?".
+**Confidence:** HIGH (grounded in existing codebase + standard UX conventions for music library apps)
 
 ---
 
 ## Feature Landscape
 
-### Table Stakes (Users Expect These)
+### Feature 1: Track Table Responsive Layout Fix
+
+**Category:** Bug fix / polish — layout correctness when window is resized
+
+#### What Is Broken
+
+The current `TrackTable.css` uses `min-width: fit-content` on `.track-table-row`, which means rows shrink-wrap to their column widths. When the window is wider than the sum of column widths, neither the row background nor the column separator lines extend to the right edge. The header (`.track-table-header`, background `var(--bg-secondary)`) similarly does not stretch. The result is a visible content area that ends mid-screen with a raw background gap to the right.
+
+#### Table Stakes
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| App is immediately usable on startup — library loads in background | Music apps with large libraries (iTunes, Rekordbox) never block startup; users expect to interact while data loads | MEDIUM | `getAllTracks()` already exists; need background load + reactive UI update. Current 1000-track paginated init must be replaced for "All Tracks" view |
-| Visual indicator during background library load | Without indicator users assume the library is empty or the app is broken | LOW | Subtle text ("Loading library...") or animated count in sidebar header is enough |
-| Library total count is visible before all tracks are loaded | "Showing X of 10,000 tracks" pattern — users orient themselves by the count | LOW | `countTracks()` already called on startup; plumb count into the visible UI |
-| Settings removal is transparent — existing users are not silently broken | Users who had Key Notation or Waveform Style set should get a sane default, not an invisible stale value | LOW | Hardcode defaults in code; stored SQLite values are harmless dead data — no migration required |
-| End-of-track plays to clean completion then advances | The current 3-5 second repeat glitch makes the app feel broken — it is the most visible playback bug | MEDIUM | Native decoder recovery code already exists; the bug is in the trigger condition |
-| Crossfade works or does nothing — never degrades audio | If beatmatch crossfade cannot run (BPM missing, native mode, format unsupported), it must silently skip — not produce distorted or stuttering audio | LOW | Existing fallback paths cover this; verify all failure modes route cleanly |
+| Row backgrounds extend full width | Standard table UX — truncated rows look unfinished | LOW | CSS-only fix; rows need `min-width: max(fit-content, 100%)` or equivalent |
+| Header background extends full width | Header must visually match the scroll area at all window sizes | LOW | Same root cause as rows |
+| Column separators reach the right edge | Without this, the rightmost cell appears clipped against a raw background | LOW | Handled automatically once row width is fixed |
+| No horizontal scroll at normal widths | Horizontal scroll should only appear when window is narrower than the minimum column sum | LOW | Ensure overflow-x is correctly gated on the scroll container |
 
-### Differentiators (Competitive Advantage)
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Beatmatch crossfade — incoming track plays at outgoing BPM during window | DJ-centric behavior: the mix sounds intentional, not jarring. The incoming track at matched tempo blends naturally, then snaps to its own BPM at swap — this snap is inaudible | HIGH | Core mechanic already implemented: `playbackRate = outgoingBpm / incomingBpm` set in `startCrossfadeToNext()`, reset to `1.0` in `completeCrossfade()`. Task is verification + edge cases |
-| NowPlayingBar shows incoming track name during crossfade | While two tracks are playing, the user expects to see what is coming in | MEDIUM | `isCrossfadingState` getter exists on `AudioPlayer`; needs wiring into store and NowPlayingBar UI |
-| Full 10k library available for queue-building and AI context | When the user hits "Play All" or AI builds a playlist, it should see all tracks — not just the first 1000 | LOW | Side effect of async full-library load; no extra feature work beyond loading all tracks |
-
-### Anti-Features (Commonly Requested, Often Problematic)
+#### Anti-Features
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Key Notation and Waveform Style in Settings | They existed before and users might ask for them back | These settings add UI surface area with minimal value for the small DJ audience; Camelot is universal; Traktor RGB waveform is the most useful default | Hardcode Camelot and `traktor_rgb`. Users on `openkey` or `mono_peaks` will get the new defaults silently — acceptable for this audience |
-| Gradual BPM ramp (pitch curve) during entire crossfade window | Sounds "professional" — like hardware CDJ pitch faders | Continuous `playbackRate` tweening causes audible pitch artifacts on WebKit; the snap at swap is inaudible because the incoming track is at near-full volume when swap occurs | The current snap-at-start approach is correct. The rate change happens before the incoming track is audible at meaningful volume |
-| Crossfade in native (Rust PCM) decoder mode | Would allow crossfade for OGG, OPUS, WMA, APE files | Dual native decoder requires simultaneous backend decode state + PCM mixing in Rust; complexity far exceeds the marginal benefit for a small audience | Skip crossfade for native-mode tracks (current behavior: throw and caller falls back to direct track advance) — this is correct |
-| Throttle or pause the background library load | Sounds safe | The load is a single SQLite paginated query returning lightweight Track objects. For 10k tracks it completes in < 500ms. No need to throttle | Just run `getAllTracks()` in a single call, resolve into state |
+| Auto-stretch columns proportionally | Seems polished | Columns have defined widths (title flex, others fixed px); stretching distorts readability | Stretch only the title/flex column or add a blank spacer cell at the end |
+| Full rewrite to `<table>` element | True semantic tables extend naturally | Would require restructuring TanStack Virtual integration and all cell/column sizing | Keep virtualized flex layout, fix width calculation only |
+
+#### Complexity
+
+LOW. One or two CSS rule changes. The `min-width: fit-content` on `.track-table-row` is the primary culprit. Changing it to `min-width: max(fit-content, 100%)` resolves the issue without touching the virtualization layer, column definitions, or any Rust code.
 
 ---
 
-## Feature Deep Dives
+### Feature 2: Duplicate Tracks Review Dialog
 
-### 1. Beatmatch Crossfade — Expected UX and Audio Behavior
+**Category:** Data management — replaces one-click destructive delete with a review-first modal
 
-**What users hear and feel (DJ convention):**
+#### What Currently Exists
 
-| Moment | Audio | Visual |
-|--------|-------|--------|
-| Crossfade window begins | Incoming track starts at volume 0, `playbackRate = outgoingBpm / incomingBpm` | NowPlayingBar could show incoming track name |
-| During window | Outgoing track plays at full volume; incoming fades in at matched tempo. Two tracks overlap | Volume meter shows dual signal |
-| Fade-in complete | Incoming at full volume (1.0); outgoing still playing naturally at end | Track name has swapped |
-| Outgoing `ended` fires | Swap: `audio = crossfadeAudio`, `playbackRate` snapped to `1.0` | Position bar resets to incoming track |
+`DatabaseSection.tsx` has a single "Remove Duplicate Tracks" button. It calls `tauriApi.cleanupDuplicateTracks()` which invokes `db.remove_duplicate_tracks()` in Rust. The Rust function runs detection (hash match first, then filename+size match), silently picks the lowest-ID track to keep per group, deletes the rest, and returns a count. The user sees "Removed N duplicate tracks" with no ability to review which tracks were deleted or choose which copy to keep.
 
-**Why the snap at swap is inaudible:**
-The `playbackRate` reset to `1.0` happens at `completeCrossfade()`, after the incoming track is already at full volume. The tiny BPM difference that created the rate offset (e.g., 1.04x for a 128→133 BPM transition) causes at most a few ms of timing shift. At the moment of swap both tracks are playing simultaneously — any artifact is masked by the full incoming signal.
+#### What Users Expect in a Music Library App
 
-**What the current code already does correctly (verified in `audioPlayer.ts`):**
-- `startCrossfadeToNext()` sets `crossfadeAudio.playbackRate = outgoingBpm / incomingBpm` — clamped to [0.5, 2.0]
-- Fade-in animates via `requestAnimationFrame` from 0 to 1 over `crossfadeDurationMs`
-- Outgoing track is NOT faded out — it plays to its natural end — correct
-- `completeCrossfade()` resets `playbackRate = 1.0` before firing `onTrackEnded`
+Reference behavior from Rekordbox, iTunes/Music.app, Swinsian, and MusicBrainz Picard:
 
-**What needs verification or completion:**
-- Edge case: BPM not set on one or both tracks — code already falls back to `playbackRate = 1.0` (crossfade without beatmatch). Verify this path is exercised.
-- Edge case: BPM ratio outside [0.5, 2.0] clamp — test a 60→180 BPM transition (3x ratio → clamps to 2x). Behavior is acceptable.
-- Edge case: crossfade started, then user manually skips — `abortCrossfade()` exists; verify it restores outgoing audio volume to 1.0.
-- UI gap: `isCrossfadingState` getter is not wired to the player store. The NowPlayingBar cannot show the incoming track name during crossfade.
+1. Show all duplicate groups before any deletion — each group lists the tracks considered duplicates, with metadata to distinguish them (title, artist, file path, duration, file size, date added, BPM if available).
+2. Auto-select the recommended deletion target — default selection marks the "worse" copy (higher ID = later import) for deletion, but does not act until user confirms.
+3. Allow per-track override — user can uncheck a track from the deletion list or switch which copy to keep.
+4. Bulk confirm or cancel — "Delete Selected" acts on all checked tracks; Cancel closes with no changes.
+5. Show count summary — "X duplicate groups found, Y tracks will be deleted" in the dialog header.
+6. Post-deletion notification — "Deleted N tracks" toast, then library reloads.
 
-**Confidence:** HIGH — implementation is verified by direct code inspection.
+#### Table Stakes
 
----
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| List all duplicate groups before deletion | Music libraries contain irreplaceable files; silent deletion is unacceptable | MEDIUM | Requires a new `get_duplicate_groups` backend command that returns groups without deleting |
+| Show file path for each duplicate | Users often have the same song in different folders — path identifies which copy is where | LOW | `file_path` already in TrackDTO |
+| Show duration and file size per track | Key signals for choosing which copy to keep (lossless vs. lossy) | LOW | `duration_ms`, `file_size` already in TrackDTO |
+| Pre-select the "worse" copy per group | Reduces click burden — users just review and confirm | LOW | Reuse existing "lowest ID = keeper" logic as the default selection |
+| Confirm before deleting | Required for any destructive action on user data | LOW | Dialog already implies this; just needs a confirm button |
+| Empty state when no duplicates found | Clear "No duplicates found" message prevents confusion when button appears to do nothing | LOW | Simple conditional render |
 
-### 2. Full Async Library Loading — Expected UX Pattern
+#### Differentiators
 
-**Established pattern from reference apps:**
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Show BPM/key per duplicate | DJs care which file has been analyzed; an unanalyzed copy is less valuable | LOW | `bpm`, `musical_key` already in TrackDTO |
+| Show date_added per track | Helps user trust which import was deliberate (first import is usually the intentional one) | LOW | `date_added` already in TrackDTO |
+| Allow choosing which copy to keep within a group | Full control, not just "delete these" | MEDIUM | Requires group-aware selection state in the dialog |
 
-| Phase | What user sees | What happens |
-|-------|---------------|-------------|
-| Startup | App shell renders, library empty, count shown ("10,234 tracks") | DB init, count fetch, theme load |
-| 0-1s | First 0 rows visible (or cached batch), loading indicator | Background: `getAllTracks()` in flight |
-| 1-3s | All tracks appear, loading indicator gone | State updated with full track array |
+#### Anti-Features
 
-**Current implementation (from `App.tsx`):**
-- `initializeApp()` calls `tauriApi.getTracksPaginated(1000, 0)` — loads first 1000 tracks only
-- `hasMoreTracks` flag triggers scroll-to-load-more pattern
-- `getAllTracks()` exists in the API but is never called from `AppContent`
-- `countTracks()` is called and result is in `totalTrackCount` state but the UI display of this is unclear
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| Preview/play audio from dialog | "Let me hear which is higher quality" | Distracts from the primary task; dialog would need audio integration | Show bitrate and file size — sufficient quality signals |
+| Automatic smart-delete without dialog | "Just clean up everything fast" | Destroys files the user might need | Keep both paths: the existing one-click button for power users AND the new review dialog |
+| Merge metadata from duplicates | "Copy tags from the better copy to the keeper" | High complexity, out of scope for a cleanup operation | Defer to a dedicated metadata editor feature |
 
-**What changes for v1.2:**
-- Replace `getTracksPaginated(1000, 0)` in the "All Tracks" branch of `loadTracks()` with `getAllTracks()`
-- Call this asynchronously after initial render (not blocking `initializeApp()`)
-- Remove `hasMoreTracks`, `isLoadingMore`, and the scroll-to-load-more trigger
-- Add a loading indicator that is visible while the async call is in flight
+#### UX Flow (Recommended)
 
-**Implementation approach:**
 ```
-initializeApp() → [as before, fast] → setLoading(false) → UI renders
-useEffect (after render) → getAllTracks() → setTracks(result) → UI updates
+Settings > Database Maintenance
+  ├── [Review Duplicate Tracks]    <- new button — opens dialog
+  └── [Remove Duplicates (quick)]  <- existing button kept for power users
+
+Dialog:
+  Header: "Duplicate Tracks — X groups found, Y tracks selected for deletion"
+  Body: Scrollable list of groups
+    Group 1:
+      [keep icon] Track row: title | artist | path | duration | size | BPM | date_added
+      [checkbox]  Track row: title | artist | path | duration | size | BPM | date_added  (pre-checked)
+    Group 2: ...
+  Footer: [Cancel]  [Delete N selected tracks]
 ```
 
-The loading indicator should show during the `useEffect` fetch only. The app is fully interactive before this — user can open Settings, navigate to a playlist, etc.
+#### New Backend Command Required
 
-**Confidence:** HIGH — code paths are fully visible, no new backend work needed.
+The existing `remove_duplicate_tracks()` folds detection and deletion into one atomic operation. The dialog needs detection only:
+
+```
+get_duplicate_groups() -> Vec<DuplicateGroup>
+
+DuplicateGroup {
+  keep: TrackDTO,           // recommended track to keep (lowest ID)
+  duplicates: Vec<TrackDTO> // tracks recommended for deletion
+}
+```
+
+This is a read-only query — safe to call without side effects. Deletion then takes a list of track IDs (reusing existing delete logic per-ID, or a new `delete_tracks_batch` command for efficiency).
+
+#### Complexity
+
+MEDIUM overall:
+- Backend: new `get_duplicate_groups` command — extract detection logic from `remove_duplicate_tracks`, return structured data instead of deleting. LOW complexity, it is a pure refactor of existing code.
+- Frontend dialog component: modal with group list, per-row checkboxes, group-level selection state, confirm/cancel. MEDIUM complexity.
+- Connecting dialog to tauri-api and refreshing library state after deletion. LOW complexity.
 
 ---
 
-### 3. Settings Cleanup — Migration Behavior
+### Feature 3: Full Library Load on Startup
 
-**Settings being removed from UI:**
-- `key_notation` stored key (values: `'camelot'` or `'openkey'`)
-- `waveform_style` stored key (values: `'traktor_rgb'`, `'mono_peaks'`, or `'bars'`)
+**Category:** Loading strategy change — remove "Scroll for more" pagination, load all tracks at once when "All Tracks" is selected
 
-**What happens to users who previously set these:**
+#### What Currently Exists
 
-Option A — Silent fallback to hardcoded defaults (RECOMMENDED):
-The SQLite `settings` table rows remain. Code that previously read them now hardcodes the default. No migration, no notification, no UI change visible on upgrade.
+`App.tsx` `loadTracks()` for the "All Tracks" view:
+- Initial load: `getTracksPaginated(1000, 0)` — first 1000 tracks only
+- Sets `hasMoreTracks = true` if total count > 1000
+- `loadMoreTracks()` fetches subsequent 1000-track batches and appends to state
+- TrackTable uses TanStack Virtual for DOM-level virtualization — only renders visible rows regardless of array size
+- A "Scroll for more" footer is shown at the bottom whenever `hasMoreTracks` is true
 
-Option B — Explicit migration on startup: Write new default values on startup. Unnecessary complexity.
+#### What "Load All Tracks at Once" Means
 
-**Why Option A is correct:**
-- The stored values cannot cause a runtime error — they are simply never read again
-- Users on `openkey` will now always see Camelot notation. This is a deliberate product decision. The audience is small and DJ-adjacent, Camelot is the most common notation
-- Users on `mono_peaks` or `bars` waveform will see Traktor RGB. Also acceptable
-- No confirmation dialog or notification needed — settings removal is a product decision, not data loss
+Replace the paginated initial load with `getAllTracks()` (already exists in `tauri-api.ts`). Remove `loadMoreTracks`, `hasMoreTracks`, and `isLoadingMore` state. Remove the "Scroll for more" footer trigger. The virtualized renderer (TanStack Virtual) already handles rendering performance — it creates DOM nodes only for visible rows regardless of how large the in-memory array is.
 
-**Code changes required (from inspection of `AppearanceSection.tsx`, `SettingsContext.tsx`, `constants.ts`):**
-- Remove `KEY_NOTATIONS` and `WAVEFORM_STYLES` arrays from `constants.ts`
-- Remove Key Notation and Waveform Style `<div className="sv-subsection">` blocks from `AppearanceSection.tsx`
-- Remove `keyNotation`, `waveformStyle` state and their handlers from `SettingsContext.tsx`
-- Remove `handleKeyNotationChange`, `handleWaveformStyleChange` from the `SettingsContextValue` interface
-- Remove `onKeyNotationChanged` and `onWaveformStyleChanged` from `SettingsCallbacks` interface
-- Remove reads of `key_notation` and `waveform_style` from `loadSettings()` in `SettingsContext.tsx`
-- In `App.tsx`: remove the `keyNotation` state that is passed as prop to `TrackTable`/display components — or hardcode `'camelot'` inline
-- Remove `setWaveformStyle` from `AppContent` state (it is already a `const [, setWaveformStyle]` — effectively unused)
+#### Performance Reality for This Audience
 
-**What to preserve:**
-- Nothing in SQLite needs to change
-- The theme selector, custom colors, and other Appearance settings are unchanged
+RecoDeck's audience (DJ friends, personal use) typically has libraries of 5,000–30,000 tracks.
 
-**Confidence:** HIGH — all affected files were inspected directly.
+| Library Size | Rust Query Time | JS Parse + setState | DOM Nodes (virtual) | Verdict |
+|-------------|-----------------|---------------------|---------------------|---------|
+| 5,000 tracks | < 100ms | < 200ms | ~30–50 rows | Instant |
+| 20,000 tracks | ~300–500ms | ~500ms | ~30–50 rows | Fast, acceptable |
+| 50,000 tracks | ~1–2s | ~1–2s | ~30–50 rows | Brief spinner, fine |
+
+The additional wait for full load (vs. 1000-track page) is imperceptible at typical library sizes and removes significant UX friction.
+
+#### Why Pagination Causes Problems
+
+The paginated approach actively breaks several existing features:
+- **Scroll to now playing track** — `scrollToIndex` only works for tracks that have been loaded into the array. If the currently playing track is on page 3, "scroll to track" silently fails.
+- **Sort operates only on loaded page** — column sort in the UI sorts `tracks[]` in memory. With pagination, this sorts only the visible batch, not the full library.
+- **"All Tracks" count vs. visible count mismatch** — footer shows "Showing 1000 of 4231" which is confusing when TanStack Virtual already hides most rows visually.
+- **Backend search result count vs. loaded tracks mismatch** — `searchTracks` returns all results from the full DB, but displayed list might not include them all if pagination state is out of sync.
+
+#### Table Stakes
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| All tracks visible immediately in "All Tracks" view | Desktop apps do not paginate their own local data | LOW | Replace `getTracksPaginated` call with `getAllTracks` |
+| No "Scroll for more" prompt | This is a web/mobile pattern; wrong for a desktop music library | LOW | Remove `hasMoreTracks` state and footer rendering |
+| Loading indicator during fetch | Library load takes a moment; spinner prevents confusion | LOW | Already exists — the table shows loading state |
+| Sort operates on full library | Column sort must reflect the full dataset | LOW | Automatically fixed by full load |
+
+#### Anti-Features
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| Keep pagination as fallback for very large libraries | "What if someone has 100k tracks?" | RecoDeck's audience does not have 100k tracks; overengineering for this adds complexity without benefit. A 3–5s spinner for 100k tracks is acceptable. | Document the scale assumption in code comments |
+| Progressive load with background fetch | Hybrid approach that loads first page, then fetches the rest | Re-introduces the partial-list problem and adds complexity back | Just load all; the extra wait is acceptable |
+| Lazy-load artwork alongside tracks | "Load artwork too for better initial render" | Artwork is fetched on-demand via `artworkCache` — independent of track data load | No change needed |
+
+#### Complexity
+
+LOW. This is a targeted simplification:
+1. In `loadTracks()`, replace `getTracksPaginated(1000, 0)` with `getAllTracks()` for the "no folder, no playlist" path
+2. Remove `hasMoreTracks`, `isLoadingMore`, `loadMoreTracks` state and function from `App.tsx`
+3. Remove or make optional the `loadMoreTracks` / `hasMoreTracks` props passed to `TrackTable`
+4. Remove the "Scroll for more" footer from `TrackTable` rendering
+5. Remove the scroll-to-bottom trigger in `TrackTable` that called `loadMoreTracks`
+
+Net result: fewer lines of code, simpler App.tsx, and the "All Tracks" view works correctly for all existing features.
 
 ---
 
 ## Feature Dependencies
 
 ```
-Async full-library load
-    └──enables──> accurate client-side queue building (all tracks in memory)
-    └──enables──> crossfade queue look-ahead (next track BPM available)
-    └──removes──> hasMoreTracks / isLoadingMore / scroll-to-load-more
+Layout fix (Feature 1)
+    └── independent — no dependencies on other v1.3 features
 
-Beatmatch crossfade playbackRate
-    └──requires──> BPM data on both tracks (in SQLite, already passed via startCrossfadeToNext)
-    └──requires──> HTML mode (crossfade skipped in native mode — acceptable, documented)
-    └──optional──> NowPlayingBar crossfade indicator (isCrossfadingState getter → store → UI)
+Full library load (Feature 3)
+    └── getAllTracks already exists in tauri-api.ts (no new backend command needed)
+        └── removes: loadMoreTracks, hasMoreTracks, isLoadingMore
 
-Settings cleanup
-    └──no dependencies on other v1.2 features (independent task)
-    └──simplifies──> SettingsContext (fewer state vars, fewer callback props)
-    └──removes──> onKeyNotationChanged and onWaveformStyleChanged prop chains through App.tsx
+Duplicate review dialog (Feature 2)
+    ├── requires new backend: get_duplicate_groups command (read-only detection, no delete)
+    └── deletion uses: existing delete_track per-ID (or new delete_tracks_batch)
 ```
 
 ### Dependency Notes
 
-- **Async library load enables crossfade look-ahead:** The crossfade code calls `startCrossfadeToNext()` with the next track in the queue. If only 1000 tracks are loaded, the queue is incomplete. Full-library load ensures queue integrity.
-- **Settings cleanup is fully independent:** It can land in its own commit and does not touch audio or library loading code paths.
-- **Crossfade NowPlayingBar enhancement is optional:** The core audio behavior works without it. It is a UX improvement that requires wiring `isCrossfadingState` from `AudioPlayer` through the player store into the bar component.
+- **Feature 2 requires a new backend command before the dialog can be built.** It is a pure extraction of existing detection logic — no new algorithms. This is a prerequisite, not a blocker for the other features.
+- **Feature 3 simplifies App.tsx.** Removing pagination state reduces complexity and eliminates a prop chain into TrackTable. No Rust changes needed.
+- **Feature 1 is fully independent.** Pure CSS, no JS or Rust changes.
 
 ---
 
-## MVP Definition (for v1.2)
+## MVP Definition
 
-### Launch With
+### Launch With (v1.3 — all three features)
 
-- [x] **Async full-library load** — remove scroll-to-load-more, load all tracks in background after initial render. Enables correct queue-building and crossfade look-ahead.
-- [x] **End-of-track glitch fix** — clean track advancement without the 3-5 second repeat. The native decoder recovery code exists; the fix is in the trigger logic.
-- [x] **Settings cleanup** — remove Key Notation and Waveform Style from Appearance section; hardcode Camelot and `traktor_rgb` as defaults. No migration needed.
-- [x] **Beatmatch crossfade verification** — confirm the `playbackRate` mechanic is correct for the common cases (BPM match, BPM missing, BPM ratio > 2x). Fix any edge cases found.
+- [ ] Track table layout fix — rows and header extend full width on any window size (CSS fix)
+- [ ] Full library load — replace paginated load with `getAllTracks()`, remove "Scroll for more" UI
+- [ ] Duplicate review dialog — new `get_duplicate_groups` backend command + modal UI with group display, checkbox selection, confirm/cancel
 
-### Add Within v1.2 If Time Allows
+### Add After Validation (future)
 
-- [ ] **NowPlayingBar shows incoming track during crossfade** — wire `isCrossfadingState` into the player store and show next-track metadata in the bar. Visually useful, not blocking.
-- [ ] **Library loading indicator** — show "Loading library..." or animated track count while `getAllTracks()` is in flight. Prevents blank-library confusion on large collections.
+- [ ] Batch delete command for duplicates — add `delete_tracks_batch` if per-ID loop is slow for large duplicate sets
+- [ ] "Choose which copy to keep" per group — allow flipping the keeper within each group in the dialog
 
-### Defer to v1.3+
+### Future Consideration (v2+)
 
-- [ ] **Crossfade in native decoder mode** — dual backend decoder state, PCM mixing in Rust, high complexity.
-- [ ] **Gradual BPM ramp (pitch curve) across crossfade window** — audible artifacts on WebKit, snap behavior at start is already correct.
-- [ ] **Key Notation toggle restored** — if users specifically request it, add as a simple display toggle without a settings screen entry.
+- [ ] Duplicate detection across different file formats (same song, different format — e.g., MP3 vs. FLAC) — requires audio fingerprinting, out of scope
+- [ ] Smart metadata merge from duplicates — high complexity, low priority for this audience
 
 ---
 
@@ -203,41 +239,39 @@ Settings cleanup
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| End-of-track glitch fix | HIGH | MEDIUM | P1 |
-| Async full-library load | HIGH | MEDIUM | P1 |
-| Beatmatch crossfade edge cases | HIGH | LOW (core logic verified, fix edge cases) | P1 |
-| Settings cleanup | MEDIUM | LOW | P1 |
-| NowPlayingBar crossfade indicator | MEDIUM | LOW | P2 |
-| Library loading indicator UI | LOW | LOW | P2 |
-| Crossfade in native mode | LOW | HIGH | P3 |
+| Layout fix | MEDIUM (polish, correctness) | LOW | P1 — quick win, do first |
+| Full library load | HIGH (removes friction, fixes scroll-to-track and sort) | LOW | P1 — simplification with UX improvement |
+| Duplicate review dialog | HIGH (data safety, replaces risky one-click delete) | MEDIUM | P1 — most work, highest user value |
+
+**Suggested implementation order:**
+1. Layout fix — CSS only, lowest risk, immediate visible improvement
+2. Full library load — simplifies App.tsx before adding dialog complexity
+3. Duplicate review dialog — new backend command + UI, most changes but well-scoped
 
 ---
 
-## Competitor Reference Behavior
+## Competitor Feature Analysis
 
-| Feature | Rekordbox | Traktor Pro | RecoDeck v1.2 Target |
-|---------|-----------|-------------|----------------------|
-| Library load | Full library on startup, UI blocked ~5-15s for 50k tracks | Full library in background, browser usable immediately | Full library in background after initial render (~1-3s for 10k tracks) |
-| Crossfade tempo match | Sync lock: phase + tempo; linear volume fade | Tempo sync optional; configurable fade curves | Linear fade-in of incoming at matched BPM; snap to native BPM at swap |
-| End-of-track | Clean to last decoded sample, no repeat | Clean to last sample | Fix the HTML5 premature-end detection (recovery code exists) |
-| Key notation | Camelot only (in standard UI) | Open Key primary, Camelot available | Camelot hardcoded (remove the toggle) |
+| Feature | Rekordbox 6 | iTunes / Music.app | Swinsian | RecoDeck v1.3 Approach |
+|---------|------------|-------------------|---------|----------------------|
+| Duplicate detection UX | "Show Duplicate Items" view filter — no review dialog | "Show Duplicate Items" menu — no review dialog | "Find Duplicates" with list preview | Review dialog with group list + selective delete |
+| Full library in table | Yes — all tracks always loaded | Yes — all tracks always loaded | Yes | Matches convention: always load all |
+| Table row full-width backgrounds | Yes | Yes | Yes | CSS fix to match standard |
+| Which copy to keep | Auto-keeps one (no user control) | Auto-keeps one (no user control) | User picks | Pre-select recommended, allow override |
 
 ---
 
 ## Sources
 
-- Direct code inspection — HIGH confidence for all behavioral claims:
-  - `src/lib/audioPlayer.ts` — crossfade implementation, `playbackRate` logic, native recovery
-  - `src/App.tsx` — library loading, pagination state, `initializeApp()` flow
-  - `src/components/settings/SettingsContext.tsx` — settings storage keys, `loadSettings()`, callback props
-  - `src/components/settings/AppearanceSection.tsx` — Key Notation and Waveform Style subsections
-  - `src/components/settings/constants.ts` — `KEY_NOTATIONS`, `WAVEFORM_STYLES` arrays
-  - `src/lib/tauri-api.ts` — `getAllTracks`, `getTracksPaginated`, `countTracks` command signatures
-  - `src/store/playerStore.ts` — queue management, player state shape
-- `.planning/PROJECT.md` — v1.2 feature targets, constraints, audience
-- DJ app conventions — Traktor Pro, Rekordbox crossfade behavior (author domain knowledge — MEDIUM confidence on specific pitch behavior, HIGH confidence on volume fade conventions)
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/App.tsx` — pagination logic, loadTracks, loadMoreTracks, hasMoreTracks state
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/TrackTable.css` — row and header layout classes, `min-width: fit-content` on `.track-table-row`
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/DatabaseSection.tsx` — current one-click duplicate removal button
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/db/mod.rs` `remove_duplicate_tracks()` — detection + deletion logic to be split
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/tauri-api.ts` — `getAllTracks`, `getTracksPaginated`, `cleanupDuplicateTracks` existing commands
+- UX convention: Rekordbox, iTunes/Music.app, Swinsian duplicate detection — industry standard is review-before-delete for music library management
+- Performance: TanStack Virtual renders only visible DOM rows regardless of in-memory array size — confirmed in existing TrackTable implementation
 
 ---
 
-*Feature research for: RecoDeck v1.2 Playback & UX Polish*
+*Feature research for: RecoDeck v1.3 Library UX & Duplicate Management*
 *Researched: 2026-03-06*
