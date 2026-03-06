@@ -98,12 +98,12 @@ Plans:
   2. Opening a playlist shows a header with art, playlist metadata, and a Spotify-style track listing
   3. The search experience returns results in a Spotify-style layout with sections for tracks, albums, and artists
   4. The mobile PWA companion renders the same dark theme and layout conventions as the redesigned desktop app
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 09-01: Redesign track table with Spotify hover states and selection
-- [ ] 09-02: Redesign playlist view with header art, metadata, and track listing
-- [ ] 09-03: Redesign search results layout and update mobile PWA to new design language
+- [ ] 09-01-PLAN.md — TrackTable Spotify redesign: # column hover icon swap, row selection, combined Title+Artist cell, playlistMode prop (UIUX-06, UIUX-07)
+- [ ] 09-02-PLAN.md — SearchView new component with sectioned results, App.tsx + Sidebar search nav wiring (UIUX-08)
+- [ ] 09-03-PLAN.md — Mobile PWA CSS token alignment to desktop midnight theme (UIUX-10)
 
 ## Progress
 
