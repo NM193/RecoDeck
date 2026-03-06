@@ -509,7 +509,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             })()}
         </div>
 
-        {/* Scroll area: header + body scroll together (vertically and horizontally) */}
+        {/* Scroll area: header + body scroll together */}
         <div
           ref={parentRef}
           className="track-table-scroll-area"
@@ -519,7 +519,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
           }}
         >
           <div className="track-table-holder">
-          {/* Column headers — scroll with content, sticky at top when scrolling down */}
+          {/* Column headers — sticky inside scroll area */}
           <div className="track-table-header">
             <div className="track-table-row header-row">
               <div className="table-cell cell-index">#</div>
@@ -561,7 +561,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               </div>
             </div>
           </div>
-
           {/* Virtualized body */}
           <div className="track-table-body">
             <div

@@ -121,7 +121,6 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  /* Extend background horizontally when scrolled — prevents visual "cut" at scroll edges */
 }
 
 
@@ -132,9 +131,13 @@
   min-width: 0;
 }
 
-/* Expand holder to fill scroll container width so rows & header background reach the edge.
-   min-width (not width) preserves horizontal scroll when columns exceed window width. */
+/* Holder must be at least as wide as the row content (fit-content).
+   This prevents rows from overflowing the holder and leaving the sticky header
+   background short of the visible content edge when scrolled right.
+   On wide windows, width:auto (block fill) still expands the holder to 100% of
+   the scroll area — fit-content only kicks in when column content is wider. */
 .track-table-holder {
+  display: inline-block;
   min-width: 100%;
 }
 
@@ -157,10 +160,9 @@
 }
 
 .track-table-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  width: 100%;
-  min-width: fit-content;
+  min-width: 100%;
 }
 
 .header-row {
@@ -235,6 +237,7 @@
 /* --- Table Cells --- */
 
 .table-cell {
+  box-sizing: border-box;
   padding: 0 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -247,7 +250,7 @@
 
 /* # column */
 .cell-index {
-  flex: 0 0 48px;
+  flex: 0 0 44px;
   justify-content: center;
   color: var(--text-secondary);
   font-size: var(--text-sm);
@@ -271,32 +274,33 @@
 
 /* Title column */
 .cell-title {
-  flex: 1 1 300px;
-  min-width: 180px;
+  flex: 3 1 220px;
+  min-width: 150px;
 }
 
 /* Artist column */
 .cell-artist {
-  flex: 0 0 200px;
+  flex: 2 1 160px;
+  min-width: 100px;
 }
 
 .cell-bpm {
-  flex: 0 0 70px;
+  flex: 0 0 76px;
   justify-content: center;
 }
 
 .cell-key {
-  flex: 0 0 70px;
+  flex: 0 0 56px;
   justify-content: center;
 }
 
 .cell-genre {
-  flex: 0 0 150px;
-  min-width: 100px;
+  flex: 1 1 130px;
+  min-width: 90px;
 }
 
 .cell-duration {
-  flex: 0 0 80px;
+  flex: 0 0 104px;
   justify-content: flex-end;
 }
 
@@ -308,8 +312,8 @@
 /* --- Scrollbar Styling --- */
 
 .track-table-scroll-area::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 0;     /* No width → vertical scrollbar doesn't consume horizontal space */
+  height: 8px;  /* Horizontal scrollbar for narrow-window scroll */
 }
 
 .track-table-scroll-area::-webkit-scrollbar-track {
