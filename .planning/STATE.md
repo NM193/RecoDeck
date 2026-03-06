@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Spotify Redesign
 status: executing
-stopped_at: "09-03 checkpoint: visual verification of mobile PWA token alignment"
-last_updated: "2026-03-06T07:42:27.103Z"
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-03-06T07:50:47.630Z"
 last_activity: 2026-03-01 — 08-03 Task 1 complete
 progress:
   total_phases: 5
@@ -93,6 +93,7 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 29. [08-03] viewKey uses full identity (playlist-{id}, folder-{path}) so switching between playlists also transitions
 30. [08-03] Album art click opens expanded overlay (separate from track info click which scrolls to track in library)
 - [Phase 09-ui-views-and-mobile]: Google Fonts Inter added via CDN link in mobile/index.html — no build step or local font copy, graceful -apple-system fallback for offline
+- [Phase 09-ui-views-and-mobile]: Separate Title and Artist columns retained after user rejected stacked combined cell during checkpoint review
 
 ### Pending Todos
 
@@ -104,6 +105,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-06T07:42:27.101Z
-Stopped at: 09-03 checkpoint: visual verification of mobile PWA token alignment
+Last session: 2026-03-06T07:50:47.627Z
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None

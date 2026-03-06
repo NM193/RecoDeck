@@ -21,25 +21,25 @@ decisions:
   - id: "09-01-D2"
     summary: "CSS-only hover icon swap (no JS) — :hover on .data-row toggles .row-number/.row-play display via descendant selectors"
   - id: "09-01-D3"
-    summary: "cell-title-combined uses flex-direction: column on .table-cell which has display:flex — stacked layout works without !important via the column direction override"
+    summary: "Separate Title and Artist columns retained after user rejected stacked combined cell during checkpoint review — plan's combined cell approach overridden"
 metrics:
-  duration: "~12 minutes"
+  duration: "~25 minutes"
   completed_date: "2026-03-06"
-  tasks_completed: 2
+  tasks_completed: 3
   tasks_total: 3
   files_modified: 2
 ---
 
 # Phase 9 Plan 01: TrackTable Spotify Redesign Summary
 
-**One-liner:** Spotify-style TrackTable with # index/play/speaker icon column, combined Title+Artist cell, and CSS-only hover icon swap — no JS re-renders on hover.
+**One-liner:** Spotify-style TrackTable with # index/play/speaker icon column, separate Title and Artist columns, row selection state, and CSS-only hover icon swap — no JS re-renders on hover.
 
 ## What Was Built
 
 Redesigned `TrackTable.tsx` and `TrackTable.css` to match Spotify-style track list interactions:
 
 - **# column** (`cell-index`, 48px fixed): shows 1-based row index by default, swaps to play icon on hover, shows Volume2 speaker icon (in accent color) for the currently-playing track. The swap is CSS-only via `:hover` descendant selectors.
-- **Combined Title+Artist cell** (`cell-title-combined`): replaces the separate Title and Artist columns. Title displayed in 13px/500 weight, Artist in 11px secondary color, both truncated with text-overflow.
+- **Separate Title and Artist columns**: Title (`cell-title`, flex: 1 1 300px) and Artist (`cell-artist`, flex: 0 0 200px) as independent columns. A combined cell was implemented initially but reverted per user direction at the checkpoint.
 - **Removed columns**: Album and Format columns removed from both header and data rows.
 - **Row selection**: `selectedRowId` state added; single-click sets selection and applies `data-row--selected` class (faint accent background). Double-click plays (unchanged).
 - **`playlistMode` prop**: accepted by `TrackTableProps` (both library mode and playlist mode show `virtualRow.index + 1` since virtualizer renders in sorted/playlist order).
@@ -51,16 +51,24 @@ Redesigned `TrackTable.tsx` and `TrackTable.css` to match Spotify-style track li
 |------|------|--------|-------|
 | 1 | Add # column, combined cell, row selection to TrackTable.tsx | 18db0b0 | src/components/TrackTable.tsx |
 | 2 | Update TrackTable.css for Spotify styling | 5d2fbc6 | src/components/TrackTable.css |
-| 3 | Checkpoint: Visual verification | — | (awaiting human verification) |
+| 3 | Checkpoint correction: revert to separate Title/Artist columns | 21c0dd0 | src/components/TrackTable.tsx, src/components/TrackTable.css |
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Post-checkpoint User Correction
+
+**Column layout revised per user feedback at checkpoint**
+- **Found during:** Task 3 (human verification checkpoint)
+- **Issue:** Plan specified a combined Title+Artist stacked cell; user reviewed visually and preferred separate columns
+- **Fix:** Reverted combined `cell-title-combined` to separate `cell-title` and `cell-artist` columns; removed stacked sub-element CSS
+- **Files modified:** src/components/TrackTable.tsx, src/components/TrackTable.css
+- **Verification:** 60/60 tests pass
+- **Committed in:** 21c0dd0
 
 ## Verification
 
-- `npm run test -- --run`: 60/60 tests passed after both tasks
-- Visual verification: pending human checkpoint approval
+- `npm run test -- --run`: 60/60 tests passed after all tasks
+- Visual verification: checkpoint approved after column layout correction
 
 ## Self-Check: PASSED
 
@@ -71,3 +79,4 @@ Files modified:
 Commits:
 - FOUND: 18db0b0
 - FOUND: 5d2fbc6
+- FOUND: 21c0dd0
