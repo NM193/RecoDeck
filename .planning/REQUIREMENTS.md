@@ -55,8 +55,8 @@ Requirements for v1.2 Playback & UX Polish. Each maps to roadmap phases.
 
 ### Playback Fixes (PLAY)
 
-- [ ] **PLAY-01**: Tracks play to completion without repeating the last 3-5 seconds before advancing to the next track
-- [ ] **PLAY-02**: Skipping a track during an active crossfade stops all audio streams immediately (no orphaned background audio)
+- [x] **PLAY-01**: Tracks play to completion without repeating the last 3-5 seconds before advancing to the next track
+- [x] **PLAY-02**: Skipping a track during an active crossfade stops all audio streams immediately (no orphaned background audio)
 
 ### Beatmatch Crossfade (XFADE)
 
@@ -136,8 +136,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SETT-01 | Phase 10 | Complete |
 | SETT-02 | Phase 10 | Complete |
 | SETT-03 | Phase 10 | Complete |
-| PLAY-01 | Phase 11 | Pending |
-| PLAY-02 | Phase 11 | Pending |
+| PLAY-01 | Phase 11 | Complete |
+| PLAY-02 | Phase 11 | Complete |
 | XFADE-01 | Phase 12 | Pending |
 | XFADE-02 | Phase 12 | Pending |
 | LOAD-01 | Phase 13 | Pending |

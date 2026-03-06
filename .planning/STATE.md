@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Spotify Redesign
 status: "Roadmap ready, awaiting /gsd:plan-phase 10"
-stopped_at: Completed 10-settings-cleanup-01-PLAN.md
-last_updated: "2026-03-06T10:17:01.904Z"
+stopped_at: "Checkpoint: Task 3 human-verify for 11-playback-bug-fixes-01-PLAN.md"
+last_updated: "2026-03-06T10:39:10.781Z"
 last_activity: 2026-03-06 — v1.2 roadmap created (phases 10-13)
 progress:
   total_phases: 9
-  completed_phases: 6
-  total_plans: 13
-  completed_plans: 13
+  completed_phases: 7
+  total_plans: 14
+  completed_plans: 14
   percent: 0
 ---
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0% (0/4 phases)
 | Phase 09-ui-views-and-mobile P02 | 15 | 3 tasks | 4 files |
 | Phase 10-settings-cleanup P01 | 15 | 2 tasks | 7 files |
 | Phase 10-settings-cleanup P01 | 30 | 3 tasks | 7 files |
+| Phase 11-playback-bug-fixes P01 | 8 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 10-01]: keyNotation/waveformStyle/customColors dead state eliminated from SettingsContext, App.tsx, TrackTable, SearchView — Camelot notation and Traktor RGB hardcoded as fixed defaults
 - [Phase 10-settings-cleanup]: Custom theme removed from THEMES — only midnight and carbon remain; applyTheme() in App.tsx still handles legacy 'custom' DB values gracefully on startup
 - [Phase 10-settings-cleanup]: keyNotation/waveformStyle/customColors dead state eliminated — Camelot notation and Traktor RGB hardcoded as fixed defaults
+- [Phase 11-01]: SEEK_MARGIN_MS reduced from 10000 to 3000 — VBR overshoot < 1s empirically, 3s covers worst-case without 7-9s replay
+- [Phase 11-01]: abortCrossfade() placed unconditionally as first statement in loadTrack() — method is idempotent, no guard check needed
 
 ### Pending Todos
 
@@ -134,7 +137,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-06T10:12:05.996Z
-Stopped at: Completed 10-settings-cleanup-01-PLAN.md
+Last session: 2026-03-06T10:39:10.778Z
+Stopped at: Checkpoint: Task 3 human-verify for 11-playback-bug-fixes-01-PLAN.md
 Resume file: None
 Next action: /gsd:plan-phase 10
