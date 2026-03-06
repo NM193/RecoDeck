@@ -40,15 +40,14 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.2 Playback & UX Polish
+## Current Milestone: v1.3 Library UX & Duplicate Management
 
-**Goal:** Fix playback bugs, load the full library upfront, streamline settings, and ship smooth beatmatch crossfading.
+**Goal:** Fix track table layout on window resize, add a duplicate tracks review dialog, and load the full library upfront without scroll-to-load.
 
 **Target features:**
-- Async full-library loading on startup — no more scroll-to-load or search resets
-- Fix end-of-track audio glitch (last 3-5 seconds repeat before next track plays)
-- Simplify Settings Appearance: keep only Midnight/Carbon themes, remove Key Notation and Waveform Style
-- Beatmatch crossfade — during crossfade window, next track's playback rate gradually shifts from current BPM to its own BPM
+- Track table layout fix — rows and header background extend to full width on any window size
+- Duplicate tracks manager — review dialog listing all duplicates before deletion, selective delete
+- Full library load on startup — remove "Scroll for more" pagination, load all tracks at once
 
 ### Out of Scope
 
@@ -102,4 +101,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-06 after v1.2 Playback & UX Polish milestone started*
+*Last updated: 2026-03-06 after v1.3 Library UX & Duplicate Management milestone started*
