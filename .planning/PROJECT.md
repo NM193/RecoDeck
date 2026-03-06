@@ -40,15 +40,15 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.1 Spotify Redesign
+## Current Milestone: v1.2 Playback & UX Polish
 
-**Goal:** Stabilize the codebase (tech debt, testing, linting) then redesign the entire UI to match Spotify's desktop design language — dark theme, sidebar navigation, album art grids, now-playing bar, smooth transitions.
+**Goal:** Fix playback bugs, load the full library upfront, streamline settings, and ship smooth beatmatch crossfading.
 
 **Target features:**
-- Fix all known tech debt (aiStore error handling bug, duplicated audio_mime_type, orphaned routes, dead code)
-- Code quality tooling (ESLint 9, Prettier 3) and full lint pass
-- Test coverage for core functionality (Rust backend + frontend via Vitest)
-- Full UI redesign following Spotify's design language (dark theme, sidebar nav, grid views, now-playing bar, transitions)
+- Async full-library loading on startup — no more scroll-to-load or search resets
+- Fix end-of-track audio glitch (last 3-5 seconds repeat before next track plays)
+- Simplify Settings Appearance: keep only Midnight/Carbon themes, remove Key Notation and Waveform Style
+- Beatmatch crossfade — during crossfade window, next track's playback rate gradually shifts from current BPM to its own BPM
 
 ### Out of Scope
 
@@ -102,4 +102,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-01 after v1.1 Spotify Redesign milestone started*
+*Last updated: 2026-03-06 after v1.2 Playback & UX Polish milestone started*
