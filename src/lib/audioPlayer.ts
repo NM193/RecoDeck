@@ -34,6 +34,10 @@ export class AudioPlayer {
   private crossfadeRafId: number | null = null
   private outgoingBpm: number | null = null
   private incomingBpm: number | null = null
+  private _bpmRampRafId: number | null = null
+  private _bpmRampStartTime: number = 0
+  private _bpmRampFromRate: number = 1.0
+  private readonly BPM_RAMP_DURATION_MS = 4000 // ms to ramp back to original BPM after crossfade
 
   // Native (Rust decode -> PCM -> WebAudio) fallback for formats WebView can't decode (e.g. ogg on macOS).
   private audioCtx: AudioContext | null = null
@@ -1193,11 +1197,8 @@ export class AudioPlayer {
     this.audio.removeAttribute('src')
     this.audio.load()
 
-    // Reset incoming track playback rate to 1.0 (default BPM)
-    this.crossfadeAudio.playbackRate = 1.0
-    console.log(
-      '[AudioPlayer] Crossfade swap complete, reset playbackRate to 1.0',
-    )
+    // Capture beatmatched rate before swap — will ramp back to 1.0 after
+    const matchedRate = this.crossfadeAudio.playbackRate
 
     // Swap: incoming becomes current
     const newAudio = this.crossfadeAudio
@@ -1224,6 +1225,16 @@ export class AudioPlayer {
       this.crossfadeRafId = null
     }
 
+    // Start smooth BPM ramp back to 1.0 if beatmatching was active
+    if (Math.abs(matchedRate - 1.0) > 0.005) {
+      this._bpmRampFromRate = matchedRate
+      this._bpmRampStartTime = Date.now()
+      console.log(
+        `[AudioPlayer] BPM ramp: ${matchedRate.toFixed(3)} → 1.0 over ${this.BPM_RAMP_DURATION_MS}ms`,
+      )
+      this.updateBpmRamp()
+    }
+
     // Immediately update position/duration from the new audio element so the
     // store reflects the incoming track's state BEFORE onTrackEnded fires.
     // Without this, the crossfade monitor in Player.tsx would see stale values
@@ -1248,10 +1259,31 @@ export class AudioPlayer {
     this._isCompletingCrossfade = false
   }
 
+  private updateBpmRamp() {
+    const elapsed = Date.now() - this._bpmRampStartTime
+    const progress = Math.min(1.0, elapsed / this.BPM_RAMP_DURATION_MS)
+    this.audio.playbackRate =
+      this._bpmRampFromRate + (1.0 - this._bpmRampFromRate) * progress
+
+    if (progress < 1.0) {
+      this._bpmRampRafId = requestAnimationFrame(() => this.updateBpmRamp())
+    } else {
+      this.audio.playbackRate = 1.0
+      this._bpmRampRafId = null
+      console.log('[AudioPlayer] BPM ramp complete, playbackRate restored to 1.0')
+    }
+  }
+
   private abortCrossfade() {
     if (this.crossfadeRafId !== null) {
       cancelAnimationFrame(this.crossfadeRafId)
       this.crossfadeRafId = null
+    }
+
+    // Cancel any in-progress BPM ramp
+    if (this._bpmRampRafId !== null) {
+      cancelAnimationFrame(this._bpmRampRafId)
+      this._bpmRampRafId = null
     }
 
     if (this.crossfadeAudio) {
@@ -1261,9 +1293,10 @@ export class AudioPlayer {
       this.crossfadeAudio = null
     }
 
-    // Restore outgoing track volume
+    // Restore outgoing track volume and playback rate
     if (this.audio) {
       this.audio.volume = 1.0
+      this.audio.playbackRate = 1.0
     }
 
     this.isCrossfading = false
