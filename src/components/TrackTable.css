@@ -132,6 +132,12 @@
   min-width: 0;
 }
 
+/* Expand holder to fill scroll container width so rows & header background reach the edge.
+   min-width (not width) preserves horizontal scroll when columns exceed window width. */
+.track-table-holder {
+  min-width: 100%;
+}
+
 .track-table-body {
   position: relative;
 }
