@@ -43,6 +43,32 @@ Requirements for v1.1 Spotify Redesign. Each maps to roadmap phases.
 - [x] **UIUX-09**: Apply consistent component styling (buttons, inputs, cards, modals) across entire app
 - [x] **UIUX-10**: Update mobile PWA companion to match new desktop design language
 
+## v1.2 Requirements
+
+Requirements for v1.2 Playback & UX Polish. Each maps to roadmap phases.
+
+### Settings Cleanup (SETT)
+
+- [ ] **SETT-01**: User sees only Midnight and Carbon theme options in Settings > Appearance
+- [ ] **SETT-02**: Key Notation setting is removed from Settings (Camelot hardcoded as default)
+- [ ] **SETT-03**: Waveform Style setting is removed from Settings (Traktor RGB hardcoded as default)
+
+### Playback Fixes (PLAY)
+
+- [ ] **PLAY-01**: Tracks play to completion without repeating the last 3-5 seconds before advancing to the next track
+- [ ] **PLAY-02**: Skipping a track during an active crossfade stops all audio streams immediately (no orphaned background audio)
+
+### Beatmatch Crossfade (XFADE)
+
+- [ ] **XFADE-01**: During crossfade, the incoming track's playback rate gradually shifts from the current track's BPM to its own BPM over the crossfade window
+- [ ] **XFADE-02**: Crossfade enabled/disabled state is applied on app launch without requiring the user to re-toggle the setting
+
+### Library Loading (LOAD)
+
+- [ ] **LOAD-01**: Full music library loads into memory on app startup — no scroll-to-load-more required
+- [ ] **LOAD-02**: Clearing a search restores the full library view (not a capped 1000-track snapshot)
+- [ ] **LOAD-03**: A loading indicator is visible while the library loads on startup
+
 ## Future Requirements
 
 Deferred to later milestones. Tracked but not in current roadmap.
@@ -108,11 +134,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UIUX-09 | Phase 7 | Complete |
 | UIUX-10 | Phase 9 | Complete |
 
-**Coverage:**
+**v1.1 Coverage:**
 - v1.1 requirements: 24 total
 - Mapped to phases: 24
 - Unmapped: 0
 
+**v1.2 Coverage:**
+- v1.2 requirements: 10 total
+- Mapped to phases: 0
+- Unmapped: 10 ⚠️ (roadmap pending)
+
 ---
 *Requirements defined: 2026-03-01*
-*Last updated: 2026-03-01 — traceability populated after roadmap creation*
+*Last updated: 2026-03-06 — v1.2 requirements added*
