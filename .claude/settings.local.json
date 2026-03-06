@@ -31,7 +31,11 @@
       "Bash(git:*)",
       "Bash(git commit:*)",
       "Bash(cat:*)",
-      "Skill(gsd:execute-phase)"
+      "Skill(gsd:execute-phase)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)"
     ]
   }
 }
