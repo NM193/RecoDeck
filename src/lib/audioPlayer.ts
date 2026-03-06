@@ -29,6 +29,7 @@ export class AudioPlayer {
   private crossfadeAudio: HTMLAudioElement | null = null // second audio element for incoming track
   private isCrossfading: boolean = false
   private crossfadeFadeComplete: boolean = false // fade-in done, waiting for outgoing track to end naturally
+  private _isCompletingCrossfade: boolean = false // true during onTrackEnded() call from completeCrossfade()
   private crossfadeStartTime: number = 0
   private crossfadeRafId: number | null = null
   private outgoingBpm: number | null = null
@@ -967,7 +968,7 @@ export class AudioPlayer {
   }
 
   get isCrossfadingState(): boolean {
-    return this.isCrossfading
+    return this.isCrossfading || this.crossfadeFadeComplete || this._isCompletingCrossfade
   }
 
   getAnalyser(): AnalyserNode | null {
@@ -1237,8 +1238,14 @@ export class AudioPlayer {
     // Ensure the UI knows we're still playing
     this.onPlayStateChange?.(true)
 
-    // Notify that track changed (Player will update currentTrack)
+    // Notify that track changed (Player will update currentTrack).
+    // _isCompletingCrossfade is set so that isCrossfadingState returns true
+    // during the callback — allowing the consumer (NowPlayingBar) to detect
+    // that this track-end was triggered by a crossfade completion and skip
+    // the normal loadTrack() + play() sequence for the already-playing track.
+    this._isCompletingCrossfade = true
     this.onTrackEnded?.()
+    this._isCompletingCrossfade = false
   }
 
   private abortCrossfade() {
@@ -1261,6 +1268,7 @@ export class AudioPlayer {
 
     this.isCrossfading = false
     this.crossfadeFadeComplete = false
+    this._isCompletingCrossfade = false
     this.crossfadeStartTime = 0
     this.outgoingBpm = null
     this.incomingBpm = null

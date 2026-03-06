@@ -67,3 +67,71 @@ describe('loadTrack() crossfade teardown', () => {
     expect(p.isCrossfading).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// SUITE 3: PLAY-03 — isCrossfadingState must be true during onTrackEnded
+//          callback fired from completeCrossfade()
+// ---------------------------------------------------------------------------
+// Root cause of the double-play bug: completeCrossfade() cleared isCrossfading
+// and crossfadeFadeComplete BEFORE calling onTrackEnded(). NowPlayingBar's
+// onTrackEnded handler checks isCrossfadingState to decide whether to skip
+// the loadTrack() + play() sequence — but the flag was already false by then,
+// causing the next track (already playing via crossfadeAudio) to be reloaded
+// from position 0.
+//
+// Fix: _isCompletingCrossfade is set true while onTrackEnded() is being called
+// from completeCrossfade(). isCrossfadingState includes this flag.
+// ---------------------------------------------------------------------------
+describe('isCrossfadingState during completeCrossfade()', () => {
+  let player: import('./audioPlayer').AudioPlayer
+
+  beforeEach(async () => {
+    const mod = await import('./audioPlayer')
+    player = new mod.AudioPlayer()
+  })
+
+  it('should return true from isCrossfadingState while onTrackEnded fires from completeCrossfade()', () => {
+    // Access private internals via cast.
+    const p = player as unknown as {
+      crossfadeAudio: HTMLAudioElement | null
+      isCrossfading: boolean
+      crossfadeFadeComplete: boolean
+      _isCompletingCrossfade: boolean
+      completeCrossfade: () => void
+    }
+
+    // Simulate the state just before completeCrossfade() is called when the
+    // outgoing track ends after a full fade (crossfadeFadeComplete = true).
+    const mockIncoming = {
+      pause: () => {},
+      play: () => Promise.resolve(),
+      load: () => {},
+      removeAttribute: (_: string) => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      src: 'stream://localhost/?p=/music/next.mp3',
+      volume: 1.0,
+      currentTime: 5.0,
+      duration: 180.0,
+      playbackRate: 1.0,
+    }
+    p.crossfadeAudio = mockIncoming as unknown as HTMLAudioElement
+    p.isCrossfading = false       // fade already finished
+    p.crossfadeFadeComplete = true // waiting for outgoing to end
+
+    // Capture what isCrossfadingState returns during the onTrackEnded callback.
+    let stateSeenDuringCallback: boolean | undefined
+    player.onTrackEnded = () => {
+      stateSeenDuringCallback = player.isCrossfadingState
+    }
+
+    // Trigger the swap.
+    p.completeCrossfade()
+
+    // The callback must have seen isCrossfadingState = true.
+    expect(stateSeenDuringCallback).toBe(true)
+
+    // After completeCrossfade() returns, the flag is cleared.
+    expect(p._isCompletingCrossfade).toBe(false)
+  })
+})
