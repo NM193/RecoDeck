@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Playback & UX Polish
-status: roadmap_ready
-stopped_at: Roadmap created — Phase 10 ready to plan
-last_updated: "2026-03-06"
+milestone: v1.1
+milestone_name: Spotify Redesign
+status: "Roadmap ready, awaiting /gsd:plan-phase 10"
+stopped_at: "Checkpoint 10-01-T3: Visual verification — Settings UI shows only 2 themes, no Key Notation or Waveform Style"
+last_updated: "2026-03-06T09:27:18.458Z"
 last_activity: 2026-03-06 — v1.2 roadmap created (phases 10-13)
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 9
+  completed_phases: 6
+  total_plans: 13
+  completed_plans: 13
   percent: 0
 ---
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0% (0/4 phases)
 | Phase 09-ui-views-and-mobile P03 | 10 | 2 tasks | 2 files |
 | Phase 09-ui-views-and-mobile P02 | 3 | 2 tasks | 4 files |
 | Phase 09-ui-views-and-mobile P02 | 15 | 3 tasks | 4 files |
+| Phase 10-settings-cleanup P01 | 15 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 - [Research] SettingsContext crossfade sync gap: loadSettings() sets React state but never calls audioPlayer.setCrossfadeEnabled() — must fix in Phase 12
 - [Research] getAllTracks() adequate for <5K track libraries — single JSON invoke, ~3MB payload for 5K tracks; no Channel IPC needed
 - [Research] Settings cleanup requires grep verification: key_notation and waveform_style must return zero hits in src/ after Phase 10
+- [Phase 10-01]: Custom theme removed from THEMES — only midnight and carbon remain; App.tsx applyTheme() still handles legacy 'custom' DB values gracefully on startup
+- [Phase 10-01]: keyNotation/waveformStyle/customColors dead state eliminated from SettingsContext, App.tsx, TrackTable, SearchView — Camelot notation and Traktor RGB hardcoded as fixed defaults
 
 ### Pending Todos
 
@@ -128,7 +131,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-06
-Stopped at: v1.2 roadmap created — phases 10-13 defined and written to ROADMAP.md
+Last session: 2026-03-06T09:27:18.455Z
+Stopped at: Checkpoint 10-01-T3: Visual verification — Settings UI shows only 2 themes, no Key Notation or Waveform Style
 Resume file: None
 Next action: /gsd:plan-phase 10

@@ -32,7 +32,7 @@
 
 **Milestone Goal:** Fix playback bugs, load the full library upfront, streamline settings, and ship smooth beatmatch crossfading.
 
-- [ ] **Phase 10: Settings Cleanup** — Remove Key Notation and Waveform Style settings; harden Camelot and Traktor RGB as hardcoded defaults
+- [x] **Phase 10: Settings Cleanup** — Remove Key Notation and Waveform Style settings; harden Camelot and Traktor RGB as hardcoded defaults (completed 2026-03-06)
 - [ ] **Phase 11: Playback Bug Fixes** — Fix end-of-track audio repeat and orphaned crossfade audio on manual skip
 - [ ] **Phase 12: Beatmatch Crossfade** — Gradual tempo ramp during crossfade window; crossfade state applied on app launch
 - [ ] **Phase 13: Async Full-Library Load** — Full library in memory on startup; remove scroll-to-load; loading indicator visible during startup
@@ -171,7 +171,7 @@ Plans:
 | 7. UI Foundation | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |
 | 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
-| 10. Settings Cleanup | v1.2 | 0/? | Not started | - |
+| 10. Settings Cleanup | 1/1 | Complete   | 2026-03-06 | - |
 | 11. Playback Bug Fixes | v1.2 | 0/? | Not started | - |
 | 12. Beatmatch Crossfade | v1.2 | 0/? | Not started | - |
 | 13. Async Full-Library Load | v1.2 | 0/? | Not started | - |

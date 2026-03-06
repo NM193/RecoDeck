@@ -49,9 +49,9 @@ Requirements for v1.2 Playback & UX Polish. Each maps to roadmap phases.
 
 ### Settings Cleanup (SETT)
 
-- [ ] **SETT-01**: User sees only Midnight and Carbon theme options in Settings > Appearance
-- [ ] **SETT-02**: Key Notation setting is removed from Settings (Camelot hardcoded as default)
-- [ ] **SETT-03**: Waveform Style setting is removed from Settings (Traktor RGB hardcoded as default)
+- [x] **SETT-01**: User sees only Midnight and Carbon theme options in Settings > Appearance
+- [x] **SETT-02**: Key Notation setting is removed from Settings (Camelot hardcoded as default)
+- [x] **SETT-03**: Waveform Style setting is removed from Settings (Traktor RGB hardcoded as default)
 
 ### Playback Fixes (PLAY)
 
@@ -133,9 +133,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UIUX-08 | Phase 9 | Complete |
 | UIUX-09 | Phase 7 | Complete |
 | UIUX-10 | Phase 9 | Complete |
-| SETT-01 | Phase 10 | Pending |
-| SETT-02 | Phase 10 | Pending |
-| SETT-03 | Phase 10 | Pending |
+| SETT-01 | Phase 10 | Complete |
+| SETT-02 | Phase 10 | Complete |
+| SETT-03 | Phase 10 | Complete |
 | PLAY-01 | Phase 11 | Pending |
 | PLAY-02 | Phase 11 | Pending |
 | XFADE-01 | Phase 12 | Pending |
