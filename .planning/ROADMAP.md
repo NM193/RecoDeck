@@ -4,6 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-4 (shipped 2026-03-01)
 - 🚧 **v1.1 Spotify Redesign** — Phases 5-9 (in progress)
+- 🚧 **v1.2 Playback & UX Polish** — Phases 10-13 (roadmap ready)
 
 ## Phases
 
@@ -26,6 +27,15 @@
 - [x] **Phase 7: UI Foundation** — Spotify dark theme, typography, spacing, and component system (completed 2026-03-01)
 - [ ] **Phase 8: UI Layout** — Sidebar navigation, album art grids, now-playing bar, view transitions
 - [x] **Phase 9: UI Views and Mobile** — Track table, playlist view, search, and mobile PWA update (completed 2026-03-06)
+
+### 🚧 v1.2 Playback & UX Polish (Roadmap Ready)
+
+**Milestone Goal:** Fix playback bugs, load the full library upfront, streamline settings, and ship smooth beatmatch crossfading.
+
+- [ ] **Phase 10: Settings Cleanup** — Remove Key Notation and Waveform Style settings; harden Camelot and Traktor RGB as hardcoded defaults
+- [ ] **Phase 11: Playback Bug Fixes** — Fix end-of-track audio repeat and orphaned crossfade audio on manual skip
+- [ ] **Phase 12: Beatmatch Crossfade** — Gradual tempo ramp during crossfade window; crossfade state applied on app launch
+- [ ] **Phase 13: Async Full-Library Load** — Full library in memory on startup; remove scroll-to-load; loading indicator visible during startup
 
 ## Phase Details
 
@@ -105,6 +115,46 @@ Plans:
 - [ ] 09-02-PLAN.md — SearchView new component with sectioned results, App.tsx + Sidebar search nav wiring (UIUX-08)
 - [ ] 09-03-PLAN.md — Mobile PWA CSS token alignment to desktop midnight theme (UIUX-10)
 
+### Phase 10: Settings Cleanup
+**Goal**: The Settings panel shows only the two supported themes; Key Notation and Waveform Style settings are gone from the UI and from all code paths — Camelot and Traktor RGB are hardcoded defaults
+**Depends on**: Phase 9 (v1.1 complete; clean UI baseline before removing settings)
+**Requirements**: SETT-01, SETT-02, SETT-03
+**Success Criteria** (what must be TRUE):
+  1. Settings > Appearance shows only Midnight and Carbon theme options — no other theme choices are visible
+  2. Key Notation is not present anywhere in the Settings UI; all keys display in Camelot notation throughout the app
+  3. Waveform Style is not present anywhere in the Settings UI; waveforms always render in Traktor RGB style
+  4. `grep -r "key_notation\|waveform_style" src/` returns zero hits — no read sites remain in the frontend codebase
+**Plans**: TBD
+
+### Phase 11: Playback Bug Fixes
+**Goal**: Tracks play to clean completion and manual skips during crossfade result in immediate, single-stream playback — no audio artifacts or orphaned background streams
+**Depends on**: Phase 10 (settings prop chain removed from App.tsx; reduces noise when reading audio-related App.tsx code)
+**Requirements**: PLAY-01, PLAY-02
+**Success Criteria** (what must be TRUE):
+  1. A VBR MP3 plays to its natural end and the next track begins without any repeated audio from the last few seconds of the previous track
+  2. Pressing skip during an active crossfade immediately stops all audio; only the newly selected track plays
+**Plans**: TBD
+
+### Phase 12: Beatmatch Crossfade
+**Goal**: When crossfade is enabled, the incoming track's playback rate smoothly ramps from the outgoing track's BPM to its own BPM over the crossfade window — and crossfade activates on app launch without user re-toggling
+**Depends on**: Phase 11 (stable onTrackEnded path; abortCrossfade called correctly in loadTrack — both required before adding rate ramp logic)
+**Requirements**: XFADE-01, XFADE-02
+**Success Criteria** (what must be TRUE):
+  1. During a crossfade between two tracks with different BPMs, the incoming track's tempo audibly ramps from the outgoing track's BPM toward its own native BPM over the crossfade window
+  2. After a fresh app launch with crossfade enabled in Settings, the next automatic track transition triggers a crossfade without the user needing to toggle the setting
+  3. No audible pitch shift (chipmunk effect) occurs during the tempo ramp
+**Plans**: TBD
+
+### Phase 13: Async Full-Library Load
+**Goal**: The full music library is in memory immediately after app startup — there is no scroll-to-load-more, no incomplete queue, and a loading indicator appears while the library loads
+**Depends on**: Phase 12 (crossfade validated against current queue structure before queue infrastructure changes)
+**Requirements**: LOAD-01, LOAD-02, LOAD-03
+**Success Criteria** (what must be TRUE):
+  1. On startup, all tracks in the library appear in the track list without any scroll-triggered loading
+  2. Clearing a search query restores the full library view — not a capped snapshot of the first 1000 tracks
+  3. A loading indicator is visible in the UI while the library is loading on startup; it disappears once loading is complete
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -113,8 +163,12 @@ Plans:
 | 2. Mobile Companion | v1.0 | 3/3 | Complete | 2026-02-28 |
 | 3. AI Playlists | v1.0 | 2/2 | Complete | 2026-02-28 |
 | 4. AI Discovery and Mix Prep | v1.0 | 2/2 | Complete | 2026-02-28 |
-| 5. Foundation Cleanup | 2/2 | Complete   | 2026-03-01 | - |
-| 6. Test Coverage | 2/2 | Complete   | 2026-03-01 | - |
-| 7. UI Foundation | 2/2 | Complete   | 2026-03-01 | - |
+| 5. Foundation Cleanup | v1.1 | 2/2 | Complete | 2026-03-01 |
+| 6. Test Coverage | v1.1 | 2/2 | Complete | 2026-03-01 |
+| 7. UI Foundation | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |
-| 9. UI Views and Mobile | 3/3 | Complete   | 2026-03-06 | - |
+| 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
+| 10. Settings Cleanup | v1.2 | 0/? | Not started | - |
+| 11. Playback Bug Fixes | v1.2 | 0/? | Not started | - |
+| 12. Beatmatch Crossfade | v1.2 | 0/? | Not started | - |
+| 13. Async Full-Library Load | v1.2 | 0/? | Not started | - |

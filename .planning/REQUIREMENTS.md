@@ -133,6 +133,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UIUX-08 | Phase 9 | Complete |
 | UIUX-09 | Phase 7 | Complete |
 | UIUX-10 | Phase 9 | Complete |
+| SETT-01 | Phase 10 | Pending |
+| SETT-02 | Phase 10 | Pending |
+| SETT-03 | Phase 10 | Pending |
+| PLAY-01 | Phase 11 | Pending |
+| PLAY-02 | Phase 11 | Pending |
+| XFADE-01 | Phase 12 | Pending |
+| XFADE-02 | Phase 12 | Pending |
+| LOAD-01 | Phase 13 | Pending |
+| LOAD-02 | Phase 13 | Pending |
+| LOAD-03 | Phase 13 | Pending |
 
 **v1.1 Coverage:**
 - v1.1 requirements: 24 total
@@ -141,9 +151,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **v1.2 Coverage:**
 - v1.2 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10 ⚠️ (roadmap pending)
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-01*
-*Last updated: 2026-03-06 — v1.2 requirements added*
+*Last updated: 2026-03-06 — v1.2 traceability added (phases 10-13)*

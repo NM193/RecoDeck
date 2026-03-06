@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Playback & UX Polish
-status: planning
-stopped_at: Milestone v1.2 started — defining requirements
+status: roadmap_ready
+stopped_at: Roadmap created — Phase 10 ready to plan
 last_updated: "2026-03-06"
-last_activity: 2026-03-06 — Milestone v1.2 started
+last_activity: 2026-03-06 — v1.2 roadmap created (phases 10-13)
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,23 +21,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** Defining requirements
+**Current focus:** v1.2 Playback & UX Polish — Phase 10 (Settings Cleanup) ready to plan
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 10 (Settings Cleanup) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-06 — Milestone v1.2 started
+Status: Roadmap ready, awaiting /gsd:plan-phase 10
+Last activity: 2026-03-06 — v1.2 roadmap created (phases 10-13)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░] 0% (0/4 phases)
+
+## v1.2 Phase Map
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 10 | Settings Cleanup | SETT-01, SETT-02, SETT-03 | Not started |
+| 11 | Playback Bug Fixes | PLAY-01, PLAY-02 | Not started |
+| 12 | Beatmatch Crossfade | XFADE-01, XFADE-02 | Not started |
+| 13 | Async Full-Library Load | LOAD-01, LOAD-02, LOAD-03 | Not started |
 
 ## Performance Metrics
 
-**Velocity:**
-- Total plans completed: 3 (v1.1)
-- Average duration: ~24 minutes
-- Total execution time: ~70 minutes
+**Velocity (v1.1):**
+- Total plans completed: 9 (v1.1)
+- Average duration: ~20 minutes
+- Total execution time: ~180 minutes
 
 **By Phase:**
 
@@ -101,6 +110,14 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 09-02]: onSearch callback calls loadTracks(null, null) in App.tsx — ensures full library is available for client-side filtering in SearchView
 - [Phase 09-02]: showSearch cleared in onNavigateHome, onShowAllTracks, and onOpenSettings to prevent stale search state persisting across navigation
 
+**v1.2 research findings (pre-implementation):**
+- [Research] SEEK_MARGIN_MS root cause identified: value is 10000ms, must reduce to 3000ms — VBR MP3 premature-end fires 1-3s from EOF, producing 7-9s audible replay
+- [Research] preservesPitch defaults to true in WKWebView (MDN Baseline 2023) — rate ramp via playbackRate is safe, no pitch correction library needed
+- [Research] crossfadeAudio orphan bug: loadTrack() does not call abortCrossfade() — add as first call in loadTrack()
+- [Research] SettingsContext crossfade sync gap: loadSettings() sets React state but never calls audioPlayer.setCrossfadeEnabled() — must fix in Phase 12
+- [Research] getAllTracks() adequate for <5K track libraries — single JSON invoke, ~3MB payload for 5K tracks; no Channel IPC needed
+- [Research] Settings cleanup requires grep verification: key_notation and waveform_style must return zero hits in src/ after Phase 10
+
 ### Pending Todos
 
 None.
@@ -111,6 +128,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-06T08:11:45.858Z
-Stopped at: Completed 09-02-PLAN.md — human verification approved
+Last session: 2026-03-06
+Stopped at: v1.2 roadmap created — phases 10-13 defined and written to ROADMAP.md
 Resume file: None
+Next action: /gsd:plan-phase 10
