@@ -9,8 +9,8 @@ Requirements for milestone v1.3 Library UX & Duplicate Management. Each maps to 
 
 ### Track Table Layout
 
-- [ ] **LAYT-01**: Track table rows extend to the full window width at any window size
-- [ ] **LAYT-02**: Track table header background extends to the full window width at any window size
+- [x] **LAYT-01**: Track table rows extend to the full window width at any window size
+- [x] **LAYT-02**: Track table header background extends to the full window width at any window size
 
 ### Library Loading
 
@@ -45,8 +45,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LAYT-01 | Phase 12 | Pending |
-| LAYT-02 | Phase 12 | Pending |
+| LAYT-01 | Phase 12 | Complete |
+| LAYT-02 | Phase 12 | Complete |
 | LOAD-01 | Phase 13 | Pending |
 | LOAD-02 | Phase 13 | Pending |
 | DUPL-01 | Phase 14 | Pending |

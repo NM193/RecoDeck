@@ -42,7 +42,7 @@
 
 **Milestone Goal:** Fix track table layout on window resize, load the full library upfront without scroll-to-load, and add a review-before-delete duplicate tracks dialog.
 
-- [ ] **Phase 12: CSS Layout Fix** — Track table rows and header extend to full window width at any window size
+- [x] **Phase 12: CSS Layout Fix** — Track table rows and header extend to full window width at any window size (completed 2026-03-06)
 - [ ] **Phase 13: Full Library Load** — All tracks load on startup; scroll-to-load pagination removed
 - [ ] **Phase 14: Duplicate Review Dialog** — Review-before-delete duplicate management with selective per-track deletion
 
@@ -198,6 +198,6 @@ Plans:
 | 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
 | 10. Settings Cleanup | v1.2 | 1/1 | Complete | 2026-03-06 |
 | 11. Playback Bug Fixes | v1.2 | 1/1 | Complete | 2026-03-06 |
-| 12. CSS Layout Fix | v1.3 | 0/1 | Not started | - |
+| 12. CSS Layout Fix | 1/1 | Complete   | 2026-03-06 | - |
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |

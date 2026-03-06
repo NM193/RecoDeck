@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Library UX & Duplicate Management
-status: "Roadmap ready"
-stopped_at: Roadmap created — Phase 12 next
-last_updated: "2026-03-06T12:30:00.000Z"
-last_activity: 2026-03-06 — Roadmap created for v1.3 (3 phases, 8 requirements mapped)
+status: Roadmap ready
+stopped_at: Completed 12-01-PLAN.md — awaiting human visual verification (checkpoint)
+last_updated: "2026-03-06T12:26:55.745Z"
+last_activity: 2026-03-06 — Roadmap created for v1.3 (3 phases, 8 requirements)
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 15
+  completed_plans: 15
 ---
 
 # Project State
@@ -60,6 +59,7 @@ Progress bar: [ ] Phase 12  [ ] Phase 13  [ ] Phase 14
 | Phase 10-settings-cleanup P01 | 30 | 3 tasks | 7 files |
 | Phase 11-playback-bug-fixes P01 | 8 | 2 tasks | 3 files |
 | Phase 11-playback-bug-fixes P01 | 60 | 6 tasks | 3 files |
+| Phase 12-css-layout-fix P01 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -128,6 +128,8 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 - [Research] find_duplicate_tracks Rust command required — new read-only extraction from existing remove_duplicate_tracks() detection logic in db/mod.rs
 - [Research] Post-deletion refresh: duplicate dialog must call onDeleted() which triggers getAllTracks() — without this, ghost entries persist until manual refresh
 - [Research] SQLite index coverage for file_hash/filename — must confirm before writing Phase 14 detection query to ensure performance on 7K+ track libraries
+- [Phase 12-01]: Used min-width: 100% on .track-table-holder (not width: 100%) — preserves horizontal scroll when columns exceed window width
+- [Phase 12-01]: Applied rule to .track-table-holder not .track-table-row — row width changes break TanStack Virtual scroll measurement
 
 ### Pending Todos
 
@@ -141,7 +143,7 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-06T12:30:00.000Z
-Stopped at: Roadmap created for v1.3
+Last session: 2026-03-06T12:26:55.742Z
+Stopped at: Completed 12-01-PLAN.md — awaiting human visual verification (checkpoint)
 Resume file: None
 Next action: /gsd:plan-phase 12
