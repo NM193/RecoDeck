@@ -8,6 +8,7 @@ import {
   useState,
   useMemo,
   useEffect,
+  useCallback,
   useImperativeHandle,
   forwardRef,
 } from 'react'
@@ -41,6 +42,7 @@ interface TrackTableProps {
   playlists?: Playlist[]
   keyNotation?: 'camelot' | 'openkey'
   selectedPlaylistId?: number | null
+  playlistMode?: boolean
   onTrackClick?: (track: Track) => void
   onTrackDoubleClick?: (
     track: Track,
@@ -48,8 +50,6 @@ interface TrackTableProps {
     trackIndex: number,
   ) => void
   onAnalyzeTrack?: (track: Track) => void
-  onAnalyzeBpm?: (track: Track) => void
-  onAnalyzeKey?: (track: Track) => void
   onAddToPlaylist?: (track: Track, playlistId: number) => void
   onRemoveFromPlaylist?: (track: Track) => void
   onSetGenre?: (track: Track, genre: string) => void
@@ -64,6 +64,7 @@ interface TrackTableProps {
     playlistName: string,
   ) => void
   onOpenMixPrep?: (playlistId: number, playlistName: string) => void
+  onSearch?: (query: string) => void
 }
 
 export interface TrackTableRef {
@@ -88,11 +89,10 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       playlists = [],
       keyNotation = 'camelot',
       selectedPlaylistId = null,
+      playlistMode = false,
       onTrackClick,
       onTrackDoubleClick,
       onAnalyzeTrack,
-      onAnalyzeBpm,
-      onAnalyzeKey,
       onAddToPlaylist,
       onRemoveFromPlaylist,
       onSetGenre,
@@ -104,6 +104,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       onGenerateAIPlaylist,
       onGetPlaylistRecommendations,
       onOpenMixPrep,
+      onSearch,
     },
     ref,
   ) {
@@ -116,8 +117,31 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     // Player store subscription for current track
     const currentTrack = usePlayerStore((state) => state.currentTrack)
 
+    // Row selection state
+    const [selectedRowId, setSelectedRowId] = useState<number | null>(null)
+
     // Search state
     const [searchQuery, setSearchQuery] = useState('')
+
+    // Debounced backend search: notify parent after 300ms of no typing
+    const searchTimerRef = useRef<number | null>(null)
+    const handleSearchChange = useCallback(
+      (value: string) => {
+        setSearchQuery(value)
+        if (onSearch) {
+          if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+          searchTimerRef.current = setTimeout(() => {
+            onSearch(value.trim())
+          }, 300)
+        }
+      },
+      [onSearch],
+    )
+    useEffect(() => {
+      return () => {
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+      }
+    }, [])
 
     // Context menu (right-click on track row)
     const [contextMenu, setContextMenu] = useState<{
@@ -141,7 +165,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     }>({ visible: false, x: 0, y: 0 })
 
     // Submenu for "Analyze"
-    const [analyzeSubmenu, setAnalyzeSubmenu] = useState<{
+    const [, setAnalyzeSubmenu] = useState<{
       visible: boolean
       x: number
       y: number
@@ -437,12 +461,12 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               className="search-input"
               placeholder="Search tracks..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
             />
             {searchQuery && (
               <button
                 className="search-clear"
-                onClick={() => setSearchQuery('')}
+                onClick={() => handleSearchChange('')}
                 title="Clear search"
               >
                 ✕
@@ -507,26 +531,16 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             overflow: 'auto',
           }}
         >
+          <div className="track-table-holder">
           {/* Column headers — scroll with content, sticky at top when scrolling down */}
           <div className="track-table-header">
             <div className="track-table-row header-row">
+              <div className="table-cell cell-index">#</div>
               <div
-                className={`table-cell cell-title sortable ${sort.column === 'title' ? 'sorted' : ''}`}
+                className={`table-cell cell-title-combined sortable ${sort.column === 'title' ? 'sorted' : ''}`}
                 onClick={() => handleSort('title')}
               >
                 Title {sortIndicator('title')}
-              </div>
-              <div
-                className={`table-cell cell-artist sortable ${sort.column === 'artist' ? 'sorted' : ''}`}
-                onClick={() => handleSort('artist')}
-              >
-                Artist {sortIndicator('artist')}
-              </div>
-              <div
-                className={`table-cell cell-album sortable ${sort.column === 'album' ? 'sorted' : ''}`}
-                onClick={() => handleSort('album')}
-              >
-                Album {sortIndicator('album')}
               </div>
               <div
                 className={`table-cell cell-bpm sortable ${sort.column === 'bpm' ? 'sorted' : ''}`}
@@ -552,12 +566,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               >
                 Duration {sortIndicator('duration')}
               </div>
-              <div
-                className={`table-cell cell-format sortable ${sort.column === 'format' ? 'sorted' : ''}`}
-                onClick={() => handleSort('format')}
-              >
-                Format {sortIndicator('format')}
-              </div>
             </div>
           </div>
 
@@ -581,7 +589,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   <div
                     key={virtualRow.key}
                     data-index={virtualRow.index}
-                    className={`track-table-row data-row ${isPlayingTrack ? 'data-row--playing' : ''}`}
+                    className={`track-table-row data-row ${isPlayingTrack ? 'data-row--playing' : ''} ${selectedRowId === track.id ? 'data-row--selected' : ''}`}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -590,7 +598,10 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       height: `${virtualRow.size}px`,
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
-                    onClick={() => onTrackClick?.(track)}
+                    onClick={() => {
+                      setSelectedRowId(track.id)
+                      onTrackClick?.(track)
+                    }}
                     onDoubleClick={(e) => {
                       e.stopPropagation() // Prevent event bubbling
                       console.log('[TrackTable] Double-click on track:', {
@@ -619,24 +630,32 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       })
                     }}
                   >
-                    <div
-                      className="table-cell cell-title"
-                      title={track.title || track.file_path}
-                    >
-                      {track.title || (
-                        <span className="text-muted">Untitled</span>
+                    <div className="table-cell cell-index">
+                      {isPlayingTrack ? (
+                        <span className="row-playing">
+                          <Icon name="Volume2" size={14} />
+                        </span>
+                      ) : (
+                        <>
+                          <span className="row-number">
+                            {playlistMode ? virtualRow.index + 1 : virtualRow.index + 1}
+                          </span>
+                          <span className="row-play">
+                            <Icon name="Play" size={14} />
+                          </span>
+                        </>
                       )}
                     </div>
                     <div
-                      className="table-cell cell-artist"
-                      title={track.artist}
+                      className="table-cell cell-title-combined"
+                      title={`${track.title || 'Untitled'} — ${track.artist || 'Unknown'}`}
                     >
-                      {track.artist || (
-                        <span className="text-muted">Unknown</span>
-                      )}
-                    </div>
-                    <div className="table-cell cell-album" title={track.album}>
-                      {track.album || <span className="text-muted">—</span>}
+                      <span className="cell-title-combined__title">
+                        {track.title || <span className="text-muted">Untitled</span>}
+                      </span>
+                      <span className="cell-title-combined__artist">
+                        {track.artist || <span className="text-muted">Unknown Artist</span>}
+                      </span>
                     </div>
                     <div className="table-cell cell-bpm">
                       {track.bpm ? track.bpm.toFixed(2) : '—'}
@@ -661,13 +680,11 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                     <div className="table-cell cell-duration">
                       {formatDuration(track.duration_ms)}
                     </div>
-                    <div className="table-cell cell-format">
-                      {track.file_format?.toUpperCase() || '—'}
-                    </div>
                   </div>
                 )
               })}
             </div>
+          </div>
           </div>
         </div>
 
@@ -740,36 +757,18 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               </div>
             )}
 
-            {(onAnalyzeTrack || onAnalyzeBpm || onAnalyzeKey) && (
-              <div
-                className="context-menu-item context-menu-item-submenu"
-                onMouseEnter={(e) => {
-                  // Cancel any pending close timeout
-                  if (analyzeSubmenuTimeout.current) {
-                    clearTimeout(analyzeSubmenuTimeout.current)
-                    analyzeSubmenuTimeout.current = null
-                  }
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setAnalyzeSubmenu({
-                    visible: true,
-                    x: rect.right,
-                    y: rect.top,
-                  })
-                }}
-                onMouseLeave={() => {
-                  analyzeSubmenuTimeout.current = setTimeout(() => {
-                    setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-                  }, 150)
+            {onAnalyzeTrack && (
+              <button
+                type="button"
+                className="context-menu-item"
+                onClick={() => {
+                  onAnalyzeTrack(contextMenu.track)
+                  setContextMenu(null)
                 }}
               >
                 <Icon name="Zap" size={16} className="context-menu-icon" />
-                Analyze
-                <Icon
-                  name="ChevronRight"
-                  size={14}
-                  className="context-menu-arrow"
-                />
-              </div>
+                Analyze BPM & Key
+              </button>
             )}
 
             {/* Set Genre option */}
@@ -985,80 +984,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
           </div>
         )}
 
-        {/* Analyze submenu */}
-        {contextMenu &&
-          analyzeSubmenu.visible &&
-          (onAnalyzeTrack || onAnalyzeBpm || onAnalyzeKey) && (
-            <div
-              className="context-menu context-submenu"
-              style={{
-                position: 'fixed',
-                top: analyzeSubmenu.y,
-                left: analyzeSubmenu.x,
-                zIndex: 10000,
-              }}
-              onMouseEnter={() => {
-                // Cancel any pending close timeout
-                if (analyzeSubmenuTimeout.current) {
-                  clearTimeout(analyzeSubmenuTimeout.current)
-                  analyzeSubmenuTimeout.current = null
-                }
-                setAnalyzeSubmenu((prev) => ({ ...prev, visible: true }))
-              }}
-              onMouseLeave={() =>
-                setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-              }
-            >
-              {onAnalyzeTrack && (
-                <button
-                  type="button"
-                  className="context-menu-item"
-                  onClick={() => {
-                    onAnalyzeTrack(contextMenu.track)
-                    setContextMenu(null)
-                    setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-                  }}
-                >
-                  <Icon name="Zap" size={16} className="context-menu-icon" />
-                  BPM & Key
-                </button>
-              )}
-
-              {onAnalyzeBpm && (
-                <button
-                  type="button"
-                  className="context-menu-item"
-                  onClick={() => {
-                    onAnalyzeBpm(contextMenu.track)
-                    setContextMenu(null)
-                    setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-                  }}
-                >
-                  <Icon
-                    name="Activity"
-                    size={16}
-                    className="context-menu-icon"
-                  />
-                  BPM Only
-                </button>
-              )}
-
-              {onAnalyzeKey && (
-                <button
-                  type="button"
-                  className="context-menu-item"
-                  onClick={() => {
-                    onAnalyzeKey(contextMenu.track)
-                    setContextMenu(null)
-                    setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-                  }}
-                >
-                  <Icon name="Music2" size={16} className="context-menu-icon" />
-                  Key Only
-                </button>
-              )}
-            </div>
-          )}
 
         {/* Footer with track count + search result info */}
         <div className="track-table-footer">
