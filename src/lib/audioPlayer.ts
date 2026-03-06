@@ -1136,6 +1136,27 @@ export class AudioPlayer {
         this.crossfadeAudio?.addEventListener('error', onError, { once: true })
       })
 
+      // Phase alignment: seek incoming track so its beat phase matches the current track.
+      // Formula: φ = currentPos % I1 / I1 → seek incoming to φ × I2
+      // This locks the downbeats together from the moment the crossfade starts.
+      if (
+        this.outgoingBpm &&
+        this.outgoingBpm > 0 &&
+        this.incomingBpm &&
+        this.incomingBpm > 0
+      ) {
+        const I1 = 60000 / this.outgoingBpm // ms per beat, outgoing
+        const I2 = 60000 / this.incomingBpm // ms per beat, incoming
+        const phase = (this._position % I1) / I1 // 0..1 within current beat
+        const seekMs = phase * I2
+        if (seekMs > 1) {
+          this.crossfadeAudio.currentTime = seekMs / 1000
+          console.log(
+            `[AudioPlayer] Beat phase align: φ=${phase.toFixed(3)}, seek incoming to ${seekMs.toFixed(0)}ms`,
+          )
+        }
+      }
+
       // Start incoming track (volume 0)
       await this.crossfadeAudio.play()
 
