@@ -3,8 +3,9 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-4 (shipped 2026-03-01)
-- 🚧 **v1.1 Spotify Redesign** — Phases 5-9 (in progress)
-- 🚧 **v1.2 Playback & UX Polish** — Phases 10-13 (roadmap ready)
+- ✅ **v1.1 Spotify Redesign** — Phases 5-9 (shipped 2026-03-06)
+- ✅ **v1.2 Playback & UX Polish** — Phases 10-11 (shipped 2026-03-06)
+- 🚧 **v1.3 Library UX & Duplicate Management** — Phases 12-14 (in progress)
 
 ## Phases
 
@@ -18,24 +19,32 @@
 
 </details>
 
-### 🚧 v1.1 Spotify Redesign (In Progress)
+<details>
+<summary>✅ v1.1 Spotify Redesign (Phases 5-9) — SHIPPED 2026-03-06</summary>
 
-**Milestone Goal:** Stabilize the codebase (tech debt, testing, linting) then redesign the entire UI to match Spotify's desktop design language.
+- [x] Phase 5: Foundation Cleanup — completed 2026-03-01
+- [x] Phase 6: Test Coverage — completed 2026-03-01
+- [x] Phase 7: UI Foundation — completed 2026-03-01
+- [x] Phase 8: UI Layout — completed 2026-03-06
+- [x] Phase 9: UI Views and Mobile — completed 2026-03-06
 
-- [x] **Phase 5: Foundation Cleanup** — Eliminate tech debt and enforce code quality tooling (completed 2026-03-01)
-- [x] **Phase 6: Test Coverage** — Rust backend tests and frontend Vitest coverage (completed 2026-03-01)
-- [x] **Phase 7: UI Foundation** — Spotify dark theme, typography, spacing, and component system (completed 2026-03-01)
-- [ ] **Phase 8: UI Layout** — Sidebar navigation, album art grids, now-playing bar, view transitions
-- [x] **Phase 9: UI Views and Mobile** — Track table, playlist view, search, and mobile PWA update (completed 2026-03-06)
+</details>
 
-### 🚧 v1.2 Playback & UX Polish (Roadmap Ready)
+<details>
+<summary>✅ v1.2 Playback & UX Polish (Phases 10-11) — SHIPPED 2026-03-06</summary>
 
-**Milestone Goal:** Fix playback bugs, load the full library upfront, streamline settings, and ship smooth beatmatch crossfading.
+- [x] Phase 10: Settings Cleanup — completed 2026-03-06
+- [x] Phase 11: Playback Bug Fixes — completed 2026-03-06
 
-- [x] **Phase 10: Settings Cleanup** — Remove Key Notation and Waveform Style settings; harden Camelot and Traktor RGB as hardcoded defaults (completed 2026-03-06)
-- [x] **Phase 11: Playback Bug Fixes** — Fix end-of-track audio repeat and orphaned crossfade audio on manual skip (completed 2026-03-06)
-- [ ] **Phase 12: Beatmatch Crossfade** — Gradual tempo ramp during crossfade window; crossfade state applied on app launch
-- [ ] **Phase 13: Async Full-Library Load** — Full library in memory on startup; remove scroll-to-load; loading indicator visible during startup
+</details>
+
+### 🚧 v1.3 Library UX & Duplicate Management (In Progress)
+
+**Milestone Goal:** Fix track table layout on window resize, load the full library upfront without scroll-to-load, and add a review-before-delete duplicate tracks dialog.
+
+- [ ] **Phase 12: CSS Layout Fix** — Track table rows and header extend to full window width at any window size
+- [ ] **Phase 13: Full Library Load** — All tracks load on startup; scroll-to-load pagination removed
+- [ ] **Phase 14: Duplicate Review Dialog** — Review-before-delete duplicate management with selective per-track deletion
 
 ## Phase Details
 
@@ -49,11 +58,11 @@
   3. `npm run lint` passes with zero ESLint errors across all frontend files
   4. `npm run format:check` reports no formatting violations
   5. The greet stub and orphaned `/api/tracks/{id}` route no longer exist in the codebase
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [x] 05-01: Fix aiStore error handling and consolidate audio_mime_type — completed 2026-03-01
-- [ ] 05-02: Remove dead code, configure ESLint 9 + Prettier 3, run full lint pass
+- [x] 05-02: Remove dead code, configure ESLint 9 + Prettier 3, run full lint pass — completed 2026-03-01
 
 ### Phase 6: Test Coverage
 **Goal**: Core backend logic and frontend utilities have automated tests, so regressions are caught before they reach users
@@ -67,41 +76,40 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [x] 06-01: Expand Rust context_builder tests (TEST-01, TEST-02, TEST-03 — db/audio already covered, context_builder gap closed) — completed 2026-03-01
-- [ ] 06-02: Configure Vitest 4 + jsdom + global IPC mock, add musicUtils and store tests (TEST-04, TEST-05, TEST-06)
+- [x] 06-01: Expand Rust context_builder tests — completed 2026-03-01
+- [x] 06-02: Configure Vitest 4 + jsdom + global IPC mock, add musicUtils and store tests — completed 2026-03-01
 
 ### Phase 7: UI Foundation
 **Goal**: A consistent Spotify-style visual language is established as design tokens and a component library that every screen in the app uses
-**Depends on**: Phase 5 (lint-clean codebase; no dead CSS to audit against)
+**Depends on**: Phase 5
 **Requirements**: UIUX-01, UIUX-09
 **Success Criteria** (what must be TRUE):
   1. The app renders in a Spotify-style dark palette with consistent typography and spacing — no hardcoded hex colors remain in CSS files
   2. Buttons, inputs, cards, and modals share a single styled component system applied identically across all views
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: Implement Spotify dark theme tokens, typography scale, and spacing system
-- [ ] 07-02: Apply consistent component styling across buttons, inputs, cards, and modals
+- [x] 07-01: Implement Spotify dark theme tokens, typography scale, and spacing system — completed 2026-03-01
+- [x] 07-02: Apply consistent component styling across buttons, inputs, cards, and modals — completed 2026-03-01
 
 ### Phase 8: UI Layout
-**Goal**: The primary navigation and playback chrome match Spotify's desktop layout — sidebar on the left, album grid in the main area, now-playing bar fixed at the bottom
-**Depends on**: Phase 7 (design tokens and component system must exist before laying out screens)
+**Goal**: The primary navigation and playback chrome match Spotify's desktop layout — sidebar on the left, main content area in the center, now-playing bar fixed at the bottom
+**Depends on**: Phase 7
 **Requirements**: UIUX-02, UIUX-03, UIUX-04, UIUX-05
 **Success Criteria** (what must be TRUE):
   1. A persistent sidebar shows library sections and the playlist list; clicking any section navigates without a full page reload
-  2. The library main area displays tracks and albums in an album art grid
-  3. The now-playing bar is fixed at the bottom of every view with track info, playback controls, and a progress bar
-  4. All view changes animate smoothly with Framer Motion transitions — no jarring instant swaps
+  2. The now-playing bar is fixed at the bottom of every view with track info, playback controls, and a progress bar
+  3. All view changes animate smoothly with Framer Motion transitions
 **Plans**: 3 plans
 
 Plans:
-- [x] 08-01: CSS Grid AppShell, resizable sidebar with collapsible sections, Rust album art extraction command (UIUX-02, UIUX-03)
-- [x] 08-02: 3-column NowPlayingBar, HomeView with playlist card grid, PlaylistDetailHeader with scroll compression (UIUX-03, UIUX-04)
-- [ ] 08-03: Framer Motion AnimatePresence crossfade transitions, expandable now-playing view, visual verification (UIUX-05)
+- [x] 08-01: CSS Grid AppShell, resizable sidebar with collapsible sections, Rust album art extraction command — completed 2026-03-06
+- [x] 08-02: 3-column NowPlayingBar, HomeView with playlist card grid, PlaylistDetailHeader — completed 2026-03-06
+- [x] 08-03: Framer Motion AnimatePresence crossfade transitions and expandable now-playing view — completed 2026-03-06
 
 ### Phase 9: UI Views and Mobile
 **Goal**: Every remaining content view — track table, playlist detail, search results — matches the Spotify design language, and the mobile PWA reflects the new desktop design
-**Depends on**: Phase 8 (layout chrome must exist before styling content views inside it)
+**Depends on**: Phase 8
 **Requirements**: UIUX-06, UIUX-07, UIUX-08, UIUX-10
 **Success Criteria** (what must be TRUE):
   1. The track table shows Spotify-style hover states and row selection; clicking a row plays the track
@@ -111,27 +119,27 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — TrackTable Spotify redesign: # column hover icon swap, row selection, combined Title+Artist cell, playlistMode prop (UIUX-06, UIUX-07)
-- [ ] 09-02-PLAN.md — SearchView new component with sectioned results, App.tsx + Sidebar search nav wiring (UIUX-08)
-- [ ] 09-03-PLAN.md — Mobile PWA CSS token alignment to desktop midnight theme (UIUX-10)
+- [x] 09-01: TrackTable Spotify redesign — completed 2026-03-06
+- [x] 09-02: SearchView new component with sectioned results — completed 2026-03-06
+- [x] 09-03: Mobile PWA CSS token alignment to desktop midnight theme — completed 2026-03-06
 
 ### Phase 10: Settings Cleanup
 **Goal**: The Settings panel shows only the two supported themes; Key Notation and Waveform Style settings are gone from the UI and from all code paths — Camelot and Traktor RGB are hardcoded defaults
-**Depends on**: Phase 9 (v1.1 complete; clean UI baseline before removing settings)
+**Depends on**: Phase 9 (v1.1 complete)
 **Requirements**: SETT-01, SETT-02, SETT-03
 **Success Criteria** (what must be TRUE):
   1. Settings > Appearance shows only Midnight and Carbon theme options — no other theme choices are visible
   2. Key Notation is not present anywhere in the Settings UI; all keys display in Camelot notation throughout the app
   3. Waveform Style is not present anywhere in the Settings UI; waveforms always render in Traktor RGB style
-  4. `grep -r "key_notation\|waveform_style" src/` returns zero hits — no read sites remain in the frontend codebase
+  4. `grep -r "key_notation\|waveform_style" src/` returns zero hits
 **Plans**: 1 plan
 
 Plans:
-- [ ] 10-01-PLAN.md — Strip Key Notation and Waveform Style settings; trim THEMES to Midnight and Carbon (SETT-01, SETT-02, SETT-03)
+- [x] 10-01: Strip Key Notation and Waveform Style settings; trim THEMES to Midnight and Carbon — completed 2026-03-06
 
 ### Phase 11: Playback Bug Fixes
 **Goal**: Tracks play to clean completion and manual skips during crossfade result in immediate, single-stream playback — no audio artifacts or orphaned background streams
-**Depends on**: Phase 10 (settings prop chain removed from App.tsx; reduces noise when reading audio-related App.tsx code)
+**Depends on**: Phase 10
 **Requirements**: PLAY-01, PLAY-02
 **Success Criteria** (what must be TRUE):
   1. A VBR MP3 plays to its natural end and the next track begins without any repeated audio from the last few seconds of the previous track
@@ -139,26 +147,37 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 11-01-PLAN.md — Fix SEEK_MARGIN_MS and add abortCrossfade() to loadTrack() (PLAY-01, PLAY-02)
+- [x] 11-01: Fix SEEK_MARGIN_MS and add abortCrossfade() to loadTrack() — completed 2026-03-06
 
-### Phase 12: Beatmatch Crossfade
-**Goal**: When crossfade is enabled, the incoming track's playback rate smoothly ramps from the outgoing track's BPM to its own BPM over the crossfade window — and crossfade activates on app launch without user re-toggling
-**Depends on**: Phase 11 (stable onTrackEnded path; abortCrossfade called correctly in loadTrack — both required before adding rate ramp logic)
-**Requirements**: XFADE-01, XFADE-02
+### Phase 12: CSS Layout Fix
+**Goal**: Track table rows and header background extend to full window width at every window size — no whitespace gaps on wide displays and no broken row backgrounds on resize
+**Depends on**: Phase 11 (v1.2 complete; clean UI baseline)
+**Requirements**: LAYT-01, LAYT-02
 **Success Criteria** (what must be TRUE):
-  1. During a crossfade between two tracks with different BPMs, the incoming track's tempo audibly ramps from the outgoing track's BPM toward its own native BPM over the crossfade window
-  2. After a fresh app launch with crossfade enabled in Settings, the next automatic track transition triggers a crossfade without the user needing to toggle the setting
-  3. No audible pitch shift (chipmunk effect) occurs during the tempo ramp
+  1. At any window width (800px, 1280px, 1920px), track table rows fill the full width — no blank gap appears to the right of the last column
+  2. The track table header background fills the full window width — it does not stop at the column content boundary
+  3. Horizontal scrolling activates only when the total column width exceeds the window width — not before
 **Plans**: TBD
 
-### Phase 13: Async Full-Library Load
-**Goal**: The full music library is in memory immediately after app startup — there is no scroll-to-load-more, no incomplete queue, and a loading indicator appears while the library loads
-**Depends on**: Phase 12 (crossfade validated against current queue structure before queue infrastructure changes)
-**Requirements**: LOAD-01, LOAD-02, LOAD-03
+### Phase 13: Full Library Load
+**Goal**: The entire music library is visible in the track list immediately after app startup — no "Scroll for more" prompt, no partial library, and the track count in the UI reflects the actual full library size
+**Depends on**: Phase 12 (CSS layout verified at correct widths before loading a large track set)
+**Requirements**: LOAD-01, LOAD-02
 **Success Criteria** (what must be TRUE):
-  1. On startup, all tracks in the library appear in the track list without any scroll-triggered loading
-  2. Clearing a search query restores the full library view — not a capped snapshot of the first 1000 tracks
-  3. A loading indicator is visible in the UI while the library is loading on startup; it disappears once loading is complete
+  1. On startup, every track in the library is visible in the "All Tracks" view without scrolling to trigger additional loads
+  2. The track count shown in the status bar and sidebar matches the total number of tracks in the database immediately after startup
+  3. Sorting and searching operate on the full library — not on a capped first-page snapshot
+**Plans**: TBD
+
+### Phase 14: Duplicate Review Dialog
+**Goal**: Users can review all duplicate track groups and selectively delete individual duplicates from a modal dialog — no track is deleted without explicit per-track confirmation, and the library refreshes accurately after deletion
+**Depends on**: Phase 13 (full library load established; post-deletion library refresh calls the simplified getAllTracks() path)
+**Requirements**: DUPL-01, DUPL-02, DUPL-03, DUPL-04
+**Success Criteria** (what must be TRUE):
+  1. Clicking "Review Duplicates" in Database Maintenance settings opens a modal dialog listing all duplicate groups
+  2. Each duplicate group shows file path, date added, file size, and BPM for every track in the group
+  3. The user can check or uncheck individual tracks within a group to select which ones to delete
+  4. Confirming deletion removes only the checked tracks; the track table and track count update immediately to reflect the deletions without showing ghost entries
 **Plans**: TBD
 
 ## Progress
@@ -172,9 +191,10 @@ Plans:
 | 5. Foundation Cleanup | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 6. Test Coverage | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 7. UI Foundation | v1.1 | 2/2 | Complete | 2026-03-01 |
-| 8. UI Layout | v1.1 | 0/3 | Not started | - |
+| 8. UI Layout | v1.1 | 3/3 | Complete | 2026-03-06 |
 | 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
-| 10. Settings Cleanup | 1/1 | Complete    | 2026-03-06 | - |
-| 11. Playback Bug Fixes | 1/1 | Complete    | 2026-03-06 | - |
-| 12. Beatmatch Crossfade | v1.2 | 0/? | Not started | - |
-| 13. Async Full-Library Load | v1.2 | 0/? | Not started | - |
+| 10. Settings Cleanup | v1.2 | 1/1 | Complete | 2026-03-06 |
+| 11. Playback Bug Fixes | v1.2 | 1/1 | Complete | 2026-03-06 |
+| 12. CSS Layout Fix | v1.3 | 0/? | Not started | - |
+| 13. Full Library Load | v1.3 | 0/? | Not started | - |
+| 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |

@@ -45,20 +45,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LAYT-01 | — | Pending |
-| LAYT-02 | — | Pending |
-| LOAD-01 | — | Pending |
-| LOAD-02 | — | Pending |
-| DUPL-01 | — | Pending |
-| DUPL-02 | — | Pending |
-| DUPL-03 | — | Pending |
-| DUPL-04 | — | Pending |
+| LAYT-01 | Phase 12 | Pending |
+| LAYT-02 | Phase 12 | Pending |
+| LOAD-01 | Phase 13 | Pending |
+| LOAD-02 | Phase 13 | Pending |
+| DUPL-01 | Phase 14 | Pending |
+| DUPL-02 | Phase 14 | Pending |
+| DUPL-03 | Phase 14 | Pending |
+| DUPL-04 | Phase 14 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️
+- Mapped to phases: 8
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-01*
-*Last updated: 2026-03-06 after v1.3 milestone definition*
+*Last updated: 2026-03-06 after v1.3 roadmap creation*

@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Library UX & Duplicate Management
-status: "Defining requirements"
-stopped_at: Milestone v1.3 started
-last_updated: "2026-03-06T12:00:00.000Z"
-last_activity: 2026-03-06 — Milestone v1.3 started
+status: "Roadmap ready"
+stopped_at: Roadmap created — Phase 12 next
+last_updated: "2026-03-06T12:30:00.000Z"
+last_activity: 2026-03-06 — Roadmap created for v1.3 (3 phases, 8 requirements mapped)
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** v1.3 Library UX & Duplicate Management — defining requirements
+**Current focus:** v1.3 Library UX & Duplicate Management — Phase 12 next (CSS Layout Fix)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 12 — CSS Layout Fix (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-06 — Milestone v1.3 started
+Status: Roadmap ready
+Last activity: 2026-03-06 — Roadmap created for v1.3 (3 phases, 8 requirements)
+
+Progress bar: [ ] Phase 12  [ ] Phase 13  [ ] Phase 14
 
 ## Performance Metrics
 
@@ -116,21 +118,30 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 10-settings-cleanup]: keyNotation/waveformStyle/customColors dead state eliminated — Camelot notation and Traktor RGB hardcoded as fixed defaults
 - [Phase 11-01]: SEEK_MARGIN_MS reduced from 10000 to 3000 — VBR overshoot < 1s empirically, 3s covers worst-case without 7-9s replay
 - [Phase 11-01]: abortCrossfade() placed unconditionally as first statement in loadTrack() — method is idempotent, no guard check needed
-- [Phase 11-01]: SEEK_MARGIN_MS reduced from 10000 to 3000 — VBR overshoot < 1s empirically, 3s covers worst-case without 7-9s replay
-- [Phase 11-01]: abortCrossfade() placed unconditionally as first statement in loadTrack() — method is idempotent, no guard check needed
 - [Phase 11-01]: _isCompletingCrossfade guard added to prevent crossfade double-play regression after fix
+
+**v1.3 research findings (pre-implementation):**
+- [Research] CSS fix must target .track-table-holder with min-width: 100% — applying to .track-table-row breaks TanStack Virtual width measurement
+- [Research] Full library load uses existing tauriApi.getAllTracks() — no new Rust command needed; adequate for up to ~7K tracks as single JSON payload
+- [Research] Duplicate dialog must reuse db.delete_track() in a loop (not a new batch command) — preserves existing cascade delete to track_analysis and playlist_tracks
+- [Research] hasMoreTracks, isLoadingMore, loadMoreTracks state vars in App.tsx are the full removal scope for Phase 13 — grep confirms no other consumers
+- [Research] find_duplicate_tracks Rust command required — new read-only extraction from existing remove_duplicate_tracks() detection logic in db/mod.rs
+- [Research] Post-deletion refresh: duplicate dialog must call onDeleted() which triggers getAllTracks() — without this, ghost entries persist until manual refresh
+- [Research] SQLite index coverage for file_hash/filename — must confirm before writing Phase 14 detection query to ensure performance on 7K+ track libraries
 
 ### Pending Todos
 
-None.
+- Before Phase 14 backend: read db/mod.rs delete_track() to confirm cascade to track_analysis and playlist_tracks — reuse if present, write explicitly if not
+- Before Phase 14 backend: check SQLite schema for file_hash and filename indexes — add if missing to keep detection query fast on large libraries
 
 ### Blockers/Concerns
 
 - [Future] Consider addressing remaining ESLint warnings: react-hooks/exhaustive-deps in multiple files, react-hooks/incompatible-library for TanStack Virtual useVirtualizer
+- [Deferred] Beatmatch crossfade (XFADE-01, XFADE-02) deferred from v1.2 — pitch correction complexity; playbackRate without pitch shift sounds wrong
 
 ## Session Continuity
 
-Last session: 2026-03-06T11:25:51.090Z
-Stopped at: Completed 11-playback-bug-fixes-01-PLAN.md
+Last session: 2026-03-06T12:30:00.000Z
+Stopped at: Roadmap created for v1.3
 Resume file: None
-Next action: /gsd:plan-phase 10
+Next action: /gsd:plan-phase 12
