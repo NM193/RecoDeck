@@ -124,7 +124,10 @@ Plans:
   2. Key Notation is not present anywhere in the Settings UI; all keys display in Camelot notation throughout the app
   3. Waveform Style is not present anywhere in the Settings UI; waveforms always render in Traktor RGB style
   4. `grep -r "key_notation\|waveform_style" src/` returns zero hits — no read sites remain in the frontend codebase
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 10-01-PLAN.md — Strip Key Notation and Waveform Style settings; trim THEMES to Midnight and Carbon (SETT-01, SETT-02, SETT-03)
 
 ### Phase 11: Playback Bug Fixes
 **Goal**: Tracks play to clean completion and manual skips during crossfade result in immediate, single-stream playback — no audio artifacts or orphaned background streams
