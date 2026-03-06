@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Spotify Redesign
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-03-06T07:54:15.987Z"
+stopped_at: "Completed 09-02-PLAN.md (checkpoint:human-verify pending)"
+last_updated: "2026-03-06T08:06:20.911Z"
 last_activity: 2026-03-01 — 08-03 Task 1 complete
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 78
 ---
 
@@ -54,6 +54,7 @@ Progress: [█████████░] 78%
 | Phase 08-ui-layout P03 | 2m | 1/2 tasks | 3 files |
 | Phase 09-ui-views-and-mobile P03 | 5 | 1 tasks | 2 files |
 | Phase 09-ui-views-and-mobile P03 | 10 | 2 tasks | 2 files |
+| Phase 09-ui-views-and-mobile P02 | 3 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ All v1.0 decisions archived in PROJECT.md Key Decisions table.
 30. [08-03] Album art click opens expanded overlay (separate from track info click which scrolls to track in library)
 - [Phase 09-ui-views-and-mobile]: Google Fonts Inter added via CDN link in mobile/index.html — no build step or local font copy, graceful -apple-system fallback for offline
 - [Phase 09-ui-views-and-mobile]: Separate Title and Artist columns retained after user rejected stacked combined cell during checkpoint review
+- [Phase 09-02]: Used home-view__card-count (not home-view__card-meta from plan) — actual HomeView.css uses card-count for the track count line
+- [Phase 09-02]: onSearch callback calls loadTracks(null, null) in App.tsx — ensures full library is available for client-side filtering in SearchView
+- [Phase 09-02]: showSearch cleared in onNavigateHome, onShowAllTracks, and onOpenSettings to prevent stale search state persisting across navigation
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-06T07:54:15.984Z
-Stopped at: Completed 09-03-PLAN.md
+Last session: 2026-03-06T08:06:20.908Z
+Stopped at: Completed 09-02-PLAN.md (checkpoint:human-verify pending)
 Resume file: None
