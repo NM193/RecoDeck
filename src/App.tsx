@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { open, confirm } from '@tauri-apps/plugin-dialog'
+import { confirm } from '@tauri-apps/plugin-dialog'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
 // import { check } from "@tauri-apps/plugin-updater";
@@ -10,16 +10,16 @@ import { NowPlayingBar } from './components/layout/NowPlayingBar'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
-import { Settings } from './components/Settings'
+import { SettingsView } from './components/views/SettingsView'
+import { SearchView } from './components/views/SearchView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { Notification } from './components/Notification'
-import { HeaderNotification } from './components/HeaderNotification'
 import {
   AnalysisProgress,
   type AnalysisProgressData,
 } from './components/AnalysisProgress'
-import { PlayerAIChat } from './components/ai/PlayerAIChat'
+// import { PlayerAIChat } from './components/ai/PlayerAIChat'
 import { AIPlaylistDialog } from './components/ai/AIPlaylistDialog'
 import { RecommendationsPanel } from './components/ai/RecommendationsPanel'
 import { MixPrepPanel } from './components/ai/MixPrepPanel'
@@ -28,7 +28,7 @@ import { Sidebar } from './components/layout/Sidebar'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
-import type { Track, Playlist } from './types/track'
+import type { Track, Playlist, AnalysisProgressEvent, AnalysisCompleteEvent } from './types/track'
 import './App.css'
 import './components/TrackTable.css'
 
@@ -59,7 +59,7 @@ function AppContent() {
   const [tracks, setTracks] = useState<Track[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [keyNotation, setKeyNotation] = useState<'camelot' | 'openkey'>(
     'camelot',
@@ -72,6 +72,8 @@ function AppContent() {
 
   // Playlist state
   const [playlists, setPlaylists] = useState<Playlist[]>([])
+  const [showAllTracks, setShowAllTracks] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -137,13 +139,92 @@ function AppContent() {
   // Analysis progress state
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgressData | null>(null)
-  const [analysisCancelled, setAnalysisCancelled] = useState(false)
+  const analysisStartTimeRef = useRef<number>(0)
 
-  // Cancel analysis
+  // Scan progress state (global, survives Settings unmount)
+  const [scanProgress, setScanProgress] = useState<{
+    current: number; total: number; currentFile: string; folder: string
+  } | null>(null)
+  const [scanStartTime, setScanStartTime] = useState<number | null>(null)
+
+  // Listen for scan-progress events globally
+  useEffect(() => {
+    const unlisten = listen<{
+      folder: string; current: number; total: number; current_file: string
+    }>('scan-progress', (event) => {
+      const p = event.payload
+      if (p.current >= p.total && p.total > 0) {
+        setScanProgress(null)
+        setScanStartTime(null)
+        return
+      } else {
+        setScanProgress({ current: p.current, total: p.total, currentFile: p.current_file, folder: p.folder })
+        setScanStartTime((prev) => prev ?? Date.now())
+      }
+    })
+    return () => { unlisten.then((fn) => fn()) }
+  }, [])
+
+  // Cancel analysis — tells backend to stop Rayon workers
   function handleCancelAnalysis() {
-    setAnalysisCancelled(true)
-    setAnalysisProgress(null)
+    tauriApi.cancelAnalysis().catch(() => {})
   }
+
+  // Listen for batch analysis events from backend
+  useEffect(() => {
+    const unlistenProgress = listen<AnalysisProgressEvent>('analysis-progress', (event) => {
+      const p = event.payload
+      setAnalysisProgress({
+        currentIndex: p.current,
+        totalTracks: p.total,
+        currentTrackName: p.track_name,
+        totalDurationMs: 0,
+        totalSizeBytes: 0,
+        startTime: analysisStartTimeRef.current,
+      })
+    })
+
+    const unlistenComplete = listen<AnalysisCompleteEvent>('analysis-complete', (event) => {
+      const e = event.payload
+
+      // Ensure progress bar is visible for at least 600ms to avoid flashing
+      const elapsed = Date.now() - analysisStartTimeRef.current
+      const minDisplayMs = 600
+      const delay = Math.max(0, minDisplayMs - elapsed)
+
+      setTimeout(() => {
+        setAnalysisProgress(null)
+        setAnalyzing(false)
+
+        if (e.cancelled) {
+          setNotification({
+            message: `Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`,
+            type: 'warning',
+          })
+        } else if (e.total_analyzed > 0) {
+          setNotification({
+            message: `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
+            type: 'success',
+          })
+        } else {
+          setNotification({
+            message: 'All tracks already have BPM and Key analysis',
+            type: 'info',
+          })
+        }
+
+        // Reload tracks and rebuild AI context (use ref to avoid stale closure)
+        loadTracksRef.current()
+        tauriApi.rebuildAIContext().catch(() => {})
+      }, delay)
+    })
+
+    return () => {
+      unlistenProgress.then((fn) => fn())
+      unlistenComplete.then((fn) => fn())
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     initializeApp()
@@ -151,7 +232,12 @@ function AppContent() {
 
   // Register Settings callback so AI error messages can open the Settings panel
   useEffect(() => {
-    useAIStore.getState().registerOpenSettings(() => setSettingsOpen(true))
+    useAIStore.getState().registerOpenSettings(() => {
+      setShowSettings(true)
+      setSelectedFolder(null)
+      setSelectedPlaylistId(null)
+      setShowAllTracks(false)
+    })
   }, [])
 
   // Check for app updates on startup (after a delay to not block UI)
@@ -180,6 +266,7 @@ function AppContent() {
   }, [])
 
   async function initializeApp() {
+    const splashStart = Date.now()
     try {
       const dataDir = await appDataDir()
       const dbPath = await join(dataDir, 'recodeck.db')
@@ -266,7 +353,10 @@ function AppContent() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      // Show splash screen for at least 2.5s so the logo animation plays
+      const elapsed = Date.now() - splashStart
+      const remaining = Math.max(0, 2500 - elapsed)
+      setTimeout(() => setLoading(false), remaining)
     }
   }
 
@@ -360,6 +450,29 @@ function AppContent() {
     tracks.length,
     totalTrackCount,
   ])
+
+  // Backend search for "All Tracks" view — searches entire DB, not just loaded tracks
+  const handleSearch = useCallback(
+    async (query: string) => {
+      // Only use backend search in "All Tracks" view (no folder/playlist selected)
+      if (selectedFolder || selectedPlaylistId) return
+
+      if (!query) {
+        // Search cleared — restore paginated view
+        loadTracks()
+        return
+      }
+
+      try {
+        const results = await tauriApi.searchTracks(query)
+        setTracks(results)
+        setHasMoreTracks(false) // Search results are complete, no pagination
+      } catch (err) {
+        console.error('Backend search failed:', err)
+      }
+    },
+    [selectedFolder, selectedPlaylistId, loadTracks],
+  )
 
   // Load playlists from backend
   const loadPlaylists = useCallback(async () => {
@@ -516,28 +629,8 @@ function AppContent() {
   async function handleFolderSelect(folderPath: string | null) {
     setSelectedFolder(folderPath)
     setSelectedPlaylistId(null)
-
-    // Debug: show what we're searching for
-    if (folderPath) {
-      console.log(`=== Selecting folder: ${folderPath} ===`)
-      try {
-        const debugTracks = await tauriApi.getDebugTracks()
-        const pattern = `${folderPath}/`
-        console.log(`Looking for tracks starting with: ${pattern}`)
-        const matching = debugTracks.filter((t) =>
-          t.file_path.startsWith(pattern),
-        )
-        console.log(`Found ${matching.length} matching tracks:`)
-        matching.forEach((t) => console.log(`  - ${t.file_path}`))
-        const nonMatching = debugTracks.filter(
-          (t) => !t.file_path.startsWith(pattern),
-        )
-        console.log(`Non-matching tracks (${nonMatching.length}):`)
-        nonMatching.forEach((t) => console.log(`  - ${t.file_path}`))
-      } catch {
-        // ignore
-      }
-    }
+    setShowAllTracks(false)
+    setShowSettings(false)
 
     await loadTracks(folderPath, null)
   }
@@ -546,249 +639,75 @@ function AppContent() {
   async function handlePlaylistSelect(playlistId: number) {
     setSelectedPlaylistId(playlistId)
     setSelectedFolder(null)
+    setShowAllTracks(false)
+    setShowSettings(false)
     await loadTracks(null, playlistId)
   }
 
-  // Analyze folder — BPM and Key for tracks that don't have them yet
+  // Analyze folder — BPM and Key for tracks that don't have them yet (parallel batch)
   async function handleAnalyzeFolder(folderPath: string) {
     try {
-      setAnalyzing(true)
-      setAnalysisCancelled(false)
-      setError(null)
-
       const folderTracks = await tauriApi.getTracksInFolder(folderPath)
+      const trackIds = folderTracks.filter((t) => t.id).map((t) => t.id)
 
-      // Filter tracks that need analysis
-      const tracksToAnalyze = folderTracks.filter(
-        (t) => t.id && (!t.bpm || !t.musical_key),
-      )
-
-      if (tracksToAnalyze.length === 0) {
-        if (folderTracks.length === 0) {
-          setNotification({
-            message: 'No audio tracks found in this folder',
-            type: 'info',
-          })
-        } else {
-          setNotification({
-            message:
-              'All tracks in this folder already have BPM and Key analysis',
-            type: 'info',
-          })
-        }
+      if (trackIds.length === 0) {
+        setNotification({ message: 'No audio tracks found in this folder', type: 'info' })
         return
       }
 
-      // Calculate total duration and size
-      const totalDurationMs = tracksToAnalyze.reduce(
-        (sum, t) => sum + (t.duration_ms || 0),
-        0,
-      )
-      const totalSizeBytes = tracksToAnalyze.reduce(
-        (sum, t) => sum + (t.file_size || 0),
-        0,
-      )
-
-      const startTime = Date.now()
-      let bpmCount = 0
-      let keyCount = 0
-
-      for (let i = 0; i < tracksToAnalyze.length; i++) {
-        if (analysisCancelled) {
-          setNotification({
-            message: `Analysis cancelled. Analyzed ${bpmCount + keyCount} tracks.`,
-            type: 'warning',
-          })
-          break
-        }
-
-        const track = tracksToAnalyze[i]
-        if (!track.id) continue
-
-        // Update progress
-        setAnalysisProgress({
-          currentIndex: i + 1,
-          totalTracks: tracksToAnalyze.length,
-          currentTrackName:
-            track.title || track.file_path.split('/').pop() || 'Unknown',
-          totalDurationMs,
-          totalSizeBytes,
-          startTime,
-        })
-
-        // Allow UI to update by yielding to the event loop
-        await new Promise((resolve) => setTimeout(resolve, 0))
-
-        try {
-          if (!track.bpm) {
-            await tauriApi.analyzeBpm(track.id)
-            bpmCount++
-          }
-          if (!track.musical_key) {
-            await tauriApi.analyzeKey(track.id)
-            keyCount++
-          }
-        } catch (err) {
-          console.warn(`Failed to analyze track ${track.id}:`, err)
-        }
-      }
-
-      setAnalysisProgress(null)
-      await loadTracks()
-
-      if (!analysisCancelled && (bpmCount > 0 || keyCount > 0)) {
-        const parts = []
-        if (bpmCount > 0) parts.push(`BPM: ${bpmCount}`)
-        if (keyCount > 0) parts.push(`Key: ${keyCount}`)
-        setNotification({
-          message: `Analyzed ${parts.join(', ')} tracks in folder`,
-          type: 'success',
-        })
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setAnalyzing(false)
-      setAnalysisProgress(null)
-      setAnalysisCancelled(false)
-      // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {})
-    }
-  }
-
-  // Analyze a single track (BPM + Key)
-  async function handleAnalyzeTrack(track: Track) {
-    try {
+      // Show progress bar immediately with "preparing" state
       setAnalyzing(true)
-      setAnalysisCancelled(false)
       setError(null)
-
-      // Show progress for single track
+      analysisStartTimeRef.current = Date.now()
       setAnalysisProgress({
-        currentIndex: 1,
-        totalTracks: 1,
-        currentTrackName:
-          track.title || track.file_path.split('/').pop() || 'Unknown',
-        totalDurationMs: track.duration_ms || 0,
-        totalSizeBytes: track.file_size || 0,
+        currentIndex: 0,
+        totalTracks: trackIds.length,
+        currentTrackName: 'Preparing analysis...',
+        totalDurationMs: 0,
+        totalSizeBytes: 0,
         startTime: Date.now(),
       })
 
-      // Allow UI to update
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      // Yield to event loop so React commits the progress bar render
+      // before backend events can clear it
+      await new Promise((r) => setTimeout(r, 0))
 
-      // Always analyze both BPM and Key (re-analyze if already exists)
-      await tauriApi.analyzeBpm(track.id)
-      await tauriApi.analyzeKey(track.id)
-
-      setAnalysisProgress(null)
-      await loadTracks()
-
-      setHeaderNotification(`Analysis complete for "${track.title || 'track'}"`)
+      await tauriApi.analyzeTracksBatch(trackIds, true)
+      // Returns instantly — backend events update progress from here
     } catch (err) {
+      setAnalyzing(false)
+      setAnalysisProgress(null)
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Analyze a single track (BPM + Key) — uses batch for decode-once benefit
+  async function handleAnalyzeTrack(track: Track) {
+    try {
+      setAnalyzing(true)
+      setError(null)
+      analysisStartTimeRef.current = Date.now()
+      setAnalysisProgress({
+        currentIndex: 0,
+        totalTracks: 1,
+        currentTrackName: track.title || track.file_path.split('/').pop() || 'Unknown',
+        totalDurationMs: 0,
+        totalSizeBytes: 0,
+        startTime: Date.now(),
+      })
+      await new Promise((r) => setTimeout(r, 0))
+      await tauriApi.analyzeTracksBatch([track.id], true)
+    } catch (err) {
+      setAnalyzing(false)
+      setAnalysisProgress(null)
       setError(err instanceof Error ? err.message : String(err))
       setNotification({
         message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
         type: 'error',
       })
-    } finally {
-      setAnalyzing(false)
-      setAnalysisProgress(null)
-      setAnalysisCancelled(false)
-      // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
-  // Analyze BPM only for a single track
-  async function handleAnalyzeBpm(track: Track) {
-    try {
-      setAnalyzing(true)
-      setAnalysisCancelled(false)
-      setError(null)
-
-      // Show progress for single track
-      setAnalysisProgress({
-        currentIndex: 1,
-        totalTracks: 1,
-        currentTrackName:
-          track.title || track.file_path.split('/').pop() || 'Unknown',
-        totalDurationMs: track.duration_ms || 0,
-        totalSizeBytes: track.file_size || 0,
-        startTime: Date.now(),
-      })
-
-      // Allow UI to update
-      await new Promise((resolve) => setTimeout(resolve, 0))
-
-      await tauriApi.analyzeBpm(track.id)
-
-      setAnalysisProgress(null)
-      await loadTracks()
-
-      setNotification({
-        message: `BPM analysis complete for "${track.title || 'track'}"`,
-        type: 'success',
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `BPM analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
-    } finally {
-      setAnalyzing(false)
-      setAnalysisProgress(null)
-      setAnalysisCancelled(false)
-      // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {})
-    }
-  }
-
-  // Analyze Key only for a single track
-  async function handleAnalyzeKey(track: Track) {
-    try {
-      setAnalyzing(true)
-      setAnalysisCancelled(false)
-      setError(null)
-
-      // Show progress for single track
-      setAnalysisProgress({
-        currentIndex: 1,
-        totalTracks: 1,
-        currentTrackName:
-          track.title || track.file_path.split('/').pop() || 'Unknown',
-        totalDurationMs: track.duration_ms || 0,
-        totalSizeBytes: track.file_size || 0,
-        startTime: Date.now(),
-      })
-
-      // Allow UI to update
-      await new Promise((resolve) => setTimeout(resolve, 0))
-
-      await tauriApi.analyzeKey(track.id)
-
-      setAnalysisProgress(null)
-      await loadTracks()
-
-      setNotification({
-        message: `Key analysis complete for "${track.title || 'track'}"`,
-        type: 'success',
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `Key analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
-    } finally {
-      setAnalyzing(false)
-      setAnalysisProgress(null)
-      setAnalysisCancelled(false)
-      // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {})
-    }
-  }
 
   // Create playlist — open name modal (prompt() doesn't work in Tauri)
   function handleCreatePlaylist(parentId: number | null) {
@@ -950,162 +869,46 @@ function AppContent() {
     }
   }
 
-  // Scan directory button
-  async function handleScanDirectory() {
-    try {
-      const selectedPath = await open({
-        directory: true,
-        multiple: false,
-        title: 'Select Music Folder',
-      })
-
-      if (!selectedPath) return
-
-      setLoading(true)
-      setError(null)
-
-      try {
-        await tauriApi.addLibraryFolder(selectedPath as string)
-      } catch {
-        // Folder might already exist
-      }
-
-      const result = await tauriApi.scanDirectory(selectedPath as string)
-      console.log('Scan result:', result)
-
-      alert(
-        `Scanned ${result.total_files} files\nImported: ${result.imported}\nSkipped: ${result.skipped}`,
-      )
-
-      let folders: string[] = []
-      try {
-        folders = await tauriApi.getLibraryFolders()
-        setLibraryFolders(folders)
-      } catch {
-        console.warn('Failed to refresh library folders')
-      }
-
-      // Restart file watcher with updated folder list
-      try {
-        await tauriApi.startFileWatcher(folders)
-      } catch {
-        console.warn('Failed to restart file watcher')
-      }
-
-      await loadTracks()
-      await loadPlaylists()
-
-      // Rebuild AI context cache in background
-      tauriApi.rebuildAIContext().catch(() => {})
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Analyze all BPM
+  // Analyze all tracks — BPM and Key (parallel batch)
   async function handleAnalyzeAll() {
     if (analyzing) return
     try {
-      setAnalyzing(true)
-      setAnalysisCancelled(false)
-      setError(null)
+      // Use already-loaded tracks if available, otherwise fetch
+      const trackIds = tracks.length > 0
+        ? tracks.filter((t) => t.id).map((t) => t.id)
+        : (await tauriApi.getAllTracks()).filter((t) => t.id).map((t) => t.id)
 
-      // Get all tracks
-      const allTracks = await tauriApi.getAllTracks()
-
-      // Filter tracks that need analysis
-      const tracksToAnalyze = allTracks.filter(
-        (t) => t.id && (!t.bpm || !t.musical_key),
-      )
-
-      if (tracksToAnalyze.length === 0) {
-        setNotification({
-          message: 'All tracks already have BPM and Key analysis',
-          type: 'info',
-        })
+      if (trackIds.length === 0) {
+        setNotification({ message: 'No tracks in library', type: 'info' })
         return
       }
 
-      // Calculate total duration and size
-      const totalDurationMs = tracksToAnalyze.reduce(
-        (sum, t) => sum + (t.duration_ms || 0),
-        0,
-      )
-      const totalSizeBytes = tracksToAnalyze.reduce(
-        (sum, t) => sum + (t.file_size || 0),
-        0,
-      )
+      // Show progress bar immediately with "preparing" state
+      setAnalyzing(true)
+      setError(null)
+      analysisStartTimeRef.current = Date.now()
+      setAnalysisProgress({
+        currentIndex: 0,
+        totalTracks: trackIds.length,
+        currentTrackName: 'Preparing analysis...',
+        totalDurationMs: 0,
+        totalSizeBytes: 0,
+        startTime: Date.now(),
+      })
 
-      const startTime = Date.now()
-      let bpmCount = 0
-      let keyCount = 0
+      // Yield to event loop so React commits the progress bar render
+      await new Promise((r) => setTimeout(r, 0))
 
-      for (let i = 0; i < tracksToAnalyze.length; i++) {
-        if (analysisCancelled) {
-          setNotification({
-            message: `Analysis cancelled. Analyzed ${bpmCount + keyCount} tracks.`,
-            type: 'warning',
-          })
-          break
-        }
-
-        const track = tracksToAnalyze[i]
-        if (!track.id) continue
-
-        // Update progress
-        setAnalysisProgress({
-          currentIndex: i + 1,
-          totalTracks: tracksToAnalyze.length,
-          currentTrackName:
-            track.title || track.file_path.split('/').pop() || 'Unknown',
-          totalDurationMs,
-          totalSizeBytes,
-          startTime,
-        })
-
-        // Allow UI to update by yielding to the event loop
-        await new Promise((resolve) => setTimeout(resolve, 0))
-
-        try {
-          if (!track.bpm) {
-            await tauriApi.analyzeBpm(track.id)
-            bpmCount++
-          }
-          if (!track.musical_key) {
-            await tauriApi.analyzeKey(track.id)
-            keyCount++
-          }
-        } catch (err) {
-          console.warn(`Failed to analyze track ${track.id}:`, err)
-        }
-      }
-
-      setAnalysisProgress(null)
-      await loadTracks()
-
-      if (!analysisCancelled && (bpmCount > 0 || keyCount > 0)) {
-        const parts = []
-        if (bpmCount > 0) parts.push(`BPM: ${bpmCount}`)
-        if (keyCount > 0) parts.push(`Key: ${keyCount}`)
-        setNotification({
-          message: `Analyzed ${parts.join(', ')} tracks`,
-          type: 'success',
-        })
-      }
+      await tauriApi.analyzeTracksBatch(trackIds, false)
+      // Returns instantly — backend events update progress from here
     } catch (err) {
+      setAnalyzing(false)
+      setAnalysisProgress(null)
       setError(err instanceof Error ? err.message : String(err))
       setNotification({
         message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
         type: 'error',
       })
-    } finally {
-      setAnalyzing(false)
-      setAnalysisProgress(null)
-      setAnalysisCancelled(false)
-      // Rebuild AI context cache with updated analysis data
-      tauriApi.rebuildAIContext().catch(() => {})
     }
   }
 
@@ -1213,7 +1016,7 @@ function AppContent() {
       <div className="app-container loading">
         <div className="loading-screen">
           <img
-            src="/recodeck-logo.png"
+            src="/recodeck-logo.gif"
             alt="RecoDeck"
             className="loading-logo"
           />
@@ -1258,11 +1061,29 @@ function AppContent() {
       : 'Click "Scan Folder" to add music to your library'
 
   // Derive a unique view key so AnimatePresence knows when to animate
-  const viewKey = selectedPlaylistId
-    ? `playlist-${selectedPlaylistId}`
-    : selectedFolder
-      ? `folder-${selectedFolder}`
-      : 'home'
+  const viewKey = showSettings
+    ? 'settings'
+    : showSearch
+      ? 'search'
+      : selectedPlaylistId
+        ? `playlist-${selectedPlaylistId}`
+        : selectedFolder
+          ? `folder-${selectedFolder}`
+          : showAllTracks
+            ? 'all-tracks'
+            : 'home'
+
+  const activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search' = showSettings
+    ? 'settings'
+    : showSearch
+      ? 'search'
+      : selectedPlaylistId
+        ? 'playlist'
+        : selectedFolder
+          ? 'folder'
+          : showAllTracks
+            ? 'all-tracks'
+            : 'home'
 
   const sidebarEl = (
     <Sidebar
@@ -1271,6 +1092,9 @@ function AppContent() {
       selectedFolder={selectedFolder}
       selectedPlaylistId={selectedPlaylistId}
       totalTrackCount={totalTrackCount}
+      activeView={activeView}
+      toastMessage={headerNotification}
+      onToastDismiss={() => setHeaderNotification(null)}
       onFolderSelect={handleFolderSelect}
       onPlaylistSelect={handlePlaylistSelect}
       onAnalyzeFolder={handleAnalyzeFolder}
@@ -1280,10 +1104,35 @@ function AppContent() {
       onRenamePlaylist={handleRenamePlaylist}
       onDeletePlaylist={handleDeletePlaylist}
       onSharePlaylist={handleSharePlaylist}
-      onScanDirectory={handleScanDirectory}
-      onOpenSettings={() => setSettingsOpen(true)}
+      onOpenSettings={() => {
+        setShowSettings(true)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
+        setShowSearch(false)
+      }}
       onNavigateHome={() => {
-        handleFolderSelect(null)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
+        setShowSettings(false)
+        setShowSearch(false)
+      }}
+      onShowAllTracks={() => {
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(true)
+        setShowSettings(false)
+        setShowSearch(false)
+        loadTracks(null, null)
+      }}
+      onSearch={() => {
+        setShowSearch(true)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
+        setShowSettings(false)
+        loadTracks(null, null)
       }}
     />
   )
@@ -1296,19 +1145,38 @@ function AppContent() {
         onCancel={handleCancelAnalysis}
       />
 
-      {/* Header notification above track table */}
-      {headerNotification && (
-        <div style={{ padding: '4px 16px', flexShrink: 0 }}>
-          <HeaderNotification
-            message={headerNotification}
-            onComplete={() => setHeaderNotification(null)}
-          />
+      {/* Scan progress bar (global — visible from any view) */}
+      {scanProgress && (
+        <div className="scan-progress-global">
+          <div className="scan-progress__bar-wrapper">
+            <div
+              className="scan-progress__bar"
+              style={{ width: `${scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%` }}
+            />
+          </div>
+          <div className="scan-progress__info">
+            <span className="scan-progress__count">
+              Scanning: [{scanProgress.current}/{scanProgress.total}]{' '}
+              {scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%
+            </span>
+            {scanStartTime && scanProgress.current > 0 && (() => {
+              const elapsed = Date.now() - scanStartTime
+              const avg = elapsed / scanProgress.current
+              const remaining = avg * (scanProgress.total - scanProgress.current)
+              if (remaining < 60000) return <span className="scan-progress__eta">{Math.ceil(remaining / 1000)}s remaining</span>
+              const mins = Math.ceil(remaining / 60000)
+              return <span className="scan-progress__eta">{mins} min{mins === 1 ? '' : 's'} remaining</span>
+            })()}
+          </div>
+          {scanProgress.currentFile && (
+            <div className="scan-progress__filename">{scanProgress.currentFile}</div>
+          )}
         </div>
       )}
 
       {/* Main content — Home view when nothing selected, TrackTable otherwise */}
       {/* AnimatePresence mode="wait" ensures old view fully exits before new view enters */}
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: 0 }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={viewKey}
@@ -1316,9 +1184,28 @@ function AppContent() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
-            style={{ height: '100%', overflow: 'auto' }}
+            style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
-            {!selectedFolder && !selectedPlaylistId ? (
+            {showSettings ? (
+              <SettingsView
+                onFoldersChanged={handleFoldersChanged}
+                onThemeChanged={handleThemeChanged}
+                onKeyNotationChanged={handleKeyNotationChanged}
+                onWaveformStyleChanged={handleWaveformStyleChanged}
+                onNotification={(message, type) => setNotification({ message, type })}
+              />
+            ) : showSearch ? (
+              <SearchView
+                tracks={tracks}
+                playlists={playlists}
+                keyNotation={keyNotation}
+                onTrackPlay={handlePlayTrack}
+                onPlaylistSelect={(id) => {
+                  handlePlaylistSelect(id)
+                  setShowSearch(false)
+                }}
+              />
+            ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
               <HomeView
                 playlists={playlists}
                 totalTrackCount={totalTrackCount}
@@ -1342,7 +1229,7 @@ function AppContent() {
                   ) : null
                 })()}
 
-                <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: 0 }}>
                   <TrackTable
                     ref={trackTableRef}
                     tracks={tracks}
@@ -1352,8 +1239,6 @@ function AppContent() {
                     onTrackClick={handleTrackClick}
                     onTrackDoubleClick={handlePlayTrack}
                     onAnalyzeTrack={handleAnalyzeTrack}
-                    onAnalyzeBpm={handleAnalyzeBpm}
-                    onAnalyzeKey={handleAnalyzeKey}
                     onAddToPlaylist={handleAddToPlaylist}
                     onRemoveFromPlaylist={handleRemoveFromPlaylist}
                     onSetGenre={handleSetGenre}
@@ -1369,6 +1254,7 @@ function AppContent() {
                       AI_ENABLED ? handleGetPlaylistRecommendations : undefined
                     }
                     onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
+                    onSearch={!selectedFolder && !selectedPlaylistId ? handleSearch : undefined}
                   />
                 </div>
               </div>
@@ -1405,17 +1291,6 @@ function AppContent() {
     <>
       <AppShell sidebar={sidebarEl} main={mainEl} player={playerEl} />
 
-      {/* Settings panel */}
-      <Settings
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onFoldersChanged={handleFoldersChanged}
-        onThemeChanged={handleThemeChanged}
-        onKeyNotationChanged={handleKeyNotationChanged}
-        onWaveformStyleChanged={handleWaveformStyleChanged}
-        onNotification={(message, type) => setNotification({ message, type })}
-      />
-
       {/* Name prompt for Create Playlist / Create Folder / Rename (works in Tauri) */}
       <PromptModal
         open={promptState.open}
@@ -1448,18 +1323,7 @@ function AppContent() {
         />
       )}
 
-      {/* AI Chat integrated into player */}
-      {AI_ENABLED && (
-        <PlayerAIChat
-          onPlaylistCreated={() => {
-            loadPlaylists()
-            setNotification({
-              message: 'Playlist created successfully!',
-              type: 'success',
-            })
-          }}
-        />
-      )}
+      {/* AI Chat integrated into player — hidden for now */}
 
       {/* AI Playlist Generation Dialog */}
       {AI_ENABLED && aiPlaylistSeedTrack && (
