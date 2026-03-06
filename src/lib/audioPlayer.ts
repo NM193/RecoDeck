@@ -3,12 +3,9 @@
  * registered in the Rust backend to serve local audio files.
  *
  * IMPORTANT:
- * In Tauri/WebView, the most reliable way to access a custom protocol from
- * browser media elements is via the `http://<scheme>.localhost/...` mapping.
- * Some WebKit builds treat `scheme://localhost/...` as unsupported for <audio>.
- *
- * Preferred URL format (all platforms): http://stream.localhost/?p=<encoded_path>
- * Fallback URL format:                 stream://localhost/?p=<encoded_path>
+ * In Tauri 2, custom protocol URL format differs by platform:
+ * - Windows:     http://stream.localhost/?p=<encoded_path>
+ * - macOS/Linux: stream://localhost/?p=<encoded_path>
  */
 export class AudioPlayer {
   private audio: HTMLAudioElement
@@ -49,6 +46,12 @@ export class AudioPlayer {
   private nativeNextStartTime: number = 0
   private nativeEndedEmitted: boolean = false
 
+  // Visualization (Web Audio AnalyserNode for waveform display)
+  private _vizCtx: AudioContext | null = null
+  private _vizAnalyser: AnalyserNode | null = null
+  private _vizSource: MediaElementAudioSourceNode | null = null
+  private _vizConnectedTo: HTMLAudioElement | null = null
+
   // Callbacks
   public onPositionUpdate?: (positionMs: number) => void
   public onDurationChange?: (durationMs: number) => void
@@ -75,6 +78,7 @@ export class AudioPlayer {
   constructor() {
     this.audio = new Audio()
     this.audio.preload = 'auto'
+    this.audio.crossOrigin = 'anonymous'
     this.setupEventListeners()
   }
 
@@ -179,8 +183,8 @@ export class AudioPlayer {
 
             // Seek with a safety margin to account for VBR seek imprecision.
             // Symphonia's seek on VBR MP3 can overshoot, missing audio data.
-            // We seek 10s earlier to ensure we don't skip anything.
-            const SEEK_MARGIN_MS = 10000
+            // We seek 3s earlier to cover VBR seek overshoot (< 1s) plus remaining audio (1-3s empirical).
+            const SEEK_MARGIN_MS = 3000
             const seekPosition = Math.max(0, savedPosition - SEEK_MARGIN_MS)
             if (seekPosition > 0) {
               const { tauriApi } = await import('./tauri-api')
@@ -467,8 +471,8 @@ export class AudioPlayer {
    * IMPORTANT: This function preserves ALL special characters in filenames:
    * spaces, commas, brackets, quotes, backslashes (on macOS/Linux), etc.
    *
-   * Prefer:          http://stream.localhost/?p=<encoded_path>
-   * Fallback:        stream://localhost/?p=<encoded_path>
+   * Windows:     http://stream.localhost/?p=<encoded_path>
+   * macOS/Linux: stream://localhost/?p=<encoded_path>
    */
   private filePathToStreamUrl(filePath: string): string {
     const trimmed = filePath.trim()
@@ -514,8 +518,12 @@ export class AudioPlayer {
     // This ensures the path survives as a single query parameter value.
     const encoded = encodeURIComponent(pathForUrl)
 
-    // Always prefer the WebView-safe http mapping. We'll fall back to stream:// if needed.
-    return `http://stream.localhost/?p=${encoded}`
+    // On Windows, Tauri 2 maps custom protocols to http://scheme.localhost/
+    // On macOS/Linux, they use scheme://localhost/
+    if (isWindows) {
+      return `http://stream.localhost/?p=${encoded}`
+    }
+    return `stream://localhost/?p=${encoded}`
   }
 
   private async loadUrl(
@@ -585,6 +593,7 @@ export class AudioPlayer {
       'trackId:',
       trackId,
     )
+    this.abortCrossfade()
     // Increment generation so any in-flight load from a previous call is cancelled.
     const gen = ++this._loadGeneration
     this._isLoading = true
@@ -638,6 +647,7 @@ export class AudioPlayer {
       const prevVolume = this.audio.volume
       this.audio = new Audio()
       this.audio.preload = 'auto'
+      this.audio.crossOrigin = 'anonymous'
       this.audio.volume = prevVolume
       this.setupEventListeners()
 
@@ -725,10 +735,12 @@ export class AudioPlayer {
           return
         }
 
-        // For non-format errors, try fallback URL scheme
+        // For non-format errors, try the other URL scheme as fallback
         const fallbackUrl = url.startsWith('http://stream.localhost/')
           ? url.replace('http://stream.localhost/', 'stream://localhost/')
-          : url
+          : url.startsWith('stream://localhost/')
+            ? url.replace('stream://localhost/', 'http://stream.localhost/')
+            : url
 
         if (fallbackUrl !== url && !isFormatError) {
           console.warn('[AudioPlayer] Retrying with fallback URL:', fallbackUrl)
@@ -958,6 +970,39 @@ export class AudioPlayer {
     return this.isCrossfading
   }
 
+  getAnalyser(): AnalyserNode | null {
+    if (this.mode !== 'html') return null
+
+    try {
+      if (!this._vizCtx) {
+        this._vizCtx = new AudioContext()
+        this._vizAnalyser = this._vizCtx.createAnalyser()
+        this._vizAnalyser.fftSize = 128
+        this._vizAnalyser.smoothingTimeConstant = 0.8
+        this._vizAnalyser.connect(this._vizCtx.destination)
+      }
+
+      // Reconnect if audio element changed (e.g. after crossfade swap)
+      if (this.audio !== this._vizConnectedTo) {
+        if (this._vizSource) {
+          try { this._vizSource.disconnect() } catch { /* already disconnected */ }
+        }
+        this._vizSource = this._vizCtx.createMediaElementSource(this.audio)
+        this._vizSource.connect(this._vizAnalyser!)
+        this._vizConnectedTo = this.audio
+      }
+
+      if (this._vizCtx.state === 'suspended') {
+        this._vizCtx.resume()
+      }
+
+      return this._vizAnalyser
+    } catch (err) {
+      console.warn('[AudioPlayer] Failed to create analyser:', err)
+      return null
+    }
+  }
+
   async initialize() {
     // No-op: HTML5 Audio doesn't need async initialization
   }
@@ -970,6 +1015,18 @@ export class AudioPlayer {
 
     // Abort any active crossfade
     this.abortCrossfade()
+
+    // Visualization cleanup
+    if (this._vizSource) {
+      try { this._vizSource.disconnect() } catch { /* ok */ }
+      this._vizSource = null
+    }
+    this._vizConnectedTo = null
+    if (this._vizCtx) {
+      this._vizCtx.close().catch(() => {})
+      this._vizCtx = null
+      this._vizAnalyser = null
+    }
 
     // Native cleanup
     this.stopNativePositionTimer()
@@ -1024,6 +1081,7 @@ export class AudioPlayer {
       // Create second audio element for incoming track
       this.crossfadeAudio = new Audio()
       this.crossfadeAudio.preload = 'auto'
+      this.crossfadeAudio.crossOrigin = 'anonymous'
       this.crossfadeAudio.volume = 0 // Start at 0, fade in
 
       // Calculate beatmatch playback rate
