@@ -1,0 +1,238 @@
+/* ============================================================
+   SearchView — Spotify-style sectioned search results
+   ============================================================ */
+
+/* Import HomeView card styles unconditionally — SearchView uses .home-view__card,
+   .home-view__card-art, .home-view__card-info, .home-view__card-name, .home-view__card-count
+   for playlist cards. HomeView.css is not a CSS module, but this import guarantees the styles
+   are present even if HomeView is not rendered in the same session. */
+@import '../views/HomeView.css';
+
+.search-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+  gap: var(--space-6);
+  background: var(--bg-primary);
+}
+
+/* ---- Search input area ---- */
+
+.search-view__input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-view__input-wrapper:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.15);
+}
+
+.search-view__input-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.search-view__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.search-view__input::placeholder {
+  color: var(--text-secondary);
+}
+
+.search-view__input-clear {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s ease;
+}
+
+.search-view__input-clear:hover {
+  color: var(--text-primary);
+}
+
+/* ---- Empty states ---- */
+
+.search-view__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+  padding: var(--space-10) 0;
+}
+
+.search-view__empty-icon {
+  opacity: 0.4;
+}
+
+.search-view__empty-title {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.search-view__empty-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ---- Results container ---- */
+
+.search-view__results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* ---- Section header ---- */
+
+.search-view__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.search-view__section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.search-view__section-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.search-view__section-count {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Track list rows (Spotify-style, no virtualizer — short results list) ---- */
+
+.search-view__track-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-view__track-row {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  padding: 0 var(--space-2);
+  gap: 0;
+}
+
+.search-view__track-row:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Hover: hide number, show play icon */
+.search-view__track-number { display: flex; align-items: center; }
+.search-view__track-play   { display: none; color: var(--text-primary); align-items: center; }
+
+.search-view__track-row:hover .search-view__track-number { display: none; }
+.search-view__track-row:hover .search-view__track-play   { display: flex; }
+
+/* # column */
+.search-view__track-index {
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Combined title+artist cell */
+.search-view__track-title-cell {
+  flex: 1 1 240px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  padding: 0 var(--space-2);
+}
+
+.search-view__track-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.search-view__track-artist {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+/* Narrow data columns */
+.search-view__track-bpm,
+.search-view__track-key,
+.search-view__track-genre,
+.search-view__track-duration {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-align: right;
+  padding: 0 var(--space-3);
+}
+
+.search-view__track-bpm      { flex: 0 0 60px; }
+.search-view__track-key      { flex: 0 0 60px; }
+.search-view__track-genre    { flex: 0 0 90px; }
+.search-view__track-duration { flex: 0 0 56px; }
+
+/* ---- Playlist grid (reuses home-view__card + home-view__card-art, adds grid) ---- */
+
+.search-view__playlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-4);
+}
+
+.search-view__playlist-card {
+  /* Inherits .home-view__card styles — no overrides needed */
+}
