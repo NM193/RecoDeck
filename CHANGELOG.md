@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Waveform visualizer in the Now Playing bar
+- Crossfade between tracks with adjustable duration
 - "What's New" dialog on startup after updates
 - Redesigned Settings with organized sections
 
