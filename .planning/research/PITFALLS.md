@@ -1,9 +1,9 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** Stabilization & polish milestone for Tauri v2 + React 19 + Rust desktop app
-**Project:** RecoDeck v1.1
-**Researched:** 2026-03-01
-**Confidence:** HIGH — based on direct codebase inspection + known Tauri/Rust/React patterns
+**Domain:** Adding playback features + UX polish to existing Tauri v2 + React 19 + Rust desktop music player
+**Project:** RecoDeck v1.2 Playback & UX Polish
+**Researched:** 2026-03-06
+**Confidence:** HIGH — based on direct codebase inspection of audioPlayer.ts, App.tsx, SettingsContext.tsx, constants.ts, settings.rs, and playerStore.ts
 
 ---
 
@@ -13,293 +13,328 @@ Mistakes that cause rewrites, regressions, or block shipping.
 
 ---
 
-### Pitfall 1: Testing Tauri Commands Requires the Tauri Runtime — Unit Tests Cannot Invoke Them
+### Pitfall 1: playbackRate Beatmatch Causes Chipmunk/Pitch Effect — Web Audio Does Not Preserve Pitch
 
-**What goes wrong:** Developers try to write `#[test]` functions that call `#[tauri::command]` functions directly, passing a real `State<AppState>`. This compiles but panics at runtime because `State` extraction requires a live Tauri app context. The test binary crashes before running any assertions.
+**What goes wrong:** Setting `HTMLAudioElement.playbackRate` to beatmatch an incoming track speeds up the audio but does NOT pitch-correct it. A track playing at 1.2x rate sounds like a chipmunk. The current crossfade code in `audioPlayer.ts` lines 1086-1107 already does exactly this: it sets `this.crossfadeAudio.playbackRate = this.outgoingBpm / this.incomingBpm`. For a 100 BPM track transitioning into an 80 BPM track, the incoming audio plays at 1.25x speed with audible pitch shift. DJs will notice immediately.
 
-**Why it happens:** `tauri::State` is not a plain wrapper — it requires an `App` or `AppHandle` context to be valid. There is no simple mock. The `#[tauri::command]` macro transforms function signatures in ways that make direct invocation from test code fragile.
+**Why it happens:** `playbackRate` is a time-domain speed multiplier. HTML5 Audio does not apply pitch correction by default. The only way to get pitch-preserved tempo shifting in a browser is via the Web Audio API's `AudioWorklet` with a dedicated pitch-shifting algorithm (phase vocoder or WSOLA), or by using native Rust audio processing. Both are significantly more complex than setting `playbackRate`.
 
-**Consequences:** Either no Rust backend tests at all (the current state — zero test files exist in this repo), or tests that silently pass without exercising the real command logic because developers extract the testable logic into a separate helper function they test instead.
+**Consequences:** The beatmatch crossfade feature — one of the four target v1.2 features — sounds wrong from the first use. Users on Discord will immediately report "why does the next track sound like a squirrel." If the feature ships as-is it will require a significant rework post-release.
 
-**Prevention:** The correct pattern for this codebase is already partially in place in `audio/bpm.rs`: split the pure logic from the Tauri command shell. Commands in `src-tauri/src/commands/` should be thin shells that:
-1. Extract data from `State`
-2. Call a pure function in the domain module
-3. Return the result
+**How to avoid:** Two options:
+1. **Remove pitch shifting entirely**: Keep crossfade volume fading but reset `playbackRate` to 1.0 for the incoming track. This is already done after the crossfade completes in `completeCrossfade()` (line 1195: `this.crossfadeAudio.playbackRate = 1.0`). Just do not set a non-1.0 rate at the start of crossfade. This means "beatmatch crossfade" becomes "volume crossfade with no tempo matching" — honest about what HTML5 Audio can do.
+2. **Clamp to near-1.0 range only**: Only apply playbackRate when BPM difference is under ~5% (rate between 0.95 and 1.05). Above this threshold the pitch shift is imperceptible. Below 5% BPM difference, apply gentle rate; above it, skip beatmatch and use plain crossfade. The current clamp (0.5x to 2.0x) allows extreme pitch distortion.
 
-Test the pure domain functions (`detect_bpm_from_samples`, database methods on a real `Database` instance using `tempfile`, Camelot key logic in `key.rs`) — not the command wrappers.
+**Warning signs:** During testing, any crossfade between tracks with BPM difference greater than ~5 sounds "wrong" in pitch. This will always repro — it is architectural.
 
-**Detection:** If a `#[test]` calls a `#[tauri::command]`-decorated function with a `State<T>` argument, it will panic at runtime or fail to compile. The warning sign is any attempt to construct `tauri::State` directly in test code.
-
-**Phase:** Test coverage phase. Architecture decision must be made before writing any command tests.
+**Phase to address:** Beatmatch crossfade phase. Decision must be made before implementing crossfade trigger logic. The simplest correct path: rename the feature "Crossfade" (not "Beatmatch crossfade"), set playbackRate to 1.0, and ship volume-only crossfade. Beatmatch can be a v1.3 feature with proper pitch correction.
 
 ---
 
-### Pitfall 2: Removing "Unused" isAppError / getErrorMessage Breaks Error UX Silently
+### Pitfall 2: playbackRate Limits in WebKit (Tauri macOS) Are Narrower Than Spec
 
-**What goes wrong:** `isAppError` and `getErrorMessage` appear unused to static analysis because they are imported but only called inside `catch (e: unknown)` blocks. A cleanup pass that removes these functions leaves AI component error paths catching `unknown` and falling through to `'An unexpected error occurred'` for every structured error — even ones that previously showed actionable messages like "No API key configured."
+**What goes wrong:** The HTML5 Audio specification allows `playbackRate` values between 0 and positive infinity. WebKit (the WebView engine in Tauri on macOS) imposes its own limits: values below 0.5 or above 4.0 are clamped without error in older WebKit versions. In newer WebKit (macOS 13+), the range is 0.0625 to 16.0. However, some Tauri app users on macOS 12 (Monterey) or Catalina may have older WebKit versions where rates outside 0.5-2.0 are silently ignored. The current clamp in audioPlayer.ts (`Math.max(0.5, Math.min(2.0, playbackRate))`) happens to fall within the safe range, but the code lacks documentation of this constraint, making future changes risky.
 
-**Why it happens:** The functions are defined in `src/types/ai.ts` and imported in `AIPlaylistDialog.tsx`, `RecommendationsPanel.tsx`, and `MixPrepPanel.tsx`. TypeScript's `noUnusedLocals` is set to `true` in `tsconfig.json`, but `catch (e: unknown)` with `getErrorMessage(e)` does count as a usage, so the import survives. The risk is in a refactor that replaces `getErrorMessage(e)` with a direct string fallback and then removes the now-truly-unused import without realizing the structured error handling was the whole point.
+**Why it happens:** WebKit's implementation of `playbackRate` is not the same as Chrome/Blink. Since Tauri uses the system WebView (WebKit on macOS, WebView2/Blink on Windows), the supported rate range differs by platform. There is no runtime error when the rate is silently clamped — the audio just plays at the wrong speed.
 
-**Consequences:** AI error messages degrade from specific (`AiNoApiKey` → "No API key configured — add your Claude API key in Settings") to generic ("An unexpected error occurred"). The backend's tagged enum serialization (`{"kind":"AiNoApiKey"}`) is wasted. Users lose actionable guidance.
+**Consequences:** Beatmatch calculation produces a rate of e.g. 0.3 (200 BPM track being matched to 60 BPM) and WebKit silently clamps it to 0.5. The crossfade starts at a rate that does not match the calculation. No error is thrown.
 
-**Prevention:** Before removing these helpers, verify every `catch` block in every AI component. The correct cleanup is to *migrate* them to a shared `src/lib/errors.ts` location (not delete them) if moving them out of `src/types/ai.ts`. Add a comment in the source: `// Used in catch blocks — do not remove without checking AIPlaylistDialog, RecommendationsPanel, MixPrepPanel`.
+**How to avoid:** The existing 0.5-2.0 clamp in `startCrossfadeToNext()` is correct. Add a code comment documenting WHY this range is chosen (WebKit limits). Additionally: before starting crossfade, log the calculated rate and the clamped rate so deviations are visible in the console.
 
-**Detection:** grep for `getErrorMessage` and `isAppError` usage — 4 call sites across 3 components. If count drops below 4, a regression occurred.
+**Warning signs:** Console logs showing a calculated playbackRate that differs from what the audio element actually uses. Test with extreme BPM differences (60 BPM vs 180 BPM = rate of 3.0 — outside the safe zone).
 
-**Phase:** Tech debt cleanup phase. Must verify continued use before any extraction/deletion.
-
----
-
-### Pitfall 3: Consolidating audio_mime_type Into a Shared Module Breaks the Stream Protocol Handler
-
-**What goes wrong:** `audio_mime_type` is duplicated between `src-tauri/src/lib.rs` (line 66) and `src-tauri/src/server/streaming.rs` (line 214). The natural fix is to extract it into a shared module (`crate::formats` or `crate::audio`). However, `lib.rs` defines this function inside a closure passed to `register_uri_scheme_protocol`. The closure has strict lifetime rules — it cannot capture references with lifetimes that outlive it. If the refactor naively moves `audio_mime_type` to a public location but the closure capture pattern changes, it will fail to compile or — worse — silently use a different code path after a merge conflict.
-
-**Why it happens:** Rust's borrow checker enforces that closures capturing external references must outlive those references. The `register_uri_scheme_protocol` closure in Tauri 2 has `'static` lifetime requirements. A refactored helper that borrows state will not compile inside this closure.
-
-**Consequences:** Compile error that blocks the entire build, or a working build that uses stale logic if someone copies the function incorrectly during merge.
-
-**Prevention:** The correct refactor is to extract `audio_mime_type` to a new file (e.g., `src-tauri/src/audio/mime.rs`) as a free function with no captures, make it `pub(crate)`, and import it in both `lib.rs` and `streaming.rs`. The function signature `fn audio_mime_type(path: &str) -> &'static str` is safe because it only accesses the argument — no captured state. Test: `cargo build` must pass before and after the change.
-
-**Detection:** If `cargo build` fails with lifetime/borrow errors after the refactor, the function is capturing something it shouldn't. The existing function signature is pure and stateless — preserve that property.
-
-**Phase:** Tech debt cleanup phase. Do this first within the debt pass, before touching anything else in `lib.rs`.
+**Phase to address:** Beatmatch crossfade phase. Document constraints before implementation.
 
 ---
 
-### Pitfall 4: The Orphaned /api/tracks/{id} Route Returns Stale Data Without Analysis Fields
+### Pitfall 3: Drift Accumulation — playbackRate Crossfade Creates Beat Phase Misalignment After Multiple Crossfades
 
-**What goes wrong:** `routes.rs` registers `/api/tracks/{id}` (line 131) and its handler `get_track` (line 239) calls `db.get_track(id)` which returns a raw `Track` without analysis fields, then converts via `MobileTrackDTO::from_track()` (not `from_track_with_analysis()`). All other track-returning routes use `get_tracks_with_analysis_paginated` or similar. This makes the single-track endpoint inconsistently return `bpm: null` and `musical_key: null` even for analyzed tracks. The mobile PWA may rely on this endpoint for playback metadata display.
+**What goes wrong:** Even if pitch were not an issue, the beatmatch crossfade as designed does not align beats — it only aligns average tempo. When the incoming track starts at rate X to match the outgoing BPM, then resets to 1.0 at crossfade completion, the phase offset between beats on the outgoing track and beats on the incoming track is arbitrary. Each successive crossfade compounds this phase error. After 5 crossfades in a continuous mix, the "matched" tempo is meaningless because the downbeats are completely misaligned.
 
-**Why it happens:** The mobile PWA's streaming flow is: browse → get ticket → stream. The ticket creation endpoint at `/api/stream-ticket` verifies the track exists via `db.get_track()`. The `/api/tracks/{id}` route was added as a convenience lookup but missed the analysis join used by the list endpoints.
+**Why it happens:** True beatmatch requires knowing the beat grid for each track (the beat position at playback start) and adjusting the playback rate in real time to maintain phase alignment — not just matching average BPM. This requires beat grid analysis (downbeat detection), not just BPM analysis. RecoDeck's Aubio BPM detection produces an average BPM, not a beat grid.
 
-**Consequences:** Mobile PWA shows no BPM or key for individual track detail views while the list view shows them correctly. If the mobile PWA is extended to show a "now playing" detail panel, this inconsistency becomes user-visible.
+**Consequences:** The beatmatch crossfade feature cannot provide true beat-synchronized transitions. This is acceptable if the feature is marketed as "tempo-matched crossfade" (smooth volume blend with approximate tempo alignment) rather than "beatmatch" (precise beat-grid synchronized mixing). Calling it "beatmatch" sets DJ user expectations that cannot be met.
 
-**Prevention:** When removing or fixing this route, decide: (a) remove it if no mobile PWA code calls it, or (b) fix it to use `db.get_track_with_analysis(id)` (or equivalent join). Check the mobile PWA source (`mobile/` directory if it exists) for any `fetch('/api/tracks/' + id)` calls before deleting.
+**How to avoid:** Rename the feature in the UI and settings to "Crossfade" rather than "Beatmatch crossfade." Do not attempt beat-grid-level matching with the current analysis pipeline. Save true beatmatch for a future milestone that adds downbeat detection.
 
-**Detection:** Check mobile PWA source for the route. If unused, deletion is safe. If used, the missing analysis fields are the bug.
+**Warning signs:** DJ users reporting "the beats don't line up during crossfade" — this is correct and expected given the implementation. It is not a bug to fix; it is a feature boundary to communicate.
 
-**Phase:** Tech debt cleanup phase. Verify mobile usage before touching.
-
----
-
-### Pitfall 5: Adding Vitest to This Stack Requires Special Tauri Mock Setup — Naive Install Breaks the Build
-
-**What goes wrong:** Installing Vitest and attempting to import `@tauri-apps/api/core` in test files will fail with a module resolution error because Tauri's `invoke` function is not available in the Node.js test environment — it requires the Tauri IPC bridge. The standard advice ("mock the module") is correct, but the mock must be set up globally in a `vitest.setup.ts` file and referenced in `vitest.config.ts`, or every test file that touches `tauriApi` will fail.
-
-**Why it happens:** `src/lib/tauri-api.ts` imports directly from `@tauri-apps/api/core`. The Tauri plugin packages assume they run inside a WebView with the Tauri IPC context. Node/Vitest has neither. The package does export a conditional shim but it is not automatic.
-
-**Consequences:** If the mock is not set up, every test that imports anything from `src/lib/` (which imports `tauri-api.ts`) fails with `ReferenceError: __TAURI_IPC__ is not defined` or similar. This can cause developers to give up on frontend tests entirely.
-
-**Prevention:** The correct setup for this codebase:
-
-1. Install: `npm install -D vitest @vitest/ui jsdom @testing-library/react @testing-library/user-event`
-2. Create `vitest.config.ts` with `environment: 'jsdom'` and a `setupFiles` entry
-3. In the setup file, mock `@tauri-apps/api/core`:
-   ```typescript
-   vi.mock('@tauri-apps/api/core', () => ({
-     invoke: vi.fn(),
-   }));
-   ```
-4. In individual tests, configure `invoke` return values per test case
-5. Add `"test": "vitest"` to `package.json` scripts
-
-Do NOT try to test `tauriApi` wrapper functions directly — test the React components and stores that call them, with `invoke` mocked.
-
-**Detection:** If `npm test` outputs `ReferenceError: __TAURI_IPC__` or `Cannot find module '@tauri-apps/api/core'`, the Tauri mock setup is missing.
-
-**Phase:** Frontend test setup phase. Must be configured before writing any frontend tests.
+**Phase to address:** Beatmatch crossfade phase. Scope the feature correctly before building the UI around it.
 
 ---
 
-### Pitfall 6: Database Tests With Real SQLite Must Use tempfile — In-Memory DBs Miss Migration Logic
+### Pitfall 4: End-of-Track Repeat Bug — crossfadeRafId Not Cancelled on Track Reload Causes Crossfade to Trigger Against the Already-Ended Track
 
-**What goes wrong:** When adding Rust tests for the `Database` struct in `src-tauri/src/db/mod.rs`, developers reach for `rusqlite::Connection::open_in_memory()` for speed. However, `Database::new()` calls `apply_migrations()` which is what creates tables and indexes. An in-memory connection created directly bypasses this and tests run against an empty schema, causing every query to fail with "no such table."
+**What goes wrong:** The `completeCrossfade()` function in `audioPlayer.ts` (line 1187) calls `this.onTrackEnded?.()` at the end. The `onTrackEnded` callback in the Player component loads the next track and calls `loadTrack()`. But if a bug causes `onTrackEnded` to fire a second time (e.g., from the stale `crossfadeRafId` RAF loop or from the HTML5 `ended` event that fires on the element being cleaned up), `loadTrack()` is called again immediately. This loads the track after the one that just loaded — causing an apparent "skip" or "wrong track plays." Specific timing: when `completeCrossfade()` calls `this.audio.removeAttribute('src')` on the old element, WebKit may fire an `ended` event on it, which the stale event listener on the old element (not yet garbage collected) may handle, calling `onTrackEnded` again.
 
-**Why it happens:** The `Database` struct encapsulates its `Connection` and migration logic. The only valid way to create a test database is to go through `Database::new(path)`. `tempfile` is already in `[dev-dependencies]` (Cargo.toml line 50), which means the project intended this pattern.
+**Why it happens:** The stale element check `if (audio !== this.audio) return` in the `ended` listener (line 106) is supposed to prevent this. However: after `completeCrossfade()` swaps `this.audio = newAudio`, `this.setupEventListeners()` is called (line 1207), which attaches a new closed-over `const audio = this.audio` to the new element. The OLD element's listener checks `if (audio !== this.audio)` — where `audio` is the OLD element's reference and `this.audio` is now the NEW element — so the check correctly returns early. This should work, BUT: if `completeCrossfade()` is called while the RAF loop is still running (theoretically prevented by `isCrossfading = false` before the RAF cancel), a race could exist.
 
-**Consequences:** Tests fail with schema errors, not logic errors. Developer diagnoses the wrong problem (query correctness) instead of the real one (missing schema setup).
+**Consequences:** Track appears to "skip" forward by one position in the queue. User hears a brief excerpt of a track before it advances to the next. This matches the reported "end-of-track glitch" symptom.
 
-**Prevention:** All database tests must use:
-```rust
-use tempfile::NamedTempFile;
+**How to avoid:** In `loadTrack()`, increment `_loadGeneration` (already done) AND cancel any active crossfade (add `this.abortCrossfade()` at the start of `loadTrack()`). Currently `loadTrack()` does not call `abortCrossfade()` — this is the gap. Also: the `crossfadeFadeComplete` path calls `completeCrossfade()` from the `ended` handler, which then calls `onTrackEnded()`. If `onTrackEnded` calls `loadTrack()` before `completeCrossfade()` finishes resetting state, `isCrossfading` might still be true when the new track's crossfade check runs.
 
-fn make_test_db() -> Database {
-    let file = NamedTempFile::new().unwrap();
-    Database::new(file.path()).expect("test db init failed")
-}
-```
-Note: `NamedTempFile` must be kept alive for the duration of the test — if it drops, the file is deleted and the connection breaks. Assign it to a variable in the test function.
+**Warning signs:** Console logs showing "ended event fired" twice in succession. "onTrackEnded callback" logged without a user action. Track index advancing by 2 instead of 1.
 
-**Detection:** Any `rusqlite::Connection::open_in_memory()` in test code is a red flag. Tests that pass in isolation but fail when the DB has data are the other warning sign.
+**Phase to address:** End-of-track repeat bug fix phase. This is a known existing bug (reported in PROJECT.md: "Fix end-of-track audio glitch"). The crossfade code interaction makes it more complex.
 
-**Phase:** Rust backend test phase. Establish this pattern in the first test file and document it.
+---
+
+### Pitfall 5: Full Library Load Causes React Rerender Storm — 10k+ Tracks Stored in useState Trigger Thousands of Cell Reconciliations
+
+**What goes wrong:** Loading all tracks at once with `setTracks(allTracks)` where `allTracks` has 10,000+ entries causes React to reconcile the entire virtual DOM tree on the TrackTable. Even with `@tanstack/react-virtual` rendering only visible rows, Zustand subscriptions that watch the full `tracks` array will re-run for every component subscribed to that store slice. The current implementation in `App.tsx` already uses pagination (batches of 1000), which is the correct approach. The pitfall is: if async full-library loading is implemented as `getAllTracks()` (which returns all tracks at once), it will cause this rerender storm even with the virtual table.
+
+**Why it happens:** `tauriApi.getAllTracks()` already exists in `tauri-api.ts` (line 29) and returns all tracks. It is tempting to call this for "async full-library loading." But calling `setTracks(await tauriApi.getAllTracks())` with 10k tracks in a single call causes React's batched update to process 10k new array elements, each of which the virtual list must compare to determine visible rows. The IPC round-trip also blocks for longer with larger payloads — Tauri serializes the array to JSON, sends it over IPC, React deserializes it.
+
+**Consequences:** UI freezes for 1-5 seconds on startup or when navigating to "All Tracks" view with a large library. The app feels unresponsive even though it "loaded everything."
+
+**How to avoid:** Keep the pagination approach already in `loadTracks()` (line 387-392 of App.tsx). The v1.2 feature is "async full-library loading" meaning: load immediately on startup without waiting for user navigation, using the existing batch mechanism. Do NOT switch to `getAllTracks()`. Instead: call `loadTracks()` in `initializeApp()` with no folder/playlist argument (triggering the paginated path), then background-load subsequent pages. The IPC call for 1000 tracks takes ~50-100ms; for 10k tracks it can take 1-2 seconds and creates a large JSON payload.
+
+**Warning signs:** `initializeApp()` taking more than 500ms after the database init. UI freeze during "All Tracks" navigation. Memory usage spiking above baseline by more than ~50MB for a 10k track library (each track object serialized through IPC is ~500-1000 bytes in JSON).
+
+**Phase to address:** Async full-library loading phase. Implement as background pagination, not a single `getAllTracks()` call.
+
+---
+
+### Pitfall 6: Search Debounce Against In-Memory Array Does Not Work When Library Is Not Fully Loaded
+
+**What goes wrong:** The current search implementation in App.tsx (line 454-475) uses backend SQL search (`tauriApi.searchTracks(query)`) for the "All Tracks" view — this is correct and will scale. However, if during "async full-library loading" the implementation is changed to load all tracks into frontend memory and do in-memory filtering, search debounce against a 10k+ element array will block the main thread on every keypress. Even with `useMemo` and debounce, filtering 10k objects with `Array.filter()` in the React render cycle is synchronous and blocks UI.
+
+**Why it happens:** In-memory array search is O(n) per keypress per track field searched. At 10k tracks with 5 searchable fields, that is 50k string comparisons per debounce tick. On a modern M-series Mac this is fast (~10ms), but on a Windows machine with a spinning HDD and a loaded library it can exceed 16ms (frame budget) causing jank.
+
+**Consequences:** Search feels laggy during the crossfade window. The existing backend SQL search (`search_tracks` command) already handles this correctly via SQLite FTS or LIKE queries. The risk is in a refactoring decision to "simplify" by doing everything client-side.
+
+**How to avoid:** Keep backend SQL search as the primary search mechanism. The `handleSearch` function in App.tsx already does this correctly. When implementing async full-library loading, do NOT replace backend search with client-side filtering. Use backend search even when tracks are fully loaded locally.
+
+**Warning signs:** `handleSearch` being modified to call `tracks.filter()` instead of `tauriApi.searchTracks()`. Any `Array.filter()` on the full tracks array in a render-path callback.
+
+**Phase to address:** Async full-library loading phase. Verify search path is not changed during the implementation.
+
+---
+
+### Pitfall 7: Settings Removal Without Clearing DB Values Causes Stale Keys to Affect Future Settings With the Same Key Name
+
+**What goes wrong:** The plan is to remove "Key Notation" and "Waveform Style" from the Appearance settings section. The settings values for these (`key_notation` and `waveform_style`) are stored as strings in the SQLite `settings` table (set via `tauriApi.setSetting('key_notation', ...)` and `tauriApi.setSetting('waveform_style', ...)`). If the UI is removed but the DB values are NOT deleted, any future feature that coincidentally uses the same settings key name will inherit a stale value. This is unlikely with these specific names but the pattern is dangerous.
+
+**Why it happens:** SQLite `settings` table is a generic key-value store with no schema enforcement — any key/value pair can be stored. There is no cleanup mechanism for orphaned settings keys. When UI is removed, developers remove the frontend code and the backend handler calls, but the stored data row in SQLite persists across app launches indefinitely.
+
+**Consequences (actual):** The stale `key_notation` value will still be read on `initializeApp()` (App.tsx line 292-299) because App.tsx reads it independently from SettingsContext. If `AppearanceSection.tsx` is modified to remove the Key Notation UI but App.tsx is not updated to stop reading `key_notation`, the app still reads and applies it — just with no UI to change it. This means the "removed" setting still silently controls behavior.
+
+**How to avoid:** Removing a setting requires three steps:
+1. Remove the UI component (AppearanceSection handler, constants entry)
+2. Remove all `getSetting`/`setSetting` calls for that key across ALL files — search for the string `'key_notation'` and `'waveform_style'` in the entire codebase. App.tsx reads both independently of SettingsContext (lines 292-309).
+3. Add a one-time migration: call `setSetting('key_notation', null)` or execute a DELETE on the settings row — OR simply hardcode the value and remove the DB lookup entirely.
+
+Currently, `keyNotation` state in App.tsx (line 64) still reads from `'key_notation'` setting. Removing the Appearance section UI without touching App.tsx leaves the state reading a key the user can no longer change.
+
+**Warning signs:** After removing the settings UI, do a full-text search for the setting key string (`'key_notation'`, `'waveform_style'`) across all source files. If any read calls remain, the removal is incomplete. Use: `grep -r "key_notation\|waveform_style" src/ src-tauri/src/`.
+
+**Phase to address:** Settings removal phase. Audit all read sites before removing any write sites.
+
+---
+
+### Pitfall 8: UI State Not Reset After Removing a Settings Section — Removed Setting's State Still Persists in React Component Tree
+
+**What goes wrong:** `AppearanceSection.tsx` currently reads `keyNotation` and `waveformStyle` from `SettingsContext`. `SettingsContext.tsx` maintains `const [keyNotation, setKeyNotation] = useState('camelot')` and `const [waveformStyle, setWaveformStyle] = useState('traktor_rgb')`. If the goal is to remove Key Notation and Waveform Style options, the state and handlers must be removed from SettingsContext too. Leaving them in the context (even if the UI section is removed) causes unnecessary re-renders when those state values change, and confuses future developers who see state with no UI.
+
+**Why it happens:** When removing a settings section, developers typically remove the UI component first and then verify "it works." But the dead state in SettingsContext compiles and runs without error — it is invisible technical debt. The callbacks `onKeyNotationChanged` and `onWaveformStyleChanged` are props of `SettingsCallbacks` interface (SettingsContext.tsx line 100-101) — if these are removed from the interface, call sites in App.tsx (which passes them as props) will get TypeScript errors, which is the correct signal that cleanup is needed.
+
+**Consequences:** Dead code in SettingsContext. Stale callbacks wiring up event handlers that never fire. When auditing the codebase later, the orphaned state creates confusion about whether key notation is still a feature.
+
+**How to avoid:** When removing a settings option, use TypeScript's type system as a guide. Remove the state from SettingsContextValue interface first — this will produce type errors at all read sites, guiding complete removal. Do NOT leave dead state in the context "just in case."
+
+**Warning signs:** `keyNotation` or `waveformStyle` appearing in SettingsContext after the UI is removed. TypeScript not complaining about `onKeyNotationChanged` despite no UI triggering it.
+
+**Phase to address:** Settings removal phase. Remove from the interface first, let TypeScript errors guide complete cleanup.
 
 ---
 
 ## Moderate Pitfalls
 
-Mistakes that cause bugs or regressions without necessarily blocking shipping.
+Mistakes that cause bugs or UX regressions without blocking shipping.
 
 ---
 
-### Pitfall 7: UI Polish That Touches TailwindCSS 4 Purging Breaks Dynamically Constructed Classes
+### Pitfall 9: HTML5 Audio `ended` Event Fires Multiple Times on WebKit for VBR MP3 Files
 
-**What goes wrong:** This project uses TailwindCSS 4. Dynamic class construction like `` `text-${color}-500` `` or `cn('bg-' + variant)` will be purged from the production build because Tailwind's scanner cannot statically detect them as used classes. In a polish pass that adds color-coded indicators (genre colors, key compatibility colors, energy arc gradients), this pattern is tempting.
+**What goes wrong:** The `ended` event can fire multiple times on the same HTMLAudioElement for VBR (Variable Bitrate) MP3 files on WebKit. The audioPlayer.ts already handles this for the native recovery path (the `_nativeRecoveryAttempted` flag prevents infinite loops), but the crossfade code path does not have equivalent protection. If `crossfadeFadeComplete` is true and `ended` fires twice, `completeCrossfade()` is called twice. The second call finds `this.crossfadeAudio` already null (set to null in the first call at line 1204) and returns early (the `if (!this.crossfadeAudio) return` guard at line 1188) — but `this.onTrackEnded?.()` was already called, advancing the queue.
 
-**Why it happens:** Tailwind 4's content scanning is static analysis — it looks for complete class strings in source files. Partial string concatenation defeats this. The existing `GenreDefinition` type has a `color` field that likely stores a hex value or color name for dynamic styling.
+**Why it happens:** WebKit's VBR MP3 duration calculation is inaccurate. It uses a frame-count heuristic that can be wrong by several seconds. When the audio "ends" based on the inaccurate duration, WebKit fires `ended`. If the actual file has more audio, WebKit may fire `ended` again when the audio truly finishes. This is the root cause of the existing "last 3-5 seconds repeat before next track plays" bug.
 
-**Consequences:** Styles work in `npm run dev` (Tailwind processes all classes) but disappear in production builds (`tauri build`). This is the hardest class of CSS bug to diagnose because dev vs prod behavior diverges.
+**Consequences:** Queue advances by 2 tracks instead of 1 for VBR MP3 files. Or the native recovery path and crossfade path interact badly — native recovery fires `onTrackEnded`, then crossfade completion also fires `onTrackEnded`.
 
-**Prevention:** Use complete class names in source: `text-red-500`, `text-blue-500` — not `` `text-${color}-500` ``. For dynamic colors from the DB (genre colors stored as hex), use inline `style={{ color: genreColor }}` instead of Tailwind classes. Add a safelist in Tailwind config only as a last resort.
+**How to avoid:** Add a `_trackEndedFired` boolean flag per track load (similar to `_nativeRecoveryAttempted`). Reset it in `loadTrack()`. Gate `onTrackEnded?.()` calls through this flag — only fire once per loaded track. The existing `nativeFinishPlayback()` already has this pattern via `nativeEndedEmitted`. Apply the same pattern to the HTML path's `ended` handler.
 
-**Detection:** Color or style works in dev but not in production build. Check Tailwind config for `safelist` — its absence means dynamic classes are not protected.
+**Warning signs:** Console showing "ended event fired" twice without an intervening `loadTrack`. Track index advancing by 2. This reproduces consistently with VBR MP3 files (most MP3s in a DJ library are VBR).
 
-**Phase:** UI polish phase. Review every dynamic class construction before building.
-
----
-
-### Pitfall 8: Polishing the Player Component Without Understanding the HTML5 / Native Dual-Mode Architecture
-
-**What goes wrong:** `audioPlayer.ts` operates in two modes: `'html'` (HTML5 Audio + custom `stream://` protocol) and `'native'` (Rust Symphonia decode → PCM chunks → WebAudio API). The fallback to native happens silently for formats WebView cannot decode (e.g., OGG on macOS). A UI polish pass that adds loading spinners, error states, or seek bars to the Player component without understanding this dual mode will either: (a) not reflect native mode state correctly, or (b) add visual states that the native path never triggers (native mode has its own `nativePositionTimer` and emits events differently than HTML5).
-
-**Why it happens:** The `AudioPlayer` class in `src/lib/audioPlayer.ts` is ~500+ lines with crossfade logic, two audio pipelines, and a `_loadGeneration` counter to cancel stale loads. The `Player.tsx` component in `src/components/Player.tsx` drives it via a singleton. Any UI state added to Player must account for both HTML and native mode callbacks.
-
-**Consequences:** Seek bar works for MP3/FLAC but freezes during OGG playback. Loading spinner never dismisses during native decode. Error state shows for the HTML fallback path then clears when native path succeeds.
-
-**Prevention:** Before adding UI polish to Player: read `audioPlayer.ts` in full, understand the callback chain (`onPositionUpdate`, `onDurationChange`, `onError`, `onPlayStateChange`), and verify that any new state correctly receives events from both modes. Test with an OGG file specifically.
-
-**Detection:** Test Player UI changes with a format that triggers native mode (OGG on macOS). If player state indicators behave differently for OGG vs MP3, the dual-mode architecture is not fully handled.
-
-**Phase:** UI polish phase. Player component is high-risk — test audio format coverage.
+**Phase to address:** End-of-track repeat bug fix phase. This is the primary bug to investigate.
 
 ---
 
-### Pitfall 9: Zustand Store Subscriptions in React 19 Strict Mode Cause Double-Subscription
+### Pitfall 10: crossfadeAudio Element Not Cleaned Up on Manual Skip or Stop — Memory Leak
 
-**What goes wrong:** React 19 Strict Mode (active in development) mounts components twice. Zustand subscriptions created in `useEffect` without proper cleanup will subscribe twice and the second subscription will not be cleaned up when the component unmounts because the cleanup function was registered for the first mount. This manifests as audio events firing twice (position updates doubling the playback speed in the progress bar) or state updates triggering twice.
+**What goes wrong:** If the user manually skips to the next track while a crossfade is in progress, `loadTrack()` is called. `loadTrack()` pauses `this.audio`, creates a new Audio element, and sets up listeners — but does NOT call `abortCrossfade()`. The `this.crossfadeAudio` element is left playing with its RAF loop (`crossfadeRafId`) still running. This means two audio elements are playing simultaneously: the new track on `this.audio` and the leftover crossfade target on the orphaned `this.crossfadeAudio`.
 
-**Why it happens:** `useEffect` in Strict Mode runs mount → unmount → mount. If the effect creates a Zustand subscription via `store.subscribe()` and the cleanup `return () => unsubscribe()` is correct, this works. But patterns like `store.getState().setX` called inside `useEffect` with no cleanup, or `listen()` from Tauri events without `unlisten()`, will accumulate listeners.
+**Why it happens:** `loadTrack()` (line 589) handles cleanup of the HTML audio element and native mode, but does not have a step that aborts any active crossfade. `abortCrossfade()` exists (line 1243) and correctly pauses `crossfadeAudio` and cancels the RAF — it just is not called from `loadTrack()`.
 
-**Consequences:** Position bar updates at 2x speed in development. Event listeners accumulate across navigation. In production (non-Strict Mode), the double-mount doesn't happen, so the bug only appears in development — making it easy to dismiss incorrectly.
+**Consequences:** Audible double-audio: two tracks playing at the same time for the duration of the orphaned crossfade. RAF loop continues consuming CPU. Memory for the crossfade Audio element is not released until the RAF eventually stops.
 
-**Prevention:** Every `useEffect` that calls `listen()`, `store.subscribe()`, or adds any kind of listener must return a cleanup function. Audit `App.tsx` and `Player.tsx` for Tauri `listen()` calls — each one must be paired with `unlisten()` in the effect cleanup.
+**How to avoid:** Add `this.abortCrossfade()` as the first step inside `loadTrack()`, before the audio element cleanup. This is a two-line fix with significant impact.
 
-**Detection:** Position bar advancing at 2x speed in dev mode, or `app.listen()` call count increasing across component remounts in Tauri devtools.
+**Warning signs:** After manually skipping a track during crossfade, hearing two audio streams. CPU usage in Activity Monitor not dropping after skip. Console logs from `updateCrossfadeVolumes` continuing after a new track load.
 
-**Phase:** Code quality pass. Audit all useEffect + listen() pairs before the UI polish phase.
-
----
-
-### Pitfall 10: Cleaning Up eprintln! Debug Logging Without Structured Logging Leaves Zero Observability
-
-**What goes wrong:** The codebase has 54 `eprintln!` calls across 7 files — stream protocol handler, analysis commands, playback, and the companion server. A cleanup pass that removes all `eprintln!` in the name of "code quality" eliminates the only observability mechanism. The stream protocol handler's `eprintln!` calls for path normalization, fallback attempts, and file serving are load-bearing diagnostics — they are what allows debugging the complex `percent_decode_maybe_twice` and fallback path logic for unusual filenames.
-
-**Why it happens:** `eprintln!` looks like debug noise to a reviewer unfamiliar with Tauri's logging setup. In a Tauri app, there is no application logger wired up by default — `eprintln!` outputs to stderr which Tauri captures and can show in the devtools console or terminal.
-
-**Consequences:** After removal, any file path bug (encoding, special characters, UNC paths) becomes impossible to diagnose without a full debugger session.
-
-**Prevention:** Replace `eprintln!` with `tracing` or `log` crate calls if cleaning up is desired. If keeping `eprintln!`, mark the load-bearing ones with a comment: `// diagnostic — do not remove`. The stream handler fallback eprintln calls (Fallback 0, 1, 2, 3) are essential for path debugging.
-
-**Detection:** After any cleanup pass, test playback of a track with a space in the directory name, a Unicode character in the filename, and a nested folder path. If the player fails silently with no log output, diagnostics were removed.
-
-**Phase:** Code quality pass. Do not remove diagnostic logging unless replacing with structured logging.
+**Phase to address:** End-of-track bug fix phase (crossfade cleanup is part of the same investigation).
 
 ---
 
-### Pitfall 11: The Mutex<Option<Database>> Pattern Deadlocks When Commands Call Each Other
+### Pitfall 11: The `crossfade_enabled` Setting Is Loaded in SettingsContext But AudioPlayer Is Not Notified on App Init
 
-**What goes wrong:** The `AppState.db: Mutex<Option<Database>>` pattern requires callers to lock, use, and drop the guard before calling another command. If any Tauri command acquires the `db` lock and then (directly or indirectly) calls another function that also tries to acquire `db`, the second lock attempt panics with a double-lock poison (Rust's `Mutex` is not reentrant).
+**What goes wrong:** `SettingsContext.tsx` loads `crossfade_enabled` and `crossfade_duration_sec` from the DB on mount (lines 218-220) and sets state. `handleCrossfadeEnabledChange` calls `AudioPlayer.setCrossfadeEnabled()` when the user toggles the switch. But on initial app load, `loadSettings()` reads the persisted crossfade state and calls `setCrossfadeEnabled(loadedCrossfadeEnabled === 'true')` to set React state — it does NOT call `audioPlayer.setCrossfadeEnabled()`. The AudioPlayer singleton always starts with `crossfadeEnabled = false` (line 27). So if the user had crossfade enabled in a previous session, it will appear enabled in Settings UI but will not actually work until the user toggles it off and on again.
 
-**Why it happens:** `rebuild_context_cache` in `commands/ai.rs` acquires the db lock inside a block, but if error handling causes it to call a helper that also needs the lock (e.g., a logging function that reads track count), deadlock occurs. This risk increases as tests add helper functions that share state.
+**Why it happens:** `SettingsContext` manages UI state but does not have a reference to the `AudioPlayer` singleton. The connection between settings changes and the audio player happens through the `handleCrossfadeEnabledChange` handler, which is only called on user interaction, not on settings load.
 
-**Consequences:** Command hangs forever or panics with `"State lock failed"` on lock acquisition. This is hard to reproduce because it depends on exact calling order and is invisible in single-threaded tests.
+**Consequences:** Crossfade appears enabled in Settings but does not function on first launch of a session. The user experiences the first song transition without crossfade even though they configured it. This is a subtle bug that only affects users with crossfade enabled in the previous session.
 
-**Prevention:** Keep the lock-acquire-use-drop pattern strictly scoped. Never hold the lock across an await point or across a call to another function that may need the same lock. The existing pattern `{ let db_lock = state.db.lock()...; let result = db_lock.as_ref()...do_work...; } // lock drops here` is correct — preserve this scope structure during any refactor.
+**How to avoid:** When loading settings on mount, also push the loaded values to the AudioPlayer. This requires SettingsContext to have access to the AudioPlayer instance (or use a global/module-level ref). The cleanest solution: expose crossfade settings to the App component via `onCrossfadeSettingsChanged` callback in `SettingsCallbacks`, and let App push values to the player singleton on load — similar to how `onKeyNotationChanged` works.
 
-**Detection:** Any test that hangs without output is likely a deadlock. `cargo test -- --nocapture` with a timeout will identify stuck tests.
+**Warning signs:** Crossfade working after toggling the Settings toggle but not on app startup. Testing: enable crossfade, close and reopen the app, play two tracks, observe whether crossfade activates.
 
-**Phase:** Rust backend test phase and code quality pass. Lock scope discipline must be preserved during refactoring.
-
----
-
-## Minor Pitfalls
-
-Mistakes that cause minor friction or suboptimal outcomes.
+**Phase to address:** Beatmatch crossfade phase. The settings-to-player sync must be part of the same implementation.
 
 ---
 
-### Pitfall 12: React 19 + @tanstack/react-virtual Requires Stable estimateSize References
+### Pitfall 12: `tracks.length` Stale Closure in `loadMoreTracks` Causes Incorrect Pagination Offset
 
-**What goes wrong:** `TrackTable.tsx` uses `@tanstack/react-virtual` for the virtualized track list. In React 19, inline functions passed to `estimateSize` or `getItemKey` re-create on every render, potentially causing excessive virtualizer recalculations. A polish pass that adds new columns to the track table or changes row height logic without memoizing these callbacks will cause visual jank.
+**What goes wrong:** The `loadMoreTracks` callback in App.tsx (lines 414-452) calculates `const currentOffset = tracks.length`. This is a stale closure: `tracks` is captured at the time `loadMoreTracks` is defined (memoized by `useCallback`). If `loadMoreTracks` is called twice in quick succession before the first call's `setTracks((prev) => [...prev, ...moreTracks])` completes, the second call uses the same `currentOffset` as the first, loading the same batch of tracks twice.
 
-**Prevention:** Wrap `estimateSize` callbacks in `useCallback` with stable dependencies. Check that the virtualizer's row height calculation matches the actual rendered height after any CSS changes.
+**Why it happens:** React state updates from `setTracks` are batched and async. The `tracks` value inside the `useCallback` closure reflects the value at render time, not after in-flight updates. The `useCallback` dependency array includes `tracks.length` (line 445), which should trigger a re-memoize when tracks change — but rapid successive calls within the same render cycle will use the same snapshot.
 
-**Phase:** UI polish phase. Verify virtualizer behavior after any track table changes.
+**Consequences:** Duplicate tracks appearing in the "All Tracks" view when the user scrolls quickly through a large library. Tracks from page 2 loaded twice, tracks from page 3 skipped.
 
----
+**How to avoid:** Use a `useRef` for the current offset rather than deriving it from `tracks.length`. Or add an `isLoadingMore` guard (already present in the code, line 418) and ensure it is set synchronously before the first await, which it is — `setIsLoadingMore(true)` is called before the await. The existing guard should prevent double-loads IF `isLoadingMore` state has updated before the second call. React 19's concurrent mode can batch state updates more aggressively. Safest fix: use a `useRef<number>` to track the actual offset that updates synchronously.
 
-### Pitfall 13: Adding New Rust Commands Requires Registering in Both Cargo invoke_handler AND tauri.conf.json
+**Warning signs:** Duplicate entries in "All Tracks" view after rapid scrolling. `loadTracks` console log showing the same offset being requested twice.
 
-**What goes wrong:** Tauri 2 requires new commands to appear in `invoke_handler!` in `lib.rs` (already done correctly for all existing commands). However, if the project uses `tauri.conf.json` allowlist configuration (less common in Tauri 2 but possible), new commands also need allowlist entries. Forgetting either causes a silent failure — `invoke()` on the frontend returns an error instead of a result.
-
-**Prevention:** After adding any new command: (1) add to `invoke_handler!` in `lib.rs`, (2) add the IPC wrapper to `tauri-api.ts`, (3) test with a real `tauri dev` run. Do not rely on compile-time checks alone.
-
-**Phase:** Applies to any phase that adds new backend commands.
+**Phase to address:** Async full-library loading phase. Review pagination implementation before releasing.
 
 ---
 
-### Pitfall 14: TypeScript strict + noUnusedParameters Breaks When Adding Test Stubs
+## Technical Debt Patterns
 
-**What goes wrong:** `tsconfig.json` has `"noUnusedLocals": true` and `"noUnusedParameters": true`. When adding frontend test utilities, mock implementations often have unused parameters (e.g., `(trackId: number) => {}` where `trackId` is not used in the mock body). TypeScript will refuse to compile the test.
+Shortcuts that seem reasonable but create long-term problems.
 
-**Prevention:** Use `_trackId` (underscore prefix) for intentionally unused parameters in mocks. Or extend `tsconfig.json` with a separate `tsconfig.test.json` that relaxes these rules for test files only.
-
-**Phase:** Frontend test setup phase.
-
----
-
-### Pitfall 15: The greet Command in lib.rs Is Dead Code But Removing It Is Cosmetically Risky
-
-**What goes wrong:** The `greet` function in `lib.rs` (line 16) is the Tauri scaffold default. It is registered in `invoke_handler!`. Removing it is clean but requires also removing it from `invoke_handler!` — easy to forget one side. clippy will not catch a registered-but-never-called command (it's not dead code from Rust's perspective since `invoke_handler!` expands to use it).
-
-**Prevention:** Remove both: the function definition AND its entry in `invoke_handler!`. Verify with `cargo build` and a quick `tauri dev` smoke test.
-
-**Phase:** Tech debt cleanup phase. Low risk, but don't do it in the same commit as larger refactors.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Calling `getAllTracks()` for full library load | Single IPC call, simple code | 1-2s freeze at 10k tracks, large IPC payload, serialization pressure | Never for library > 5k tracks |
+| In-memory array search instead of backend SQL | No backend changes needed | Blocks main thread at 10k tracks, search lags on keystroke | Never — backend search already exists |
+| Setting `playbackRate` for beatmatch without pitch correction | Zero additional complexity | Every DJ user hears chipmunk audio immediately | Acceptable ONLY with 0.95-1.05 rate clamp and clear feature naming |
+| Leaving `key_notation` / `waveform_style` reads in App.tsx after removing the settings UI | App still compiles | Setting silently controls behavior with no UI to change it | Never |
+| Removing `AppearanceSection` handlers without removing from SettingsCallbacks interface | Fewer files to change | TypeScript allows orphaned callbacks; future confusion about feature status | Never — remove from interface to get type errors at all call sites |
 
 ---
 
-## Phase-Specific Warnings
+## Integration Gotchas
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|----------------|------------|
-| Fix tech debt: unused type guards | Pitfall 2 — deleting isAppError/getErrorMessage breaks AI error UX | Migrate to shared location, verify all 4 call sites before changing |
-| Fix tech debt: duplicated audio_mime_type | Pitfall 3 — refactor breaks stream protocol closure | Extract as pure free function to audio/mime.rs, verify `cargo build` |
-| Fix tech debt: orphaned /api/tracks/{id} | Pitfall 4 — remove without checking mobile PWA usage | grep mobile PWA source before deleting route |
-| Fix tech debt: greet command | Pitfall 15 — partial removal leaves dangling invoke_handler entry | Remove both definition and handler registration atomically |
-| Rust backend tests | Pitfall 1 — testing commands requires runtime | Test pure functions only; commands are thin shells |
-| Rust backend tests | Pitfall 6 — in-memory DB misses migrations | Use tempfile + Database::new() pattern; tempfile already in dev-deps |
-| Rust backend tests | Pitfall 11 — lock scope regressions during test setup | Preserve strict lock-acquire-use-drop scoping |
-| Frontend test setup | Pitfall 5 — Tauri IPC not available in Node/Vitest | Global vi.mock('@tauri-apps/api/core') in setup file |
-| Frontend test setup | Pitfall 14 — noUnusedParameters breaks mock stubs | Use _ prefix or tsconfig.test.json override |
-| Code quality pass | Pitfall 9 — useEffect subscriptions not cleaned up | Audit every listen() call for unlisten() cleanup |
-| Code quality pass | Pitfall 10 — removing eprintln! kills observability | Keep stream handler diagnostics; replace others with tracing if desired |
-| UI polish: Player component | Pitfall 8 — dual-mode audio architecture | Test OGG playback specifically after any Player UI changes |
-| UI polish: track table | Pitfall 12 — virtual scroll estimateSize re-renders | Wrap estimateSize in useCallback |
-| UI polish: any dynamic Tailwind class | Pitfall 7 — purged classes disappear in prod | Use complete class strings; inline style for runtime colors |
-| Adding new backend commands | Pitfall 13 — command not in invoke_handler | Checklist: function → invoke_handler → tauri-api.ts → test |
+Common mistakes when connecting these new features to the existing system.
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| AudioPlayer + SettingsContext | Loading crossfade settings but not calling `audioPlayer.setCrossfadeEnabled()` on app init | Push settings to AudioPlayer singleton on `loadSettings()` completion, not just on user toggle |
+| CrossfadeAudio + loadTrack | Calling `loadTrack()` without first calling `abortCrossfade()` | Add `this.abortCrossfade()` as first step in `loadTrack()` |
+| Crossfade + onTrackEnded | `completeCrossfade()` calls `onTrackEnded()` which calls `loadTrack()` before crossfade state is fully reset | Ensure all crossfade flags (`isCrossfading`, `crossfadeFadeComplete`) are reset BEFORE calling `onTrackEnded()` |
+| Paginated load + search | Changing "All Tracks" load to `getAllTracks()` then using `tracks.filter()` for search | Keep `tauriApi.searchTracks()` as the search mechanism regardless of how tracks are loaded |
+| Settings removal + App.tsx reads | Removing UI handler without finding all `getSetting('key_notation')` call sites | Grep for the setting key string across ALL source files before and after removal |
+
+---
+
+## Performance Traps
+
+Patterns that work at small scale but fail as usage grows.
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| `setTracks(await getAllTracks())` | 1-5s UI freeze on navigation to All Tracks | Use paginated loading (already implemented) | At ~5k tracks on average hardware |
+| `tracks.filter(...)` in render path for search | Search keystroke causes 16ms+ frame drops | Backend SQL search (already implemented); keep it | At ~2k tracks on slower Windows machines |
+| Multiple `listen()` calls in useEffect without `unlisten()` cleanup | Duplicate audio events, double position updates in dev mode | Always return `() => { unlisten.then(fn => fn()) }` from effects | React 19 Strict Mode (dev only), but leaks accumulate in prod on navigation |
+| RAF loop not cancelled on crossfade abort | CPU stays elevated after skip during crossfade | Cancel `crossfadeRafId` in `abortCrossfade()` (already done) — ensure `abortCrossfade()` is called from `loadTrack()` | Any time user skips during crossfade |
+| `crossfadeAudio` not GC'd after orphaning | Memory grows per orphaned crossfade | Call `removeAttribute('src')` and `.load()` before nulling reference (already done in abortCrossfade) — but only if `abortCrossfade` is called | Repeated skips during active crossfades |
+
+---
+
+## UX Pitfalls
+
+Common user experience mistakes specific to these v1.2 features.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Labeling the feature "Beatmatch crossfade" when it only volume-fades | DJ users expect beat-grid-synchronized transitions; they will be disappointed | Name it "Crossfade" and describe as "smooth volume transition with approximate tempo matching" |
+| Crossfade duration slider with range 1-30 seconds but no preview | Users do not know what 8 seconds sounds like during transition | The current default of 8s is reasonable; add label hint "(typical: 6-10s for DJ mixing)" |
+| Settings removal without in-app transition | Users who saved a specific Key Notation (Camelot) or Waveform Style see it silently reset | Before removal: read the current setting and hardcode it as the default; do not lose user data |
+| Full library loading spinner blocking the main view | Users cannot browse while tracks load in the background | Show loading as a subtle indicator in the sidebar track count, not a blocking overlay |
+| End-of-track glitch (current bug) fixed but crossfade introduces new double-load | Bug appears fixed in testing but crossfade interaction re-introduces it | Test crossfade + end-of-track together, not separately |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+Things that appear complete but are missing critical pieces.
+
+- [ ] **Beatmatch crossfade**: Crossfade visually works (volume fades) but pitch shift is audible — verify rate is either 1.0 or within 5% clamp before shipping
+- [ ] **Crossfade enabled on startup**: Settings show "enabled" and crossfade works after toggling — verify crossfade also works WITHOUT toggling after fresh app launch (AudioPlayer init sync)
+- [ ] **End-of-track bug fix**: Bug no longer repros in isolation — verify fix also holds during crossfade (crossfade triggers `onTrackEnded` path, which can re-introduce the bug)
+- [ ] **Settings removal**: Key Notation and Waveform Style UI removed — verify `getSetting('key_notation')` is also removed from App.tsx lines 292-299, not just from SettingsContext
+- [ ] **Async library load**: First 1000 tracks display on startup — verify subsequent pages load without duplicating tracks, and search still uses backend SQL not client-side filter
+- [ ] **Skip during crossfade**: Works correctly — verify skipping during an active crossfade does not leave an orphaned audio element playing in the background
+- [ ] **Crossfade + shuffle**: Crossfade loads the next track in queue — verify queue index used for crossfade preload matches what the playerStore's `playNext()` would choose (including shuffle state)
+
+---
+
+## Recovery Strategies
+
+When pitfalls occur despite prevention, how to recover.
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Pitch shift is audible in crossfade | LOW | Set `playbackRate = 1.0` in `startCrossfadeToNext()`, test, ship as "volume crossfade" |
+| Orphaned crossfadeAudio playing after skip | LOW | Add `this.abortCrossfade()` to top of `loadTrack()` |
+| Settings key still read after UI removal | LOW | Find remaining `getSetting('key_notation')` calls via grep, remove them |
+| `onTrackEnded` fires twice from crossfade | MEDIUM | Add `_trackEndedFired` boolean guard, reset in `loadTrack()`, gate callback through it |
+| Duplicate tracks from paginated load | MEDIUM | Replace `tracks.length` offset with `useRef<number>` tracking actual loaded count |
+| AudioPlayer crossfadeEnabled not synced on init | LOW | Add `audioPlayer.setCrossfadeEnabled(loaded === 'true')` to `loadSettings()` completion |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Pitch shift in playbackRate beatmatch | Crossfade implementation | Listen test with BPM difference > 10%; reject if pitch shift audible |
+| WebKit playbackRate limits undocumented | Crossfade implementation | Code review — clamp must be documented with rationale |
+| Beat grid misalignment across multiple crossfades | Feature scoping (pre-implementation) | Acceptance criteria must exclude beat-grid-level sync; scope as "volume crossfade" |
+| `ended` event firing during crossfade cleanup causes double advance | End-of-track bug fix | Queue index after back-to-back crossfades must be correct |
+| Orphaned `crossfadeAudio` on manual skip | Crossfade cleanup | Skip during active crossfade; verify single audio stream and CPU normal |
+| Full library load rerender storm | Async library loading | Profile with React DevTools; render count must not spike at track count |
+| Search broken by in-memory filtering | Async library loading | Search test after full library load; verify SQL backend is used |
+| Stale `key_notation` setting read in App.tsx | Settings removal | Grep for setting key in all source files post-removal |
+| Dead state in SettingsContext after removal | Settings removal | TypeScript must have zero references to removed state |
+| crossfadeEnabled not synced to AudioPlayer on init | Crossfade + settings integration | Enable crossfade, restart app, play two tracks without toggling settings |
+| `loadMoreTracks` stale closure offset | Async library loading | Rapid scroll test; verify no duplicate tracks in All Tracks view |
 
 ---
 
 ## Sources
 
-- Direct codebase inspection: all files in `src-tauri/src/` and `src/`
-- `src-tauri/Cargo.toml`: confirms `tempfile` in dev-dependencies, no test framework configured yet
-- `tsconfig.json`: confirms `noUnusedLocals`, `noUnusedParameters`, `strict` mode
-- `package.json`: confirms no test runner (`vitest`, `jest`) in devDependencies
-- `src-tauri/src/audio/bpm.rs`: confirms the correct testing pattern (pure function separation) is already in place
-- `src-tauri/src/lib.rs`: stream protocol handler, duplicated `audio_mime_type`, 54 `eprintln!` calls
-- `src-tauri/src/server/streaming.rs`: second `audio_mime_type` copy, lock usage patterns
-- `src/types/ai.ts`: isAppError/getErrorMessage definitions and 4 call sites
-- `src-tauri/src/commands/library.rs`: `Mutex<Option<Database>>` lock pattern
-- Tauri v2 documentation knowledge (HIGH confidence): `State` requires live app context for tests
-- Rust standard library: `Mutex` is not reentrant — confirmed from language specification
+- Direct codebase inspection: `src/lib/audioPlayer.ts` (full file, 1300+ lines) — crossfade implementation, `ended` handler, native mode dual-path
+- Direct codebase inspection: `src/App.tsx` (lines 1-500) — paginated loading, `loadMoreTracks`, `handleSearch`, `initializeApp`, `key_notation` reads
+- Direct codebase inspection: `src/components/settings/SettingsContext.tsx` — settings load/save, crossfade state, callback interface
+- Direct codebase inspection: `src/components/settings/AppearanceSection.tsx`, `AudioSection.tsx`, `constants.ts` — which settings exist and their keys
+- Direct codebase inspection: `src/components/settings/constants.ts` — confirms THEMES still has "dawn" and "neon" (full set, not just Midnight/Carbon)
+- Direct codebase inspection: `src/store/playerStore.ts` — queue management, `playNext()` logic
+- Direct codebase inspection: `src-tauri/src/commands/settings.rs` — `get_setting`/`set_setting` are generic key-value; no schema validation on keys
+- HTML5 Audio `playbackRate` and pitch: MDN Web Docs — `playbackRate` is time-stretch only; no pitch correction. WebKit implementation limits ~0.5-4.0 range (confirmed behavior, HIGH confidence)
+- WebKit `ended` event multiple-fire on VBR MP3: Known WebKit behavior documented in Safari Web Inspector team blog posts and WPT test suite failures (MEDIUM confidence from community reports; HIGH from existing code comments in audioPlayer.ts confirming this is the root cause of the current bug)
+- React 19 `useCallback` stale closure with async state: React documentation on concurrent rendering and state batching (HIGH confidence)
+- SQLite settings orphan risk: Inherent to the key-value schema design, confirmed from reading settings.rs and SettingsContext.tsx simultaneously
+
+---
+*Pitfalls research for: RecoDeck v1.2 Playback & UX Polish milestone*
+*Researched: 2026-03-06*

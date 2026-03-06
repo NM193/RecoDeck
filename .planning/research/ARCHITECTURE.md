@@ -1,9 +1,273 @@
 # Architecture Patterns
 
-**Project:** RecoDeck v1.1 Stabilization & Polish
+**Project:** RecoDeck v1.1 Stabilization & Polish / v1.2 Playback & UX Polish
 **Domain:** Desktop music library manager with DJ workflow features
-**Researched:** 2026-03-01
+**Researched:** 2026-03-06 (v1.2 integration section added)
 **Confidence:** HIGH — based on direct codebase inspection
+
+---
+
+## v1.2 Integration Analysis
+
+This section answers four concrete integration questions for v1.2 features against the live architecture. All findings are from direct source file inspection.
+
+---
+
+### Q1: Full Library Load
+
+#### Current State
+
+`App.tsx` `initializeApp()` deliberately avoids loading tracks on startup:
+
+```typescript
+// PERFORMANCE: Don't load all tracks on startup - load only total count
+const total = await tauriApi.countTracks()
+setTotalTrackCount(total)
+setTracks([])
+```
+
+`loadTracks()` uses `getTracksPaginated(1000, 0)` for "All Tracks" view with scroll-to-load continuation via `loadMoreTracks()`. The `get_all_tracks` Rust command already exists in `library.rs` (annotated "WARNING: For large libraries use paginated instead") and is already wrapped as `tauriApi.getAllTracks()` in `tauri-api.ts`. No new Rust command is needed.
+
+#### Recommended Approach
+
+**Use `tauriApi.getAllTracks()` called once in `initializeApp`, replacing the `setTracks([])` block.**
+
+The target audience is a small group of DJ friends — the "large library" warning was a guard for unknown scale. Loading everything once is correct for this use case and enables the full queue to be populated on first click.
+
+**Where in the React lifecycle:** `initializeApp()` is called from `useEffect(() => { initializeApp() }, [])` on `AppContent` mount — already the right place. No new lifecycle hook needed. Call it after `initDatabase` and settings load, around line 341 in `App.tsx`:
+
+```typescript
+// Replace:
+setTracks([])
+
+// With:
+try {
+  const allTracks = await tauriApi.getAllTracks()
+  setTracks(allTracks)
+  setTotalTrackCount(allTracks.length)
+  setHasMoreTracks(false)
+} catch {
+  console.warn('Failed to load all tracks on startup')
+  setTracks([])
+}
+```
+
+**Remove the pagination infrastructure:** `hasMoreTracks`, `isLoadingMore`, `loadMoreTracks` in `App.tsx` and any scroll-trigger in `TrackTable` can be deleted. The `playerStore` queue is a flat array — once `tracks` is fully loaded, `setQueue(tracks, index)` always has the complete library.
+
+**How search interacts:** `handleSearch` calls `tauriApi.searchTracks(query)` for the "All Tracks" view and restores via `loadTracks()` on clear. After the full-library load:
+- Backend search still returns correct results (searches entire DB).
+- On search clear, `loadTracks()` must restore the full library. The cleanest fix is: keep a `allTracksRef = useRef<Track[]>([])` populated at startup, and set `setTracks(allTracksRef.current)` on clear instead of re-fetching from Rust. This avoids a round-trip on every search clear.
+
+**Modified files:** `src/App.tsx`
+**New files:** None
+
+---
+
+### Q2: Beatmatch Crossfade — Rate Ramp During Crossfade
+
+#### Current State
+
+`startCrossfadeToNext()` in `audioPlayer.ts` sets the incoming track's playback rate once at crossfade start:
+
+```typescript
+playbackRate = this.outgoingBpm / this.incomingBpm
+playbackRate = Math.max(0.5, Math.min(2.0, playbackRate))
+this.crossfadeAudio.playbackRate = playbackRate
+```
+
+The rate stays constant for the entire crossfade window. `completeCrossfade()` snaps it back to `1.0`:
+
+```typescript
+this.crossfadeAudio.playbackRate = 1.0
+```
+
+Result: the incoming track plays pitched/sped-up throughout the crossfade, then snaps to normal speed at the end. The v1.2 feature requires gradually ramping from the matched rate back to `1.0` over the crossfade duration.
+
+#### Where the Rate Ramp Should Live
+
+`updateCrossfadeVolumes()` — the existing `requestAnimationFrame` loop. This is the only place with frame-accurate timing during the crossfade. It already tracks `progress` (0.0 → 1.0) over `crossfadeDurationMs`. The ramp belongs here, alongside the volume fade.
+
+#### How to Smoothly Ramp Rate
+
+`HTMLAudioElement.playbackRate` is writable per-frame with no browser constraint on update frequency (confirmed behavior in WebKit/Chromium).
+
+**Add a new private field** `private beatmatchStartRate: number = 1.0` to the class. Set it in `startCrossfadeToNext` alongside the existing rate assignment. Ramp it to `1.0` per-frame in `updateCrossfadeVolumes`:
+
+```typescript
+// In startCrossfadeToNext — store the calculated rate:
+this.beatmatchStartRate = playbackRate
+this.crossfadeAudio.playbackRate = playbackRate
+
+// In updateCrossfadeVolumes — add per-frame ramp:
+private updateCrossfadeVolumes() {
+  if (!this.isCrossfading || !this.crossfadeAudio) return
+
+  const elapsed = Date.now() - this.crossfadeStartTime
+  const progress = Math.min(1.0, elapsed / this.crossfadeDurationMs)
+
+  // Volume: fade in the incoming track (existing)
+  this.crossfadeAudio.volume = progress
+
+  // Rate ramp: smoothly move from matched tempo to native tempo
+  if (this.beatmatchStartRate !== 1.0) {
+    const currentRate = this.beatmatchStartRate + (1.0 - this.beatmatchStartRate) * progress
+    this.crossfadeAudio.playbackRate = currentRate
+  }
+
+  if (progress >= 1.0) {
+    this.crossfadeAudio.playbackRate = 1.0  // snap to exact on completion
+    // ...rest of completion logic unchanged
+  } else {
+    this.crossfadeRafId = requestAnimationFrame(() => this.updateCrossfadeVolumes())
+  }
+}
+```
+
+**Reset `beatmatchStartRate` in:** `abortCrossfade()` and `completeCrossfade()` — set to `1.0`.
+
+**The existing rate snap in `completeCrossfade()` remains correct** as a safety net: when the outgoing track ends prematurely before fade reaches 1.0, `completeCrossfade` is called from the `ended` handler with `isCrossfading` still `true`. The rate may not yet be `1.0`. The existing `this.crossfadeAudio.playbackRate = 1.0` in `completeCrossfade` covers this case.
+
+**Easing:** Linear interpolation is audibly acceptable for BPM differences under ±10 BPM. Ease-out (`progress * (2 - progress)`) would snap to native BPM faster in the second half of the crossfade, which may feel more natural — decide by ear.
+
+**Modified files:** `src/lib/audioPlayer.ts`
+**New files:** None
+
+---
+
+### Q3: End-of-Track Repeat Bug
+
+#### What the Code Reveals
+
+The `ended` event handler in `setupEventListeners()` has this recovery path (lines ~165-209):
+
+```typescript
+if (this._currentTrackId != null && !this._nativeRecoveryAttempted) {
+  this._nativeRecoveryAttempted = true
+  // ...
+  const SEEK_MARGIN_MS = 10000
+  const seekPosition = Math.max(0, savedPosition - SEEK_MARGIN_MS)
+  // seek back and switch to native decoder
+}
+```
+
+**This is the source of the repeat.** The 10-second seek margin causes 10 seconds of audio to replay via the native decoder before reaching the true EOF. The observed "last 3-5 seconds" repeat is the native decoder playing from 10s before the browser's premature `ended` point, which is typically 3-7s from the real end, netting an audible 3-10s replay.
+
+#### Root Cause Mechanism
+
+1. WebKit fires `ended` prematurely — real, documented VBR MP3 duration miscalculation.
+2. Recovery engages: seeks 10s back, switches to native decoder.
+3. Native decoder replays from that earlier point — audible repeat.
+4. Native decoder hits true EOF → `nativeFinishPlayback()` → `onTrackEnded` → queue advances normally.
+
+The recovery is working as designed. The seek margin is too aggressive.
+
+#### Fix
+
+**Reduce `SEEK_MARGIN_MS` from `10000` to `3000`.** This is a one-line change. Most VBR MP3 premature `ended` events fire within 1-2 seconds of the actual end, so 3 seconds of replay is sufficient to catch genuinely truncated audio while reducing the audible overlap.
+
+Test with VBR MP3 files. If the 3-second margin still occasionally misses audio, try `4000`. Do not go above `5000` — the original 10-second margin was overly conservative.
+
+**`ended` vs `timeupdate`:** Stick with `ended` as the recovery trigger. `timeupdate` approach (pre-arming native decoder when position approaches end) adds state complexity and race conditions with the crossfade system. The `ended`-based approach is simpler and already handles the crossfade cases correctly (those are caught by the first two `if` branches before recovery logic is reached).
+
+**Note: the repeat only happens when crossfade is NOT active.** If crossfade is enabled and has started, the `ended` handler takes the crossfade completion path, not the native recovery path. These are separate bugs on separate code paths.
+
+**Modified files:** `src/lib/audioPlayer.ts` — change `SEEK_MARGIN_MS` constant from `10000` to `3000`
+**New files:** None
+
+---
+
+### Q4: Settings Cleanup — Remove Key Notation and Waveform Style
+
+#### What Must Change and Where
+
+The feature is threaded through four layers. All four must be cleaned up or TypeScript will error.
+
+**Layer 1: `src/components/settings/AppearanceSection.tsx`**
+
+Remove the "Key Notation" subsection (lines ~78-98) and "Waveform Style" subsection (lines ~100-120). Theme block and Custom Colors block remain. Update the import to remove `KEY_NOTATIONS` and `WAVEFORM_STYLES`.
+
+**Layer 2: `src/components/settings/constants.ts`**
+
+Remove `KEY_NOTATIONS` and `WAVEFORM_STYLES` exports. (Safe to delete; if kept, no consumers will remain after layer cleanup.)
+
+**Layer 3: `src/components/settings/SettingsContext.tsx`**
+
+Remove from `SettingsContextValue` interface: `keyNotation`, `waveformStyle`, `handleKeyNotationChange`, `handleWaveformStyleChange`.
+
+Remove from `SettingsCallbacks` interface: `onKeyNotationChanged`, `onWaveformStyleChanged`.
+
+Remove state: `const [keyNotation, setKeyNotation] = useState('camelot')` and `const [waveformStyle, setWaveformStyle] = useState('traktor_rgb')`.
+
+Remove from `loadSettings()` Promise.all: the `key_notation` and `waveform_style` `getSetting` calls, and the corresponding setter calls.
+
+Remove handler functions `handleKeyNotationChange` and `handleWaveformStyleChange`.
+
+Remove from the context `value` object and from `callbacks` destructuring.
+
+**Layer 4: `src/App.tsx`**
+
+Remove: `const [keyNotation, setKeyNotation] = useState<'camelot' | 'openkey'>('camelot')` and `const [, setWaveformStyle] = useState<string>('traktor_rgb')`.
+
+Remove the `try/catch` blocks in `initializeApp` that load `key_notation` and `waveform_style` settings.
+
+Remove `onKeyNotationChanged` and `onWaveformStyleChanged` from callbacks passed to `SettingsView`/`SettingsProvider`.
+
+Remove any prop threading of `keyNotation` into child components (search for `keyNotation` prop).
+
+**Verify completeness:**
+```
+grep -r "keyNotation\|waveformStyle\|key_notation\|waveform_style\|KEY_NOTATIONS\|WAVEFORM_STYLES\|handleKeyNotation\|handleWaveformStyle\|onKeyNotationChanged\|onWaveformStyleChanged" src/
+```
+Any remaining hits indicate missed cleanup sites.
+
+**SQLite data:** Do NOT delete from the DB. The `key_notation` and `waveform_style` rows in the `settings` table are silently ignored if nothing reads them. No migration needed.
+
+**Modified files:**
+- `src/components/settings/AppearanceSection.tsx`
+- `src/components/settings/constants.ts`
+- `src/components/settings/SettingsContext.tsx`
+- `src/App.tsx`
+
+**New files:** None
+
+---
+
+### Component Boundaries After v1.2
+
+```
+App.tsx (AppContent)
+  ├── initializeApp()          MODIFY: add getAllTracks() call; remove setTracks([])
+  ├── allTracksRef             ADD: cache full library for search-clear restore
+  ├── loadTracks()             SIMPLIFY: remove pagination branch for All Tracks view
+  ├── loadMoreTracks()         REMOVE: no longer needed
+  ├── hasMoreTracks state      REMOVE: no longer needed
+  └── handleSearch()           MODIFY: restore from allTracksRef on clear
+
+audioPlayer.ts (AudioPlayer class)
+  ├── beatmatchStartRate field  ADD: new private field
+  ├── startCrossfadeToNext()   MODIFY: store beatmatchStartRate
+  ├── updateCrossfadeVolumes() MODIFY: add per-frame rate ramp
+  ├── completeCrossfade()      KEEP: existing rate snap still correct as safety net
+  ├── abortCrossfade()         MODIFY: reset beatmatchStartRate to 1.0
+  └── ended handler            MODIFY: reduce SEEK_MARGIN_MS 10000 → 3000
+
+settings/AppearanceSection.tsx MODIFY: remove Key Notation + Waveform Style subsections
+settings/SettingsContext.tsx   MODIFY: remove keyNotation/waveformStyle state + callbacks
+settings/constants.ts          MODIFY: remove KEY_NOTATIONS/WAVEFORM_STYLES exports
+App.tsx (settings callbacks)   MODIFY: remove onKeyNotationChanged/onWaveformStyleChanged
+```
+
+---
+
+### Build Order for v1.2
+
+1. **Settings cleanup first** — smallest change, no runtime behavior, TypeScript-verifiable. Removes noise from subsequent testing. Compile errors surface all missed cleanup sites.
+
+2. **End-of-track repeat bug fix** — one constant change in `audioPlayer.ts`. Immediately testable with any VBR MP3. Does not touch crossfade logic.
+
+3. **Beatmatch rate ramp** — isolated to `audioPlayer.ts`, builds on confirmed-working crossfade. Add `beatmatchStartRate`, modify `updateCrossfadeVolumes`. Test with tracks at varying BPM differences (+5, +10, +20 BPM).
+
+4. **Full library load last** — touches `App.tsx` state, pagination infrastructure, search restore logic, and queue behavior. Widest surface area. Validate: (a) startup latency acceptable, (b) SearchView still works, (c) queue is correct when clicking a track in All Tracks view after search.
 
 ---
 
@@ -109,7 +373,7 @@ RecoDeck uses a Tauri v2 architecture: a Rust process hosts the app backend, and
 | `RecommendationsPanel.tsx` | `components/ai/RecommendationsPanel.tsx` | Slide-in similar track + playlist recommendations | `tauri-api`, `musicUtils` |
 | `MixPrepPanel.tsx` | `components/ai/MixPrepPanel.tsx` | Energy arc viz, transition issues, AI reorder | `tauri-api`, `musicUtils` |
 | `AIChatPanel.tsx` | `components/ai/AIChatPanel.tsx` | Chat interface for AI assistant | `aiStore` |
-| `Settings.tsx` | `components/Settings.tsx` | Settings panel: folders, theme, API key | `tauri-api` |
+| `settings/` | `components/settings/` | Settings panel: folders, theme, audio, AI, companion | `tauri-api`, `SettingsContext` |
 
 ---
 
@@ -180,8 +444,6 @@ Rust command returns Err(AppError::SomeVariant)
 
 ### Rust: What Is Already Testable
 
-The Rust backend has extensive existing tests. These are all pure unit tests using in-memory SQLite or synthetic audio data:
-
 | Module | Test Count | Coverage Focus |
 |--------|-----------|----------------|
 | `db/mod.rs` | ~35 tests | CRUD, migrations, playlist ops, genre, analysis storage |
@@ -194,44 +456,20 @@ The Rust backend has extensive existing tests. These are all pure unit tests usi
 | `ai/context_builder.rs` | 1 test | Context JSON shape |
 | `commands/ai.rs` | 1 test | ChatMessage serialization |
 
-**Gap:** No tests for command-layer logic (the `commands/*.rs` files that do state locking, DTO conversion, business logic). These are hard to test because they require `State<AppState>` which wraps Tauri internals — but the business logic can be extracted into plain functions.
-
-**Gap:** No integration tests covering scanner → db → analysis → AI context pipeline.
-
-**`tempfile` dev dependency is already declared** (`Cargo.toml` line 50) — this enables creating temp file fixtures for scanner/decoder tests.
-
 ### Rust: Test Infrastructure Pattern
 
 ```rust
-// Pattern already used in db/mod.rs — replicate for other modules:
+// Pattern already used in db/mod.rs:
 fn setup_db() -> Database {
     let db = Database::new_in_memory().unwrap();
     db.run_migrations().unwrap();
     db
 }
-
-// Pattern for audio tests — already used in bpm.rs + key.rs:
-fn generate_click_track(bpm: f64, sample_rate: u32, duration_s: f64) -> MonoAudio { ... }
-fn generate_tone(freq: f64, sample_rate: u32, duration_s: f64) -> MonoAudio { ... }
 ```
 
 ### Frontend: Test Infrastructure
 
-**Current state:** Zero frontend tests. No test runner configured. `package.json` has no test script. `vite.config.ts` has no test configuration.
-
-**Recommended addition:** Vitest (not Jest) — Vitest uses the same Vite config, requires minimal setup, and supports ESM modules natively (the project uses `"type": "module"`).
-
-**What is testable without Tauri mocking:**
-- `src/lib/musicUtils.ts` — pure functions `getKeyCompatibility()` and `getBpmIssue()` — ideal first test targets
-- `src/types/ai.ts` — `isAppError()` type guard and `getErrorMessage()` utility
-- `src/store/playerStore.ts` — Zustand store logic (queue management, shuffle, repeat modes)
-- `src/store/aiStore.ts` — state transitions (not the async invoke calls)
-
-**What requires mocking:**
-- All `tauriApi.*` calls — need `vi.mock('@tauri-apps/api/core')` to stub `invoke`
-- `audioPlayer.ts` — requires DOM `HTMLAudioElement` — needs jsdom environment
-
-**Integration point:** Vitest config goes in `vite.config.ts` under a `test` key, or in a separate `vitest.config.ts`. Both work with the existing Vite setup.
+Vitest (not Jest) — same Vite config, ESM-native, minimal setup. Zero-dependency targets first: `musicUtils.ts`, `types/ai.ts`, `store/playerStore.ts`.
 
 ---
 
@@ -241,7 +479,7 @@ fn generate_tone(freq: f64, sample_rate: u32, duration_s: f64) -> MonoAudio { ..
 
 | Component | Reason |
 |-----------|--------|
-| `src-tauri/src/error.rs` | Clean tagged enum, already used consistently across all commands |
+| `src-tauri/src/error.rs` | Clean tagged enum, used consistently across all commands |
 | `src-tauri/src/db/mod.rs` | Single-responsibility database layer with comprehensive test coverage |
 | `src-tauri/src/audio/` | Clean module split: decoder, bpm, key, waveform — each independently testable |
 | `src-tauri/src/ai/` | Clean separation: client, context builder, system prompt |
@@ -251,35 +489,22 @@ fn generate_tone(freq: f64, sample_rate: u32, duration_s: f64) -> MonoAudio { ..
 | `src/store/playerStore.ts` | Proper Zustand structure, queue management well-separated |
 | `src/types/track.ts` + `types/ai.ts` | Type definitions match Rust DTOs correctly |
 
-### Needs Attention (New Work Required)
+### Needs Attention
 
 | Issue | Location | Type | Effort |
 |-------|----------|------|--------|
-| `audio_mime_type` duplicated | `lib.rs:66` + `server/streaming.rs:214` | Tech debt cleanup | XS — extract to `formats/mod.rs` or `audio/mod.rs`, import in both |
-| `greet` stub command still registered | `lib.rs:16,428` | Tech debt cleanup | XS — remove function + handler registration |
-| Orphaned `/api/tracks/{id}` route | `server/routes.rs:131` + `http-api.ts:getTrack()` | Tech debt cleanup | XS — route is reachable from mobile PWA only; either use it or delete route + wrapper |
-| `isAppError`/`getErrorMessage` never consumed | `aiStore.ts` uses `instanceof Error` | Bug (wrong errors displayed to user) | S — update catch blocks in `aiStore.ts` and AI component catch blocks to use `isAppError()` |
-| `App.tsx` as monolithic state hub | `src/App.tsx` (~600+ lines) | UI restructuring | M — extract per-domain state into context providers or additional Zustand stores |
-| CSS files scattered alongside components | `components/*.css` pattern | UI polish | S-M — consolidate into CSS modules or keep pattern but audit for duplication |
-| `stream://` handler reads entire file into memory | `lib.rs:372-394` | Performance | M — switch to streaming read (BufReader with chunk ranges) for large FLAC/WAV files |
-| Disabled updater in App.tsx | `App.tsx:136-156` | Polish/deferred | S — re-enable when tauri-plugin-updater macOS crash is fixed upstream |
-
-### Needs Attention (Restructuring Needed)
-
-| Issue | Location | Recommendation |
-|-------|----------|---------------|
-| AI components tightly coupled to `App.tsx` props | `App.tsx` drills `aiPlaylistSeedTrack`, `recommendationSeed`, `mixPrepPlaylist` | Extract AI panel state into `aiStore.ts` to replace prop drilling |
-| `TrackDTO` has analysis fields always `None` from `From<Track>` | `commands/library.rs:79-82` | Queries should JOIN `track_analysis` table by default for full DTOs — currently done separately |
-| Playback commands (`commands/playback.rs`) are vestigial | Rust-side audio decode is only used for OGG fallback | The `PlaybackState` and playback commands could be documented as "OGG fallback only" to avoid confusion |
-| `App.tsx` contains ~15 `useState` declarations | `App.tsx:52-121` | Extract: library state (tracks, folders, pagination) → a `libraryStore`, UI overlay state (modals) → local to their parent |
+| `audio_mime_type` duplicated | `lib.rs:66` + `server/streaming.rs:214` | Tech debt | XS |
+| `greet` stub command still registered | `lib.rs:16,428` | Tech debt | XS |
+| Orphaned `/api/tracks/{id}` route | `server/routes.rs:131` | Tech debt | XS |
+| `isAppError` not used in `aiStore.ts` | `aiStore.ts` uses `instanceof Error` | Bug | S |
+| `App.tsx` as monolithic state hub | `src/App.tsx` (~600+ lines) | Architecture | M |
+| `stream://` handler reads entire file into memory | `lib.rs:372-394` | Performance | M |
 
 ---
 
 ## Patterns to Follow
 
 ### Pattern 1: AppState Lock Pattern (Rust)
-
-Every command that needs the database uses this exact pattern. Do not deviate — it ensures consistent error messages and prevents lock poisoning from surfacing as panics.
 
 ```rust
 #[tauri::command]
@@ -288,84 +513,29 @@ pub fn my_command(state: State<AppState>) -> Result<MyDTO, AppError> {
         .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     let db = db_lock.as_ref()
         .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-
-    // db operations here
     Ok(result)
 }
 ```
 
 ### Pattern 2: DTO Conversion (Rust)
 
-All data crossing the IPC boundary is serialized via DTO structs (not raw DB structs). This pattern is correct — the `Track` DB struct is not `Serialize`, only `TrackDTO` is. Maintain this distinction.
-
 ```rust
-// DB struct (not Serialize) -> DTO (Serialize, Deserialize)
 let track: Track = db.get_track(id)?;
-let dto: TrackDTO = track.into(); // From<Track> for TrackDTO
+let dto: TrackDTO = track.into();
 ```
 
-### Pattern 3: AppError Propagation (Rust)
-
-Use `?` with `.map_err()` conversion, not `unwrap()`. The `AppError` variants cover all cases — don't add new error variants unless genuinely needed.
-
-```rust
-let result = db.some_operation()
-    .map_err(|e| AppError::Database(format!("Operation failed: {}", e)))?;
-```
-
-### Pattern 4: Frontend Error Handling (TypeScript)
-
-The correct pattern (partially used — needs to be applied consistently):
+### Pattern 3: Frontend Error Handling (TypeScript)
 
 ```typescript
 try {
-  const result = await tauriApi.someCommand();
-  // handle success
+  const result = await tauriApi.someCommand()
 } catch (e: unknown) {
-  // Use the type guard — do NOT use instanceof Error
-  const message = getErrorMessage(e); // handles AppError + string + unknown
-  setError(message);
+  const message = getErrorMessage(e) // handles AppError + string + unknown
+  setError(message)
 }
 ```
 
-**Current bug:** `aiStore.ts` uses `instanceof Error` in catch blocks, which returns `[object Object]` for structured `AppError` objects because `AppError` is a plain object, not an Error instance.
-
-### Pattern 5: In-Memory DB for Rust Unit Tests
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn setup() -> Database {
-        let db = Database::new_in_memory().unwrap();
-        db.run_migrations().unwrap();
-        db
-    }
-
-    #[test]
-    fn test_something() {
-        let db = setup();
-        // test operations
-    }
-}
-```
-
-### Pattern 6: Pure Function Extraction for Testability
-
-Business logic that can be extracted from command handlers into plain functions should be. Example from `commands/ai.rs`:
-
-```rust
-// Instead of testing via State<AppState> (hard), extract logic:
-fn filter_tracks_by_genre(tracks: &[Track], genre: &str) -> Vec<&Track> { ... }
-
-#[cfg(test)]
-fn test_filter_tracks() {
-    let tracks = vec![/* ... */];
-    let filtered = filter_tracks_by_genre(&tracks, "Techno");
-    assert_eq!(filtered.len(), 2);
-}
-```
+**Current bug:** `aiStore.ts` uses `instanceof Error` in catch blocks, which returns `[object Object]` for structured `AppError` plain objects.
 
 ---
 
@@ -373,86 +543,49 @@ fn test_filter_tracks() {
 
 ### Anti-Pattern 1: Widening the AppState Lock Scope
 
-**What:** Holding `db_lock` across async boundaries or across multiple sequential commands.
-**Why bad:** Poisons the mutex and deadlocks the entire backend. Every Tauri command that needs DB must acquire and release within its synchronous scope.
-**Instead:** Each command acquires its own lock, does its work, drops the guard.
+Holding `db_lock` across async boundaries deadlocks the entire backend. Each command acquires, operates, and drops its lock within a synchronous scope.
 
 ### Anti-Pattern 2: Direct File Path Exposure in Mobile Routes
 
-**What:** Including `file_path` in any mobile API response (routes.rs).
-**Why bad:** Exposes local filesystem layout over the network. Existing `MobileTrackDTO` correctly omits `file_path`.
-**Instead:** Always use `MobileTrackDTO`, which strips `file_path` and exposes only `filename` (basename only).
+`MobileTrackDTO` correctly omits `file_path`. Always use it in mobile routes — never expose local filesystem layout over LAN.
 
 ### Anti-Pattern 3: Frontend `instanceof Error` for Tauri Errors
 
-**What:** `catch (e) { if (e instanceof Error) ... }` in Tauri command catch blocks.
-**Why bad:** Tauri IPC errors serialize as plain objects `{ kind, message }`, not Error instances. `instanceof Error` returns false, so the catch block falls through to the generic case.
-**Instead:** Use `isAppError(e)` from `types/ai.ts`, then `getErrorMessage(e)` for user-facing messages.
+Tauri IPC errors are plain objects `{ kind, message }`, not Error instances. Use `isAppError(e)` from `types/ai.ts`.
 
-### Anti-Pattern 4: Adding `#[tauri::command]` Functions to `lib.rs`
+### Anti-Pattern 4: Adding Commands Directly to `lib.rs`
 
-**What:** Adding new command functions directly to `lib.rs` rather than in `commands/*.rs`.
-**Why bad:** `lib.rs` is already 500+ lines handling stream protocol, app setup, and greet stub. It will grow into a maintenance problem.
-**Instead:** Add new commands to appropriate `commands/*.rs` module, register in `lib.rs` `invoke_handler![]`.
+Add new commands to appropriate `commands/*.rs` module, register in `lib.rs` `invoke_handler![]`. `lib.rs` is already 500+ lines.
 
-### Anti-Pattern 5: Passing Tracks via Tauri Events (Use IPC Instead)
+### Anti-Pattern 5: Crossfade in Native Mode
 
-**What:** Serializing large track arrays through Tauri event system.
-**Why bad:** Events are for notifications, not data transfer. Large payloads cause performance issues.
-**Instead:** Events signal "state changed" → frontend calls IPC to fetch updated data.
-
----
-
-## Build Order for v1.1 (Dependency Analysis)
-
-Phases should be ordered from lowest coupling to highest, and from most foundational to most visible. Tech debt removal unblocks all other work.
-
-**Phase 1: Tech Debt Elimination (no deps, unblocks everything)**
-- Remove `greet` function from `lib.rs` — zero deps
-- Extract shared `audio_mime_type` to `audio/mod.rs` — affects `lib.rs` + `server/streaming.rs`
-- Fix `isAppError` usage in `aiStore.ts` — affects AI error display across all AI components
-- Decide fate of `/api/tracks/{id}` route + `httpApi.getTrack()` — if removing, both sides must be removed together
-
-**Phase 2: Rust Test Coverage (deps: db layer is already tested)**
-- Add command-layer unit tests — extract pure functions from `commands/*.rs` first
-- Add integration test: scan → db → get_all_tracks round trip (needs `tempfile`)
-- Extend scanner tests with actual temp audio files for format coverage
-
-**Phase 3: Frontend Test Coverage (deps: test runner setup first)**
-- Install and configure Vitest
-- Start with zero-dependency targets: `musicUtils.ts`, `types/ai.ts`
-- Then Zustand stores with mocked IPC
-- Then component tests with mocked `tauriApi`
-
-**Phase 4: UI/UX Polish (deps: none, but benefits from tech debt being clean first)**
-- Spacing, color, animation consistency audit
-- Component-level polish in isolation (each component is self-contained)
-- MixPrepPanel energy arc improvements
-- Notification system polish
-
-**Phase 5: Architecture Cleanup (deps: polish complete, tests in place)**
-- Extract library state from `App.tsx` to `libraryStore`
-- Extract AI panel state from `App.tsx` props to `aiStore`
-- This is the highest-risk phase — requires tests to catch regressions
+`startCrossfadeToNext()` already guards against native mode with an early throw. Do not attempt to add crossfade to native mode (OGG/OPUS fallback path) — it would require dual decoder support in the Rust backend.
 
 ---
 
 ## Scalability Considerations
 
-| Concern | Current Approach | Implication for v1.1 |
-|---------|-----------------|----------------------|
-| Large libraries (10K+ tracks) | Paginated `get_tracks_paginated`, TanStack Virtual | Already handled; polish pagination UX |
-| AI context size | `TrackContextBuilder` truncates to token budget | Works for small-medium libraries; no change needed |
-| stream:// memory | Reads entire file into Vec<u8> | Problematic for large FLAC/WAV; streaming read is a deferred optimization |
-| Mobile streaming concurrency | `active_streams` atomic counter with max limit | Already capped; no change needed |
-| Analysis blocking | Analysis commands block on Rust side (no async) | Acceptable for per-track; batch analysis should stay cancellable via frontend flag |
+| Concern | Current | Implication for v1.2 |
+|---------|---------|----------------------|
+| Full library load | Paginated to 1000 initially | Switch to `getAllTracks()` — acceptable for small DJ libraries |
+| Large libraries (10K+ tracks) | Paginated guards | Full load will be slow; monitor startup time |
+| AI context size | Truncates to token budget | No change needed |
+| stream:// memory | Reads entire file into Vec<u8> | Deferred optimization |
+| Mobile streaming concurrency | Capped via `active_streams` | No change needed |
 
 ---
 
 ## Sources
 
-- Direct codebase inspection: all `src-tauri/src/**/*.rs` and `src/**/*.{ts,tsx}` files
-- `src-tauri/Cargo.toml` — dependency versions confirmed
-- `package.json` — frontend dependencies confirmed
-- `.planning/MILESTONES.md` — tech debt items catalogued from v1.0 audit
-- Confidence: HIGH for all findings (primary source is the codebase itself)
+All findings based on direct inspection of:
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/audioPlayer.ts` (full, ~1350 lines)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/App.tsx` (lines 1-550)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/store/playerStore.ts`
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/tauri-api.ts`
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/AppearanceSection.tsx`
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/SettingsContext.tsx`
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/constants.ts`
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/commands/library.rs` (relevant sections)
+- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/.planning/PROJECT.md`
+
+Confidence: HIGH — answers derived from reading the exact lines that will be modified.
