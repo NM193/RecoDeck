@@ -2,15 +2,15 @@
 
 :root {
   --accent: #6366f1;
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a28;
-  --text-primary: #e0e0e8;
-  --text-secondary: #8888a0;
-  --border: #2a2a3a;
-  --surface: #16161f;
-  --danger: #ef4444;
-  --success: #10b981;
+  --bg-primary: #121212;
+  --bg-secondary: #181818;
+  --bg-tertiary: #282828;
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --border: #333333;
+  --surface: #1e1e1e;
+  --danger: #e53e3e;
+  --success: #1ed760;
 }
 
 * {
@@ -30,7 +30,7 @@ body,
 
 body {
   font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   overscroll-behavior: none;
