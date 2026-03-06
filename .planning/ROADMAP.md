@@ -171,7 +171,7 @@ Plans:
 | 7. UI Foundation | v1.1 | 2/2 | Complete | 2026-03-01 |
 | 8. UI Layout | v1.1 | 0/3 | Not started | - |
 | 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
-| 10. Settings Cleanup | 1/1 | Complete   | 2026-03-06 | - |
+| 10. Settings Cleanup | 1/1 | Complete    | 2026-03-06 | - |
 | 11. Playback Bug Fixes | v1.2 | 0/? | Not started | - |
 | 12. Beatmatch Crossfade | v1.2 | 0/? | Not started | - |
 | 13. Async Full-Library Load | v1.2 | 0/? | Not started | - |
