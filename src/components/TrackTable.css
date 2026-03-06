@@ -263,37 +263,15 @@
 .data-row--playing .row-play   { display: none; }
 .data-row--playing .cell-index .row-playing { display: flex; }
 
-/* Combined Title + Artist cell */
-.cell-title-combined {
+/* Title column */
+.cell-title {
   flex: 1 1 300px;
   min-width: 180px;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding-top: 3px;
-  padding-bottom: 3px;
-  overflow: hidden;
 }
 
-.cell-title-combined__title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
-  line-height: 1.2;
-}
-
-.cell-title-combined__artist {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
-  line-height: 1.2;
+/* Artist column */
+.cell-artist {
+  flex: 0 0 200px;
 }
 
 .cell-bpm {

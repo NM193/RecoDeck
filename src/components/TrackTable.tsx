@@ -537,10 +537,16 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             <div className="track-table-row header-row">
               <div className="table-cell cell-index">#</div>
               <div
-                className={`table-cell cell-title-combined sortable ${sort.column === 'title' ? 'sorted' : ''}`}
+                className={`table-cell cell-title sortable ${sort.column === 'title' ? 'sorted' : ''}`}
                 onClick={() => handleSort('title')}
               >
                 Title {sortIndicator('title')}
+              </div>
+              <div
+                className={`table-cell cell-artist sortable ${sort.column === 'artist' ? 'sorted' : ''}`}
+                onClick={() => handleSort('artist')}
+              >
+                Artist {sortIndicator('artist')}
               </div>
               <div
                 className={`table-cell cell-bpm sortable ${sort.column === 'bpm' ? 'sorted' : ''}`}
@@ -646,16 +652,11 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                         </>
                       )}
                     </div>
-                    <div
-                      className="table-cell cell-title-combined"
-                      title={`${track.title || 'Untitled'} — ${track.artist || 'Unknown'}`}
-                    >
-                      <span className="cell-title-combined__title">
-                        {track.title || <span className="text-muted">Untitled</span>}
-                      </span>
-                      <span className="cell-title-combined__artist">
-                        {track.artist || <span className="text-muted">Unknown Artist</span>}
-                      </span>
+                    <div className="table-cell cell-title" title={track.title || 'Untitled'}>
+                      {track.title || <span className="text-muted">Untitled</span>}
+                    </div>
+                    <div className="table-cell cell-artist" title={track.artist || 'Unknown Artist'}>
+                      {track.artist || <span className="text-muted">Unknown Artist</span>}
                     </div>
                     <div className="table-cell cell-bpm">
                       {track.bpm ? track.bpm.toFixed(2) : '—'}
