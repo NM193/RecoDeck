@@ -45,7 +45,9 @@ describe('playerStore - queue management', () => {
   })
 
   it('playNext advances index', () => {
-    usePlayerStore.getState().setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 0)
+    usePlayerStore
+      .getState()
+      .setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 0)
     usePlayerStore.getState().playNext()
     expect(usePlayerStore.getState().currentTrackIndex).toBe(1)
   })
@@ -69,7 +71,9 @@ describe('playerStore - queue management', () => {
   })
 
   it('playPrevious goes back one', () => {
-    usePlayerStore.getState().setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 2)
+    usePlayerStore
+      .getState()
+      .setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 2)
     usePlayerStore.getState().playPrevious()
     expect(usePlayerStore.getState().currentTrackIndex).toBe(1)
   })
@@ -81,7 +85,9 @@ describe('playerStore - queue management', () => {
   })
 
   it('playTrackAtIndex sets correct index', () => {
-    usePlayerStore.getState().setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 0)
+    usePlayerStore
+      .getState()
+      .setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 0)
     usePlayerStore.getState().playTrackAtIndex(2)
     expect(usePlayerStore.getState().currentTrackIndex).toBe(2)
   })
@@ -95,7 +101,13 @@ describe('playerStore - queue management', () => {
 
 describe('playerStore - shuffle', () => {
   it('setShuffle true shuffles queue', () => {
-    const tracks = [makeTrack(1), makeTrack(2), makeTrack(3), makeTrack(4), makeTrack(5)]
+    const tracks = [
+      makeTrack(1),
+      makeTrack(2),
+      makeTrack(3),
+      makeTrack(4),
+      makeTrack(5),
+    ]
     usePlayerStore.getState().setQueue(tracks, 0)
     usePlayerStore.getState().setShuffle(true)
     expect(usePlayerStore.getState().isShuffle).toBe(true)

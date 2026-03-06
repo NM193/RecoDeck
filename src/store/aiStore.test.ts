@@ -33,7 +33,9 @@ describe('aiStore - checkApiKeyStatus', () => {
   })
 
   it('sets isApiKeyConfigured false on error', async () => {
-    vi.mocked(tauriApi.getAIApiKeyStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(tauriApi.getAIApiKeyStatus).mockRejectedValue(
+      new Error('network'),
+    )
     await useAIStore.getState().checkApiKeyStatus()
     expect(useAIStore.getState().isApiKeyConfigured).toBe(false)
   })
@@ -50,7 +52,9 @@ describe('aiStore - setApiKey', () => {
 
   it('sets error message on failure and throws', async () => {
     vi.mocked(tauriApi.setAIApiKey).mockRejectedValue('save failed')
-    await expect(useAIStore.getState().setApiKey('bad-key')).rejects.toBeTruthy()
+    await expect(
+      useAIStore.getState().setApiKey('bad-key'),
+    ).rejects.toBeTruthy()
     expect(useAIStore.getState().error).toBeTruthy()
   })
 })

@@ -232,6 +232,14 @@ export const tauriApi = {
     return await invoke('analyze_all_keys')
   },
 
+  async analyzeTracksBatch(trackIds: number[], force = false): Promise<void> {
+    return await invoke('analyze_tracks_batch', { trackIds, force })
+  },
+
+  async cancelAnalysis(): Promise<void> {
+    return await invoke('cancel_analysis')
+  },
+
   async getTrackAnalysis(trackId: number): Promise<TrackAnalysis | null> {
     return await invoke('get_track_analysis', { trackId })
   },

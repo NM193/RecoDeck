@@ -6,7 +6,7 @@
     "sidebar main"
     "player  player";
   grid-template-columns: var(--sidebar-width, 240px) 1fr;
-  grid-template-rows: 1fr var(--player-height, 88px);
+  grid-template-rows: 1fr auto;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
@@ -26,6 +26,7 @@
 .app-shell__main {
   grid-area: main;
   overflow: hidden;
+  min-width: 0;
   position: relative;
   background: var(--bg-primary);
   display: flex;
@@ -36,5 +37,5 @@
   grid-area: player;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-  overflow: hidden;
+  overflow: visible;
 }

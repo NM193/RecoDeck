@@ -7,6 +7,7 @@ import { tauriApi } from '../../lib/tauri-api'
 import { getTrackArtworkUrl } from '../../lib/artworkCache'
 import type { Playlist, Track } from '../../types/track'
 import { Icon } from '../Icon'
+import { WaveformVisualizer } from '../WaveformVisualizer'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -61,6 +62,9 @@ export function NowPlayingBar({
   const [crossfadeTriggered, setCrossfadeTriggered] = useState(false)
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [showWaveform, setShowWaveform] = useState(false)
+  const [progressHover, setProgressHover] = useState(false)
+  const [hoverX, setHoverX] = useState(0) // 0-1 ratio across bar
 
   const progressRef = useRef<HTMLDivElement>(null)
   const playlistMenuRef = useRef<HTMLDivElement>(null)
@@ -706,7 +710,7 @@ export function NowPlayingBar({
         </div>
       )}
 
-      <div className="now-playing-bar__inner">
+      <div className={`now-playing-bar__inner${showWaveform && currentTrack ? ' is-waveform' : ''}`}>
         {/* LEFT: Album art + track info */}
         <div className="now-playing-bar__left">
           <div
@@ -816,24 +820,63 @@ export function NowPlayingBar({
           </div>
 
           {/* Progress row */}
-          <div className="now-playing-bar__progress-row">
+          <div className={`now-playing-bar__progress-row${showWaveform && currentTrack ? ' now-playing-bar__progress-row--waveform' : ''}`}>
             <span className="now-playing-bar__time">{formatTime(position)}</span>
 
-            <div
-              className="now-playing-bar__progress"
-              ref={progressRef}
-              onMouseDown={handleProgressMouseDown}
-            >
-              <div className="now-playing-bar__progress-track" />
-              <div
-                className="now-playing-bar__progress-fill"
-                style={{ width: `${progress}%` }}
+            {showWaveform && currentTrack ? (
+              <WaveformVisualizer
+                key={currentTrack.id}
+                trackId={currentTrack.id}
+                position={position}
+                duration={effectiveDuration}
+                onSeek={async (posMs) => {
+                  setPosition(posMs)
+                  try {
+                    await audioPlayer.seek(Math.floor(posMs))
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+                onSeeking={(posMs) => setPosition(posMs)}
               />
+            ) : (
               <div
-                className="now-playing-bar__progress-handle"
-                style={{ left: `${progress}%` }}
-              />
-            </div>
+                className={`now-playing-bar__progress${progressHover || isDragging ? ' now-playing-bar__progress--hover' : ''}`}
+                ref={progressRef}
+                onMouseDown={handleProgressMouseDown}
+                onMouseEnter={() => setProgressHover(true)}
+                onMouseLeave={() => setProgressHover(false)}
+                onMouseMove={(e) => {
+                  if (!progressRef.current) return
+                  const rect = progressRef.current.getBoundingClientRect()
+                  setHoverX(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)))
+                }}
+              >
+                <div className="now-playing-bar__progress-track" />
+                {(progressHover || isDragging) && hoverX * 100 > progress && (
+                  <div
+                    className="now-playing-bar__progress-hover-fill"
+                    style={{ left: `${progress}%`, width: `${hoverX * 100 - progress}%` }}
+                  />
+                )}
+                <div
+                  className="now-playing-bar__progress-fill"
+                  style={{ width: `${progress}%` }}
+                />
+                <div
+                  className="now-playing-bar__progress-handle"
+                  style={{ left: `${progress}%` }}
+                />
+                {(progressHover || isDragging) && effectiveDuration > 0 && (
+                  <div
+                    className="now-playing-bar__progress-tooltip"
+                    style={{ left: `${hoverX * 100}%` }}
+                  >
+                    {formatTime(hoverX * effectiveDuration)}
+                  </div>
+                )}
+              </div>
+            )}
 
             <span className="now-playing-bar__time">{formatTime(effectiveDuration)}</span>
           </div>
@@ -894,6 +937,16 @@ export function NowPlayingBar({
               </div>
             )}
           </div>
+
+          {/* Waveform toggle */}
+          <button
+            className={`now-playing-bar__btn now-playing-bar__btn--action ${showWaveform ? 'now-playing-bar__btn--waveform-active' : ''}`}
+            onClick={() => setShowWaveform((v) => !v)}
+            disabled={!currentTrack}
+            title={showWaveform ? 'Hide waveform' : 'Show waveform'}
+          >
+            <Icon name="AudioWaveform" size={18} />
+          </button>
 
           {/* Open Mini Player */}
           <button

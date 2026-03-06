@@ -14,7 +14,7 @@ import type { Track } from '../../types/track'
 import type { RecommendedOrder } from '../../types/ai'
 import { getErrorMessage } from '../../types/ai'
 import { useAIStore } from '../../store/aiStore'
-import { getKeyCompatibility, getBpmIssue } from '../../lib/musicUtils'
+import { getKeyCompatibilityScore, getBpmIssue, type KeyCompatibilityTier } from '../../lib/musicUtils'
 import './MixPrepPanel.css'
 
 interface MixPrepPanelProps {
@@ -157,14 +157,14 @@ export function MixPrepPanel({
     .map((trackA, i) => {
       const trackB = tracks[i + 1]
       const bpmIssue = getBpmIssue(trackA.bpm, trackB.bpm)
-      const keyCompat = getKeyCompatibility(
+      const keyResult = getKeyCompatibilityScore(
         trackA.musical_key,
         trackB.musical_key,
       )
-      return { trackA, trackB, bpmIssue, keyCompat }
+      return { trackA, trackB, bpmIssue, keyTier: keyResult.tier }
     })
     .filter(
-      ({ bpmIssue, keyCompat }) => bpmIssue === 'bad' || keyCompat === 'clash',
+      ({ bpmIssue, keyTier }) => bpmIssue === 'bad' || keyTier === 'clash',
     )
 
   // --- Section 3: AI Suggested Order ---
@@ -210,9 +210,9 @@ export function MixPrepPanel({
   }
 
   // Helper: key badge class
-  function keyBadgeClass(compat: 'perfect' | 'compatible' | 'clash') {
-    if (compat === 'perfect') return 'mix-prep-badge mix-prep-badge--ok'
-    if (compat === 'compatible') return 'mix-prep-badge mix-prep-badge--warn'
+  function keyBadgeClass(tier: KeyCompatibilityTier) {
+    if (tier === 'perfect' || tier === 'harmonic') return 'mix-prep-badge mix-prep-badge--ok'
+    if (tier === 'energy') return 'mix-prep-badge mix-prep-badge--warn'
     return 'mix-prep-badge mix-prep-badge--bad'
   }
 
@@ -314,7 +314,7 @@ export function MixPrepPanel({
                   ) : (
                     <div className="mix-prep-transitions">
                       {transitionIssues.map(
-                        ({ trackA, trackB, bpmIssue, keyCompat }, i) => {
+                        ({ trackA, trackB, bpmIssue, keyTier }, i) => {
                           const bpmDelta =
                             trackA.bpm != null && trackB.bpm != null
                               ? Math.abs(trackA.bpm - trackB.bpm).toFixed(0)
@@ -344,12 +344,14 @@ export function MixPrepPanel({
                                     No BPM
                                   </span>
                                 )}
-                                <span className={keyBadgeClass(keyCompat)}>
-                                  {keyCompat === 'perfect'
+                                <span className={keyBadgeClass(keyTier)}>
+                                  {keyTier === 'perfect'
                                     ? 'Perfect key'
-                                    : keyCompat === 'compatible'
-                                      ? 'Compat. key'
-                                      : 'Key clash'}
+                                    : keyTier === 'harmonic'
+                                      ? 'Harmonic'
+                                      : keyTier === 'energy'
+                                        ? 'Energy shift'
+                                        : 'Key clash'}
                                 </span>
                               </div>
                             </div>
@@ -433,11 +435,11 @@ export function MixPrepPanel({
                             const bpmIssue = nextTrack
                               ? getBpmIssue(track.bpm, nextTrack.bpm)
                               : null
-                            const keyCompat = nextTrack
-                              ? getKeyCompatibility(
+                            const keyTier = nextTrack
+                              ? getKeyCompatibilityScore(
                                   track.musical_key,
                                   nextTrack.musical_key,
-                                )
+                                ).tier
                               : null
                             return (
                               <div key={track.id ?? i}>
@@ -459,7 +461,7 @@ export function MixPrepPanel({
                                         : ''}
                                     </div>
                                   </div>
-                                  {bpmIssue && keyCompat && (
+                                  {bpmIssue && keyTier && (
                                     <div className="mix-prep-transition-badges">
                                       <span className={bpmBadgeClass(bpmIssue)}>
                                         {track.bpm && nextTrack.bpm
@@ -468,13 +470,15 @@ export function MixPrepPanel({
                                         BPM
                                       </span>
                                       <span
-                                        className={keyBadgeClass(keyCompat)}
+                                        className={keyBadgeClass(keyTier)}
                                       >
-                                        {keyCompat === 'perfect'
+                                        {keyTier === 'perfect'
                                           ? 'Key'
-                                          : keyCompat === 'compatible'
-                                            ? 'Compat.'
-                                            : 'Clash'}
+                                          : keyTier === 'harmonic'
+                                            ? 'Harmonic'
+                                            : keyTier === 'energy'
+                                              ? 'Energy'
+                                              : 'Clash'}
                                       </span>
                                     </div>
                                   )}

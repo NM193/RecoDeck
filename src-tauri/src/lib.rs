@@ -8,8 +8,8 @@ pub mod scanner;
 pub mod server;
 
 use commands::{library::AppState, playback::PlaybackState, server::CompanionState, watcher::WatcherState};
-use std::sync::Mutex;
-use tauri::{Emitter, Listener};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 /// Percent-decode a URI path string (e.g. "%20" → " ")
 fn percent_decode(input: &str) -> String {
@@ -61,16 +61,7 @@ use audio::audio_mime_type;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
-            // Relay player events between windows (main <-> mini player)
-            let handle = app.handle().clone();
-            for event_name in ["player-state", "player-position", "player-action", "request-player-state"] {
-                let h = handle.clone();
-                let name = event_name.to_string();
-                app.listen(event_name, move |event| {
-                    let _ = h.emit(&name, event.payload());
-                });
-            }
+        .setup(|_app| {
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -397,6 +388,7 @@ pub fn run() {
             db: Mutex::new(None),
             ai_context_cache: Mutex::new(None),
             db_path: Mutex::new(None),
+            analysis_cancelled: Arc::new(AtomicBool::new(false)),
         })
         .manage(PlaybackState::new())
         .manage(WatcherState::new())
@@ -439,6 +431,8 @@ pub fn run() {
             commands::analysis::get_track_analysis,
             commands::analysis::analyze_waveform,
             commands::analysis::get_waveform,
+            commands::analysis::analyze_tracks_batch,
+            commands::analysis::cancel_analysis,
             // Playlist commands
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,
@@ -486,6 +480,18 @@ pub fn run() {
             commands::server::get_companion_status,
             commands::server::regenerate_companion_token,
         ])
+        .on_window_event(|window, event| {
+            use tauri::Manager;
+            if let tauri::WindowEvent::Destroyed = event {
+                // Shut down companion server so the port is freed
+                let state = window.app_handle().state::<commands::server::CompanionState>();
+                let server = state.running_server.lock().ok().and_then(|mut lock| lock.take());
+                if let Some(server) = server {
+                    eprintln!("[companion] Window closing, shutting down server...");
+                    let _ = server.shutdown_tx.send(());
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

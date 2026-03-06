@@ -7,7 +7,31 @@
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
       "Bash(npm run tauri:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Skill(gsd:discuss-phase)",
+      "Skill(gsd:plan-phase)",
+      "WebSearch",
+      "Bash(git log:*)",
+      "Bash(cp:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(grep:*)",
+      "Bash(git stash:*)",
+      "Bash(sqlite3:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npx vitest:*)",
+      "Bash(ls:*)",
+      "Bash(npm ls:*)",
+      "Bash(npx sharp-cli:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh release:*)",
+      "Bash(git add:*)",
+      "Bash(echo:*)",
+      "Bash(git:*)",
+      "Bash(git commit:*)",
+      "Bash(cat:*)",
+      "Skill(gsd:execute-phase)"
     ]
   }
 }

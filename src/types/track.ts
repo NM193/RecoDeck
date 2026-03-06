@@ -101,3 +101,20 @@ export interface GenreDefinition {
   color?: string
   sort_order: number
 }
+
+// Batch analysis event types (emitted by backend during parallel analysis)
+export interface AnalysisProgressEvent {
+  current: number
+  total: number
+  track_id: number
+  track_name: string
+  bpm?: number
+  musical_key?: string
+}
+
+export interface AnalysisCompleteEvent {
+  total_analyzed: number
+  total_requested: number
+  total_failed: number
+  cancelled: boolean
+}

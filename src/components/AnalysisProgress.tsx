@@ -45,6 +45,8 @@ export function AnalysisProgress({
 
   if (!progress) return null
 
+  const isSingleTrack = progress.totalTracks <= 1
+  const isIndeterminate = isSingleTrack || progress.currentIndex === 0
   const percentage =
     progress.totalTracks > 0
       ? Math.round((progress.currentIndex / progress.totalTracks) * 100)
@@ -98,18 +100,22 @@ export function AnalysisProgress({
     <div className="analysis-progress-container">
       <div className="analysis-progress-bar-wrapper">
         <div
-          className="analysis-progress-bar"
-          style={{ width: `${percentage}%` }}
+          className={`analysis-progress-bar${isIndeterminate ? ' indeterminate' : ''}`}
+          style={isIndeterminate ? undefined : { width: `${percentage}%` }}
         />
       </div>
 
       <div className="analysis-progress-content">
         <div className="analysis-progress-track">
-          <span className="analysis-progress-index">
-            [{progress.currentIndex}/{progress.totalTracks}]
-          </span>{' '}
+          {!isSingleTrack && (
+            <>
+              <span className="analysis-progress-index">
+                [{progress.currentIndex}/{progress.totalTracks}]
+              </span>{' '}
+            </>
+          )}
           <span className="analysis-progress-name">
-            {progress.currentTrackName}
+            {isSingleTrack ? `Analyzing ${progress.currentTrackName}...` : progress.currentTrackName}
           </span>
         </div>
 

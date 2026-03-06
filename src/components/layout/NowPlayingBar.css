@@ -42,8 +42,13 @@
 .now-playing-bar__inner {
   display: flex;
   align-items: center;
-  height: 88px;
+  min-height: 88px;
   padding: 0 var(--space-4);
+  transition: min-height 0.15s ease;
+}
+
+.now-playing-bar__inner.is-waveform {
+  min-height: 113px;
 }
 
 /* ---- LEFT column: album art + track info ---- */
@@ -180,7 +185,7 @@
   flex-shrink: 0;
 }
 
-/* Progress bar */
+/* Progress bar — Spotify-style: thin line, hover reveals thumb + green fill */
 .now-playing-bar__progress {
   flex: 1;
   height: 16px;
@@ -203,31 +208,61 @@
   position: absolute;
   left: 0;
   height: 3px;
-  background: var(--accent);
+  background: var(--text-primary);
   border-radius: 1.5px;
   pointer-events: none;
-  transition: width 0.05s linear;
+  transition: background 0.15s;
+}
+
+/* On hover: fill turns accent */
+.now-playing-bar__progress--hover .now-playing-bar__progress-fill {
+  background: var(--accent);
+}
+
+/* Hover preview: muted white bar from current position to cursor */
+.now-playing-bar__progress-hover-fill {
+  position: absolute;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 1.5px;
+  pointer-events: none;
 }
 
 .now-playing-bar__progress-handle {
   position: absolute;
   top: 50%;
-  width: 10px;
-  height: 10px;
-  background: var(--accent);
+  width: 12px;
+  height: 12px;
+  background: var(--text-primary);
   border-radius: 50%;
   transform: translate(-50%, -50%);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
-.now-playing-bar__progress:hover .now-playing-bar__progress-handle {
+/* On hover: show thumb */
+.now-playing-bar__progress--hover .now-playing-bar__progress-handle {
   opacity: 1;
 }
 
-.now-playing-bar__progress:active .now-playing-bar__progress-handle {
-  opacity: 1;
+/* Floating time tooltip */
+.now-playing-bar__progress-tooltip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: var(--bg-tertiary, #282828);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* ---- RIGHT column: volume + extras ---- */
@@ -322,10 +357,15 @@
   height: 32px;
 }
 
+.now-playing-bar__btn--waveform-active {
+  color: var(--accent) !important;
+}
+
 /* ---- Volume ---- */
 .now-playing-bar__volume {
   position: relative;
   flex-shrink: 0;
+  z-index: 150;
 }
 
 .now-playing-bar__volume-popup {
@@ -340,7 +380,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 120;
+  z-index: 200;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
@@ -469,6 +509,41 @@
 .now-playing-bar__playlist-menu::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 2px;
+}
+
+/* ---- Waveform visualizer (inline in progress row) ---- */
+.now-playing-bar__progress-row--waveform {
+  height: 36px;
+}
+
+.waveform-visualizer__wrap {
+  flex: 1;
+  height: 100%;
+  position: relative;
+}
+
+.waveform-visualizer {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.waveform-visualizer__tooltip {
+  position: absolute;
+  top: -24px;
+  transform: translateX(-50%);
+  background: var(--bg-tertiary, #282828);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 /* ---- Expanded now-playing overlay ---- */

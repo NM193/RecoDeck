@@ -7,6 +7,7 @@ use crate::server::{self, RunningServer};
 use serde::Serialize;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager, State};
@@ -42,6 +43,8 @@ pub struct CompanionState {
     pub running_server: Mutex<Option<RunningServer>>,
     /// Shared reference to library folders (kept in sync with settings)
     pub library_folders: Arc<Mutex<Vec<String>>>,
+    /// Prevents concurrent auto-start attempts (React StrictMode calls init twice)
+    auto_starting: AtomicBool,
 }
 
 impl Default for CompanionState {
@@ -55,6 +58,7 @@ impl CompanionState {
         CompanionState {
             running_server: Mutex::new(None),
             library_folders: Arc::new(Mutex::new(Vec::new())),
+            auto_starting: AtomicBool::new(false),
         }
     }
 }
@@ -340,6 +344,12 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
 
     let app_state = app_handle.state::<AppState>();
     let companion_state = app_handle.state::<CompanionState>();
+
+    // Atomically claim the auto-start slot — prevents double-start from React StrictMode
+    if companion_state.auto_starting.swap(true, Ordering::SeqCst) {
+        eprintln!("[companion] Auto-start already in progress, skipping duplicate");
+        return;
+    }
 
     // Check if autostart is enabled (default: true for new users)
     let should_start = {

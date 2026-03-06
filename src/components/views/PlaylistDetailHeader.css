@@ -1,19 +1,11 @@
 /* ============================================================
    PlaylistDetailHeader — Large hero header for playlist views
-   with scroll compression via IntersectionObserver
+   with click-to-toggle compression
    ============================================================ */
-
-/* Sentinel div used by IntersectionObserver — zero-height, sits at scroll top */
-.playlist-header__sentinel {
-  height: 1px;
-  flex-shrink: 0;
-}
 
 /* ---- Main header ---- */
 .playlist-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: var(--space-6);
@@ -28,7 +20,7 @@
   flex-shrink: 0;
 }
 
-/* ---- Compressed state (triggered by IntersectionObserver) ---- */
+/* ---- Compressed state ---- */
 .playlist-header--compressed {
   padding: var(--space-3) var(--space-5);
   background: var(--bg-secondary);
@@ -92,6 +84,7 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1;
   transition: all 0.3s ease;
 }
 
@@ -154,4 +147,28 @@
 .playlist-header__meta-item svg {
   flex-shrink: 0;
   opacity: 0.7;
+}
+
+/* ---- Collapse/expand toggle button ---- */
+.playlist-header__toggle {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.playlist-header__toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
 }

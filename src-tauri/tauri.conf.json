@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; media-src 'self' stream: http: https: blob:"
+      "csp": "default-src 'self'; img-src 'self' blob: asset: https://asset.localhost/; media-src 'self' stream: http: https: blob:"
     }
   },
   "bundle": {
@@ -43,7 +43,7 @@
         "https://github.com/NM193/RecoDeck/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVERTg2NjJERDY0NzkwODgKUldTSWtFZldMV2JvN1ZJVnB4R2NRMG5uNHJDWVVBNVZscFFZWDQ3SnRQZTRoVHAzc1o3eW9DcnMK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzM0QxOUZGOUEzMkNGQUUKUldTdXp6S2EveGs5ODdhenY0aWlkUTRxUTVKK3o4TnVRQmo4UHA4ZWVnb0l2MWFnZG9tbEtndlEK"
     }
   }
 }

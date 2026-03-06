@@ -24,6 +24,25 @@
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.3);
 }
 
+.analysis-progress-bar.indeterminate {
+  width: 100% !important;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 30%,
+    var(--accent-hover) 50%,
+    var(--accent) 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: indeterminateShimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminateShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .analysis-progress-content {
   position: relative;
   z-index: 1;

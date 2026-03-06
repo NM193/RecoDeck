@@ -12,7 +12,7 @@ import type { Track } from '../../types/track'
 import type { EnergyDirection, GeneratedPlaylist } from '../../types/ai'
 import { getErrorMessage } from '../../types/ai'
 import { useAIStore } from '../../store/aiStore'
-import { getKeyCompatibility } from '../../lib/musicUtils'
+import { getKeyCompatibilityScore } from '../../lib/musicUtils'
 import './AIPlaylistDialog.css'
 
 interface AIPlaylistDialogProps {
@@ -41,7 +41,7 @@ function TransitionIndicator({ trackA, trackB }: TransitionIndicatorProps) {
     trackA.bpm != null && trackB.bpm != null
       ? Math.abs(trackA.bpm - trackB.bpm)
       : null
-  const keyCompat = getKeyCompatibility(trackA.musical_key, trackB.musical_key)
+  const { tier: keyTier } = getKeyCompatibilityScore(trackA.musical_key, trackB.musical_key)
 
   const bpmClass =
     bpmDelta == null
@@ -53,11 +53,20 @@ function TransitionIndicator({ trackA, trackB }: TransitionIndicatorProps) {
           : 'ai-playlist-transition__bpm--red'
 
   const keyClass =
-    keyCompat === 'perfect'
+    keyTier === 'perfect' || keyTier === 'harmonic'
       ? 'ai-playlist-transition__key--perfect'
-      : keyCompat === 'compatible'
+      : keyTier === 'energy'
         ? 'ai-playlist-transition__key--compatible'
         : 'ai-playlist-transition__key--clash'
+
+  const keyLabel =
+    keyTier === 'perfect'
+      ? 'Same key'
+      : keyTier === 'harmonic'
+        ? 'Harmonic'
+        : keyTier === 'energy'
+          ? 'Energy'
+          : 'Clash'
 
   return (
     <div className="ai-playlist-transition">
@@ -65,11 +74,7 @@ function TransitionIndicator({ trackA, trackB }: TransitionIndicatorProps) {
         {bpmDelta != null ? `±${bpmDelta} BPM` : 'BPM ?'}
       </span>
       <span className={`ai-playlist-transition__key ${keyClass}`}>
-        {keyCompat === 'perfect'
-          ? 'Same key'
-          : keyCompat === 'compatible'
-            ? 'Compatible'
-            : 'Clash'}
+        {keyLabel}
       </span>
     </div>
   )

@@ -14,6 +14,9 @@ import { SettingsView } from './components/views/SettingsView'
 import { SearchView } from './components/views/SearchView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
+import { WhatsNewDialog } from './components/WhatsNewDialog'
+import { getChangesForVersion } from './lib/changelog'
+import appPackage from '../package.json'
 import { Notification } from './components/Notification'
 import {
   AnalysisProgress,
@@ -124,6 +127,12 @@ function AppContent() {
   const [notification, setNotification] = useState<{
     message: string
     type: 'info' | 'success' | 'warning' | 'error'
+  } | null>(null)
+
+  // What's New dialog state
+  const [whatsNew, setWhatsNew] = useState<{
+    version: string
+    changes: string[]
   } | null>(null)
 
   // Header notification (small text next to logo, typing animation)
@@ -303,6 +312,22 @@ function AppContent() {
 
       // Load genre definitions
       await loadGenreDefinitions()
+
+      // Check if we should show "What's New" dialog
+      try {
+        const lastSeen = await tauriApi.getSetting('last_seen_version')
+        const currentVersion = appPackage.version
+        if (lastSeen !== currentVersion) {
+          const changes = getChangesForVersion(currentVersion)
+          if (changes.length > 0) {
+            setWhatsNew({ version: `v${currentVersion}`, changes })
+          }
+          // Save even if no changes found, so we don't re-check
+          await tauriApi.setSetting('last_seen_version', currentVersion)
+        }
+      } catch {
+        console.warn('Failed to check version for What\'s New dialog')
+      }
 
       // PERFORMANCE: Don't load all tracks on startup - load only total count
       // Tracks will be loaded when user selects a folder or playlist
@@ -1278,6 +1303,15 @@ function AppContent() {
           message={notification.message}
           type={notification.type}
           onClose={() => setNotification(null)}
+        />
+      )}
+
+      {/* What's New dialog */}
+      {whatsNew && (
+        <WhatsNewDialog
+          version={whatsNew.version}
+          changes={whatsNew.changes}
+          onClose={() => setWhatsNew(null)}
         />
       )}
 

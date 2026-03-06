@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useRef } from 'react'
 import { Icon, type IconName } from './Icon'
 import './Notification.css'
 
@@ -15,13 +15,24 @@ export function Notification({
   duration = 4000,
   onClose,
 }: NotificationProps) {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onClose()
-    }, duration)
+  const closedRef = useRef(false)
 
-    return () => clearTimeout(timer)
-  }, [duration, onClose])
+  const handleAnimationEnd = useCallback(
+    (e: React.AnimationEvent) => {
+      if (e.animationName === 'notifCountdown' && !closedRef.current) {
+        closedRef.current = true
+        onClose()
+      }
+    },
+    [onClose],
+  )
+
+  const handleClose = useCallback(() => {
+    if (!closedRef.current) {
+      closedRef.current = true
+      onClose()
+    }
+  }, [onClose])
 
   const getIcon = (): IconName => {
     if (type === 'success') return 'CircleCheck'
@@ -31,11 +42,15 @@ export function Notification({
   }
 
   return (
-    <div className={`notification notification--${type}`}>
-      <Icon name={getIcon()} size={20} className="notification-icon" />
+    <div
+      className={`notification notification--${type}`}
+      style={{ '--notif-duration': `${duration}ms` } as React.CSSProperties}
+      onAnimationEnd={handleAnimationEnd}
+    >
+      <Icon name={getIcon()} size={16} className="notification-icon" />
       <span className="notification-message">{message}</span>
-      <button className="notification-close" onClick={onClose}>
-        <Icon name="X" size={16} />
+      <button className="notification-close" onClick={handleClose}>
+        <Icon name="X" size={14} />
       </button>
     </div>
   )

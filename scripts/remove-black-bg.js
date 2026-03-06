@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Removes black background from an image by making dark pixels transparent.
+ * Removes black/dark background from logo by making dark pixels transparent.
+ * Use for logo in app (header, etc). For app icon, generate-app-icon.js does its own processing.
  */
 import sharp from 'sharp';
 import { fileURLToPath } from 'url';
@@ -11,7 +12,7 @@ const root = join(__dirname, '..');
 const input = join(root, 'public', 'recodeck-logo.png');
 const output = join(root, 'public', 'recodeck-logo.png');
 
-// Threshold: pixels darker than this become transparent (0-255)
+// Pixels darker than this become transparent (black/gray bg)
 const BLACK_THRESHOLD = 25;
 
 const { data, info } = await sharp(input)
@@ -27,7 +28,7 @@ for (let i = 0; i < data.length; i += channels) {
   const b = data[i + 2];
   const avg = (r + g + b) / 3;
   if (avg <= BLACK_THRESHOLD) {
-    data[i + 3] = 0; // Set alpha to transparent
+    data[i + 3] = 0;
   }
 }
 

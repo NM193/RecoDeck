@@ -38,6 +38,7 @@ walkdir = "2.5"
 sha2 = "0.10"
 bliss-audio-aubio-rs = { version = "0.2", features = ["builtin", "bindgen"] }
 rustfft = "6.2"
+rayon = "1.10"
 
 # Mobile companion server
 axum = "0.8"

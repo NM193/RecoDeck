@@ -5,8 +5,10 @@ use crate::error::AppError;
 use crate::scanner::{ScanResult, Scanner};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::sync::Mutex;
-use tauri::State;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::ipc::Response;
 
 /// Application state with database connection
@@ -16,6 +18,8 @@ pub struct AppState {
     pub ai_context_cache: Mutex<Option<String>>,
     /// Path to the SQLite database file (needed for companion server's own connection)
     pub db_path: Mutex<Option<String>>,
+    /// Cancellation flag for batch analysis (checked by Rayon workers)
+    pub analysis_cancelled: Arc<AtomicBool>,
 }
 
 /// Serializable track for frontend
@@ -114,6 +118,15 @@ impl From<TrackDTO> for Track {
             // Note: bpm/bpm_confidence are analysis-only fields, not stored on Track
         }
     }
+}
+
+/// Progress event emitted during folder scanning
+#[derive(Clone, Serialize)]
+pub struct ScanProgressEvent {
+    pub folder: String,
+    pub current: usize,
+    pub total: usize,
+    pub current_file: String,
 }
 
 /// Serializable scan result for frontend
@@ -275,99 +288,139 @@ pub fn count_tracks(state: State<AppState>) -> Result<i64, AppError> {
 }
 
 /// Scan a directory and import tracks.
-/// Releases the DB mutex between file imports so other commands aren't blocked.
+/// Runs on a background thread so the UI stays responsive.
+/// Emits throttled `scan-progress` events for real-time progress.
 #[tauri::command]
-pub fn scan_directory(state: State<AppState>, path: String) -> Result<ScanResultDTO, AppError> {
-    // 1. Load known paths (brief lock)
-    let known_paths = {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        db.get_all_file_paths().map_err(|e| AppError::Database(format!("Failed to get file paths: {}", e)))?
-    }; // lock released
+pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDTO, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
 
-    // 2. Scan filesystem for audio files (no lock needed)
-    let files = Scanner::scan_directory(Path::new(&path));
-    let total_files = files.len();
-    let mut imported = 0;
-    let mut skipped = 0;
-    let mut errors = Vec::new();
-
-    for file_path in files {
-        // Skip files already in DB (no I/O needed)
-        let path_str = file_path.to_string_lossy().to_string();
-        if known_paths.contains(&path_str) {
-            skipped += 1;
-            continue;
-        }
-
-        // 3. Extract metadata + hash (no lock needed, this is the expensive part)
-        let metadata = match Scanner::extract_metadata(&file_path) {
-            Ok(m) => m,
-            Err(e) => {
-                errors.push(crate::scanner::ScanError {
-                    file_path: file_path.clone(),
-                    error: e,
-                });
-                continue;
-            }
-        };
-
-        // 4. Insert into DB (brief lock per file)
-        let (track, tag_bpm, tag_genre) = metadata;
-        {
+        // 1. Load known paths (brief lock)
+        let known_paths = {
             let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
             let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+            db.get_all_file_paths().map_err(|e| AppError::Database(format!("Failed to get file paths: {}", e)))?
+        }; // lock released
 
-            // Check for duplicate hash
-            if track.file_hash != "unknown"
-                && db.track_exists_with_hash(&track.file_hash).unwrap_or(false) {
-                    skipped += 1;
+        // 2. Scan filesystem for audio files (no lock needed)
+        let files = Scanner::scan_directory(Path::new(&path));
+        let total_files = files.len();
+        let mut imported = 0;
+        let mut skipped = 0;
+        let mut errors = Vec::new();
+        let mut last_emit = Instant::now();
+        let emit_interval = std::time::Duration::from_millis(150);
+
+        for (idx, file_path) in files.iter().enumerate() {
+            let file_name = file_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+
+            // Skip files already in DB (no I/O needed)
+            let path_str = file_path.to_string_lossy().to_string();
+            if known_paths.contains(&path_str) {
+                skipped += 1;
+                if last_emit.elapsed() >= emit_interval {
+                    let _ = app.emit("scan-progress", &ScanProgressEvent {
+                        folder: path.clone(), current: idx + 1, total: total_files, current_file: file_name,
+                    });
+                    last_emit = Instant::now();
+                }
+                continue;
+            }
+
+            // 3. Extract metadata + hash (no lock needed, this is the expensive part)
+            let metadata = match Scanner::extract_metadata(file_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    errors.push(crate::scanner::ScanError {
+                        file_path: file_path.clone(),
+                        error: e,
+                    });
                     continue;
                 }
+            };
 
-            match db.create_track(&track) {
-                Ok(id) => {
-                    if let Some(bpm) = tag_bpm {
-                        let _ = db.save_bpm_analysis(id, bpm, 0.99);
-                    }
-                    if let Some(genre) = tag_genre {
-                        let _ = db.save_track_genre(id, &genre, "tag");
-                    }
-                    imported += 1;
-                }
-                Err(e) => {
-                    let err_str = format!("{}", e);
-                    if err_str.contains("UNIQUE constraint") {
+            // 4. Insert into DB (brief lock per file)
+            let (track, tag_bpm, tag_genre) = metadata;
+            {
+                let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+                let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+                // Check for duplicate hash
+                if track.file_hash != "unknown"
+                    && db.track_exists_with_hash(&track.file_hash).unwrap_or(false) {
                         skipped += 1;
-                    } else {
-                        errors.push(crate::scanner::ScanError {
-                            file_path: file_path.clone(),
-                            error: err_str,
-                        });
+                        continue;
+                    }
+
+                match db.create_track(&track) {
+                    Ok(id) => {
+                        if let Some(bpm) = tag_bpm {
+                            let _ = db.save_bpm_analysis(id, bpm, 0.99);
+                        }
+                        if let Some(genre) = tag_genre {
+                            let _ = db.save_track_genre(id, &genre, "tag");
+                        }
+                        imported += 1;
+                    }
+                    Err(e) => {
+                        let err_str = format!("{}", e);
+                        if err_str.contains("UNIQUE constraint") {
+                            skipped += 1;
+                        } else {
+                            errors.push(crate::scanner::ScanError {
+                                file_path: file_path.clone(),
+                                error: err_str,
+                            });
+                        }
                     }
                 }
-            }
-        } // lock released after each file
-    }
+            } // lock released after each file
 
-    Ok(ScanResultDTO::from(ScanResult {
-        total_files,
-        imported,
-        skipped,
-        errors,
-    }))
+            // Throttle: emit at most every 150ms
+            if last_emit.elapsed() >= emit_interval {
+                let _ = app.emit("scan-progress", &ScanProgressEvent {
+                    folder: path.clone(), current: idx + 1, total: total_files, current_file: file_name,
+                });
+                last_emit = Instant::now();
+            }
+        }
+
+        // Always emit final progress (100%)
+        if total_files > 0 {
+            let _ = app.emit("scan-progress", &ScanProgressEvent {
+                folder: path.clone(),
+                current: total_files,
+                total: total_files,
+                current_file: String::new(),
+            });
+        }
+
+        Ok(ScanResultDTO::from(ScanResult {
+            total_files,
+            imported,
+            skipped,
+            errors,
+        }))
+    }).await.map_err(|e| AppError::Internal(format!("Scan task failed: {}", e)))?
 }
 
-/// Search tracks by query string across all text fields
+/// Search tracks by query string across all text fields (includes analysis data)
 #[tauri::command]
 pub fn search_tracks(state: State<AppState>, query: String) -> Result<Vec<TrackDTO>, AppError> {
     let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
-    let tracks = db.search_tracks(&query)
+    let rows = db.search_tracks_with_analysis(&query)
         .map_err(|e| AppError::Database(format!("Failed to search tracks: {}", e)))?;
 
-    Ok(tracks.into_iter().map(TrackDTO::from).collect())
+    Ok(rows.into_iter().map(|(track, bpm, bpm_conf, key, key_conf)| {
+        let mut dto = TrackDTO::from(track);
+        dto.bpm = bpm;
+        dto.bpm_confidence = bpm_conf;
+        dto.musical_key = key;
+        dto.key_confidence = key_conf;
+        dto
+    }).collect())
 }
 
 /// Get list of audio files in a directory (without importing)

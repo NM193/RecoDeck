@@ -425,22 +425,6 @@ export function FolderTree({
   function renderFoldersContent() {
     return (
       <div className="folder-tree-section-body">
-              {/* "All Tracks" node */}
-              <div
-                className={`folder-row root-all ${isAllSelected ? 'selected' : ''}`}
-                onClick={() => onFolderSelect(null)}
-                onContextMenu={(e) =>
-                  showContextMenu(e, { type: 'all-tracks' })
-                }
-              >
-                <span className="folder-arrow" />
-                <Icon name="Music" size={16} className="folder-icon" />
-                <span className="folder-name">All Tracks</span>
-                {totalTrackCount != null && totalTrackCount > 0 && (
-                  <span className="folder-count">({totalTrackCount})</span>
-                )}
-              </div>
-
               {/* Library folder roots */}
               {libraryFolders.map((folderPath) => {
                 const isExpanded = libraryExpandedRoots.has(folderPath)
@@ -637,27 +621,6 @@ export function FolderTree({
             {contextMenu.type === 'playlist-item' && (
               <>
                 <div className="context-menu-header">{contextMenu.playlistName}</div>
-                <div
-                  className="context-menu-item"
-                  onClick={() => {
-                    onCreatePlaylist(contextMenu.playlistParentId ?? null)
-                    closeContextMenu()
-                  }}
-                >
-                  <Icon name="Plus" size={16} className="context-menu-icon" />
-                  Create Playlist
-                </div>
-                <div
-                  className="context-menu-item"
-                  onClick={() => {
-                    onCreateFolder(contextMenu.playlistParentId ?? null)
-                    closeContextMenu()
-                  }}
-                >
-                  <Icon name="FolderPlus" size={16} className="context-menu-icon" />
-                  Create Folder
-                </div>
-                <div className="context-menu-separator" />
                 {onSharePlaylist && (
                   <div
                     className="context-menu-item"
@@ -992,31 +955,6 @@ export function FolderTree({
               <div className="context-menu-header">
                 {contextMenu.playlistName}
               </div>
-              <div
-                className="context-menu-item"
-                onClick={() => {
-                  onCreatePlaylist(contextMenu.playlistParentId ?? null)
-                  closeContextMenu()
-                }}
-              >
-                <Icon name="Plus" size={16} className="context-menu-icon" />
-                Create Playlist
-              </div>
-              <div
-                className="context-menu-item"
-                onClick={() => {
-                  onCreateFolder(contextMenu.playlistParentId ?? null)
-                  closeContextMenu()
-                }}
-              >
-                <Icon
-                  name="FolderPlus"
-                  size={16}
-                  className="context-menu-icon"
-                />
-                Create Folder
-              </div>
-              <div className="context-menu-separator" />
               {onSharePlaylist && (
                 <div
                   className="context-menu-item"
