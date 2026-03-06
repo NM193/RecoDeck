@@ -136,7 +136,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. A VBR MP3 plays to its natural end and the next track begins without any repeated audio from the last few seconds of the previous track
   2. Pressing skip during an active crossfade immediately stops all audio; only the newly selected track plays
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 11-01-PLAN.md — Fix SEEK_MARGIN_MS and add abortCrossfade() to loadTrack() (PLAY-01, PLAY-02)
 
 ### Phase 12: Beatmatch Crossfade
 **Goal**: When crossfade is enabled, the incoming track's playback rate smoothly ramps from the outgoing track's BPM to its own BPM over the crossfade window — and crossfade activates on app launch without user re-toggling
