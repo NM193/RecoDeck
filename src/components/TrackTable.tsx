@@ -40,7 +40,6 @@ interface SortState {
 interface TrackTableProps {
   tracks: Track[]
   playlists?: Playlist[]
-  keyNotation?: 'camelot' | 'openkey'
   selectedPlaylistId?: number | null
   playlistMode?: boolean
   onTrackClick?: (track: Track) => void
@@ -71,23 +70,11 @@ export interface TrackTableRef {
   scrollToCurrentTrack: () => void
 }
 
-// Convert Camelot notation to Open Key notation
-function camelotToOpenKey(camelot: string): string {
-  // Simple conversion: replace 'A' with 'm' (minor) and 'B' with 'd' (major)
-  if (camelot.endsWith('A')) {
-    return camelot.slice(0, -1) + 'm'
-  } else if (camelot.endsWith('B')) {
-    return camelot.slice(0, -1) + 'd'
-  }
-  return camelot
-}
-
 export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
   function TrackTable(
     {
       tracks,
       playlists = [],
-      keyNotation = 'camelot',
       selectedPlaylistId = null,
       playlistMode = false,
       onTrackClick,
@@ -669,11 +656,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                           : undefined
                       }
                     >
-                      {track.musical_key
-                        ? keyNotation === 'openkey'
-                          ? camelotToOpenKey(track.musical_key)
-                          : track.musical_key
-                        : '—'}
+                      {track.musical_key ?? '—'}
                     </div>
                     <div className="table-cell cell-genre" title={track.genre}>
                       {track.genre || <span className="text-muted">—</span>}

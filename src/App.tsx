@@ -61,11 +61,6 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
-  const [keyNotation, setKeyNotation] = useState<'camelot' | 'openkey'>(
-    'camelot',
-  )
-  const [, setWaveformStyle] = useState<string>('traktor_rgb')
-
   // Folder tree state
   const [libraryFolders, setLibraryFolders] = useState<string[]>([])
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
@@ -286,26 +281,6 @@ function AppContent() {
         }
       } catch {
         console.warn('Failed to load saved theme, using default')
-      }
-
-      // Load saved key notation preference
-      try {
-        const savedKeyNotation = await tauriApi.getSetting('key_notation')
-        if (savedKeyNotation === 'openkey' || savedKeyNotation === 'camelot') {
-          setKeyNotation(savedKeyNotation)
-        }
-      } catch {
-        console.warn('Failed to load key notation preference, using default')
-      }
-
-      // Load saved waveform style preference
-      try {
-        const savedWaveformStyle = await tauriApi.getSetting('waveform_style')
-        if (savedWaveformStyle) {
-          setWaveformStyle(savedWaveformStyle)
-        }
-      } catch {
-        console.warn('Failed to load waveform style preference, using default')
       }
 
       // Load library folders
@@ -608,21 +583,8 @@ function AppContent() {
     loadTracks()
   }
 
-  function handleThemeChanged(
-    theme: string,
-    customColors?: Record<string, string>,
-  ) {
-    applyTheme(theme, customColors)
-  }
-
-  function handleKeyNotationChanged(notation: string) {
-    if (notation === 'openkey' || notation === 'camelot') {
-      setKeyNotation(notation)
-    }
-  }
-
-  function handleWaveformStyleChanged(style: string) {
-    setWaveformStyle(style)
+  function handleThemeChanged(theme: string) {
+    applyTheme(theme)
   }
 
   // Folder selection from Track Collection
@@ -1190,15 +1152,12 @@ function AppContent() {
               <SettingsView
                 onFoldersChanged={handleFoldersChanged}
                 onThemeChanged={handleThemeChanged}
-                onKeyNotationChanged={handleKeyNotationChanged}
-                onWaveformStyleChanged={handleWaveformStyleChanged}
                 onNotification={(message, type) => setNotification({ message, type })}
               />
             ) : showSearch ? (
               <SearchView
                 tracks={tracks}
                 playlists={playlists}
-                keyNotation={keyNotation}
                 onTrackPlay={handlePlayTrack}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
@@ -1234,7 +1193,6 @@ function AppContent() {
                     ref={trackTableRef}
                     tracks={tracks}
                     playlists={playlists}
-                    keyNotation={keyNotation}
                     selectedPlaylistId={selectedPlaylistId}
                     onTrackClick={handleTrackClick}
                     onTrackDoubleClick={handlePlayTrack}

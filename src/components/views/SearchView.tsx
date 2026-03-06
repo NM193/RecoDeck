@@ -25,12 +25,11 @@ function getPlaylistGradient(name: string): string {
 interface SearchViewProps {
   tracks: Track[]
   playlists: Playlist[]
-  keyNotation?: 'camelot' | 'openkey'
   onTrackPlay: (track: Track, tracks: Track[], index: number) => void
   onPlaylistSelect: (id: number) => void
 }
 
-export function SearchView({ tracks, playlists, keyNotation = 'camelot', onTrackPlay, onPlaylistSelect }: SearchViewProps) {
+export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }: SearchViewProps) {
   const [query, setQuery] = useState('')
 
   const filteredTracks = useMemo(() => {
@@ -62,14 +61,8 @@ export function SearchView({ tracks, playlists, keyNotation = 'camelot', onTrack
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
-  // Format key display (camelot vs openkey)
   function formatKey(key?: string) {
-    if (!key) return '—'
-    if (keyNotation === 'openkey') {
-      if (key.endsWith('A')) return key.slice(0, -1) + 'm'
-      if (key.endsWith('B')) return key.slice(0, -1) + 'd'
-    }
-    return key
+    return key ?? '—'
   }
 
   return (
