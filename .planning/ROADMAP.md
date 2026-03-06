@@ -157,7 +157,10 @@ Plans:
   1. At any window width (800px, 1280px, 1920px), track table rows fill the full width — no blank gap appears to the right of the last column
   2. The track table header background fills the full window width — it does not stop at the column content boundary
   3. Horizontal scrolling activates only when the total column width exceeds the window width — not before
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 12-01-PLAN.md — Add min-width: 100% to .track-table-holder; visual verify at three window widths
 
 ### Phase 13: Full Library Load
 **Goal**: The entire music library is visible in the track list immediately after app startup — no "Scroll for more" prompt, no partial library, and the track count in the UI reflects the actual full library size
@@ -195,6 +198,6 @@ Plans:
 | 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
 | 10. Settings Cleanup | v1.2 | 1/1 | Complete | 2026-03-06 |
 | 11. Playback Bug Fixes | v1.2 | 1/1 | Complete | 2026-03-06 |
-| 12. CSS Layout Fix | v1.3 | 0/? | Not started | - |
+| 12. CSS Layout Fix | v1.3 | 0/1 | Not started | - |
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
