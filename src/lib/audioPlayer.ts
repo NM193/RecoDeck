@@ -88,6 +88,88 @@ export class AudioPlayer {
     this._metadataDurationMs = ms
   }
 
+  // EQ configuration
+
+  /**
+   * DRY helper: ramp a BiquadFilterNode gain to targetDb over 30ms using the
+   * cancel + anchor + linearRamp pattern (avoids clicks/pops).
+   */
+  private _rampEqGain(filter: BiquadFilterNode, targetDb: number): void {
+    if (!this._vizCtx) return
+    const now = this._vizCtx.currentTime
+    filter.gain.cancelScheduledValues(now)
+    filter.gain.setValueAtTime(filter.gain.value, now)
+    filter.gain.linearRampToValueAtTime(targetDb, now + 0.03)
+  }
+
+  /**
+   * Set the gain (in dB) for a single EQ band. Clamped to [-12, 12].
+   * Gain is stored even when EQ is bypassed; re-applied on setEqEnabled(true).
+   */
+  setEqBandGain(index: number, dB: number): void {
+    const clampedDb = Math.max(-12, Math.min(12, dB))
+    this._eqGains[index] = clampedDb
+    if (!this._eqEnabled) return
+    if (this._eqFilters[index] && this._vizCtx) {
+      this._rampEqGain(this._eqFilters[index], clampedDb)
+    }
+  }
+
+  /**
+   * Enable or bypass the EQ.
+   * When bypassed, all filter gains ramp to 0 dB (transparent).
+   * When re-enabled, stored gains are restored.
+   */
+  setEqEnabled(enabled: boolean): void {
+    this._eqEnabled = enabled
+    if (!this._vizCtx || this._eqFilters.length === 0) return
+    for (let i = 0; i < this._eqFilters.length; i++) {
+      this._rampEqGain(this._eqFilters[i], enabled ? this._eqGains[i] : 0)
+    }
+  }
+
+  /**
+   * Set all 10 EQ band gains at once. Each value is clamped to [-12, 12].
+   * Applied immediately if EQ is enabled and filter chain exists.
+   */
+  setAllBands(gains: number[]): void {
+    for (let i = 0; i < EQ_BANDS.length; i++) {
+      const clampedDb = Math.max(-12, Math.min(12, gains[i] ?? 0))
+      this._eqGains[i] = clampedDb
+    }
+    if (!this._eqEnabled || this._eqFilters.length === 0 || !this._vizCtx) return
+    for (let i = 0; i < this._eqFilters.length; i++) {
+      this._rampEqGain(this._eqFilters[i], this._eqGains[i])
+    }
+  }
+
+  /**
+   * Load a previously persisted EQ state (e.g. from settings on app startup).
+   * Works both before and after the AudioContext is created.
+   * If called before first play, stored values are applied during getAnalyser() init.
+   */
+  loadEqState(state: { enabled: boolean; bands: number[] }): void {
+    this._eqEnabled = state.enabled
+    const padded = [...state.bands]
+    while (padded.length < EQ_BANDS.length) padded.push(0)
+    this._eqGains = padded.slice(0, EQ_BANDS.length)
+
+    if (this._eqFilters.length > 0 && this._vizCtx) {
+      for (let i = 0; i < this._eqFilters.length; i++) {
+        this._rampEqGain(this._eqFilters[i], this._eqEnabled ? this._eqGains[i] : 0)
+      }
+    }
+    // If filters don't exist yet, gains will be applied in getAnalyser() init block
+  }
+
+  /**
+   * Get the current EQ state (enabled flag + gain values in dB per band).
+   * Returns a copy — caller may mutate freely.
+   */
+  getEqState(): { enabled: boolean; bands: number[] } {
+    return { enabled: this._eqEnabled, bands: [...this._eqGains] }
+  }
+
   constructor() {
     this.audio = new Audio()
     this.audio.preload = 'auto'
