@@ -3,9 +3,36 @@
 **Defined:** 2026-03-01
 **Core Value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
 
-## v1.3 Requirements
+## v1.4 Requirements
 
-Requirements for milestone v1.3 Library UX & Duplicate Management. Each maps to roadmap phases.
+Requirements for milestone v1.4 Equalizer. Each maps to roadmap phases.
+
+### Audio Processing
+
+- [ ] **EQAP-01**: User can enable/disable a 10-band graphic equalizer that processes audio in real time
+- [ ] **EQAP-02**: EQ filter chain shares the existing AudioContext with the waveform visualizer (no second MediaElementSource)
+- [ ] **EQAP-03**: EQ reconnects correctly after a crossfade completes (audio element swap)
+- [ ] **EQAP-04**: AudioContext resumes automatically when the app window regains focus (WebKit background suspension guard)
+
+### Presets
+
+- [ ] **EQPR-01**: User can select from 6 built-in presets: Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones
+- [ ] **EQPR-02**: Selecting a preset applies all 10 band gains smoothly (no audible clicks)
+
+### UI
+
+- [ ] **EQUI-01**: An EQ icon appears next to the volume control in the NowPlayingBar
+- [ ] **EQUI-02**: Clicking the EQ icon opens a modal with 10 vertical sliders (one per frequency band) and frequency labels
+- [ ] **EQUI-03**: User can adjust individual band gain (±12 dB) by dragging sliders in custom mode
+- [ ] **EQUI-04**: Modal includes an on/off toggle and a preset selector dropdown
+- [ ] **EQUI-05**: EQ icon shows an active indicator when EQ is enabled
+- [ ] **EQUI-06**: Modal uses the app's existing theme system (midnight/carbon) with a cool, minimal design
+
+### Persistence
+
+- [ ] **EQPE-01**: EQ state (enabled, active preset, custom band gains) persists across app restarts via SQLite settings
+
+## v1.3 Requirements (Previous)
 
 ### Track Table Layout
 
@@ -35,9 +62,11 @@ Requirements for milestone v1.3 Library UX & Duplicate Management. Each maps to 
 
 | Feature | Reason |
 |---------|--------|
-| Beatmatch crossfade | Deferred from v1.2 — pitch correction complexity; playbackRate without pitch shift sounds wrong |
-| Batch "delete all duplicates" button | Forces individual review — prevents accidental data loss |
-| Duplicate detection by audio fingerprint | File hash + filename matching is sufficient; audio fingerprinting requires new dependency |
+| EQ on crossfade secondary audio | Crossfade is 8s transitional — EQ applies after swap completes |
+| EQ in native PCM fallback mode | Native mode is transient recovery path; not worth dual-context complexity |
+| User-defined named presets (CRUD) | 6 built-in + custom slot sufficient for v1.4 |
+| Parametric EQ (adjustable frequency/Q per band) | Graphic EQ with fixed frequencies is simpler and sufficient |
+| Beatmatch crossfade | Deferred from v1.2 — pitch correction complexity |
 
 ## Traceability
 
@@ -45,20 +74,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LAYT-01 | Phase 12 | Complete |
-| LAYT-02 | Phase 12 | Complete |
-| LOAD-01 | Phase 13 | Pending |
-| LOAD-02 | Phase 13 | Pending |
-| DUPL-01 | Phase 14 | Pending |
-| DUPL-02 | Phase 14 | Pending |
-| DUPL-03 | Phase 14 | Pending |
-| DUPL-04 | Phase 14 | Pending |
+| EQAP-01 | TBD | Pending |
+| EQAP-02 | TBD | Pending |
+| EQAP-03 | TBD | Pending |
+| EQAP-04 | TBD | Pending |
+| EQPR-01 | TBD | Pending |
+| EQPR-02 | TBD | Pending |
+| EQUI-01 | TBD | Pending |
+| EQUI-02 | TBD | Pending |
+| EQUI-03 | TBD | Pending |
+| EQUI-04 | TBD | Pending |
+| EQUI-05 | TBD | Pending |
+| EQUI-06 | TBD | Pending |
+| EQPE-01 | TBD | Pending |
 
 **Coverage:**
-- v1.3 requirements: 8 total
-- Mapped to phases: 8
-- Unmapped: 0 ✓
+- v1.4 requirements: 13 total
+- Mapped to phases: 0
+- Unmapped: 13
 
 ---
-*Requirements defined: 2026-03-01*
-*Last updated: 2026-03-06 after v1.3 roadmap creation*
+*Requirements defined: 2026-03-13*
+*Last updated: 2026-03-13 after v1.4 requirements definition*
