@@ -6,6 +6,7 @@
 - ✅ **v1.1 Spotify Redesign** — Phases 5-9 (shipped 2026-03-06)
 - ✅ **v1.2 Playback & UX Polish** — Phases 10-11 (shipped 2026-03-06)
 - 🚧 **v1.3 Library UX & Duplicate Management** — Phases 12-14 (in progress)
+- 📋 **v1.4 Equalizer** — Phases 15-16 (planned)
 
 ## Phases
 
@@ -45,6 +46,13 @@
 - [x] **Phase 12: CSS Layout Fix** — Track table rows and header extend to full window width at any window size (completed 2026-03-06)
 - [ ] **Phase 13: Full Library Load** — All tracks load on startup; scroll-to-load pagination removed
 - [ ] **Phase 14: Duplicate Review Dialog** — Review-before-delete duplicate management with selective per-track deletion
+
+### 📋 v1.4 Equalizer (Planned)
+
+**Milestone Goal:** Add a 10-band graphic equalizer with presets, custom mode, and persistence — accessible from the NowPlayingBar. All processing in the existing Web Audio API graph; no Rust changes.
+
+- [ ] **Phase 15: EQ Audio Engine** — 10 BiquadFilterNode chain inserted into existing _vizCtx; setEqBandGain/setEqEnabled methods; crossfade reconnect guard; visibilitychange resume guard
+- [ ] **Phase 16: EQ UI, Presets, and Persistence** — EQ modal with 10 vertical sliders, preset selector, on/off toggle, NowPlayingBar icon with active indicator, SQLite persistence
 
 ## Phase Details
 
@@ -183,6 +191,29 @@ Plans:
   4. Confirming deletion removes only the checked tracks; the track table and track count update immediately to reflect the deletions without showing ghost entries
 **Plans**: TBD
 
+### Phase 15: EQ Audio Engine
+**Goal**: The audio pipeline has a working 10-band graphic equalizer — BiquadFilterNode chain inserted into the existing _vizCtx AudioContext, with gain control, bypass, crossfade reconnect safety, and WebKit background suspension guard
+**Depends on**: Phase 14 (v1.3 complete)
+**Requirements**: EQAP-01, EQAP-02, EQAP-03, EQAP-04
+**Success Criteria** (what must be TRUE):
+  1. Enabling the EQ and boosting the bass band (+6 dB at 32 Hz) produces an audible change in the currently playing track — no console errors, waveform visualizer continues animating simultaneously
+  2. After a crossfade completes, the EQ still has an audible effect on the new track — bass boost or treble cut applied before the crossfade remains active
+  3. Switching to another app for 10+ seconds and returning produces no audio interruption — the AudioContext resumes automatically and EQ processing continues
+  4. Bypassing the EQ (all gains at 0) produces the same perceived volume and tone as before the EQ was added — no double-gain or silent audio
+**Plans**: TBD
+
+### Phase 16: EQ UI, Presets, and Persistence
+**Goal**: The EQ is fully operable from the NowPlayingBar — a modal exposes 10 vertical sliders and a preset selector, the icon shows active state, and all settings survive an app restart
+**Depends on**: Phase 15 (EQ audio engine working; UI wires to existing setEqBandGain/setEqEnabled methods)
+**Requirements**: EQPR-01, EQPR-02, EQUI-01, EQUI-02, EQUI-03, EQUI-04, EQUI-05, EQUI-06, EQPE-01
+**Success Criteria** (what must be TRUE):
+  1. An EQ icon appears in the NowPlayingBar right section; clicking it opens the EQ modal; the icon shows an accent indicator when the EQ is enabled
+  2. The modal displays 10 vertical sliders with frequency labels (32 Hz–16 kHz); dragging any slider changes the sound in real time with no audible click or pop
+  3. Selecting a preset from the dropdown (Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones) moves all 10 sliders smoothly and applies the correct gain values to the audio
+  4. Closing the app and reopening it restores the last-used preset, enabled/disabled state, and any custom band positions — the EQ is immediately active before the first track play
+  5. The modal renders correctly in both Midnight and Carbon themes using the app's existing CSS custom properties
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -198,6 +229,8 @@ Plans:
 | 9. UI Views and Mobile | v1.1 | 3/3 | Complete | 2026-03-06 |
 | 10. Settings Cleanup | v1.2 | 1/1 | Complete | 2026-03-06 |
 | 11. Playback Bug Fixes | v1.2 | 1/1 | Complete | 2026-03-06 |
-| 12. CSS Layout Fix | 1/1 | Complete   | 2026-03-06 | - |
+| 12. CSS Layout Fix | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
+| 15. EQ Audio Engine | v1.4 | 0/? | Not started | - |
+| 16. EQ UI, Presets, and Persistence | v1.4 | 0/? | Not started | - |

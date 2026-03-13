@@ -74,25 +74,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EQAP-01 | TBD | Pending |
-| EQAP-02 | TBD | Pending |
-| EQAP-03 | TBD | Pending |
-| EQAP-04 | TBD | Pending |
-| EQPR-01 | TBD | Pending |
-| EQPR-02 | TBD | Pending |
-| EQUI-01 | TBD | Pending |
-| EQUI-02 | TBD | Pending |
-| EQUI-03 | TBD | Pending |
-| EQUI-04 | TBD | Pending |
-| EQUI-05 | TBD | Pending |
-| EQUI-06 | TBD | Pending |
-| EQPE-01 | TBD | Pending |
+| EQAP-01 | Phase 15 | Pending |
+| EQAP-02 | Phase 15 | Pending |
+| EQAP-03 | Phase 15 | Pending |
+| EQAP-04 | Phase 15 | Pending |
+| EQPR-01 | Phase 16 | Pending |
+| EQPR-02 | Phase 16 | Pending |
+| EQUI-01 | Phase 16 | Pending |
+| EQUI-02 | Phase 16 | Pending |
+| EQUI-03 | Phase 16 | Pending |
+| EQUI-04 | Phase 16 | Pending |
+| EQUI-05 | Phase 16 | Pending |
+| EQUI-06 | Phase 16 | Pending |
+| EQPE-01 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after v1.4 requirements definition*
+*Last updated: 2026-03-13 after v1.4 roadmap creation*
