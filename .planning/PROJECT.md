@@ -40,14 +40,16 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.3 Library UX & Duplicate Management
+## Current Milestone: v1.4 Equalizer
 
-**Goal:** Fix track table layout on window resize, add a duplicate tracks review dialog, and load the full library upfront without scroll-to-load.
+**Goal:** Add a 10-band graphic equalizer with presets and custom mode, accessible from the NowPlayingBar.
 
 **Target features:**
-- Track table layout fix — rows and header background extend to full width on any window size
-- Duplicate tracks manager — review dialog listing all duplicates before deletion, selective delete
-- Full library load on startup — remove "Scroll for more" pagination, load all tracks at once
+- EQ icon next to volume control in NowPlayingBar
+- Modal with 10-band graphic equalizer (sliders per frequency band)
+- Preset EQ profiles (Flat, Bass Boost, Treble Boost, Vocal, etc.)
+- Custom EQ mode with per-band adjustment
+- Cool, minimal UI using existing app theme system (midnight/carbon)
 
 ### Out of Scope
 
@@ -101,4 +103,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-06 after v1.3 Library UX & Duplicate Management milestone started*
+*Last updated: 2026-03-13 after v1.4 Equalizer milestone started*
