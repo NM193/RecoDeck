@@ -39,7 +39,7 @@
 
 </details>
 
-### 🚧 v1.3 Library UX & Duplicate Management (In Progress)
+### v1.3 Library UX & Duplicate Management (In Progress)
 
 **Milestone Goal:** Fix track table layout on window resize, load the full library upfront without scroll-to-load, and add a review-before-delete duplicate tracks dialog.
 
@@ -47,7 +47,7 @@
 - [ ] **Phase 13: Full Library Load** — All tracks load on startup; scroll-to-load pagination removed
 - [ ] **Phase 14: Duplicate Review Dialog** — Review-before-delete duplicate management with selective per-track deletion
 
-### 📋 v1.4 Equalizer (Planned)
+### v1.4 Equalizer (Planned)
 
 **Milestone Goal:** Add a 10-band graphic equalizer with presets, custom mode, and persistence — accessible from the NowPlayingBar. All processing in the existing Web Audio API graph; no Rust changes.
 
@@ -200,7 +200,10 @@ Plans:
   2. After a crossfade completes, the EQ still has an audible effect on the new track — bass boost or treble cut applied before the crossfade remains active
   3. Switching to another app for 10+ seconds and returning produces no audio interruption — the AudioContext resumes automatically and EQ processing continues
   4. Bypassing the EQ (all gains at 0) produces the same perceived volume and tone as before the EQ was added — no double-gain or silent audio
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 15-01-PLAN.md — EQ filter chain, API methods, crossfade reconnect, visibilitychange guard
 
 ### Phase 16: EQ UI, Presets, and Persistence
 **Goal**: The EQ is fully operable from the NowPlayingBar — a modal exposes 10 vertical sliders and a preset selector, the icon shows active state, and all settings survive an app restart
@@ -232,5 +235,5 @@ Plans:
 | 12. CSS Layout Fix | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
-| 15. EQ Audio Engine | v1.4 | 0/? | Not started | - |
+| 15. EQ Audio Engine | v1.4 | 0/1 | Not started | - |
 | 16. EQ UI, Presets, and Persistence | v1.4 | 0/? | Not started | - |
