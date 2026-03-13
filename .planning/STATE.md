@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Library UX & Duplicate Management
 status: planning
-stopped_at: Phase 15 context gathered
-last_updated: "2026-03-13T18:19:56.246Z"
+stopped_at: Completed 15-eq-audio-engine-01-PLAN.md
+last_updated: "2026-03-13T20:33:36.244Z"
 last_activity: 2026-03-13 — Roadmap created for v1.4 (Phases 15-16)
 progress:
   total_phases: 12
-  completed_phases: 8
-  total_plans: 15
-  completed_plans: 15
+  completed_phases: 9
+  total_plans: 16
+  completed_plans: 16
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | — | — | — | — |
 
 *Updated after each plan completion*
+| Phase 15-eq-audio-engine P01 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,9 @@ All v1.0–v1.3 decisions archived in PROJECT.md Key Decisions table and STATE.m
 - [Architecture] Native PCM fallback mode: EQ is a no-op (acceptable — native mode is transient recovery path only)
 - [Persistence] Store eq_state as single JSON string under key "eq_state" via tauriApi.setSetting/getSetting — no new Rust commands needed
 - [Persistence] Load EQ state in NowPlayingBar mount effect before first play — avoids brief 0 dB flash
+- [Phase 15-eq-audio-engine]: EQ filter chain created lazily inside getAnalyser() to share _vizCtx — createMediaElementSource() can only be called once per HTMLAudioElement
+- [Phase 15-eq-audio-engine]: 30ms linearRamp for all EQ gain changes (cancel+anchor+ramp) to prevent audible clicks; no instant setValueAtTime for gains
+- [Phase 15-eq-audio-engine]: EQ gains and enabled state NOT reset in cleanup() — preserved as user preference across app sessions
 
 ### Pending Todos
 
@@ -76,7 +80,7 @@ All v1.0–v1.3 decisions archived in PROJECT.md Key Decisions table and STATE.m
 
 ## Session Continuity
 
-Last session: 2026-03-13T18:19:56.241Z
-Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-eq-audio-engine/15-CONTEXT.md
+Last session: 2026-03-13T20:33:36.241Z
+Stopped at: Completed 15-eq-audio-engine-01-PLAN.md
+Resume file: None
 Next action: /gsd:plan-phase 15
