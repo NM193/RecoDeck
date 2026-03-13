@@ -1,3 +1,5 @@
+import { EQ_BANDS } from './eqConstants'
+
 /**
  * HTML5 Audio-based player that uses a custom "stream" URI scheme protocol
  * registered in the Rust backend to serve local audio files.
@@ -56,6 +58,12 @@ export class AudioPlayer {
   private _vizAnalyser: AnalyserNode | null = null
   private _vizSource: MediaElementAudioSourceNode | null = null
   private _vizConnectedTo: HTMLAudioElement | null = null
+
+  // EQ state
+  private _eqFilters: BiquadFilterNode[] = []
+  private _eqGains: number[] = new Array(EQ_BANDS.length).fill(0)
+  private _eqEnabled: boolean = false
+  private _visibilityHandler: (() => void) | null = null
 
   // Callbacks
   public onPositionUpdate?: (positionMs: number) => void
@@ -984,7 +992,35 @@ export class AudioPlayer {
         this._vizAnalyser = this._vizCtx.createAnalyser()
         this._vizAnalyser.fftSize = 128
         this._vizAnalyser.smoothingTimeConstant = 0.8
+
+        // Build 10-band EQ filter chain: source -> eqFilters[0..9] -> analyser -> destination
+        this._eqFilters = EQ_BANDS.map((band, i) => {
+          const filter = this._vizCtx!.createBiquadFilter()
+          filter.type = band.type
+          filter.frequency.value = band.freq
+          filter.Q.value = band.Q
+          filter.gain.value = this._eqEnabled ? this._eqGains[i] : 0
+          return filter
+        })
+
+        // Chain filters in series
+        for (let i = 0; i < this._eqFilters.length - 1; i++) {
+          this._eqFilters[i].connect(this._eqFilters[i + 1])
+        }
+        // Connect last filter to analyser
+        this._eqFilters[this._eqFilters.length - 1].connect(this._vizAnalyser)
+        // Connect analyser to destination
         this._vizAnalyser.connect(this._vizCtx.destination)
+
+        // visibilitychange guard: resume AudioContext after backgrounding (WebKit suspension)
+        this._visibilityHandler = () => {
+          if (document.visibilityState === 'visible' && this._vizCtx?.state === 'suspended') {
+            this._vizCtx.resume().catch(err =>
+              console.warn('[AudioPlayer] Failed to resume AudioContext after visibility change:', err)
+            )
+          }
+        }
+        document.addEventListener('visibilitychange', this._visibilityHandler)
       }
 
       // Reconnect if audio element changed (e.g. after crossfade swap)
@@ -993,7 +1029,8 @@ export class AudioPlayer {
           try { this._vizSource.disconnect() } catch { /* already disconnected */ }
         }
         this._vizSource = this._vizCtx.createMediaElementSource(this.audio)
-        this._vizSource.connect(this._vizAnalyser!)
+        const firstNode = this._eqFilters.length > 0 ? this._eqFilters[0] : this._vizAnalyser!
+        this._vizSource.connect(firstNode)
         this._vizConnectedTo = this.audio
       }
 
@@ -1027,6 +1064,18 @@ export class AudioPlayer {
       this._vizSource = null
     }
     this._vizConnectedTo = null
+
+    // EQ filter cleanup
+    for (const filter of this._eqFilters) {
+      try { filter.disconnect() } catch { /* ok */ }
+    }
+    this._eqFilters = []
+
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler)
+      this._visibilityHandler = null
+    }
+
     if (this._vizCtx) {
       this._vizCtx.close().catch(() => {})
       this._vizCtx = null
