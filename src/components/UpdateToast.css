@@ -1,0 +1,105 @@
+.update-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  min-width: 220px;
+  max-width: 420px;
+  padding: 10px 16px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: notifSlideIn 0.25s ease-out;
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 -1px 0 0 var(--accent) inset,
+    0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.update-toast-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+/* Top row: icon + message */
+.update-toast {
+  flex-direction: column;
+}
+
+.update-toast-message {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
+
+/* We lay the icon and message side-by-side using the first two children */
+.update-toast > .update-toast-icon,
+.update-toast > .update-toast-message {
+  display: inline;
+}
+
+/* Override: use a row for icon+message */
+.update-toast {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 8px;
+  align-items: start;
+}
+
+.update-toast > .update-toast-icon {
+  grid-column: 1;
+  grid-row: 1;
+  margin-top: 1px;
+}
+
+.update-toast > .update-toast-message {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+
+.update-toast-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.update-toast-btn {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 6px 16px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.update-toast-btn--install {
+  background: var(--accent);
+  color: white;
+  border: none;
+}
+
+.update-toast-btn--install:hover {
+  opacity: 0.85;
+}
+
+.update-toast-btn--later {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.update-toast-btn--later:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--border) 80%, var(--text-primary));
+}
