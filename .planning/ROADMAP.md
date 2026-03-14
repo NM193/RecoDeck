@@ -398,7 +398,7 @@ Plans:
 | 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
 | 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
 | 21. Updater Plugin Configuration | 1/1 | Complete    | 2026-03-14 | - |
-| 22. Auto-Check and Update Toast | 1/1 | Complete   | 2026-03-14 | - |
+| 22. Auto-Check and Update Toast | 1/1 | Complete    | 2026-03-14 | - |
 | 23. Categorized What's New Modal | v1.6 | 0/? | Not started | - |
 | 24. CI Release Pipeline | v1.6 | 0/? | Not started | - |
 | 25. Update UX Polish | v1.6 | 0/? | Not started | - |

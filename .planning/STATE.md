@@ -4,7 +4,7 @@ milestone: v1.5
 milestone_name: Windows Support
 status: planning
 stopped_at: Completed 22-auto-check-toast 22-01-PLAN.md
-last_updated: "2026-03-14T17:17:59.968Z"
+last_updated: "2026-03-14T17:21:22.329Z"
 last_activity: 2026-03-14 — v1.6 requirements defined, roadmap created
 progress:
   total_phases: 21
