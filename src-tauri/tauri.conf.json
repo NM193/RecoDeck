@@ -25,7 +25,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": "v1Compatible",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -43,7 +43,6 @@
       "endpoints": [
         "https://github.com/NM193/RecoDeck/releases/latest/download/latest.json"
       ],
-      "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzM0QxOUZGOUEzMkNGQUUKUldTdXp6S2EveGs5ODdhenY0aWlkUTRxUTVKK3o4TnVRQmo4UHA4ZWVnb0l2MWFnZG9tbEtndlEK"
     }
   }
