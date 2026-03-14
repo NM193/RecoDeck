@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Windows Support
 status: planning
-stopped_at: Phase 17 context gathered
-last_updated: "2026-03-14T11:49:58.439Z"
+stopped_at: Completed 17-01-PLAN.md tasks 1-2, awaiting Task 3 human-verify checkpoint
+last_updated: "2026-03-14T12:12:08.284Z"
 last_activity: 2026-03-14 — Roadmap created, phases 17-20 defined
 progress:
   total_phases: 16
-  completed_phases: 10
-  total_plans: 18
-  completed_plans: 18
+  completed_phases: 11
+  total_plans: 19
+  completed_plans: 19
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | — | — | — | — |
 
 *Updated after each plan completion*
+| Phase 17-windows-compilation-baseline P01 | 2 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -55,6 +56,9 @@ All v1.0–v1.4 decisions archived in PROJECT.md Key Decisions table.
 
 **v1.5 decisions:**
 - Skip Windows code signing for v1.5 — SmartScreen "Run anyway" acceptable for small DJ friend group
+- [Phase 17-windows-compilation-baseline]: additionalBrowserArgs must re-include msWebOOUI/msPdfOOUI/msSmartScreenProtection defaults when set — overrides all Tauri/wry defaults
+- [Phase 17-windows-compilation-baseline]: Aubio MSVC fallback documented in WINDOWS-SETUP.md but not implemented — only implement if compilation actually fails on Windows
+- [Phase 17-windows-compilation-baseline]: build.rs LIBCLANG_PATH block uses cfg(target_os = windows) — completely absent from macOS compilation, not just branched at runtime
 
 ### Pending Todos
 
@@ -67,7 +71,7 @@ All v1.0–v1.4 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-14T11:49:58.435Z
-Stopped at: Phase 17 context gathered
-Resume file: .planning/phases/17-windows-compilation-baseline/17-CONTEXT.md
+Last session: 2026-03-14T12:12:08.281Z
+Stopped at: Completed 17-01-PLAN.md tasks 1-2, awaiting Task 3 human-verify checkpoint
+Resume file: None
 Next action: `/gsd:plan-phase 17` — Windows Compilation Baseline

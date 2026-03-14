@@ -61,7 +61,7 @@
 
 **Milestone Goal:** Ship-ready Windows support — compilation with Aubio C toolchain, runtime code fixes for Windows path quirks, NSIS installer, CI/CD Windows build job, and multi-platform auto-updater manifest.
 
-- [ ] **Phase 17: Windows Compilation Baseline** — App compiles and runs on Windows; audio plays end-to-end
+- [x] **Phase 17: Windows Compilation Baseline** — App compiles and runs on Windows; audio plays end-to-end (completed 2026-03-14)
 - [ ] **Phase 18: Windows Runtime Fixes** — Mobile companion streaming and PWA resource resolution work correctly on Windows
 - [ ] **Phase 19: NSIS Installer and CI Build** — Automated Windows build in CI produces an installable NSIS setup.exe
 - [ ] **Phase 20: Auto-Updater Manifest** — Merged latest.json covers both macOS and Windows so all users receive updates
@@ -304,7 +304,7 @@ Plans:
 | 14. Duplicate Review Dialog | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-13 |
 | 16. EQ UI, Presets, and Persistence | v1.4 | 2/2 | Complete | 2026-03-14 |
-| 17. Windows Compilation Baseline | v1.5 | 0/1 | Not started | - |
+| 17. Windows Compilation Baseline | 1/1 | Complete   | 2026-03-14 | - |
 | 18. Windows Runtime Fixes | v1.5 | 0/? | Not started | - |
 | 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
 | 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |

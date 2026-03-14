@@ -9,8 +9,8 @@ Requirements for Windows Support milestone. Each maps to roadmap phases.
 
 ### Build & Compilation
 
-- [ ] **BILD-01**: App compiles on Windows with `x86_64-pc-windows-msvc` target including Aubio bindgen
-- [ ] **BILD-02**: `build:win` npm script produces a working Windows build
+- [x] **BILD-01**: App compiles on Windows with `x86_64-pc-windows-msvc` target including Aubio bindgen
+- [x] **BILD-02**: `build:win` npm script produces a working Windows build
 
 ### Runtime Fixes
 
@@ -56,8 +56,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BILD-01 | Phase 17 | Pending |
-| BILD-02 | Phase 17 | Pending |
+| BILD-01 | Phase 17 | Complete |
+| BILD-02 | Phase 17 | Complete |
 | RNTM-01 | Phase 18 | Pending |
 | RNTM-02 | Phase 18 | Pending |
 | INST-01 | Phase 19 | Pending |
