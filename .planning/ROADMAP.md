@@ -304,7 +304,7 @@ Plans:
 | 14. Duplicate Review Dialog | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-13 |
 | 16. EQ UI, Presets, and Persistence | v1.4 | 2/2 | Complete | 2026-03-14 |
-| 17. Windows Compilation Baseline | 1/1 | Complete   | 2026-03-14 | - |
+| 17. Windows Compilation Baseline | 1/1 | Complete    | 2026-03-14 | - |
 | 18. Windows Runtime Fixes | v1.5 | 0/? | Not started | - |
 | 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
 | 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
