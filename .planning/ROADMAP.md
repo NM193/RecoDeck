@@ -251,7 +251,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 17-01-PLAN.md — Windows setup guide, build:win script, build.rs LIBCLANG_PATH hint, tauri.conf.json autoplay fix
+- [x] 17-01: Windows setup guide, build:win script, build.rs LIBCLANG_PATH hint, tauri.conf.json autoplay fix — completed 2026-03-14
 
 ### Phase 18: Windows Runtime Fixes
 **Goal**: The mobile companion works correctly on Windows — streaming returns audio data instead of 403 Forbidden, and the PWA resource files resolve to the correct path in both dev and NSIS install layouts
