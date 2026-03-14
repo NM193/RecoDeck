@@ -1,176 +1,182 @@
 # Project Research Summary
 
-**Project:** RecoDeck v1.5 — Windows Platform Support
-**Domain:** Cross-platform desktop app (Tauri 2 / Rust / React 19) — adding Windows to an existing macOS-only build
+**Project:** RecoDeck v1.6 — In-App Update Notifications and "What's New" Changelog
+**Domain:** Tauri v2 desktop app update delivery; changelog UX for a DJ tool
 **Researched:** 2026-03-14
 **Confidence:** HIGH
 
 ## Executive Summary
 
-RecoDeck v1.5 adds Windows support to an already-functional macOS app. The good news from research is that the existing codebase is significantly more Windows-ready than it might appear: `lib.rs` already has `#[cfg(target_os = "windows")]` branches for the custom stream protocol, `audioPlayer.ts` already detects Windows and constructs the correct `http://stream.localhost/` URLs, and `Cargo.toml` already uses `rusqlite` with the `bundled` feature and `ort` with `download-binaries` — both of which handle Windows without changes. The scope of actual new work is smaller than a typical platform port: no new Rust crates, no new npm packages, and no new source directories are required.
+RecoDeck v1.6 is not a greenfield feature — it is the completion of a partially-built update notification system. All required dependencies (`tauri-plugin-updater`, `@tauri-apps/plugin-updater`, `@tauri-apps/plugin-process`, `@tauri-apps/plugin-dialog`) are already installed and configured. The `WhatsNewDialog` component, the `changelog.ts` parser, the `last_seen_version` version sentinel, the manual update check in Settings, and the `CHANGELOG.md` file all exist and are functional. The milestone is about closing three specific gaps: (1) re-enabling the startup auto-check safely, (2) wiring a non-blocking update-available toast instead of an intrusive auto-install, and (3) upgrading the "What's New" modal to display categorized changelog entries (Added / Fixed / Changed) instead of a flat bullet list.
 
-The single biggest risk in the entire milestone is the `bliss-audio-aubio-rs` crate, which uses `features = ["builtin", "bindgen"]`. The `bindgen` feature requires `libclang` at compile time. On Windows — both locally and on `windows-latest` GitHub Actions runners — `LIBCLANG_PATH` is not set by default. If this crate does not compile, nothing else can ship. This risk must be validated first before any other work proceeds. Beyond that, there is a latent bug in `streaming.rs` where `std::fs::canonicalize` on Windows prepends a `\\?\` UNC prefix that will cause every mobile companion stream request to return 403 Forbidden — this is a one-line normalization fix but must be addressed.
+The recommended approach is conservative and user-respecting: `check()` runs on launch after a 3-5 second delay, stores the `Update` object in a `useRef`, and surfaces a dismissible toast. Download and install only happen on explicit user action — either from the toast or from Settings > About, which already works. The "What's New" modal continues to fire on first launch after an update via the existing `last_seen_version` SQLite sentinel. The only type-level breaking change is `getChangesForVersion()` in `changelog.ts` changing from `string[]` to `{ added: string[], changed: string[], fixed: string[] }`, which has exactly two callers.
 
-The recommended approach is to sequence the work by risk: validate Aubio compilation first (Phase 1), fix the one known code bug and verify audio end-to-end (Phase 2), add the Windows CI/CD job and NSIS installer (Phase 3), and wire up the auto-updater manifest (Phase 4). Skip Windows code signing entirely for v1.5 — the target audience is a small group of DJ friends who can handle a SmartScreen "Run anyway" click. SMTC, system tray, file associations, and ARM64 Windows are all clear v2+ items.
+The primary risk is the macOS crash that caused the auto-check to be disabled (`cross-device link`, OS error 18 during `downloadAndInstall()`). Research confirms the crash is triggered during install, not during `check()`. The safe pattern — check-only on launch, user-initiated install — sidesteps the crash entirely for the auto-check path. Two config values in `tauri.conf.json` must change before any frontend work: `"dialog"` from `true` to `false` (otherwise the JS API receives nothing) and `"createUpdaterArtifacts"` from `"v1Compatible"` to `true` (deprecation cleanup). These are the first two implementation actions; skipping them causes silent failures.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new dependencies are required. The Windows build requires only toolchain and environment setup: MSVC Build Tools with the "Desktop C++ workload," Rust stable with the `x86_64-pc-windows-msvc` toolchain, LLVM 17 (for `libclang`), and the `KyleMayes/install-llvm-action@v2` GitHub Actions action to install LLVM on the CI runner and set `LLVM_PATH`. `tauri.conf.json` needs a `windows.nsis` section added for installer configuration, and the CI workflow needs a parallel `build-windows` job plus a `create-release` merge job for the `latest.json` updater manifest.
+Zero new dependencies are needed for this milestone. The update plugin ecosystem is fully installed. The `Notification.tsx` toast system, `Framer Motion` animations, and `Lucide React` icons are all present and reusable for the update-available banner. The one genuine new UI piece — an update-available toast with Install and Later actions — should follow the existing `Notification.tsx` pattern rather than introducing a third-party toast library.
 
-**Core technologies (Windows-specific additions only):**
-- LLVM 17 / libclang: required by `bindgen` feature of `bliss-audio-aubio-rs` — install via `winget install LLVM.LLVM` locally and `KyleMayes/install-llvm-action@v2` in CI
-- MSVC Build Tools (Visual Studio 2022 C++ workload): required by Tauri v2 — GNU/MinGW target is not supported
-- `KyleMayes/install-llvm-action@v2`: sets `LLVM_PATH` env var on `windows-latest` runner, from which `LIBCLANG_PATH` is derived
-- NSIS installer: bundled by Tauri CLI automatically — just needs `windows.nsis` config block in `tauri.conf.json`
-- WebView2 Runtime: pre-installed on Windows 10 1803+; NSIS bootstrapper handles older systems automatically
+**Core technologies (already installed, no changes needed):**
+- `@tauri-apps/plugin-updater` v2.10.0: `check()` on launch, `downloadAndInstall()` on user action — already imported in `WhatsNewDialog.tsx` and `SettingsContext.tsx`
+- `@tauri-apps/plugin-process` v2: `relaunch()` after install on macOS only (Windows auto-exits) — already used in both update paths
+- `@tauri-apps/plugin-dialog`: `ask()` native restart prompt — already used in both update code paths
+- `Framer Motion` v11: Toast slide-in animation — already used throughout the app
+- `Notification.tsx`: Existing toast component — reuse for the update-available banner; no new library needed
+- `changelog.ts` + `CHANGELOG.md?raw`: Bundled changelog parser — needs return type upgrade only; no build config changes
 
-See `.planning/research/STACK.md` for full CI workflow YAML, `tauri.conf.json` diffs, `latest.json` format, and alternatives considered.
+**Config changes required (not dependency changes):**
+- `tauri.conf.json`: `"dialog": false` — enables JS API; current `true` silently kills all event handlers
+- `tauri.conf.json`: `"createUpdaterArtifacts": true` — removes v1Compatible deprecation debt before any artifacts are published
 
 ### Expected Features
 
-The MVP feature set for v1.5 is deliberately narrow. The research confirmed that everything beyond basic Windows compilation, audio playback, and distribution infrastructure is either already handled by existing code or belongs in v2+.
+The milestone scope is narrow and all P1 features carry low implementation cost. Nothing requires new libraries or new Rust commands.
 
-**Must have (table stakes for v1.5):**
-- Windows compilation with Aubio C toolchain — the entire milestone gates on this
-- GitHub Actions `build-windows` CI job producing `recodeck_*_x64-setup.exe`
-- NSIS installer installs and uninstalls cleanly on Windows 10 and 11
-- Audio playback end-to-end on Windows (stream protocol, range requests, real files with spaces and Unicode in paths)
-- Library scanning works with Windows paths (`C:\Users\...`)
-- `latest.json` extended with `windows-x86_64` entry so auto-updater reaches Windows users
-- `build:win` script added to `package.json`
+**Must have (table stakes — P1):**
+- Safe startup update check (call `check()` only, never auto-install) — eliminates the macOS crash risk
+- Update-available toast notification — non-blocking, dismissible, with Install and Later actions
+- Categorized "What's New" modal (New / Fixes / Changes sections with icons) — replaces the existing flat bullet dump
+- Version tracking via SQLite `last_seen_version` — already works, no changes needed
+- Manual install + deferred restart from Settings > About — already works, no changes needed
 
-**Should have (post-P1 validation):**
-- Mobile companion Windows verification (firewall prompt documented, path resolution tested)
-- High-DPI scaling verification on Windows 125%/150% display scaling
-- SmartScreen bypass documentation in release notes
+**Should have (differentiators — P2, add after P1 verified):**
+- Section icons in "What's New" (`Plus`/sparkle for Added, `Wrench` for Fixed, `ArrowLeftRight` for Changed)
+- Inline "Install Update" CTA in the update toast (navigates to Settings > About to reduce friction)
+- Suppress update toast during active audio playback (check `isPlaying` state before showing)
 
 **Defer to v2+:**
-- Windows code signing (OV/EV certificate) — cost/complexity disproportionate for friend-group distribution
-- SMTC (System Media Transport Controls) media key integration — requires WinRT bindings via `windows-rs`
-- System tray integration — RecoDeck is a visible DJ tool, not a background service
-- ARM64 Windows build — effectively zero ARM Windows in the target audience in 2026
-- MSIX / Windows Store distribution — breaks SQLite path resolution due to path virtualization
-
-See `.planning/research/FEATURES.md` for the full prioritization matrix, platform behavior comparison table, and competitor analysis.
+- Background silent download before prompting (blocked by macOS bug until upstream fix in `tauri-plugin-updater`)
+- Re-openable "What's New" from Help/About menu
+- Per-version changelog archive inline in the About section
+- OS-level system tray notification for updates
 
 ### Architecture Approach
 
-The architecture for Windows support follows an additive, minimal-change pattern. All platform differences are expressed through existing patterns already in the codebase: compile-time `#[cfg(target_os = "windows")]` in Rust for OS-level behavior, and a runtime `navigator.userAgent.includes('Windows')` check in TypeScript for the URL scheme switch. The CI/CD pattern changes from a single job to a parallel matrix: `build-macos` and `build-windows` run concurrently, and a dependent `create-release` job merges their per-platform `latest.json` fragments into one combined manifest. No new Rust modules, npm packages, or source directories are introduced.
+The architecture is entirely in the React frontend layer — no new Rust commands are needed. State for the pending update lives in `AppContent` (`useRef<Update | null>` for the update object, `useState<string | null>` for the version string that triggers the toast). The `WhatsNewDialog` duplicate update button should be removed; it is the only piece that creates a second independent update code path. All install actions should route through `SettingsContext.handleCheckForUpdates()` or a shared callback passed down from `AppContent`. The `CHANGELOG.md` is bundled at Vite build time via `?raw` import — no network fetch, works offline.
 
-**Major components and changes:**
-1. `.github/workflows/release.yml` — rewrite to add `build-windows` parallel job with LLVM setup, x86_64-pc-windows-msvc target, NSIS artifact upload, and a `create-release` merge job
-2. `scripts/generate-update-manifest.js` — rewrite to support `--platform` fragment mode and `--merge` mode for combining darwin and windows entries into one `latest.json`
-3. `src-tauri/src/commands/server.rs` (`find_mobile_dist()`) — add Windows exe-sibling path check to Fallback 3 (currently macOS `.app/Contents/MacOS` layout assumed)
-4. `src-tauri/src/server/streaming.rs` — normalize `\\?\` UNC prefix from `canonicalize()` output before `starts_with` comparison to fix mobile streaming 403 bug
-5. `tauri.conf.json` — add `bundle.windows.nsis` section with `installMode: "perUser"`, `compression: "lzma"`
-6. `package.json` — add `build:win` and `release:sign:win` scripts
-
-See `.planning/research/ARCHITECTURE.md` for complete data flow diagrams, anti-patterns, audit checklist, and the 7-step build order sequence.
+**Major components:**
+1. `App.tsx` `useEffect` (auto-check) — re-enable with 3s delay, `check()` only, store result in ref, set toast state on update found
+2. `App.tsx` `initializeApp()` (What's New sentinel) — already works; update only the call site to pass the new structured type
+3. `src/lib/changelog.ts` `getChangesForVersion()` — upgrade return type to `{ added: string[], changed: string[], fixed: string[] }`
+4. `src/components/WhatsNewDialog.tsx` — render three labeled sections; remove the duplicate update button
+5. `Notification.tsx` (reused as update toast) — add action buttons (Install, Later) via extended props or a thin wrapper
+6. `SettingsContext.handleCheckForUpdates()` — unchanged; remains the canonical install handler
+7. `tauri.conf.json` — `dialog: false` and `createUpdaterArtifacts: true` — two-line change, must land before any frontend work
 
 ### Critical Pitfalls
 
-1. **`LIBCLANG_PATH` not set on Windows CI** — `bliss-audio-aubio-rs` bindgen fails with "Unable to find libclang." Fix: add `KyleMayes/install-llvm-action@v2` step in the Windows CI job and set `LIBCLANG_PATH=${{ env.LLVM_PATH }}/bin` before `cargo build`. Validate locally or via a manual CI run before writing anything else.
+1. **`"dialog": true` silently kills the JS API** — The current `tauri.conf.json` has `dialog: true`. This causes Tauri to handle all update events via a native OS dialog and call none of the JavaScript event handlers. `check()` appears to return an object but the toast never fires. Fix: set `"dialog": false` as the first implementation step, before writing any frontend logic.
 
-2. **`streaming.rs` canonicalize UNC mismatch** — `std::fs::canonicalize` on Windows returns `\\?\C:\Users\...`; the DB stores forward-slash paths; `starts_with` comparison always fails; every mobile stream request returns 403 Forbidden. Fix: strip `\\?\` prefix and normalize both sides to forward slashes before comparing. One-function change, high impact.
+2. **macOS crash is from `downloadAndInstall()`, not `check()`** — The disabled auto-check code was calling `downloadAndInstall()` silently without user consent. The crash (`cross-device link`, OS error 18) occurs during install, not during the HTTP check. Safe path: `check()` on launch, toast, user-initiated install only. Never auto-install from the launch check.
 
-3. **`latest.json` platform overwrite in CI** — if both platform jobs each write and upload their own `latest.json`, the second job to finish overwrites the first. The Tauri updater then delivers a single-platform manifest and users on the other platform stop receiving updates. Fix: each job uploads a fragment JSON as a build artifact; a `create-release` job merges both before creating the release.
+3. **Windows auto-exits the app during install — `relaunch()` must not be called on Windows** — `downloadAndInstall()` causes the NSIS installer to kill the running process on Windows. Calling `relaunch()` afterward either throws or races the installer. Use `import { platform } from '@tauri-apps/plugin-os'` and only call `relaunch()` on macOS/Linux.
 
-4. **SmartScreen blocks unsigned NSIS installer** — every Windows user who downloads the `.exe` from a browser will see a "Windows protected your PC" blue screen. There is no technical fix at this budget level. Fix: document the "More info → Run anyway" path explicitly in release notes; provide a `.zip` alternative if needed. An additional NSIS plugin signing gap (Tauri issue #11673) may trigger antivirus alerts beyond SmartScreen.
+4. **Private key loss permanently breaks updates for all installed users** — The Tauri signing key must be stored in a password manager (not only as a CI secret). If lost, existing users can never receive automatic updates. Additionally, `vite.config.ts` must use `envPrefix: ['VITE_']` only — including `'TAURI_'` bundles `TAURI_SIGNING_PRIVATE_KEY` into the frontend (CVE-2023-46115).
 
-5. **WebView2 audio autoplay / CSP** — two linked risks: (a) `audio.play()` before any DOM interaction throws `NotAllowedError` in WebView2; (b) the `stream:` CSP directive is WebKit-only — Windows uses `http://stream.localhost/` which must be covered by the existing `http:` wildcard. Current CSP appears to cover it but must be verified with DevTools console on first Windows boot.
-
-See `.planning/research/PITFALLS.md` for recovery strategies, a "Looks Done But Isn't" checklist, and the full pitfall-to-phase mapping table.
+5. **"What's New" modal fires on fresh install without a null guard** — If `last_seen_version` has never been set (new user, clean install), comparing `undefined !== currentVersion` is truthy and shows the modal immediately. Fix: only show if `last_seen_version` exists AND differs from current version.
 
 ## Implications for Roadmap
 
-Based on research, the work naturally breaks into 4 phases ordered by risk, dependency, and deliverable completeness.
+Based on research, the build order has clear dependency constraints. Config changes must precede all frontend work; the macOS crash diagnosis must precede auto-check re-enablement; the changelog type change must precede the modal UI update.
 
-### Phase 1: Windows Compilation Baseline
-**Rationale:** Everything else is blocked until `cargo build --target x86_64-pc-windows-msvc` succeeds with `bliss-audio-aubio-rs` bindgen. This is the highest-risk unknown in the milestone. Validate it before investing any effort in CI pipelines, installer config, or updater manifests. If Aubio fails to compile, the milestone strategy changes (e.g., switching to a pre-built aubio binary).
-**Delivers:** A runnable debug build of RecoDeck on Windows; audio plays end-to-end; library scan works on Windows paths; no CSP or autoplay errors in DevTools.
-**Addresses features:** "App compiles and runs on Windows," "Audio playback works on Windows," "Folder picker works for library setup"
-**Avoids pitfalls:** LIBCLANG_PATH bindgen failure (Pitfall 1); WebView2 audio autoplay and CSP issues (Pitfall 5); path separator inconsistency in DB (audit during scan test)
+### Phase 1: Updater Plugin Configuration and Unblocking
 
-### Phase 2: Windows Code Fixes
-**Rationale:** With a working compilation, fix the one confirmed latent bug (mobile streaming 403) and add the Windows-specific path fallback for the mobile companion. These are surgical code changes with clear acceptance tests.
-**Delivers:** Mobile companion works end-to-end on Windows; `find_mobile_dist()` resolves correctly in a production NSIS layout; Windows Firewall prompt documented.
-**Addresses features:** "Mobile companion works on Windows"
-**Avoids pitfalls:** `canonicalize` UNC prefix mismatch (Pitfall 2); mobile PWA path resolution failure (Architecture Audit item)
+**Rationale:** `"dialog": true` silently disables the entire JS API — this is a two-line config change that must land before any frontend code is written or tested. `"v1Compatible"` adds migration debt that is free to fix now and costly to fix after artifacts are published. This is also where key management and permission verification happen.
+**Delivers:** A working `check()` call that returns an update object; confirmed `updater:default` permissions; signing key verified in CI and in a password manager; `createUpdaterArtifacts: true` preventing future migration pain.
+**Addresses:** All P1 features depend on this as a prerequisite.
+**Avoids:** Pitfall 1 (`dialog: true` blocking JS API), Pitfall 4 (key loss / CVE-2023-46115), capabilities permission pitfall.
 
-### Phase 3: NSIS Installer and CI Build Job
-**Rationale:** With code working correctly, wire up the automated build and distribution. The NSIS installer config is low-risk (Tauri handles most of it). The Windows CI job introduces the only medium-risk CI work: LLVM installation in the workflow and the new parallel matrix structure.
-**Delivers:** Automated Windows CI builds on tag push; NSIS installer (`recodeck_*_x64-setup.exe`) installable on clean Windows 10 and 11 machines; `build:win` and `release:sign:win` scripts in `package.json`.
-**Uses stack:** `KyleMayes/install-llvm-action@v2`, `tauri-apps/tauri-action@v0`, NSIS (bundled by Tauri), `swatinem/rust-cache@v2`
-**Avoids pitfalls:** Sequential platform builds anti-pattern (use parallel matrix); SmartScreen documentation (Pitfall 3 — document in release notes before publishing)
+### Phase 2: Safe Startup Auto-Check and Update-Available Toast
 
-### Phase 4: Auto-Updater Manifest and Release
-**Rationale:** With both macOS and Windows artifacts building in CI, rewire the manifest generation script to produce a merged `latest.json` covering both platforms, and restructure the release workflow to gate on both jobs completing before creating the GitHub Release.
-**Delivers:** A GitHub Release containing `.dmg` + `.exe` + merged `latest.json` with both `darwin-aarch64` and `windows-x86_64` entries; existing macOS users continue to receive updates; Windows users get their first auto-update experience.
-**Addresses features:** "Auto-updater delivers Windows builds"
-**Avoids pitfalls:** `latest.json` platform overwrite (Pitfall 3); missing `windows-x86_64` manifest entry
+**Rationale:** The auto-check `useEffect` is already written and commented out in `App.tsx`. The fix is: remove `downloadAndInstall()` from the auto path, add `pendingUpdateRef`, add toast state, render the toast using `Notification.tsx`. This is the core user-facing deliverable of v1.6.
+**Delivers:** On-launch update detection; non-blocking dismissible toast with Install and Later actions; deferred install via Settings > About when the user is ready.
+**Uses:** `@tauri-apps/plugin-updater` `check()`, `Notification.tsx`, Framer Motion, `pendingUpdateRef` pattern.
+**Implements:** Auto-check `useEffect` in `AppContent`; `pendingUpdateRef`; update-available state; toast render.
+**Avoids:** Pitfall 2 (macOS crash from auto-install), Pitfall 6 (blocking startup with synchronous check), Windows auto-exit from calling `relaunch()`.
+
+### Phase 3: Categorized "What's New" Modal
+
+**Rationale:** This is a standalone TypeScript change (`getChangesForVersion()` return type upgrade) plus a UI update in `WhatsNewDialog.tsx`. It has no dependency on Phase 2 and can be developed in parallel, but the type change touches two callers and should be verified before adding Phase 5 polish on top.
+**Delivers:** Structured changelog sections (Added / Fixed / Changed) in the "What's New" modal; removal of the duplicate update button from the modal; guard against the modal firing on a fresh install.
+**Implements:** `getChangesForVersion()` return type; `WhatsNewDialog.tsx` three-section rendering; `initializeApp()` call-site update.
+**Avoids:** Pitfall 5 (What's New on fresh install), duplicate update code path anti-pattern from ARCHITECTURE.md.
+
+### Phase 4: CI Release Pipeline and Cross-Platform Manifest
+
+**Rationale:** The `latest.json` currently contains only `darwin-aarch64`. The `generate-update-manifest.js` script must be extended for Windows before any Windows users (v1.5 milestone) can receive updates. This phase validates the end-to-end release workflow: sign, build, publish, check from an installed app.
+**Delivers:** Multi-platform `latest.json` with correct `pub_date` (RFC 3339 format), platform entries for macOS and Windows; CI workflow that generates and publishes the manifest on release tag.
+**Avoids:** `latest.json` missing platform entries pitfall; RFC 3339 date format rejection; signature field content vs file path mistake.
+
+### Phase 5: Polish and Edge Cases
+
+**Rationale:** After all P1 items are verified in production builds, add visual polish and UX refinements. All changes are purely additive — no risk of breaking Phase 2 or 3 behavior.
+**Delivers:** Section icons in "What's New" modal; playback-aware toast deferral (suppress if `isPlaying`); inline "Go to Settings" CTA in the update toast.
+**Addresses:** All P2 features from the FEATURES.md prioritization matrix.
 
 ### Phase Ordering Rationale
 
-- **Risk-first:** Aubio bindgen compilation is the only true unknown. It must be confirmed or unblocked before anything else is designed. All other phases can be planned confidently from existing research and official docs.
-- **Dependencies flow forward:** Phase 2 (code fixes) requires a running Windows binary to test against. Phase 3 (CI) requires Phase 2 to be clean so the produced artifact is correct. Phase 4 (updater) requires Phase 3 to produce signed artifacts before manifest URLs can be generated.
-- **Smallest scope last:** The manifest and release wiring (Phase 4) is pure configuration and scripting work with no runtime risk, so it comes last when all platform binaries are stable.
+- Phase 1 before everything: `dialog: true` is a silent blocker. No JS update code is testable until this is `false`. Config debt has zero cost to fix now, high cost after shipping.
+- Phase 2 before Phase 4: Need the auto-check working end-to-end to validate that `latest.json` is read and parsed correctly by the installed app.
+- Phase 3 independent: The changelog type change is entirely TypeScript/React with no dependency on plugin behavior. It can be merged in any order relative to Phase 2.
+- Phase 4 last in the main track: Requires a real GitHub Release to test end-to-end. All code logic must be correct before publishing artifacts that existing macOS users will receive.
+- Phase 5 always last: Polish only after core behavior is verified on both macOS and Windows.
 
 ### Research Flags
 
-Phases likely needing deeper attention during implementation:
-- **Phase 1:** Aubio bindgen on Windows — whether `bliss-audio-aubio-rs` with `features = ["builtin", "bindgen"]` compiles cleanly under MSVC with LLVM 17 has not been empirically validated for this specific crate version. Open the phase by running a trial `cargo build --target x86_64-pc-windows-msvc` on a real Windows environment before finalizing phase scope. If it fails, the blocker must be resolved before anything else.
-- **Phase 2:** `find_mobile_dist()` Fallback 1 (Tauri Resource resolver) — documented as cross-platform in Tauri v2 docs but has not been tested in a Windows NSIS install layout for this project. If Fallback 1 works correctly, the Fallback 3 patch is a safety net only; if Fallback 1 fails, Fallback 3 is critical. Needs an NSIS install test.
+Phases likely needing deeper research during planning:
+- **Phase 4 (CI pipeline):** The `generate-update-manifest.js` script is macOS-only. Extending it for Windows requires knowing the exact artifact filenames from the Tauri Windows build output (e.g., `RecoDeck_1.6.0_x64-setup.exe` + `.sig`). Research the Windows artifact naming convention against the Phase 17 Windows baseline build output before writing the manifest merge script.
+- **Phase 2 (macOS crash verification):** Before re-enabling the auto-check, verify whether `@tauri-apps/plugin-updater` v2.10.0 patched the `cross-device link` crash (OS error 18). Check the plugin's v2.10.0 release notes against the GitHub issues linked in PITFALLS.md. If unpatched, the check-only pattern (no `downloadAndInstall()` in the auto path) is confirmed safe regardless.
 
-Phases with standard, well-documented patterns (implementation can proceed without research):
-- **Phase 3:** NSIS installer config and CI matrix workflow — fully documented in official Tauri v2 docs. The `KyleMayes/install-llvm-action` workaround for libclang is community-validated. The `tauri-apps/tauri-action@v0` parallel matrix pattern is official.
-- **Phase 4:** Updater manifest merging — pure Node.js scripting with a well-defined JSON format documented in official Tauri v2 updater docs. Platform key naming and `latest.json` structure are known quantities.
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (config changes):** Two-line change with unambiguous guidance from PITFALLS.md and official Tauri v2 docs. No open questions.
+- **Phase 3 (changelog type upgrade):** Pure TypeScript refactor with two known callers in two files. Standard pattern; no library or API research needed.
+- **Phase 5 (polish):** Additive UI work reusing the existing `Icon` component and design system. All patterns already in use elsewhere in the app.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All findings grounded in official Tauri v2 docs, direct `Cargo.toml` inspection, and official bindgen docs. The one MEDIUM item (`KyleMayes/install-llvm-action`) is a community action — but it is the standard solution for this problem and has no credible alternative. |
-| Features | HIGH | Grounded in direct codebase inspection of existing Windows-aware code paths, official Tauri v2 installer and updater docs, and explicit identification of what is already implemented vs. what is missing. |
-| Architecture | HIGH | Based on line-level code reads of all affected files: `lib.rs`, `audioPlayer.ts`, `server.rs`, `streaming.rs`, `release.yml`, `generate-update-manifest.js`. All structural changes are confirmed as necessary by source review. |
-| Pitfalls | HIGH | Critical pitfalls are grounded in direct code inspection (the `canonicalize` UNC bug was found by reading the actual `streaming.rs` source) and official documentation. SmartScreen and NSIS plugin signing issues are confirmed upstream Tauri limitations with issue numbers. |
+| Stack | HIGH | All dependencies confirmed via direct `package.json` and `Cargo.toml` inspection. Zero new packages required. Config changes are two lines with explicit official documentation. |
+| Features | HIGH | Codebase inspection confirmed precisely what exists vs what is missing. Upstream GitHub issues (tauri-apps/plugins-workspace #2458, tauri-apps/tauri #11392) confirm the macOS crash is real, current, and triggered by install not by check. |
+| Architecture | HIGH | Direct codebase inspection of all relevant files. Component responsibilities and data flow are unambiguous. Both callers of the changed API are identified by file name. The build order is derived from concrete dependencies. |
+| Pitfalls | HIGH | Critical pitfalls are grounded in direct config file inspection (`dialog: true` and `v1Compatible` confirmed present in the actual `tauri.conf.json`), cross-referenced with official Tauri docs and CVE-2023-46115. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Aubio bindgen empirical validation:** The claim that `bliss-audio-aubio-rs` with `builtin` + `bindgen` compiles under MSVC with LLVM 17 is based on community evidence and bindgen official docs, not a test run of this specific crate version in this project. Phase 1 must open with a trial `cargo build` before declaring scope final.
-- **Tauri Resource resolver on Windows NSIS layout:** `BaseDirectory::Resource` is documented as platform-aware but has not been tested in a Windows NSIS install for this project. If it resolves correctly, the `find_mobile_dist()` Fallback 3 patch is optional hardening; if it fails, Fallback 3 is the only working path.
-- **SQLite path separator in folder queries:** Scanner normalizes paths to forward slashes before DB insert (confirmed in `scanner.rs`). However, it is not confirmed whether folder-based `LIKE` queries in `db/mod.rs` and `commands/library.rs` use the same forward-slash convention consistently for both the stored prefix and query string. Needs a Windows library scan plus folder-view test to rule out silent 0-row returns.
-- **WebView2 CSP wildcard matching:** The `http:` wildcard in the existing CSP is expected to cover `http://stream.localhost`, but Chromium's CSP engine may differ from WebKit in edge cases. Verify with DevTools console on first Windows boot rather than assuming equivalence.
+- **macOS crash status in v2.10.0:** Research confirmed the crash exists and identified which call triggers it (`downloadAndInstall()`), but did not confirm whether v2.10.0 specifically patches it. During Phase 2 planning, check the `@tauri-apps/plugin-updater` changelog and test `check()` in a production build on macOS before re-enabling the `useEffect`. The check-only pattern is safe regardless — this gap only affects whether a future background-download feature is unblocked.
+- **Windows artifact naming for `latest.json`:** The existing manifest script is macOS-only. Before Phase 4, determine the exact Tauri-generated artifact filename for the Windows NSIS installer. Cross-reference against the Windows build output from Phase 17's compilation baseline work.
+- **Playback state access from `AppContent`:** Phase 5 toast deferral (suppress if `isPlaying`) requires reading Zustand player store state in `AppContent`. Confirm the store slice is accessible from that component without prop drilling before designing the deferral logic.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [Tauri v2 Prerequisites](https://v2.tauri.app/start/prerequisites/) — MSVC toolchain requirement, WebView2 setup
-- [Tauri v2 Windows Installer](https://v2.tauri.app/distribute/windows-installer/) — NSIS config, install modes, compression options
-- [Tauri v2 GitHub Actions Pipeline](https://v2.tauri.app/distribute/pipelines/github/) — multi-platform workflow structure, `tauri-apps/tauri-action@v0`
-- [Tauri v2 Updater Plugin](https://v2.tauri.app/plugin/updater/) — `latest.json` format, `windows-x86_64` platform key, Windows update flow
-- [Tauri v2 Windows Code Signing](https://v2.tauri.app/distribute/sign/windows/) — unsigned installer behavior, SmartScreen, Azure options
-- [bindgen Requirements](https://rust-lang.github.io/rust-bindgen/requirements.html) — LIBCLANG_PATH, libclang minimum version
-- [ort Cargo Features](https://ort.pyke.io/setup/cargo-features) — `download-binaries` default, Windows prebuilt binary fetch
-- Codebase: `src-tauri/src/lib.rs` — Windows `#[cfg]` branches confirmed in stream protocol handler
-- Codebase: `src/lib/audioPlayer.ts` — `isWindows` UA detection and `http://stream.localhost/` URL construction confirmed
-- Codebase: `src-tauri/src/commands/server.rs` — `find_mobile_dist()` Fallback 3 macOS-only layout confirmed
-- Codebase: `src-tauri/src/server/streaming.rs` — `canonicalize` path comparison; UNC prefix bug identified at source
-- Codebase: `src-tauri/Cargo.toml` — `bliss-audio-aubio-rs` with `["builtin","bindgen"]` and `ort = "2.0.0-rc.11"` confirmed
-- Codebase: `.github/workflows/release.yml` — macOS-only CI, no Windows job confirmed
-- Codebase: `scripts/generate-update-manifest.js` — darwin-only manifest generation confirmed
+- `src/App.tsx` — Disabled auto-check (lines 251-270 with explicit crash annotation), version sentinel in `initializeApp()` (lines 317-330)
+- `src/components/WhatsNewDialog.tsx` — Existing modal with flat list and duplicate update button confirmed
+- `src/lib/changelog.ts` — `getChangesForVersion()` returning `string[]` via `CHANGELOG.md?raw` confirmed
+- `src/components/settings/SettingsContext.tsx` — `handleCheckForUpdates()` with download progress confirmed
+- `src/components/settings/AboutSection.tsx` — "Check for Updates" button and progress bar UI confirmed
+- `src-tauri/tauri.conf.json` — `"dialog": true` and `"createUpdaterArtifacts": "v1Compatible"` confirmed present
+- `src-tauri/capabilities/default.json` — `updater:default`, `updater:allow-check`, `process:allow-restart` confirmed present
+- `src-tauri/Cargo.toml` — `tauri-plugin-updater = "2"`, `tauri-plugin-process = "2"` confirmed
+- `package.json` — `@tauri-apps/plugin-updater ^2.10.0`, `@tauri-apps/plugin-process ^2` confirmed
+- [Tauri v2 Updater Plugin Docs](https://v2.tauri.app/plugin/updater/) — `check()`, `downloadAndInstall()`, `dialog` config option behavior
+- [Tauri v2 Updater JS API Reference](https://v2.tauri.app/reference/javascript/updater/)
 
 ### Secondary (MEDIUM confidence)
-- [KyleMayes/install-llvm-action GitHub Marketplace](https://github.com/marketplace/actions/install-llvm-and-clang) — LLVM CI setup for bindgen; community action, widely used
-- [bindgen issue #1797](https://github.com/rust-lang/rust-bindgen/issues/1797) — `LIBCLANG_PATH` workaround for Windows CI; community-sourced solution
-- Tauri issue #9968 — Audio autoplay on Windows was broken by a typo in WebView2 init args (wry#1287); confirmed fixed in current Tauri 2 but WebView2 autoplay policy itself is still enforced
-- Tauri issue #11673 — NSIS embedded plugin DLLs are unsigned; may trigger antivirus false positives; no upstream fix yet
+- [tauri-apps/plugins-workspace #2458](https://github.com/tauri-apps/plugins-workspace/issues/2458) — macOS cross-device link crash during update install (February 2025, confirmed open)
+- [tauri-apps/tauri #11392](https://github.com/tauri-apps/tauri/issues/11392) — App::restart failure after update on macOS
+- [tauri-apps/tauri #7169](https://github.com/tauri-apps/tauri/issues/7169) — Cross-device link (OS error 18) in updater restart
+- [CVE-2023-46115](https://github.com/tauri-apps/tauri/security/advisories/GHSA-2rcp-jvr4-r259) — Updater private key leak via Vite envPrefix
+- Toast notification UX best practices — LogRocket, Smashing Magazine (applied to deferral-during-playback guidance)
+- "What's New" modal UX patterns — Appcues blog (applied to fresh install guard guidance)
 
 ### Tertiary (LOW confidence)
-- `bliss-audio-aubio-rs` with MSVC + LLVM 17 compiling successfully — inferred from community evidence and bindgen docs; must be empirically validated in Phase 1 before relying on it
+- CrabNebula auto-updates guide for Tauri v2 — supplementary CI pipeline pattern reference
 
 ---
 *Research completed: 2026-03-14*

@@ -1,163 +1,219 @@
 # Pitfalls Research
 
-**Domain:** Adding Windows platform support to an existing macOS-only Tauri 2 desktop music player (RecoDeck)
-**Project:** RecoDeck v1.5 Windows Support
+**Domain:** Adding in-app update notifications and "What's New" changelog to an existing Tauri v2 desktop app (RecoDeck v1.6)
+**Project:** RecoDeck v1.6 Update Notifications
 **Researched:** 2026-03-14
-**Confidence:** HIGH — derived from direct codebase inspection combined with verified Tauri, bindgen, and NSIS documentation
+**Confidence:** HIGH — derived from direct codebase inspection of `tauri.conf.json` + `capabilities/default.json`, cross-referenced against official Tauri v2 updater documentation, GitHub issue tracker, and security advisories
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: `LIBCLANG_PATH` Not Set — Aubio Bindgen Fails to Compile on Windows CI
+### Pitfall 1: `"dialog": true` Silently Disables the Programmatic API
 
 **What goes wrong:**
-`bliss-audio-aubio-rs` is declared in `Cargo.toml` with `features = ["builtin", "bindgen"]`. The `bindgen` feature causes the build to invoke `libclang` at compile time to generate FFI bindings from C headers. On Windows (both locally and on `windows-latest` GitHub Actions runners), bindgen cannot locate `libclang.dll` unless `LIBCLANG_PATH` is explicitly set. The build fails with: `Unable to find libclang: "the 'libclang' shared library at [path]"`.
+RecoDeck's current `tauri.conf.json` has `"dialog": true` in the updater plugin config. When `dialog` is `true`, the built-in native dialog intercepts all update events and the JavaScript API receives nothing. Calls to `check()`, `downloadAndInstall()`, and progress event listeners will never fire. The toast/banner and "What's New" modal will appear to do nothing even though the updater is technically running.
 
 **Why it happens:**
-The GitHub Actions `windows-latest` runner includes LLVM only as a Visual Studio component — it is not on `PATH` and `LIBCLANG_PATH` is not set by default. The bliss-audio-aubio-rs `builtin` feature also invokes cmake to compile the C aubio library from source, which requires a working C compiler (MSVC or MinGW). If cmake is not installed or the toolchain is wrong, this fails as a separate error before bindgen even runs.
+Tauri v2 removed the built-in dialog in v2 stable, but the `dialog: true` config option persists as a v1-compatibility setting. Developers who either migrated from v1 or copied a configuration example that includes `dialog: true` will find the programmatic API dead. The failure is silent — no errors are thrown, the updater just handles everything itself via the native OS dialog and never calls your event handlers.
 
 **How to avoid:**
-In the GitHub Actions Windows job, add these steps before `npx tauri build`:
-
-```yaml
-- name: Install LLVM and Clang (for aubio-rs bindgen)
-  uses: KyleMayes/install-llvm-action@v2
-  with:
-    version: "17"
-
-- name: Set LIBCLANG_PATH
-  run: echo "LIBCLANG_PATH=${{ env.LLVM_PATH }}/bin" >> $GITHUB_ENV
-```
-
-Alternatively, use `winget install LLVM.LLVM` locally and set `LIBCLANG_PATH=C:\Program Files\LLVM\bin` as a system environment variable. Verify with `cargo build` before wiring CI.
-
-**Warning signs:**
-- Build error: `Unable to find libclang` on Windows but not macOS
-- Build error: `thread 'main' panicked at 'Unable to find libclang'`
-- CI Windows job fails at the `cargo build` step specifically on crates that use bindgen
-
-**Phase to address:** Phase 1 (Windows compilation baseline) — this is the first blocker to resolve. Nothing else can proceed until the crate compiles.
-
----
-
-### Pitfall 2: Mobile Companion Path Validation Fails on Windows (canonicalize vs. Stored Forward-Slash Paths)
-
-**What goes wrong:**
-In `src-tauri/src/server/streaming.rs` at line 87 and 96, the security check for mobile streaming does:
-
-```rust
-let canonical_path = std::fs::canonicalize(&file_path)...;
-let canonical_str = canonical_path.to_string_lossy().to_string();
-// ...
-canonical_str.starts_with(&canonical_folder.to_string_lossy().to_string())
-```
-
-On Windows, `std::fs::canonicalize` returns a UNC-prefixed backslash path: `\\?\C:\Users\...`. The DB stores paths as forward-slash normalized strings (`C:/Users/...`) because `scanner.rs` runs `normalize_scanned_path` which converts backslashes to forward slashes before inserting. The `starts_with` comparison between a `\\?\C:\Users\music\track.mp3` canonical string and a `C:/music` library folder string will **always return false**. Every mobile stream request will be rejected with 403 Forbidden.
-
-**Why it happens:**
-`std::fs::canonicalize` on Windows prepends the `\\?\` UNC prefix (extended-length path notation) and uses backslashes. The scanner intentionally normalizes to forward slashes for DB storage consistency. These two representations never match with a simple `starts_with` string comparison.
-
-**How to avoid:**
-Before comparing, strip the `\\?\` prefix from the canonical path on Windows and normalize both sides to forward slashes:
-
-```rust
-fn normalize_for_comparison(s: &str) -> String {
-    let s = s.strip_prefix(r"\\?\").unwrap_or(s);
-    s.replace('\\', "/")
-}
-
-let canonical_norm = normalize_for_comparison(&canonical_str);
-let folder_norm = normalize_for_comparison(&canonical_folder.to_string_lossy());
-canonical_norm.starts_with(&folder_norm)
-```
-
-Use this normalization on both the track path and the library folder path before comparison.
-
-**Warning signs:**
-- Mobile companion PWA connects but all stream requests return 403 Forbidden
-- `[companion] Stream rejected: track X not within library roots` appears in Tauri logs on Windows even for valid tracks
-- Desktop playback works fine but mobile streaming is completely broken
-
-**Phase to address:** Phase 2 (mobile companion Windows fixes) — must be tested on a real Windows machine or Windows CI with a library folder set up.
-
----
-
-### Pitfall 3: Windows SmartScreen Blocks Every Download of the Unsigned NSIS Installer
-
-**What goes wrong:**
-Any NSIS `.exe` installer downloaded from a browser on Windows triggers a Windows Defender SmartScreen "Windows protected your PC" blue warning screen. For unsigned installers from unknown publishers, this warning cannot be bypassed silently — users must click "More info" then "Run anyway." For some antivirus configurations (corporate environments, Crowdstrike), the installer may be blocked entirely with no bypass option. Additionally, Tauri's NSIS installer embeds NSIS plugin DLLs in `$PLUGINSDIR` — these are not signed even when the outer `.exe` is signed, causing a second wave of antivirus alerts.
-
-**Why it happens:**
-Microsoft SmartScreen assigns reputation scores to downloaded executables based on signing certificate and download frequency. A freshly built app with no prior download history has zero reputation regardless of whether the developer considers it trustworthy. The NSIS plugin DLL signing gap is a documented upstream Tauri issue (#11673) with no current fix.
-
-**How to avoid:**
-- Accept that for a small audience of DJ friends, the SmartScreen dialog is manageable — document the "More info → Run anyway" click in the release notes.
-- Do not invest in an EV certificate (thousands of dollars annually) for a personal tool.
-- Provide a PowerShell one-liner in release notes as an alternative installation path: `Expand-Archive recodeck-win.zip -DestinationPath "$env:LOCALAPPDATA\recodeck"` using a plain `.zip` distribution.
-- If using an OV certificate in the future, SmartScreen reputation accumulates over weeks; initial users will still see warnings.
-- For the NSIS plugin signing gap: no workaround exists in Tauri 2 today. Monitor issue #11673 for upstream fix.
-
-**Warning signs:**
-- Users report "Windows protected your PC" during install
-- Corporate users report antivirus quarantining the installer immediately after download
-- Users report `$PLUGINSDIR\StdUtils.dll` being flagged by antivirus
-
-**Phase to address:** Phase 3 (NSIS installer configuration) — set expectations in release notes before publishing. Do not attempt to hide this known limitation.
-
----
-
-### Pitfall 4: WebView2 Audio Autoplay Bug — Audio Does Not Start on Windows Without Prior DOM Interaction
-
-**What goes wrong:**
-In earlier Tauri 2 / wry versions, a typo in the Windows WebView2 initialization arguments caused `autoplay-policy` to not be passed correctly, making audio autoplay silently fail on Windows even after user interaction. This was reported as Tauri issue #9968. In current Tauri 2 versions the typo is fixed, but **the autoplay policy itself is still enforced by WebView2** — `audio.play()` on a fresh app launch before any DOM interaction will be rejected with a `NotAllowedError: play() can only be initiated by a user gesture`.
-
-**Why it happens:**
-WebView2 enforces Chromium's autoplay policy (same as Chrome). WKWebView on macOS also enforces this, but RecoDeck's audio playback is always triggered by explicit user clicks (play button, track selection), so this is currently handled correctly. The risk is platform-specific edge cases — e.g. if RecoDeck ever tries to auto-resume the last track on startup on Windows, it will fail.
-
-**How to avoid:**
-- Verify that every `audio.play()` call in `audioPlayer.ts` is downstream of a user gesture.
-- Do not add "resume last track on startup" features without first testing on Windows — this is the most likely trigger point.
-- The existing architecture (play is only triggered by user clicks) should be safe. Verify in CI smoke test.
-- If auto-resume is ever added, buffer the play intent and execute it on the next user interaction.
-
-**Warning signs:**
-- `Uncaught (in promise) NotAllowedError: play() failed because the user didn't interact with the document first` in Windows DevTools console
-- Play button does nothing on Windows but works on macOS
-
-**Phase to address:** Phase 1 (compilation verification) — add a manual Windows test checklist item: "press play button, audio starts" before declaring compilation complete.
-
----
-
-### Pitfall 5: `http://stream.localhost` CSP Header Missing `http:` Source — Audio Blocked on Windows
-
-**What goes wrong:**
-On Windows, Tauri's custom protocols map to `http://scheme.localhost/` URLs instead of `scheme://localhost/`. The current CSP in `tauri.conf.json` is:
-
-```
-media-src 'self' stream: http: https: blob:
-```
-
-The `stream:` directive allows the macOS custom protocol. `http:` as a wildcard allows any HTTP origin including `http://stream.localhost`. This appears safe — but the wildcard `http:` is broad. If the WebView2 CSP implementation is stricter about wildcard matching than WKWebView, or if `http://stream.localhost` is not considered a match for the generic `http:` source list, audio will silently fail.
-
-**Why it happens:**
-WebView2 uses Chromium's CSP implementation, which may handle `http:` and `stream:` source directives differently from WKWebView. The `stream:` scheme is not a registered scheme in Chromium — it's only recognized in WKWebView via Tauri's URL remapping. On Windows, the scheme is never `stream:` — it's always `http://stream.localhost/`.
-
-**How to avoid:**
-Make the CSP explicit for Windows by adding `http://stream.localhost` as an allowed source:
+Set `"dialog": false` in `tauri.conf.json` updater config before writing any JavaScript update logic:
 
 ```json
-"csp": "default-src 'self'; img-src 'self' blob: asset: https://asset.localhost/; media-src 'self' stream: http://stream.localhost http: https: blob:"
+"plugins": {
+  "updater": {
+    "active": true,
+    "dialog": false,
+    "pubkey": "...",
+    "endpoints": ["..."]
+  }
+}
 ```
 
-Alternatively, test on Windows DevTools (F12 → Console) and look for CSP violation errors on audio load. If none appear, the existing `http:` wildcard is working.
+The RecoDeck `tauri.conf.json` currently has `"dialog": true` — this must be changed to `false` as the first step of the implementation phase.
 
 **Warning signs:**
-- `Refused to load media from 'http://stream.localhost/?p=...' because it violates the following Content Security Policy directive: "media-src 'self' stream: ..."`
-- Audio elements show `NETWORK_ERR` (error code 2) in `audioPlayer.ts`
-- Same tracks load on macOS but not Windows
+- `check()` returns a non-null update object but no toast or modal appears
+- Progress event handler in `downloadAndInstall()` is never called
+- The app silently shows a native OS dialog at startup instead of your custom toast
 
-**Phase to address:** Phase 1 (Windows compilation and first boot test) — verify audio actually plays before building anything else.
+**Phase to address:** Phase 1 (updater plugin integration) — change `dialog: false` before writing any frontend logic. If you write the frontend first you will spend hours debugging why events never fire.
+
+---
+
+### Pitfall 2: `createUpdaterArtifacts: "v1Compatible"` Will Break in Tauri v3
+
+**What goes wrong:**
+RecoDeck's `tauri.conf.json` currently sets `"createUpdaterArtifacts": "v1Compatible"`. The official Tauri v2 docs explicitly state: "the v1Compatible value will be removed in v3." This is a ticking migration cost — the next major Tauri upgrade will require changing the artifact format and regenerating the GitHub release manifest.
+
+**Why it happens:**
+The `"v1Compatible"` mode generates `.tar.gz` bundles in the older format for backward compatibility with v1 updater clients. Since RecoDeck has no existing v1 clients (it was built on Tauri v2 from the start), this value provides no benefit and only defers a forced migration.
+
+**How to avoid:**
+Change `"createUpdaterArtifacts"` from `"v1Compatible"` to `true` now, before publishing any update artifacts. The `true` value generates the modern v2 bundle format. Since no users currently have an installed version that knows the old format, there is no backward compatibility concern.
+
+```json
+"bundle": {
+  "createUpdaterArtifacts": true
+}
+```
+
+If this value has already been used to publish live updates, switching requires a transitional release (one build signed with old key, new value, then subsequent builds use new format).
+
+**Warning signs:**
+- Tauri CLI emits a deprecation warning about `v1Compatible` during `tauri build`
+- After a Tauri v3 upgrade, `tauri build` fails with an unrecognized config value error
+
+**Phase to address:** Phase 1 (updater plugin integration) — change this alongside `dialog: false` before the first artifact build. Zero cost to fix now; moderate migration cost later.
+
+---
+
+### Pitfall 3: Private Key Loss Permanently Breaks Updates for Installed Users
+
+**What goes wrong:**
+The Tauri updater requires cryptographic signing for every update artifact. The private key used to sign artifacts must match the public key embedded in the installed app. If the private key is lost, deleted, or accidentally rotated without a transitional release, existing installed users can never receive updates. The only recovery path is asking users to manually reinstall from scratch.
+
+**Why it happens:**
+Developers store `TAURI_SIGNING_PRIVATE_KEY` as a local environment variable or CI secret and assume it is safe. Common failure modes: accidentally deleting the `.key` file after a machine reset, rotating GitHub Actions secrets without preserving the old key first, or leaking the key via a Vite `envPrefix` misconfiguration (CVE-2023-46115: setting `envPrefix: ['VITE_', 'TAURI_']` in `vite.config.ts` bundles the private key into the frontend bundle).
+
+**How to avoid:**
+- Store the private key in a password manager (1Password, Bitwarden) as the primary backup — not only in CI secrets.
+- Verify `vite.config.ts` uses `envPrefix: ['VITE_']` only, never `'TAURI_'`. The TAURI_ prefix would expose `TAURI_SIGNING_PRIVATE_KEY` to the frontend bundle.
+- Never commit the `.key` file to git.
+- Before publishing v1.6, document the key location in a personal secure note so it survives a machine wipe.
+- If key rotation is ever needed: the transitional release (signed with old key) must first update the embedded public key to the new key. Only then can subsequent releases use the new private key.
+
+**Warning signs:**
+- CI build errors: `Error incorrect updater private key password` or `UnexpectedKeyId`
+- `TAURI_SIGNING_PRIVATE_KEY` missing from CI environment on a new runner
+- `vite.config.ts` contains `envPrefix: ['VITE_', 'TAURI_']`
+
+**Phase to address:** Phase 1 (updater plugin integration) — verify key storage before the first artifact is published. Key management is a one-time setup that is catastrophic if skipped.
+
+---
+
+### Pitfall 4: Windows Auto-Exits on Install — No `relaunch()` Needed, and Unsaved State Is Lost
+
+**What goes wrong:**
+On Windows, when `update.downloadAndInstall()` completes, the NSIS/MSI installer automatically exits the running application before it finishes installing. Any in-memory state (current playback position, active track, Zustand store contents, Axum companion server connections) is destroyed without warning. If you call `relaunch()` after `downloadAndInstall()` on Windows, it either errors or relaunches into a race condition with the installer.
+
+On macOS, the behavior is different: the app stays running after install completes and you call `relaunch()` explicitly to restart.
+
+**Why it happens:**
+The Windows installer (NSIS or MSI) requires the target process to be stopped before it can overwrite the app binary. Tauri handles this at the OS level. The Tauri docs note: "The application is automatically exited when the install step is executed due to a limitation of Windows installers." This is platform-specific behavior that is not obvious from the JavaScript API.
+
+**How to avoid:**
+Use the `on_before_exit` pattern (or its JS equivalent `onBeforeClose`) to flush any critical state before `downloadAndInstall()` is called on Windows:
+
+```typescript
+// Stop audio, flush Zustand state to SQLite, stop companion server
+await stopAudio();
+await flushPlayerState();
+// Then install
+await update.downloadAndInstall();
+// On macOS only — on Windows the app is already dead here
+await relaunch();
+```
+
+Detect the platform with `import { platform } from '@tauri-apps/plugin-os'` and only call `relaunch()` on macOS/Linux. Windows users will see the installer run and the app reopen automatically.
+
+**Warning signs:**
+- On Windows: app closes mid-download without showing the installer
+- On Windows: `relaunch()` throws an error after `downloadAndInstall()`
+- Audio keeps playing through a Windows update install (means the state flush is not running)
+
+**Phase to address:** Phase 2 (download, install, and restart flow) — cross-platform install behavior must be handled before shipping. Test on both platforms; do not assume macOS behavior applies to Windows.
+
+---
+
+### Pitfall 5: Version Tracking for "What's New" Modal Uses Wrong Source of Truth
+
+**What goes wrong:**
+The most common pattern for detecting "first launch after update" is comparing the stored "last seen version" against the current app version. Two sub-pitfalls exist:
+
+1. **Using the frontend to read `package.json` version**: If `import { getVersion } from '@tauri-apps/api/app'` is not used and instead `import pkg from '../../package.json'` is used, the version string is baked into the frontend bundle at build time and may not reflect the actual installed binary version in edge cases (dev builds, manual overrides).
+
+2. **Storing the "last seen version" in `localStorage`**: `localStorage` is scoped to the WebView origin. If Tauri's WebView data directory is cleared by an OS update, antivirus, or a user cleaning browser data, the stored version is lost and the "What's New" modal fires again spuriously.
+
+**Why it happens:**
+`localStorage` is the easiest storage option in a React/Tauri app. Developers reach for it without considering that it can be cleared externally, and without considering that the app's SQLite database (RecoDeck's `settings` table) already provides a durable, structured storage layer that survives WebView data resets.
+
+**How to avoid:**
+- Read the current version with `import { getVersion } from '@tauri-apps/api/app'` — this queries the Tauri core directly and returns the actual installed binary version, not the bundled `package.json`.
+- Store `last_seen_version` in RecoDeck's existing SQLite `settings` table via the established `get_setting`/`set_setting` command pattern. This is durable, consistent with all other settings, and survives WebView clears.
+- On app startup: call `getVersion()`, call `get_setting("last_seen_version")`, compare. Show "What's New" if different. Then update the stored value.
+
+**Warning signs:**
+- "What's New" modal fires on every launch for some users
+- Version shown in modal does not match the actual installed version
+- "What's New" modal never fires even after a real update
+
+**Phase to address:** Phase 3 (changelog and "What's New" modal) — design the version-tracking data flow before building the modal UI. Choosing the wrong storage at this stage requires UI and backend changes to fix later.
+
+---
+
+### Pitfall 6: Update Check Blocks App Startup If Called Synchronously
+
+**What goes wrong:**
+If the update check (`check()` from `@tauri-apps/plugin-updater`) is called in a `useEffect` that blocks rendering, or if it is awaited before the app renders its main content, users experience a visible delay on every launch — especially on slow networks or when the GitHub Releases endpoint is slow to respond. On timeout, the app may appear frozen.
+
+**Why it happens:**
+The `check()` call makes an outbound HTTPS request to the update endpoint. Network latency is unpredictable. Developers often put the update check inside a top-level `useEffect` in `App.tsx` as the obvious location without considering that it runs before the user sees any UI.
+
+**How to avoid:**
+Defer the update check until after the app is fully rendered and the user can interact:
+
+```typescript
+useEffect(() => {
+  // Delay check by 3-5 seconds after mount to ensure
+  // audio playback, library load, and UI render complete first
+  const timer = setTimeout(async () => {
+    try {
+      const update = await check();
+      if (update) setAvailableUpdate(update);
+    } catch (e) {
+      // Network failure is silent — user is not interrupted
+    }
+  }, 3000);
+  return () => clearTimeout(timer);
+}, []);
+```
+
+Wrap the entire check in a try/catch — a network failure should never surface as a UI error. The update check is a background task, not a launch requirement.
+
+**Warning signs:**
+- App startup takes noticeably longer than before adding the updater
+- Users on slow/offline connections report app hangs at startup
+- The app spinner appears for several seconds before the library loads
+
+**Phase to address:** Phase 1 (updater plugin integration) — the timing pattern must be set from the start. Do not wait until performance complaints arise.
+
+---
+
+### Pitfall 7: Capabilities Permission `updater:allow-check` vs `updater:allow-download` Both Required
+
+**What goes wrong:**
+RecoDeck's `capabilities/default.json` already includes `"updater:default"` and `"updater:allow-check"`. However, `updater:allow-download` and `updater:allow-install` are separate permissions required for `update.downloadAndInstall()` to work. The `updater:default` group typically includes all of these, but if custom permission scoping is applied or if a future Tauri version changes the default group composition, download calls will fail with a `Permission denied` error.
+
+**Why it happens:**
+Tauri v2's permission system denies all capabilities by default. The `updater:default` group includes the common set of permissions, but developers who fine-grain their capabilities (removing `updater:default` and adding individual permissions) may miss `allow-download` and `allow-install` while keeping only `allow-check`.
+
+**How to avoid:**
+Keep `"updater:default"` in the capabilities file as the primary permission. Do not replace it with individual `allow-*` permissions unless there is a specific security reason. Verify `capabilities/default.json` includes `"updater:default"` as the first entry for the updater — the current RecoDeck config already does this correctly.
+
+If individual permissions are ever needed, the complete set is:
+- `updater:allow-check`
+- `updater:allow-download`
+- `updater:allow-install`
+- `process:allow-restart` (already present in RecoDeck's default.json — required for `relaunch()`)
+
+**Warning signs:**
+- `check()` returns an update object but `downloadAndInstall()` throws `Permission denied`
+- Tauri security log shows `"Permission denied for command: plugin:updater|download"`
+- Update download starts then silently fails at 0%
+
+**Phase to address:** Phase 1 (updater plugin integration) — verify the full permission set in a debug build before wiring up the UI.
 
 ---
 
@@ -165,11 +221,11 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Skip code signing, distribute raw NSIS .exe | Saves $200-500/yr for OV cert | Every Windows user sees SmartScreen warning; corporate users blocked | Acceptable for personal-use DJ friends audience |
-| Use `LIBCLANG_PATH` hardcoded to LLVM 17 path in CI | Works today | Breaks when GitHub runner LLVM version changes | Acceptable short-term; pin action version to lock it |
-| Store paths with forward slashes on Windows (current design) | Consistent DB format cross-platform | Requires explicit normalization before `canonicalize()` comparison | Acceptable — normalization is cheap, consistency is valuable |
-| Cross-compile Windows from macOS CI instead of native Windows runner | No need to maintain Windows environment | Cross-compilation of C code (aubio) via cargo-xwin is experimental; not tested as much per Tauri docs | Never for the C bindgen path — use native `windows-latest` runner |
-| Use `targets: "all"` in tauri.conf.json bundle | Builds all targets | On Windows, builds both NSIS and MSI; MSI requires VBSCRIPT optional Windows feature enabled | Acceptable to leave but add `VBSCRIPT` note to Windows setup docs |
+| Keep `"dialog": true` and use native dialog | Zero implementation effort | No custom toast, no "What's New" modal, no progress bar — the entire milestone is undeliverable | Never — must change to `false` |
+| Keep `"createUpdaterArtifacts": "v1Compatible"` | No action required now | Forced migration on Tauri v3 upgrade; if any artifacts have been published in v1Compatible format, switching mid-stream breaks existing installed users | Switch to `true` now — zero users have v1Compatible artifacts yet |
+| Store last_seen_version in localStorage | Trivial to implement | Modal fires spuriously if WebView data is cleared; no single source of truth with existing settings system | Never — RecoDeck's SQLite settings table is the correct location |
+| Inline changelog text in JS bundle | No hosting required | Every changelog update requires a full app rebuild and release cycle; cannot patch notes without a new release | Acceptable if changelog only changes with code changes (i.e., bundled `changelog.json` is fine) |
+| Skip platform detection in relaunch() | Simpler code | `relaunch()` after `downloadAndInstall()` throws on Windows; update flow breaks for half the user base | Never — platform check is three lines of code |
 
 ---
 
@@ -177,13 +233,12 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `streaming.rs` path validation | `canonical_path.to_string_lossy().starts_with(folder_str)` — broken on Windows due to `\\?\` UNC prefix | Strip `\\?\`, normalize both sides to forward slashes before `starts_with` comparison |
-| `audioPlayer.ts` stream URL | Checking `navigator.userAgent.includes('Windows')` to decide URL format — already implemented correctly | Verify this branch is tested on Windows; `http://stream.localhost/?p=...` must be used on Windows |
-| GitHub Actions Windows job | Using same `npm run release:manifest` script as macOS without adapting Windows target names | `TAURI_UPDATE_PLATFORM` must be `windows-x86_64`; artifact paths differ (`.msi` / `.nsis.zip`) |
-| auto-updater `latest.json` | Omitting the `windows-x86_64` platform entry | Both `darwin-aarch64` and `windows-x86_64` entries required; updater silently does nothing if platform key missing |
-| NSIS installer language | Leaving `displayLanguageSelector` unset for international users | Default is OS language; acceptable for DJ friends audience — no action needed |
-| WebView2 version requirement | Assuming WebView2 is pre-installed on all Windows machines | WebView2 ships with Windows 10 21H1+ and Windows 11; for older Windows 10, the NSIS `downloadBootstrapper` default handles it |
-| `tauri_plugin_opener` on Windows | `opener::open(url)` behavior for file:// paths differs between Windows shell and macOS Finder | Test folder-open functionality on Windows before shipping |
+| Tauri updater endpoint (GitHub Releases) | Using a GitHub Release HTML page URL instead of the direct `latest.json` download URL | Use `https://github.com/NM193/RecoDeck/releases/latest/download/latest.json` — direct file URL, not the release page |
+| `latest.json` static manifest | Omitting a platform entry causes the updater to silently find no update for that platform | Both `darwin-aarch64` (and/or `darwin-x86_64`) and `windows-x86_64` entries must be present in `platforms` |
+| `latest.json` signature field | Pasting a file path or URL as the `signature` value | The `signature` field must contain the raw content of the `.sig` file, not a path to it |
+| Vite `envPrefix` config | Setting `envPrefix: ['VITE_', 'TAURI_']` to make TAURI_ vars available | Use `envPrefix: ['VITE_']` only — TAURI_SIGNING_PRIVATE_KEY must never reach the frontend bundle (CVE-2023-46115) |
+| `getVersion()` in frontend | Reading version from `package.json` import | Use `import { getVersion } from '@tauri-apps/api/app'` — queries the actual binary, not the bundled JSON |
+| RFC 3339 date in `pub_date` | Using ISO 8601 without timezone offset (e.g., `2026-03-14T00:00:00`) | Must be RFC 3339 with timezone: `2026-03-14T00:00:00Z` — Tauri rejects non-compliant dates |
 
 ---
 
@@ -191,9 +246,9 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| `analyze_waveform` reads entire audio file into memory | On Windows with large FLAC files (100+ MB), peak RAM usage during analysis | Already documented in project memory: must stay synchronous; no change needed | Individual files over 500 MB on low-RAM machines |
-| Rayon parallel BPM analysis on Windows with `windows-latest` CI | CI timeout on 8-core runner analyzing a test library | Cap rayon thread pool size in CI; use `RAYON_NUM_THREADS=4` env var | During CI test runs with large test libraries |
-| `std::fs::canonicalize` on Windows prepends `\\?\` and stat-checks every path component | Slow on network drives or deeply nested paths | Use only for security validation in streaming.rs; do not use in hot paths like track listing | Network-mounted music libraries with deep folder trees |
+| Update check on synchronous render path | App startup hangs for 2-5 seconds; users on slow connections see frozen UI | Defer `check()` call by 3-5 seconds after app mount; always in background task | Every launch on any connection slower than 50ms to GitHub CDN |
+| Blocking `await check()` before library load | Library scan and audio playback delayed until update server responds | Decouple update check from library initialization; run them in parallel or stagger | Offline launches; GitHub API rate limiting (rare) |
+| Re-checking on every navigation/re-render | Hammers the GitHub Releases API; rate limiting blocks updates for real | Check once per app session only; track `hasCheckedThisSession` in module-level variable | After ~60 unauthenticated requests/hour to GitHub API |
 
 ---
 
@@ -201,9 +256,10 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Distributing unsigned NSIS installer | Low for this audience; moderate reputational risk | Accept the SmartScreen warning; document it in release notes; consider `.zip` distribution as alternative |
-| Windows Firewall blocking Axum companion server port | Mobile companion server silently fails; users cannot connect from mobile | The Tauri-spawned Axum server must bind on `0.0.0.0`; Windows Firewall prompts user on first run — document this expected prompt in user-facing release notes |
-| QR code shows LAN IP that Windows firewall blocks | Mobile app shows connected but audio never loads | Test companion server on Windows: connect mobile device, verify stream plays end to end |
+| `vite.config.ts` with `envPrefix: ['VITE_', 'TAURI_']` | Private signing key bundled into frontend JS; extractable by anyone with a hex editor on the app bundle | Set `envPrefix: ['VITE_']` only; verify with `grep -r "TAURI_SIGNING" dist/` after build |
+| Committing `TAURI_SIGNING_PRIVATE_KEY` to `.env` or version control | Key leaked in git history; anyone with repo access can sign malicious updates | Store only in password manager + CI secret; add `.env` to `.gitignore`; never commit key file |
+| `"dangerousInsecureTransportProtocol": true` left enabled in production config | Updates served over HTTP are trivially interceptable and replaceable with malicious payloads | Only use for local testing; never ship with this flag enabled |
+| Serving `latest.json` from an unsigned HTTP endpoint | MITM attacker can modify version/URL fields to push arbitrary downloads | GitHub Releases serves over HTTPS by default; self-hosted endpoints must use HTTPS with a valid cert |
 
 ---
 
@@ -211,23 +267,27 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| SmartScreen dialog on installer download | Users unfamiliar with Windows security dialogs may abort install thinking the app is malware | Include explicit screenshot + "More info → Run anyway" instruction in release notes |
-| Windows Firewall dialog on first companion server start | User sees unexpected system dialog asking to allow RecoDeck network access | Add a one-time first-run message: "RecoDeck will request firewall access for mobile streaming. Click Allow." |
-| Audio file paths with drive letter displayed in UI | `C:/Users/DJ/Music/track.mp3` looks different from macOS paths — no functional issue but cosmetically inconsistent | No action needed; path display in tooltip/debug views should already handle this |
+| Showing the "Install" prompt during active audio playback | User is interrupted mid-mix when auto-check fires | Check `isPlaying` state before showing toast; defer notification until track ends or user pauses |
+| Starting download immediately on "Install" click without showing progress | Download can take 30-60 seconds for a 30MB bundle; user sees no feedback and clicks again | Show a progress bar or percentage in the toast banner; disable the Install button once clicked |
+| No "Later" option on the update toast | Users who cannot update right now (e.g., mid-DJ set) are forced to choose between updating and dismissing permanently | Provide three options: "Install Now", "Remind Me Later" (re-show next launch), "Skip This Version" |
+| "What's New" modal fires on first install, not just updates | New users who have never had a previous version stored in DB see the modal immediately | Guard the modal: only show if `last_seen_version` exists in settings AND differs from current version; never show if no prior version is stored |
+| Restart happening during active companion server session | Mobile PWA clients get disconnected mid-stream without warning | Before relaunch, emit a shutdown event via the Axum companion server or send a toast on mobile; then relaunch |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Aubio bindgen compilation:** `cargo build --target x86_64-pc-windows-msvc` succeeds locally or in CI without `LIBCLANG_PATH` errors — verify `LIBCLANG_PATH` is set in CI environment
-- [ ] **Audio plays on Windows:** Launch app on Windows, select a track, press play — audio must be audible (not just "no error")
-- [ ] **Mobile companion streaming on Windows:** Start companion server, scan QR from phone, stream a track — 403 Forbidden means the canonicalize path comparison bug is present
-- [ ] **NSIS installer installs correctly:** Download and run the `.exe`, verify app launches, library scan works, audio plays
-- [ ] **Auto-updater manifest has Windows entry:** `latest.json` must contain a `windows-x86_64` platform key with a valid `.msi.zip` or `.nsis.zip` URL and `.sig` file
-- [ ] **SmartScreen warning documented:** Release notes include explicit install instructions for Windows SmartScreen bypass
-- [ ] **Windows Firewall prompt tested:** Companion server start on Windows triggers firewall dialog — verify "Allow" makes mobile streaming work
-- [ ] **Folder scan on Windows paths:** Add `C:\Users\...\Music` as library folder, scan — tracks should appear with forward-slash paths in DB
-- [ ] **CSP no violations:** Open Windows DevTools (F12), load a track, check Console for any CSP violation messages on `stream.localhost` URLs
+- [ ] **`"dialog": false` in `tauri.conf.json`:** Verify the updater config has `"dialog": false` — the current RecoDeck config has `true`, which silently disables the JS API.
+- [ ] **`createUpdaterArtifacts: true`:** Verify this is set to `true` (not `"v1Compatible"`) before publishing any release artifacts.
+- [ ] **Private key backed up:** Verify `TAURI_SIGNING_PRIVATE_KEY` is stored in a password manager and as a GitHub Actions secret, not only on disk.
+- [ ] **`vite.config.ts` envPrefix check:** Confirm `envPrefix` does not include `'TAURI_'` — verify in `vite.config.ts` before first build with signing enabled.
+- [ ] **`latest.json` has all platform entries:** After CI build, confirm `latest.json` includes both `darwin-aarch64` and `windows-x86_64` platform keys.
+- [ ] **Signature field content (not path):** Verify the `signature` fields in `latest.json` contain the raw `.sig` file content, not a file path or URL.
+- [ ] **Update check is non-blocking:** Confirm `check()` runs in a `setTimeout` or after app mount, not in the synchronous render path.
+- [ ] **Windows install flow tested:** On Windows, verify `downloadAndInstall()` exits the app and the NSIS installer runs; confirm `relaunch()` is NOT called on Windows.
+- [ ] **"What's New" modal does not show on fresh install:** On a clean install with no prior `last_seen_version` in SQLite settings, the modal must not appear.
+- [ ] **Update toast does not interrupt active playback:** Trigger an update check while a track is playing; verify the toast defers until playback stops.
+- [ ] **`process:allow-restart` in capabilities:** Verify `capabilities/default.json` includes `"process:allow-restart"` — RecoDeck's current config includes this correctly; ensure it is not removed during refactor.
 
 ---
 
@@ -235,12 +295,13 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Aubio bindgen fails in CI | LOW | Add `KyleMayes/install-llvm-action` step + set `LIBCLANG_PATH` env var before cargo build |
-| Mobile streaming 403 on Windows | LOW | Add `normalize_for_comparison` helper in `streaming.rs`; normalize both sides before `starts_with`; no DB changes needed |
-| SmartScreen blocks all users | LOW | Publish `.zip` distribution alongside NSIS installer; document bypass in release notes |
-| WebView2 audio not playing | MEDIUM | Verify CSP; check DevTools console; ensure all `play()` calls are in user gesture handlers; test `http://stream.localhost` URL construction |
-| Auto-updater not working on Windows | LOW | Add `windows-x86_64` entry to `latest.json` generation script; verify `.sig` file is uploaded to GitHub release |
-| Windows Firewall blocks companion server | LOW | Document expected Firewall prompt in release notes; verify Axum binds `0.0.0.0` not `127.0.0.1` for LAN access |
+| `dialog: true` blocking JS API | LOW | Change `"dialog": false` in `tauri.conf.json`; no code changes required |
+| Private key lost after publishing | HIGH | Users with installed version can never receive automatic updates; must publish manual reinstall instructions; generate new key for future users only |
+| Private key leaked (Vite envPrefix) | HIGH | Revoke and rotate key; publish a transitional release signed with old key that embeds new public key; subsequent releases use new key |
+| "What's New" modal fires on every launch | LOW | Add null-check guard: only show if `last_seen_version` is set AND differs from current; write fix to `settings` table on modal close |
+| Update check blocks startup | LOW | Wrap `check()` in `setTimeout(fn, 3000)`; add try/catch; one-line change |
+| Windows relaunch() error after install | LOW | Add `platform()` check; only call `relaunch()` on non-Windows; three lines of code |
+| `createUpdaterArtifacts: "v1Compatible"` after shipping | MEDIUM | If existing installed users have v1Compatible artifacts, switching immediately breaks their updater; must publish one transitional release in old format with new value embedded |
 
 ---
 
@@ -248,35 +309,35 @@ Alternatively, test on Windows DevTools (F12 → Console) and look for CSP viola
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Aubio bindgen / LIBCLANG_PATH | Phase 1 — Windows compilation baseline | `cargo build` succeeds in CI Windows job; no `libclang` errors |
-| Mobile companion 403 due to canonicalize mismatch | Phase 2 — mobile companion Windows fixes | Connect phone via QR code on Windows; audio streams without error |
-| SmartScreen / NSIS antivirus blocking | Phase 3 — NSIS installer configuration | Download installer on clean Windows machine; document SmartScreen bypass |
-| WebView2 audio autoplay CSP | Phase 1 — first Windows boot | Press play on Windows build; audio plays; no CSP console errors |
-| Auto-updater missing Windows platform entry | Phase 4 — CI/CD and auto-updater | Check `latest.json` contains `windows-x86_64` key; updater plugin picks it up |
-| Windows Firewall blocking companion server | Phase 2 — mobile companion Windows fixes | Confirm firewall prompt appears and "Allow" enables mobile streaming |
-| `canonicalize` UNC prefix in any future path code | All phases | Code review any new `canonicalize()` usage; always normalize before string comparison |
+| `"dialog": true` blocking JS API | Phase 1 — updater plugin integration setup | Set `dialog: false`; write a minimal `check()` call; verify it returns a result object |
+| `"v1Compatible"` future migration debt | Phase 1 — updater plugin integration setup | Change to `true` before first artifact build; `tauri build` produces no deprecation warning |
+| Private key loss / leak | Phase 1 — updater plugin integration setup | Key stored in password manager; `vite.config.ts` uses `envPrefix: ['VITE_']` only |
+| Update check blocking startup | Phase 1 — updater plugin integration setup | Startup time measured before and after; no regression |
+| Missing capabilities permissions | Phase 1 — updater plugin integration setup | `downloadAndInstall()` completes without permission error in debug build |
+| Windows auto-exit / no relaunch | Phase 2 — download, install, and restart flow | Manual test on Windows: update installs, app restarts, no unhandled errors |
+| Version tracking wrong storage | Phase 3 — changelog and "What's New" modal | Delete app SQLite DB; relaunch; modal does not appear on fresh install |
+| "What's New" on fresh install | Phase 3 — changelog and "What's New" modal | Fresh install test: modal absent; update install test: modal present with correct version notes |
+| Update interrupting active playback | Phase 2 — download, install, and restart flow | Play a track; trigger update check; verify toast defers until track ends |
+| `latest.json` platform entries missing | Phase 4 — CI build and GitHub release pipeline | CI artifact inspection: `latest.json` contains entries for all shipped platforms |
 
 ---
 
 ## Sources
 
-- Tauri 2 Windows Installer docs: [https://v2.tauri.app/distribute/windows-installer/](https://v2.tauri.app/distribute/windows-installer/)
-- Tauri 2 Windows Code Signing: [https://v2.tauri.app/distribute/sign/windows/](https://v2.tauri.app/distribute/sign/windows/)
-- Tauri issue #9968 — Audio autoplay not working on Windows: [https://github.com/tauri-apps/tauri/issues/9968](https://github.com/tauri-apps/tauri/issues/9968)
-- Tauri issue #11673 — NSIS plugins not signed (causes antivirus false positives): [https://github.com/tauri-apps/tauri/issues/11673](https://github.com/tauri-apps/tauri/issues/11673)
-- bindgen requirements (LIBCLANG_PATH): [https://rust-lang.github.io/rust-bindgen/requirements.html](https://rust-lang.github.io/rust-bindgen/requirements.html)
-- GitHub Actions runner images issue — LLVM version inconsistency on windows-latest: [https://github.com/actions/runner-images/issues/12435](https://github.com/actions/runner-images/issues/12435)
-- GitHub Actions issue — libclang not found on Windows bindgen: [https://github.com/rust-lang/rust-bindgen/issues/1797](https://github.com/rust-lang/rust-bindgen/issues/1797)
-- KyleMayes/install-llvm-action (GitHub Marketplace): [https://github.com/marketplace/actions/install-llvm-and-clang](https://github.com/marketplace/actions/install-llvm-and-clang)
-- bliss-audio-aubio-rs crate (builtin + bindgen features): [https://docs.rs/bliss-audio-aubio-rs/latest/bliss_audio_aubio_rs/](https://docs.rs/bliss-audio-aubio-rs/latest/bliss_audio_aubio_rs/)
-- False positives in Tauri apps: [https://tauri.by.simon.hyll.nu/concepts/security/false_positives/](https://tauri.by.simon.hyll.nu/concepts/security/false_positives/)
-- Tauri updater plugin docs: [https://v2.tauri.app/plugin/updater/](https://v2.tauri.app/plugin/updater/)
-- Microsoft `MAX_PATH` docs: [https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
-- Codebase: `src-tauri/src/server/streaming.rs` — canonicalize path comparison at lines 85-100
-- Codebase: `src-tauri/src/scanner.rs` — `normalize_scanned_path` forward-slash normalization at lines 148-200
-- Codebase: `src/lib/audioPlayer.ts` — Windows URL detection at lines 616-640
-- Codebase: `src-tauri/src/lib.rs` — Windows URL format comment at lines 72-73
+- Tauri v2 updater plugin documentation: [https://v2.tauri.app/plugin/updater/](https://v2.tauri.app/plugin/updater/)
+- Tauri v2 updater JS API reference: [https://v2.tauri.app/reference/javascript/updater/](https://v2.tauri.app/reference/javascript/updater/)
+- Tauri v2 macOS code signing: [https://v2.tauri.app/distribute/sign/macos/](https://v2.tauri.app/distribute/sign/macos/)
+- Tauri v2 Windows code signing: [https://v2.tauri.app/distribute/sign/windows/](https://v2.tauri.app/distribute/sign/windows/)
+- CVE-2023-46115 — Updater private key leak via Vite envPrefix: [https://github.com/tauri-apps/tauri/security/advisories/GHSA-2rcp-jvr4-r259](https://github.com/tauri-apps/tauri/security/advisories/GHSA-2rcp-jvr4-r259)
+- Tauri issue #12457 — deprecation warning for `updater.dialog: true` in v1: [https://github.com/tauri-apps/tauri/issues/12457](https://github.com/tauri-apps/tauri/issues/12457)
+- Tauri issue #7169 — cross-device link (os error 18) in updater restart: [https://github.com/tauri-apps/tauri/issues/7169](https://github.com/tauri-apps/tauri/issues/7169)
+- Tauri issue #7402 — args lost after installUpdate + relaunch: [https://github.com/tauri-apps/tauri/issues/7402](https://github.com/tauri-apps/tauri/issues/7402)
+- Tauri discussion #10206 — updater and GitHub releases automation: [https://github.com/orgs/tauri-apps/discussions/10206](https://github.com/orgs/tauri-apps/discussions/10206)
+- CrabNebula auto-updates guide for Tauri v2: [https://docs.crabnebula.dev/cloud/guides/auto-updates-tauri/](https://docs.crabnebula.dev/cloud/guides/auto-updates-tauri/)
+- Auto-update and distribution guide (Oflight): [https://www.oflight.co.jp/en/columns/tauri-v2-auto-update-distribution](https://www.oflight.co.jp/en/columns/tauri-v2-auto-update-distribution)
+- Codebase: `src-tauri/tauri.conf.json` — `"dialog": true` and `"createUpdaterArtifacts": "v1Compatible"` confirmed at time of research
+- Codebase: `src-tauri/capabilities/default.json` — `"updater:default"`, `"updater:allow-check"`, `"process:allow-restart"` all present
 
 ---
-*Pitfalls research for: RecoDeck v1.5 Windows Platform Support*
+*Pitfalls research for: RecoDeck v1.6 Update Notifications*
 *Researched: 2026-03-14*

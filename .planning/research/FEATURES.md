@@ -1,8 +1,34 @@
 # Feature Research
 
-**Domain:** Windows platform support — Tauri 2 desktop music player
+**Domain:** In-app update notifications and "What's New" changelog — Tauri v2 desktop app (RecoDeck v1.6)
 **Researched:** 2026-03-14
-**Confidence:** HIGH (grounded in existing codebase analysis, official Tauri 2 docs, and direct code review)
+**Confidence:** HIGH (infrastructure partially in place; patterns well-established; macOS crash confirmed via upstream issues)
+
+---
+
+## Context: What Already Exists
+
+Before mapping features, it is critical to understand what the codebase has already shipped. This milestone is not "build from scratch" — it is narrowing known gaps.
+
+| Component | State | Notes |
+|-----------|-------|-------|
+| `tauri-plugin-updater = "2"` in Cargo.toml | Installed | Plugin available, no Cargo changes needed |
+| `plugins.updater` with endpoint + pubkey in tauri.conf.json | Configured | Points to GitHub Releases `latest.json`; signing key in place |
+| `createUpdaterArtifacts: "v1Compatible"` in tauri.conf.json | Configured | Signed updater artifacts generated on release |
+| `WhatsNewDialog.tsx` | Exists | Modal showing version + flat `changes: string[]`, plus inline update-and-restart flow |
+| `getChangesForVersion()` in `src/lib/changelog.ts` | Exists | Parses `CHANGELOG.md` (Keep a Changelog format) into flat bullet list; does NOT distinguish Added/Changed/Fixed |
+| `last_seen_version` setting check in `initializeApp()` | Exists | Compares stored version to `appPackage.version`; shows dialog if different; already saves the key after check |
+| `handleCheckForUpdates()` in `SettingsContext.tsx` | Exists | Manual check from About section; download progress bar; deferred restart dialog via `ask()` |
+| Startup auto-check | Disabled | Commented out in `App.tsx` (lines 251-269) with explicit note: "tauri-plugin-updater has known crash issues on macOS (cross-device link, restart failures). Re-enable when upstream is fixed." |
+| `CHANGELOG.md` | Exists | Keep a Changelog format with `### Added / Changed / Fixed` subsections per version |
+| `Notification.tsx` toast | Exists | Used for analysis complete, folder remove, etc. Supports info/success/warning/error types |
+| `HeaderNotification.tsx` | Exists | Typing-animation text inline with the logo; used for AI status messages |
+
+The milestone gaps are:
+1. Re-enabling startup auto-check safely — the crash is during `downloadAndInstall()`, not `check()`. Safe pattern: `check()` on launch, store result, show notification; do NOT auto-install.
+2. Replacing the flat changes list in `WhatsNewDialog` with categorized sections (New / Fixes / Changes).
+3. Updating `getChangesForVersion()` to return structured `{ added, changed, fixed }` instead of a merged `string[]`.
+4. Wiring a non-intrusive update-available toast or banner into the startup flow (separate from the "What's New" modal).
 
 ---
 
@@ -10,153 +36,110 @@
 
 ### Table Stakes (Users Expect These)
 
-Features Windows users assume exist. Missing these = product feels broken or unprofessional on the platform.
+Features users assume exist in any maintained desktop app. Missing these = product feels unpolished or unmaintained.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| NSIS installer (.exe) | Windows users expect a standard Setup.exe, not a raw binary | LOW | Tauri 2 bundles NSIS by default; `tauri.conf.json` already has `"targets": "all"` which includes NSIS. Just needs a Windows build job in CI. |
-| App compiles and runs on Windows | Foundational — nothing else matters if it doesn't build | HIGH | Primary blocker: `bliss-audio-aubio-rs` uses `bindgen` + C build toolchain. Windows CI runner needs `libclang`, `llvm`, MSVC C compiler. |
-| Audio playback works on Windows | Core feature must function on the new platform | MEDIUM | Custom `stream://` protocol is already Windows-aware in `lib.rs` (uses `http://stream.localhost/?p=` on Windows). Needs Windows E2E verification. |
-| Auto-updater delivers Windows builds | Users expect updates without reinstalling manually | MEDIUM | `tauri.conf.json` already has updater configured with `createUpdaterArtifacts: "v1Compatible"`. The `latest.json` manifest needs a `windows-x86_64` platform entry. |
-| App data stored in correct Windows location | Library DB and settings must persist across sessions in the OS-standard location | LOW | Tauri 2's path resolver maps `AppLocalData` to `%LOCALAPPDATA%\recodeck` on Windows automatically. `init_database` already uses Tauri path API — no change needed. |
-| No console window on startup | Desktop apps on Windows must not flash a black terminal window | LOW | `src-tauri/build.rs` or `Cargo.toml` must include `#![windows_subsystem = "windows"]` linker flag. Tauri CLI adds this automatically in release builds. Verify it's not bypassed in debug. |
-| App icon in taskbar and title bar | Windows users expect a proper application icon | LOW | `icon.ico` already exists in `icons/`. Tauri NSIS installer registers it automatically. Verify the `.ico` file has all required sizes (16, 24, 32, 48, 64, 128, 256px). |
-| Window controls match Windows conventions | Windows title bar has minimize/maximize/close on the right, in that order | LOW | RecoDeck appears to use standard Tauri window chrome. Custom `frameless` or `decorations: false` would require implementing Windows-style controls. Check `tauri.conf.json`. |
-| Windows CI build job in release workflow | Shipping requires reproducible Windows builds from CI | MEDIUM | Current `release.yml` has only `build-macos` job. Needs a parallel `build-windows` job using `windows-latest` runner. |
-| Folder picker works for library setup | Users must be able to select music folders on Windows paths (`C:\Users\...`) | LOW | `tauri-plugin-dialog` already used for folder picking. Windows paths are native-handled by the dialog plugin. Verify the returned path is correctly passed through the stream protocol. |
+| Auto-check for updates on launch | Every maintained desktop app does this (VS Code, Slack, Spotify) | LOW | Already structured; only blocked by the macOS crash. Safe fix: call `check()` only, store the result, never auto-install in the check path. |
+| Non-blocking update check (no UI freeze) | Users tolerate background checks; foreground hangs feel broken | LOW | Existing pattern uses `setTimeout` delay + async `check()`. The delay must stay (3-5s after launch) so it does not compete with `initializeApp()`. |
+| "Update available" notification that does not interrupt work | Users should be informed but not forced to stop | LOW | `Notification.tsx` toast is the right vehicle. Message: "RecoDeck v1.x is available. Install in Settings." |
+| Install + restart flow with deferred option | Standard pattern — forcing immediate restart is hostile to DJ session flow | LOW | Already implemented in `handleCheckForUpdates()` via `ask()` dialog with "Restart Now" / "Later". |
+| "What's New" modal on first launch after update | Sets expectation that the app improved; prevents "what changed?" confusion | LOW | Already exists via `last_seen_version` tracking. Gap is flat list vs categorized sections. |
+| Version number visible in settings | Users need to know what they have to report bugs | LOW | Already in `AboutSection.tsx`. No changes needed. |
+| Manual "Check for Updates" button | Power users want on-demand check | LOW | Already in `AboutSection.tsx`. No changes needed. |
+| Silent skip when no changelog entries for a version | Avoids empty modal on patch releases | LOW | Already guarded: `if (changes.length > 0)` in `initializeApp()`. Keep this guard when changing the type. |
 
-### Differentiators (What Would Make It Notable on Windows)
+### Differentiators (Competitive Advantage)
 
-Features Windows desktop users appreciate but don't strictly require for Day 1 usability.
+Features that go beyond the minimum and reinforce RecoDeck's craft quality for the DJ audience.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Unsigned installer with SmartScreen guidance | Small-team reality — OV cert is expensive; providing clear "Run Anyway" instructions reduces friction for trusted distribution | LOW | Document in README/release notes. SmartScreen shows "Windows protected your PC" prompt for unsigned apps. Users can click "More info" → "Run anyway". Consider submitting binary to Microsoft's file submission portal to build reputation over time. |
-| Windows-style keyboard shortcuts | Windows users expect Ctrl+Z, Ctrl+C, Ctrl+V for editing; media keys for play/pause | LOW | WebView2 (Chromium) handles standard Ctrl+* shortcuts natively. Media keys (F7/F8/F9 legacy keys) are a v2+ SMTC integration story. |
-| Correct Windows path display | Windows paths show as `C:\Music\Artist - Track.mp3` not `/C:/Music/...` | LOW | Track paths stored in SQLite will reflect whatever was scanned. The stream protocol `lib.rs` already handles Windows path normalization. UI display should respect OS-native path format. |
-| Mobile companion works on Windows | PWA companion server should function on Windows local network | MEDIUM | The Axum server binds to `0.0.0.0`. The `local-ip-address` crate resolves the machine's LAN IP. On Windows, firewall may block the port — need to document that Windows Firewall will prompt users to allow the app through. |
-| Proper high-DPI scaling | Windows 4K/HiDPI displays are common; UI must not appear blurry or tiny | LOW | WebView2 handles DPI scaling automatically. Tauri sets `highDpiAware` in the Windows manifest by default. Verify no pixel-snapped CSS values break on fractional DPI (125%, 150%). |
+| Categorized changelog in "What's New" modal (New / Fixes / Changes) | Clearer at a glance than a flat bullet dump; DJ users scan fast | LOW | Update `getChangesForVersion()` return type to `{ added: string[], changed: string[], fixed: string[] }`; update `WhatsNewDialog.tsx` to render three sections. |
+| Section headers with icons in "What's New" | Adds visual scanning landmarks matching RecoDeck's existing aesthetic | LOW | Use existing `Icon` component (sparkle or `Plus` for New, `Wrench` for Fixes, `ArrowLeftRight` for Changes). Pure UI addition. |
+| Typing-animation header notification for update available | Matches existing `HeaderNotification` pattern; feels native to RecoDeck | LOW | Use `HeaderNotification.tsx` as an optional update-available signal. Set after `check()` resolves with an available update. Clears after a few seconds; toast persists separately. |
+| Download progress bar during install | Users know something is happening; avoids "is it frozen?" anxiety | LOW | Already implemented in both `WhatsNewDialog.tsx` and `SettingsContext.tsx`. Keep as-is. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Windows code signing (OV/EV certificate) | Prevents SmartScreen warnings entirely | OV certificates now require HSM hardware (post-June 2023); EV certificates cost $300-600/year; HSM setup adds CI complexity with Azure Key Vault or similar. For a small personal-use app distributed to friends, cost/complexity is disproportionate to benefit. | Ship unsigned with clear install instructions. Build SmartScreen reputation over time via Microsoft's file submission portal. Revisit when user base grows. |
-| System tray integration | Windows apps sometimes live in the system tray | Adds surface area: tray icon, context menu, click-to-restore, minimize-to-tray behavior. RecoDeck is a DJ library manager — you want it visible while working, not hidden. | Keep standard taskbar behavior. Tray is a v2+ consideration if users request background operation. |
-| SMTC (System Media Transport Controls) integration | Windows 11 shows media controls in taskbar flyout; media keys would control RecoDeck | Requires WinRT API bindings from Rust via `windows-rs` crate. Adds ~2MB to binary and significant Windows-only Rust code. Not a blocker for v1.5. | Defer to v2+. WebView2 already handles focus-based media key events (Space bar play/pause). SMTC is an enhancement, not table stakes. |
-| Windows Store (MSIX) distribution | Store provides auto-update and discovery | MSIX packaging changes app data paths to virtualized locations, breaking the existing SQLite path resolution. Requires a separate packaging target and Microsoft developer account. Not worth the complexity for a small DJ tool. | NSIS installer + GitHub Releases is the right approach for this audience. |
-| File association for audio files (MP3/FLAC opens RecoDeck) | Users might want to double-click a track to open it | RecoDeck is a library manager, not a default audio player. Registering as the default handler for MP3 would override users' existing players (Winamp, foobar2000, VLC). | Register an optional `.rdeck` project file association in v2+ if playlist files become a feature. Do not register generic audio MIME types. |
-| 32-bit (x86) build | Maximum compatibility | Virtually zero 32-bit Windows machines in 2026. `ort` (ONNX Runtime) and Aubio both have limited 32-bit support. Extra CI job for minimal gain. | x86_64 only. ARM64 Windows is a v2+ consideration. |
-
----
-
-## Technical Context: Windows-Specific Code Paths Already in Codebase
-
-### What Is Already Implemented
-
-RecoDeck already has Windows-aware code in key areas. This significantly reduces the scope of v1.5.
-
-**Stream protocol URL (`lib.rs` line 73-74):**
-```
-// macOS URL:  stream://localhost/<absolute_path>
-// Windows URL: http://stream.localhost/<absolute_path>
-```
-The `register_uri_scheme_protocol("stream", ...)` handler already has `#[cfg(target_os = "windows")]` branches for path normalization (backslash-to-forward-slash conversion, UNC path handling, forward-slash-with-backslash fallback).
-
-**Audio player URL construction (`audioPlayer.ts` lines 9-11):**
-```typescript
-// Windows:     http://stream.localhost/?p=<encoded_path>
-// macOS/Linux: stream://localhost/?p=<encoded_path>
-```
-The frontend already uses the correct platform URL format.
-
-**Cargo.toml lib name workaround (`Cargo.toml` line 13-14):**
-```
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows
-```
-This is already handled.
-
-### What Is Not Yet Implemented
-
-| Gap | Location | Action Required |
-|-----|----------|-----------------|
-| Aubio C toolchain on Windows CI | `.github/workflows/release.yml` | Windows runner needs `libclang`, `llvm`, Visual Studio C++ build tools. `bliss-audio-aubio-rs` with `builtin` + `bindgen` features requires this. |
-| Windows CI build job | `.github/workflows/release.yml` | No `windows-latest` job exists; only `build-macos`. |
-| `latest.json` Windows platform entry | `scripts/generate-update-manifest.js` | Manifest generator currently only outputs `darwin-aarch64`. Need `windows-x86_64` entry. |
-| Windows build script | `package.json` | `build:mac` script exists; `build:win` does not. |
-| `release:sign` for Windows | `package.json` | Current `release:sign` is macOS-only. Windows NSIS artifacts are auto-signed by the updater plugin (using the existing Tauri signing key), so this may be a no-op. |
-| Mobile companion Windows Firewall | `src-tauri/src/server/` | Windows Firewall will prompt users when the Axum server tries to bind. The prompt is automatic (Windows dialog), but users must click Allow. No code change required — but needs documentation. |
-| Mobile companion path resolution on Windows | `src-tauri/src/server/routes.rs` | Mobile PWA served from `mobile-dist/`. Tauri `resources` copies it to the bundle. On Windows, the path to the bundled resource may differ. Needs verification. |
+| Auto-download and auto-install without user consent | "Seamless" feel | Unexpected app restart mid-session destroys DJ flow; users lose unsaved queue, analysis in progress. macOS crash (`cross-device link` OS error 18) also occurs during `downloadAndInstall()`. | Notify with toast; let user initiate install from Settings > About or inline CTA. |
+| Modal dialog blocking app launch until update decision | Ensures visibility | DJ apps are opened quickly before a set; blocking on update is hostile. | Toast/banner notification; user acts when ready. |
+| Full release notes fetched from remote URL at runtime | Always fresh | Requires network; fails offline; adds latency to "What's New" display at startup. | Bundle `CHANGELOG.md` at build time (already done via `?raw` import in `changelog.ts`). This is the correct approach — keep it. |
+| OS-level notification (system tray popup) for updates | Visible even when app is backgrounded | Requires `tauri-plugin-notification` (additional permission), platform-specific behavior, overkill for a small-audience app. | In-app toast is sufficient. |
+| Silent background install (no user feedback) | "Just works" feeling | Users do not know why the app restarted; can feel like a crash. | Always show progress and explicit restart prompt. |
+| Forced update (block app if not on latest) | Security or compatibility enforcement | Not relevant for a personal DJ tool; creates friction before a set. | Soft notification only. Never block. |
+| Separate "Update History" view listing all past versions | Power user request | High maintenance; CHANGELOG.md already serves this role. | Surface a "View full changelog" link or show last 2 versions in the About section. Future consideration. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Windows CI build job
-    └──requires──> Aubio C toolchain setup on windows-latest runner
-                       └──requires──> libclang/LLVM available in CI environment
-                                          └──uses──> bliss-audio-aubio-rs (bindgen feature)
+[Safe startup auto-check]
+    └──requires──> [call check() only — NOT downloadAndInstall() in check path]
+                       (avoids macOS cross-device link crash in plugin-updater)
+    └──produces──> [Update object stored in React state or ref]
 
-Windows auto-updater
-    └──requires──> Windows CI build job (to produce artifacts)
-    └──requires──> latest.json manifest with windows-x86_64 entry
-    └──uses──> tauri-plugin-updater (already in Cargo.toml)
-    └──uses──> TAURI_SIGNING_PRIVATE_KEY secret (already in CI)
+[Update-available toast]
+    └──requires──> [Safe startup auto-check result]
+    └──reuses──> [Notification.tsx] (already in App.tsx state)
+    └──optionally triggers──> [HeaderNotification.tsx typing animation]
 
-Audio playback on Windows
-    └──requires──> stream:// protocol Windows path resolution (already implemented)
-    └──requires──> http://stream.localhost URL construction (already implemented in audioPlayer.ts)
-    └──needs verification──> Range request support in WebView2 (implemented in lib.rs, needs E2E test)
+[Categorized "What's New" modal]
+    └──requires──> [Updated getChangesForVersion() returning { added, changed, fixed }]
+                       └──parses──> [CHANGELOG.md ### Added / Changed / Fixed subsections]
+    └──requires──> [Updated WhatsNewDialog.tsx accepting categorized props]
+    └──reuses──> [last_seen_version tracking in initializeApp()] (already works)
 
-Mobile companion on Windows
-    └──requires──> Windows Firewall rule (automatic prompt, user action)
-    └──requires──> mobile-dist resource path resolution on Windows (needs verification)
-    └──uses──> Axum server (already implemented, platform-agnostic)
+[Install + deferred restart]
+    └──requires──> [User action from toast CTA or Settings > About]
+    └──reuses──> [handleCheckForUpdates() in SettingsContext.tsx] (already implemented)
+    └──uses──> [update.downloadAndInstall() from plugin-updater]
+    └──uses──> [relaunch() from plugin-process]
 
-Auto-updater manifest
-    └──requires──> Windows NSIS artifact (.exe + .sig) from CI
-    └──requires──> generate-update-manifest.js updated for windows-x86_64
+[What's New modal — ordering]
+    └──should show before──> [Update-available toast]
+    (first show what changed in the version just installed, then notify about the next one)
 ```
 
 ### Dependency Notes
 
-- **Aubio is the critical path**: If `bliss-audio-aubio-rs` with `builtin` + `bindgen` features cannot be compiled on `windows-latest`, nothing else can ship. This must be validated first before investing in CI workflow, installer config, or updater manifest work.
-- **Stream protocol is already Windows-ready**: The `lib.rs` protocol handler and `audioPlayer.ts` URL construction both have Windows branches. The primary remaining risk is E2E audio playback testing on an actual Windows machine with real paths containing spaces and Unicode characters.
-- **Updater requires Windows artifacts first**: The `latest.json` manifest can only be generated after the Windows CI build produces `recodeck_*_x64-setup.exe` and its `.sig` file.
-- **Mobile companion is lowest priority**: It adds Windows Firewall complexity and resource path uncertainty. If it works without changes, great. If not, defer to v1.5.x.
+- **Safe check vs install split is the core architectural decision:** The macOS crash (`cross-device link`, OS error 18) is triggered during `downloadAndInstall()`, not during `check()`. The safe pattern is: call `check()` on launch → store the `Update` object in a ref → show a toast → user navigates to Settings > About and clicks "Check for Updates" (which already handles download + install safely). Alternatively, the toast can have an "Install" CTA that directly calls `update.downloadAndInstall()` — but this path must be user-initiated, not auto-triggered.
+
+- **Categorized parser is a breaking type change:** `getChangesForVersion()` currently returns `string[]`. Changing the return type to `{ added: string[], changed: string[], fixed: string[] }` requires updating every caller: `WhatsNewDialog.tsx` (props change from `changes: string[]` to structured type), and the `setWhatsNew()` call in `initializeApp()`. Both callers are in the same two files, so the blast radius is small.
+
+- **"What's New" modal and update-available toast can coexist on the same launch:** They are triggered by different conditions. The modal fires if `last_seen_version !== currentVersion` (user just ran the updated version for the first time). The toast fires if `check()` finds a newer version available (next update is ready). Order matters: show the modal first (it is about what was just installed), then show the toast after the modal is dismissed or after a delay.
+
+- **`last_seen_version` tracking is already correct:** The setting is saved unconditionally after the check, even if no changelog entries are found. The guard `if (changes.length > 0)` only controls whether the modal is shown. This is the right behavior — keep it.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.5)
+### Launch With (v1.6)
 
-The minimum that makes RecoDeck usable on Windows for the existing DJ friend group.
+The minimum set of changes to make the milestone complete and reliable.
 
-- [ ] Windows compilation passes with Aubio C toolchain — without this nothing ships
-- [ ] GitHub Actions `build-windows` job produces `recodeck_*_x64-setup.exe` artifact
-- [ ] NSIS installer installs and uninstalls cleanly on Windows 10/11
-- [ ] Audio playback works end-to-end on Windows (stream protocol, range requests, real music files)
-- [ ] Library scanning works with Windows paths (`C:\Users\...`)
-- [ ] `latest.json` updated to include `windows-x86_64` platform entry so auto-updater functions
-- [ ] `package.json` gets a `build:win` script
-- [ ] Release workflow updated to upload Windows artifacts alongside macOS `.dmg`
+- [ ] **Safe startup update check** — uncomment the `check()` call in `App.tsx`; remove `downloadAndInstall()` from the auto-check path; store the result; show a toast notification if an update is found. Skip auto-install in this path entirely.
+- [ ] **Update-available toast** — reuse `Notification.tsx` with type `info` and message like "RecoDeck v1.x available. Install in Settings > About." Duration should be longer than the default (e.g., 8-10s) since it requires user action.
+- [ ] **Categorized "What's New" modal** — update `getChangesForVersion()` to return `{ added, changed, fixed }`; update `WhatsNewDialog.tsx` to render three labeled sections. Empty sections are not rendered.
+- [ ] **version tracking unchanged** — `last_seen_version` logic in `initializeApp()` already works. Update only the call site to pass the new structured type to `setWhatsNew()`.
+- [ ] **Existing manual check/install in Settings > About unchanged** — it already handles `downloadAndInstall()` safely with progress bar and deferred restart. No regression here.
 
-### Add After Validation (v1.5.x)
+### Add After Validation (v1.6.x)
 
-- [ ] Mobile companion on Windows verified/fixed — trigger: first Windows user tries to use PWA feature
-- [ ] High-DPI display verification — trigger: user reports UI scaling issues
-- [ ] Windows Firewall documentation added to README — trigger: user can't connect mobile companion
+Features to add once the core is working without regressions.
+
+- [ ] **Section icons in "What's New"** — add `Icon` component glyphs next to each section header (`Plus`/sparkle for Added, `Wrench` for Fixed, `ArrowLeftRight` for Changed). Purely visual; no behavior change.
+- [ ] **Inline "Install Update" CTA in toast** — a secondary action button in the update-available toast that navigates to Settings > About. Reduces the "go find the button" friction. Requires a slightly wider toast or a separate action row.
 
 ### Future Consideration (v2+)
 
-- [ ] SMTC media transport controls — when user base is large enough to justify WinRT bindings
-- [ ] Windows code signing (OV/EV certificate) — when distributing publicly beyond friend group
-- [ ] ARM64 Windows build — when ARM Windows hardware becomes common in target audience
-- [ ] System tray integration — if background operation becomes a requested use pattern
+- [ ] **Background silent download then prompt** — download the update in the background without showing the progress bar, then prompt "Update ready — restart when convenient?". Reduces perceived install time. Blocked until the macOS `cross-device link` bug is fixed upstream in `tauri-plugin-updater`.
+- [ ] **Per-version changelog archive in About section** — show the last 3 versions of changes inline. Deferred until changelog accumulates enough history to be worth the UI real estate.
+- [ ] **"What's New" re-openable from Help or About** — let users re-read the changelog for the current version. Low priority; CHANGELOG.md on GitHub serves this role.
 
 ---
 
@@ -164,76 +147,52 @@ The minimum that makes RecoDeck usable on Windows for the existing DJ friend gro
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Aubio Windows compilation | HIGH — blocks everything | HIGH (unknown until attempted) | P1 — must validate first |
-| Windows CI build job | HIGH — needed for distribution | MEDIUM | P1 |
-| NSIS installer | HIGH — table stakes for Windows | LOW (Tauri handles it) | P1 |
-| Audio playback E2E on Windows | HIGH — core function | LOW (code exists, needs test) | P1 |
-| Library scanning on Windows paths | HIGH — core function | LOW (code exists, needs test) | P1 |
-| latest.json Windows entry | HIGH — auto-updater | LOW | P1 |
-| build:win package.json script | MEDIUM — developer convenience | LOW | P1 |
-| Mobile companion on Windows | MEDIUM — existing feature | MEDIUM (firewall + path uncertainty) | P2 |
-| High-DPI verification | MEDIUM — usability | LOW | P2 |
-| Windows code signing | LOW for friend-group distribution | HIGH (cost + CI setup) | P3 |
-| SMTC integration | LOW for v1.5 | HIGH | P3 |
+| Safe startup update check (notify only, no auto-install) | HIGH | LOW | P1 |
+| Update-available toast notification | HIGH | LOW | P1 |
+| Categorized "What's New" modal (New / Fixes / Changes) | MEDIUM | LOW | P1 |
+| Version tracking (already works) | HIGH | LOW — zero, exists | P1 |
+| Manual install + deferred restart from About (already works) | HIGH | LOW — zero, exists | P1 |
+| Section icons in "What's New" | LOW | LOW | P2 |
+| Inline "Install" CTA in update toast | MEDIUM | LOW | P2 |
+| Background download before prompt | MEDIUM | HIGH (macOS bug blocks) | P3 |
+| OS-level tray notification | LOW | MEDIUM | P3 |
 
 **Priority key:**
-- P1: Must have for v1.5 launch
+- P1: Must have for v1.6 launch
 - P2: Should have; add after P1 items verified
-- P3: Defer to v2+
-
----
-
-## Platform Differences: Windows vs macOS Behavior Notes
-
-These are differences that affect user experience or developer workflow, even if no code changes are required.
-
-| Aspect | macOS (current) | Windows (target) | Action |
-|--------|----------------|------------------|--------|
-| Custom protocol URL | `stream://localhost/?p=...` | `http://stream.localhost/?p=...` | Already handled in both `lib.rs` and `audioPlayer.ts` |
-| Path separators | `/Users/name/Music/...` | `C:\Users\name\Music\...` | `lib.rs` normalizes backslashes; scanner uses Rust `Path` (cross-platform) |
-| App data directory | `~/Library/Application Support/recodeck/` | `%LOCALAPPDATA%\recodeck\` | Tauri path resolver abstracts this automatically |
-| WebView engine | WKWebView (WebKit/Safari) | WebView2 (Chromium/Edge) | CSS and JS behavior is more consistent with standard Chrome; some macOS-specific WebKit quirks disappear |
-| Font rendering | Subpixel antialiasing (Retina) | ClearType (CRT-legacy) | Minor visual difference; no CSS changes required |
-| Audio autoplay | Works without interaction | Fixed in wry#1287 — should work in current Tauri 2 | Verify on Windows; the bug was a typo in the autoplay browser arg, now resolved |
-| Installer format | `.dmg` (drag to Applications) | `.exe` NSIS setup wizard | Different artifact type; release workflow uploads both |
-| Updater behavior | Replaces `.app` bundle in-place | Automatically exits app, runs installer, restarts | Windows-specific: the app closes itself during update. Tauri handles this automatically with `tauri-plugin-updater`. |
-| Firewall | macOS firewall prompts are rare | Windows Defender Firewall prompts when Axum server tries to bind port | Mobile companion users will see a firewall dialog; they must click Allow. Document this. |
-| Code signing status | Unsigned (no Apple Developer Program) | Unsigned (no Windows certificate) | Both platforms will warn users. macOS Gatekeeper is stricter than Windows SmartScreen for unsigned apps. |
-| Window decorations | macOS-style traffic lights | Windows-style min/max/close on right | Tauri uses OS-native window chrome by default — nothing to do |
+- P3: Nice to have; defer to v2+
 
 ---
 
 ## Competitor Feature Analysis
 
-For context: how other DJ/music tools handle Windows distribution.
+Reference apps for UX patterns (not direct competitors — RecoDeck is a niche DJ tool):
 
-| Feature | Rekordbox (DJ software) | foobar2000 (music player) | RecoDeck v1.5 Approach |
-|---------|------------------------|--------------------------|----------------------|
-| Windows installer | NSIS setup wizard | NSIS setup wizard | NSIS (Tauri default) |
-| Code signing | EV signed (Pioneer) | Unsigned → SmartScreen warning common | Unsigned; document workaround |
-| Auto-updater | Built-in launcher checks | Manual download | Tauri updater plugin |
-| Windows Firewall | Not applicable (no server) | Not applicable | Axum server triggers firewall prompt; document it |
-| System tray | Not used | Not used | Not used |
-| SMTC integration | Not integrated | Optional plugin | Deferred to v2+ |
+| Pattern | VS Code | Slack | RecoDeck v1.6 Approach |
+|---------|---------|-------|------------------------|
+| Update check timing | Background on launch; subtle status bar indicator | Background on launch; banner when ready | Background `check()` on launch (3-5s delay after `initializeApp()`); toast notification |
+| Install timing | User clicks "Restart to Update" in status bar | User-initiated restart from banner | User-initiated from toast CTA or Settings > About |
+| "What's New" trigger | Opens automatically on first launch after update | Shows "What's New" on first launch after update | `last_seen_version` comparison in `initializeApp()` — already this exact pattern |
+| Changelog format | Categorized (New, Improvements, Bug Fixes) | Categorized with section icons | `### Added / Changed / Fixed` from CHANGELOG.md rendered with section headers and icons |
+| Forcing updates | Never | Never | Never — deferred restart only, no blocking |
+| Changelog source | Bundled in app | Fetched remotely | Bundled via `?raw` import — correct, works offline |
 
 ---
 
 ## Sources
 
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/lib.rs` — existing Windows `#[cfg(target_os = "windows")]` branches in stream protocol handler; HIGH confidence
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/audioPlayer.ts` — existing platform-conditional URL construction for stream protocol; HIGH confidence
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/Cargo.toml` — `bliss-audio-aubio-rs` dependency with `builtin` + `bindgen` features (C toolchain required); HIGH confidence
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/.github/workflows/release.yml` — macOS-only CI job; Windows job does not exist; HIGH confidence
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/tauri.conf.json` — `createUpdaterArtifacts: "v1Compatible"`, updater endpoints, `targets: "all"`; HIGH confidence
-- [Tauri 2 Windows Installer](https://v2.tauri.app/distribute/windows-installer/) — NSIS options, MSI options, WebView2 install modes; HIGH confidence
-- [Tauri 2 Updater Plugin](https://v2.tauri.app/plugin/updater/) — Windows install modes (`passive`, `basicUi`, `quiet`), manifest format, automatic app exit on Windows update; HIGH confidence
-- [Tauri 2 GitHub Actions](https://v2.tauri.app/distribute/pipelines/github/) — official multi-platform workflow structure; HIGH confidence
-- [Tauri Issue #9968](https://github.com/tauri-apps/tauri/issues/9968) — audio autoplay on Windows fixed via wry#1287 (typo in autoplay browser arg); HIGH confidence (issue closed)
-- [Tauri 2 Windows Code Signing](https://v2.tauri.app/distribute/sign/windows/) — OV/EV certificate options, SmartScreen behavior; HIGH confidence
-- [Microsoft SMTC docs](https://learn.microsoft.com/en-us/uwp/api/windows.media.systemmediatransportcontrols) — SMTC integration for Windows media apps; HIGH confidence (deferred to v2+)
-- [WebView2 autoplay issue](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2159) — WebView2 autoplay policy details; MEDIUM confidence
+- Tauri v2 updater plugin official docs: [https://v2.tauri.app/plugin/updater/](https://v2.tauri.app/plugin/updater/) — HIGH confidence
+- macOS cross-device link crash (OS error 18) during update: [Issue #2458, tauri-apps/plugins-workspace](https://github.com/tauri-apps/plugins-workspace/issues/2458) — HIGH confidence (confirmed open issue, February 2025)
+- App::restart failure after update on macOS: [Issue #11392, tauri-apps/tauri](https://github.com/tauri-apps/tauri/issues/11392) — HIGH confidence
+- Toast notification UX best practices: [LogRocket UX Blog](https://blog.logrocket.com/ux-design/toast-notifications/), [Smashing Magazine design guidelines](https://www.smashingmagazine.com/2025/07/design-guidelines-better-notifications-ux/) — MEDIUM confidence
+- "What's New" modal and product update UX patterns: [Appcues — choosing the right UI pattern](https://www.appcues.com/blog/choosing-the-right-ui-pattern-for-your-product-update) — MEDIUM confidence
+- Codebase: `src/components/WhatsNewDialog.tsx` — existing modal with flat list and inline update flow; HIGH confidence
+- Codebase: `src/lib/changelog.ts` — existing parser returning `string[]`; HIGH confidence
+- Codebase: `src/App.tsx` lines 247-270 — commented-out startup check with explicit crash annotation; HIGH confidence
+- Codebase: `src/components/settings/SettingsContext.tsx` `handleCheckForUpdates()` — existing manual check with progress and deferred restart; HIGH confidence
+- Codebase: `src-tauri/tauri.conf.json` — updater plugin configuration already in place; HIGH confidence
 
 ---
 
-*Feature research for: RecoDeck v1.5 — Windows Platform Support*
+*Feature research for: RecoDeck v1.6 — in-app update notifications and "What's New" changelog*
 *Researched: 2026-03-14*

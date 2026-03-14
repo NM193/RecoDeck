@@ -1,504 +1,474 @@
 # Architecture Research
 
-**Domain:** Tauri v2 multi-platform desktop app — adding Windows support to existing macOS-only build
+**Domain:** In-app update notifications + "What's New" changelog for existing Tauri v2 desktop app
 **Researched:** 2026-03-14
-**Confidence:** HIGH (grounded in direct codebase inspection of all platform-branching points)
+**Confidence:** HIGH — based on direct codebase inspection of existing implementation
+
+---
+
+## Current State Assessment
+
+The update notification system is **substantially already implemented**. This is a completion
+and stabilization milestone, not a greenfield build. The gap is one critical piece (auto-check
+on launch was disabled due to a macOS crash bug) plus minor cleanup.
+
+**What exists today:**
+
+| Piece | File | Status |
+|-------|------|--------|
+| `tauri-plugin-updater` v2.10.0 | `Cargo.toml`, `package.json` | Installed |
+| `tauri-plugin-process` v2 | `Cargo.toml`, `package.json` | Installed |
+| Updater config (endpoint, pubkey, artifact format) | `tauri.conf.json` plugins.updater | Done |
+| IPC permissions | `capabilities/default.json` | Done |
+| `WhatsNewDialog` component | `src/components/WhatsNewDialog.tsx` | Done |
+| CHANGELOG.md parser | `src/lib/changelog.ts` | Done |
+| Version sentinel check (first launch after update) | `src/App.tsx` `initializeApp()` | Done |
+| Manual update check + progress bar | `src/components/settings/SettingsContext.tsx` | Done |
+| "Check for Updates" button + progress UI | `src/components/settings/AboutSection.tsx` | Done |
+| `latest.json` for GitHub Releases endpoint | `/latest.json` | Done |
+
+**What is incomplete or disabled:**
+
+1. **Auto-check on launch is commented out** in `App.tsx` lines 251–270 with the note:
+   "Disabled: update check was causing 'quit unexpectedly' crashes on macOS"
+2. **`WhatsNewDialog` has a duplicate "Update" button** that calls `check()` directly inside
+   the modal, separate from the `SettingsContext.handleCheckForUpdates()` path
+3. **Update toast/banner** (non-blocking notification offering Install / Later) is missing —
+   the disabled auto-check code was attempting silent download + forced relaunch instead
 
 ---
 
 ## Standard Architecture
 
-### System Overview — Current State (macOS only)
+### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     Frontend (React 19 / WebView)                 │
-│  ┌────────────┐  ┌─────────────┐  ┌──────────────────────────┐   │
-│  │ audioPlayer│  │  tauri-api  │  │  stream:// URL builder   │   │
-│  │    .ts     │  │     .ts     │  │  (macOS: stream://localhost│  │
-│  │            │  │ (IPC stubs) │  │   Win: http://stream.loc)│   │
-│  └─────┬──────┘  └──────┬──────┘  └──────────────────────────┘   │
-│        │                │                                          │
-├────────┼────────────────┼──────────────────────────────────────── ┤
-│        │       Tauri IPC│bridge                                    │
-├────────┼────────────────┼──────────────────────────────────────────┤
-│        │                │         Rust Backend                     │
-│  ┌─────▼──────┐  ┌──────▼──────────────────────────────────────┐  │
-│  │ stream://  │  │              commands/                       │  │
-│  │ protocol   │  │  library | playback | analysis | ai         │  │
-│  │ handler    │  │  playlists | genre | settings | server      │  │
-│  │ (lib.rs)   │  └──────────────────────┬──────────────────────┘  │
-│  └─────┬──────┘                         │                          │
-│        │                    ┌───────────▼────────────┐            │
-│        │                    │     db/mod.rs          │            │
-│        │                    │  (SQLite via rusqlite) │            │
-│        │                    └────────────────────────┘            │
-│        │                                                           │
-│  ┌─────▼──────────────────────────────────────────────────────┐   │
-│  │               Audio files on local filesystem               │   │
-│  │           (paths stored as strings in SQLite)               │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────┘
-
-Mobile companion (Axum HTTP server — runs on LAN, not platform-specific)
-┌────────────────────────────────────────────────────┐
-│  server/mod.rs  ->  routes.rs  ->  streaming.rs    │
-│  find_mobile_dist() resolves mobile PWA resources  │
-│  Fallback 3 in find_mobile_dist is macOS-specific  │
-└────────────────────────────────────────────────────┘
-
-CI/CD (GitHub Actions — macOS only today)
-┌────────────────────────────────────────────────────┐
-│  release.yml: single job, macos-latest runner      │
-│  Target: aarch64-apple-darwin only                 │
-│  Artifacts: .dmg + .app.tar.gz + .sig              │
-│  Updater: latest.json with darwin-aarch64 only     │
-└────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                      App.tsx (AppContent)                             │
+│                                                                       │
+│  ┌──────────────────┐   ┌─────────────────────┐   ┌───────────────┐  │
+│  │  initializeApp() │   │  update useEffect   │   │ whatsNew      │  │
+│  │  (on mount)      │   │  (launch auto-check)│   │ state         │  │
+│  │                  │   │  [DISABLED]         │   │               │  │
+│  └────────┬─────────┘   └──────────┬──────────┘   └───────┬───────┘  │
+│           │                        │                       │          │
+│    compare last_seen_         check()                WhatsNewDialog  │
+│    version (SQLite)           @tauri-apps/plugin-    (modal overlay) │
+│    to package.json            updater                                 │
+│           │                        │                                  │
+│    if different:              if update found:                        │
+│    getChangesForVersion()     [MISSING: toast                        │
+│    → setWhatsNew()            notification with                      │
+│                               Install / Later]                       │
+└──────────────────────────────────────────────────────────────────────┘
+                          │
+         ┌────────────────┼──────────────────────────┐
+         ▼                ▼                           ▼
+┌──────────────┐  ┌────────────────────┐  ┌──────────────────────────┐
+│Settings      │  │ GitHub Releases    │  │ CHANGELOG.md             │
+│Context       │  │ latest.json        │  │ (bundled at Vite build   │
+│(manual check │  │ endpoint           │  │  via ?raw import)        │
+│+ progress)   │  │                    │  │ → changelog.ts parser    │
+│→ AboutSection│  │                    │  │                          │
+└──────────────┘  └────────────────────┘  └──────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | Windows Impact |
-|-----------|----------------|----------------|
-| `lib.rs` — stream:// handler | Serve audio bytes over custom protocol to the WebView | Already has `#[cfg(target_os = "windows")]` branches for UNC paths and backslash normalization. Needs validation testing on real Windows. |
-| `audioPlayer.ts` — URL builder | Converts file paths to stream:// or http://stream.localhost/ URLs | Already detects Windows via `navigator.userAgent.includes('Windows')`. Maps to `http://stream.localhost/?p=`. No changes needed. |
-| `commands/server.rs` — `find_mobile_dist()` | Locates the bundled mobile PWA at runtime | Fallback 3 (exe-relative) uses macOS `.app/Contents/MacOS/` layout. Must add Windows `.exe` sibling path logic. |
-| `db/mod.rs` — path storage | Stores and queries `file_path` as raw strings in SQLite | Paths stored as-scanned by the OS. On Windows these are `C:\Users\...` paths. Folder queries using `LIKE 'prefix/%'` must be tested — Windows paths use backslash. |
-| `scanner.rs` | Recursively finds audio files using `walkdir` | `walkdir` is cross-platform. File paths returned are OS-native. Path storage as strings will produce `C:\...` on Windows. |
-| `src-tauri/Cargo.toml` | Dependency configuration | `bliss-audio-aubio-rs` with `features = ["builtin","bindgen"]` requires C compiler + libclang on Windows. Highest-risk build dependency. |
-| `build.rs` | Tauri build integration | Currently trivial. No changes needed. |
-| `.github/workflows/release.yml` | CI/CD pipeline | macOS-only. Must be split into parallel jobs with a merge step. |
-| `scripts/generate-update-manifest.js` | Writes `latest.json` | macOS-only paths and single-platform block. Must be rewritten to merge platforms when called from each build job. |
-| `tauri.conf.json` | Bundle configuration | `targets: "all"` already includes NSIS for Windows. `icon.ico` already exists. Updater endpoint is shared. |
+| Component | Responsibility | Status |
+|-----------|---------------|--------|
+| `App.tsx` `initializeApp()` | Version sentinel check on launch; show WhatsNewDialog if new version | Done |
+| `App.tsx` update `useEffect` | Auto-check GitHub Releases on launch (after delay, prod only) | Disabled — needs fix |
+| `WhatsNewDialog.tsx` | Display changelog entries for current version; optional update trigger | Done — needs cleanup |
+| `src/lib/changelog.ts` | Parse CHANGELOG.md to extract bullet points for a given version | Done |
+| `SettingsContext.tsx` `handleCheckForUpdates()` | Full manual update flow: check → download → progress → restart dialog | Done |
+| `AboutSection.tsx` | "Check for Updates" button + inline progress bar UI | Done |
+| `tauri.conf.json` plugins.updater | Endpoint, public key, createUpdaterArtifacts config | Done |
+| `capabilities/default.json` | `updater:allow-check`, `process:allow-restart` IPC permissions | Done |
+| `latest.json` | Published to GitHub Releases; queried by updater plugin at runtime | Done |
+| **UpdateBanner / toast** | Non-blocking "v1.x available — Install / Later" notification | MISSING |
 
 ---
 
 ## Recommended Project Structure
 
-No new source directories are needed. All Windows support is achieved by modifying existing files plus adding CI configuration:
+No new directories are needed. All pieces already exist in the correct locations.
 
 ```
-RecoDeck/
-├── src-tauri/
-│   └── src/
-│       └── commands/
-│           └── server.rs          # find_mobile_dist(): add Windows exe-relative path
-├── .github/
-│   └── workflows/
-│       └── release.yml            # Add build-windows job + create-release merge job
-├── scripts/
-│   └── generate-update-manifest.js  # Rewrite for multi-platform fragment + merge
-└── package.json                   # Add build:win, release:sign:win scripts
+src/
+├── App.tsx                          # initializeApp(): version sentinel + auto-check effect
+├── components/
+│   ├── WhatsNewDialog.tsx           # Changelog modal (needs Update button removed or delegated)
+│   ├── Notification.tsx             # Existing toast — reuse for update-available banner
+│   └── settings/
+│       ├── AboutSection.tsx         # "Check for Updates" button + progress bar
+│       └── SettingsContext.tsx      # handleCheckForUpdates() + UpdateProgress state
+└── lib/
+    └── changelog.ts                 # Parse CHANGELOG.md for version bullet points
+
+CHANGELOG.md                         # Keep a Changelog format — source of truth for What's New
+latest.json                          # Published per release to GitHub Releases endpoint
+
+src-tauri/
+├── Cargo.toml                       # tauri-plugin-updater, tauri-plugin-process
+├── tauri.conf.json                  # plugins.updater endpoint + pubkey + artifact format
+└── capabilities/
+    └── default.json                 # updater:allow-check, process:allow-restart
 ```
 
 ### Structure Rationale
 
-- **No new Rust modules:** Platform differences are handled via `#[cfg]` inside existing modules.
-- **No new npm packages:** CI changes and script rewrites use Node.js stdlib.
-- **Cargo.toml unchanged for dependencies:** aubio and bindgen are already declared; the issue is the Windows build environment, not the Cargo config.
+- **No new Rust commands needed:** The entire update flow runs through `@tauri-apps/plugin-updater`'s JS API (`check()`, `downloadAndInstall()`) and `@tauri-apps/plugin-process` (`relaunch()`). No custom Rust wrapper is required.
+- **No new stores:** Update state is ephemeral (checking in progress, available, none). App-level `useState` in `AppContent` (for the toast) and `SettingsContext` state (for the progress bar) are sufficient.
+- **`Notification.tsx` is reusable:** The existing `Notification` component accepts `type` and `message`. An "update available" toast fits naturally as `type: 'info'` with a custom action button.
 
 ---
 
 ## Architectural Patterns
 
-### Pattern 1: Compile-Time Platform Branching via `#[cfg(target_os = "windows")]`
+### Pattern 1: Version Sentinel in SQLite Settings
 
-**What:** Rust attributes that include code only when compiling for a specific OS. Already used in `lib.rs` for UNC path handling, backslash normalization, and `try_read()` fallback.
+**What:** On every app launch, compare `getSetting('last_seen_version')` (from the SQLite settings table) to `package.json` version (the new binary's version). If they differ, the app was just updated.
 
-**When to use:** Any code path where behavior must differ by OS at a compiled-binary level — path separators, directory layout, OS APIs.
+**When to use:** Detecting "first launch after update" without polling or server state. Works because the SQLite DB persists across restarts but `package.json` is baked into each build.
 
-**Trade-offs:** Pro: zero runtime overhead, correct by construction. Con: must compile on all platforms to catch errors; CI must test both platforms.
+**Trade-offs:** Simple; no external state. Works offline. The sentinel is updated immediately after the check (even if the dialog is dismissed without reading), which prevents the dialog from re-showing on next launch.
 
-**Example (already in lib.rs):**
-```rust
-#[cfg(target_os = "windows")]
-{
-    s = s.replace('\\', "/");
-}
-#[cfg(not(target_os = "windows"))]
-{
-    // preserve backslashes on non-Windows (valid in filenames)
-}
-```
-
-### Pattern 2: Runtime Platform Detection in TypeScript via User Agent
-
-**What:** `navigator.userAgent.includes('Windows')` to switch the custom protocol URL scheme at runtime.
-
-**When to use:** Frontend code that must generate different URLs per platform. Already used in `audioPlayer.ts`.
-
-**Trade-offs:** Pro: single JS/TS build artifact. Con: string match is fragile in theory, but `'Windows'` in the Tauri WebView UA string is reliable in practice.
-
-**Example (already in audioPlayer.ts):**
+**Example (from `App.tsx` `initializeApp()`):**
 ```typescript
-const isWindows = navigator.userAgent.includes('Windows')
-return isWindows
-  ? `http://stream.localhost/?p=${encoded}`
-  : `stream://localhost/?p=${encoded}`
-```
-
-### Pattern 3: Parallel CI Jobs with Artifact Merge
-
-**What:** GitHub Actions matrix — `build-macos` and `build-windows` run in parallel on their respective runners, each producing platform-specific artifacts. A final `create-release` job depends on both and merges the updater manifest.
-
-**When to use:** Multi-platform builds where each platform must run on its native runner. Tauri v2 with C FFI (aubio + bindgen) does not cross-compile reliably.
-
-**Trade-offs:** Pro: fastest total CI time; each platform build is isolated. Con: the latest.json merge step requires artifact passing between jobs.
-
-**Target state:**
-```yaml
-jobs:
-  build-macos:
-    runs-on: macos-latest
-    # outputs: darwin artifact + fragment JSON
-
-  build-windows:
-    runs-on: windows-latest
-    # outputs: Windows artifact + fragment JSON
-
-  create-release:
-    needs: [build-macos, build-windows]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-      - name: Merge latest.json
-        run: node scripts/generate-update-manifest.js --merge
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            artifacts/mac/*.dmg
-            artifacts/mac/*.app.tar.gz
-            artifacts/mac/*.app.tar.gz.sig
-            artifacts/win/*.exe
-            artifacts/win/*.nsis.zip
-            artifacts/win/*.nsis.zip.sig
-            latest.json
-```
-
-### Pattern 4: find_mobile_dist() Cross-Platform Exe-Relative Resolution
-
-**What:** The Tauri Resource resolver (`BaseDirectory::Resource`) is the correct production path on all platforms and should handle both. The manual exe-relative fallback (Fallback 3) currently hard-codes macOS `.app` bundle layout. Must add the Windows sibling pattern.
-
-**Windows vs macOS install layouts:**
-```
-macOS (.app bundle):
-  recodeck.app/Contents/MacOS/recodeck     <- exe
-  recodeck.app/Contents/Resources/mobile-dist/  <- resources
-
-Windows (NSIS installer):
-  C:\Program Files\recodeck\recodeck.exe   <- exe
-  C:\Program Files\recodeck\mobile-dist\   <- sibling to exe
-```
-
-**Fix:**
-```rust
-// Fallback 3: exe-relative, cross-platform
-if let Ok(exe) = std::env::current_exe() {
-    if let Some(exe_dir) = exe.parent() {
-        // Windows: mobile-dist is a sibling of the exe
-        let win_path = exe_dir.join("mobile-dist");
-        if win_path.join("index.html").exists() {
-            return Some(win_path);
-        }
-        // macOS: exe is in Contents/MacOS, resources in Contents/Resources
-        if let Some(contents) = exe_dir.parent() {
-            let mac_path = contents.join("Resources").join("mobile-dist");
-            if mac_path.join("index.html").exists() {
-                return Some(mac_path);
-            }
-        }
-    }
+const lastSeen = await tauriApi.getSetting('last_seen_version')
+const currentVersion = appPackage.version
+if (lastSeen !== currentVersion) {
+  const changes = getChangesForVersion(currentVersion)
+  if (changes.length > 0) {
+    setWhatsNew({ version: `v${currentVersion}`, changes })
+  }
+  // Update sentinel regardless — prevents re-showing if no changelog entry
+  await tauriApi.setSetting('last_seen_version', currentVersion)
 }
+```
+
+### Pattern 2: Plugin Direct Call — No Rust Command Wrapper
+
+**What:** The frontend calls `check()` from `@tauri-apps/plugin-updater` directly. No custom Rust `#[tauri::command]` is needed. The plugin handles HTTP, signature verification, download, and install.
+
+**When to use:** Tauri v2 plugin model — use the plugin's JS API when it provides everything needed.
+
+**Trade-offs:** Simpler than a Rust wrapper; less code to maintain. Loses the ability to add Rust-side logic (forced update policy, telemetry). For this use case, direct call is correct.
+
+**Example:**
+```typescript
+import { check } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
+
+const update = await check()
+if (update) {
+  await update.downloadAndInstall((event) => {
+    if (event.event === 'Progress') {
+      setProgress(Math.round((downloadedBytes / totalBytes) * 100))
+    }
+  })
+  // Ask user before restarting
+  const confirm = await ask('Restart now?', { okLabel: 'Restart Now', cancelLabel: 'Later' })
+  if (confirm) await relaunch()
+}
+```
+
+### Pattern 3: Changelog Bundled at Build Time via Vite Raw Import
+
+**What:** `CHANGELOG.md` is imported as raw text at Vite build time (`import changelog from '../../CHANGELOG.md?raw'`). `changelog.ts` parses it at runtime using regex to extract bullet points for a given version.
+
+**When to use:** Local-first apps where changelog data must be available offline. The correct version's notes are always present in the shipped binary.
+
+**Trade-offs:** Changelog is frozen at build time (correct for a release). The `latest.json` `notes` field is separate and not currently used by the UI — the app reads CHANGELOG.md instead, which provides richer structure (categories, formatting).
+
+**Example (from `src/lib/changelog.ts`):**
+```typescript
+import changelog from '../../CHANGELOG.md?raw'
+
+export function getChangesForVersion(version: string): string[] {
+  const versionNorm = version.replace(/^v/, '')
+  const regex = new RegExp(
+    `## \\[${versionNorm.replace(/\./g, '\\.')}\\][^\\n]*\\n([\\s\\S]*?)(?=\\n## \\[|$)`
+  )
+  const match = changelog.match(regex)
+  if (!match) return []
+  return match[1]
+    .split('\n')
+    .map((line) => line.replace(/^- /, '').trim())
+    .filter((line) => line.length > 0 && !line.startsWith('###'))
+}
+```
+
+### Pattern 4: Non-Blocking Toast for Update Available
+
+**What:** When the auto-check finds an update, show a toast notification (reuse `Notification.tsx` or extend it with an action button) rather than immediately downloading. Store the `Update` object in a `useRef` so the Install action can invoke it later.
+
+**When to use:** Auto-triggered operations that should not interrupt the user's current session. The user can dismiss and update later via Settings → About.
+
+**Trade-offs:** Better UX than forced download. Requires storing the `Update` object for deferred action. If the user ignores the toast, the update is still available via Settings.
+
+**Target implementation sketch:**
+```typescript
+// In AppContent (App.tsx)
+const pendingUpdateRef = useRef<Update | null>(null)
+const [updateAvailable, setUpdateAvailable] = useState<string | null>(null) // version string
+
+// Auto-check effect (currently disabled — re-enable after macOS fix)
+useEffect(() => {
+  if (import.meta.env.DEV) return
+  const timer = setTimeout(async () => {
+    try {
+      const update = await check()
+      if (update) {
+        pendingUpdateRef.current = update
+        setUpdateAvailable(update.version)
+      }
+    } catch (err) {
+      console.warn('Update check failed:', err)
+    }
+  }, 3000)
+  return () => clearTimeout(timer)
+}, [])
+
+// In JSX: render toast when updateAvailable is set
+// User clicks Install → pendingUpdateRef.current.downloadAndInstall(...)
 ```
 
 ---
 
 ## Data Flow
 
-### Audio Playback URL Flow (Platform-Specific)
+### "What's New" on First Launch After Update
 
 ```
-Track selected (DB record: file_path = "C:\Music\track.mp3" on Windows)
-    |
-    v
-audioPlayer.ts: pathToStreamUrl(file_path)
-    |
-    v  [isWindows = navigator.userAgent.includes('Windows')]
-    |
-Windows:  http://stream.localhost/?p=C%3A%5CMusic%5Ctrack.mp3
-macOS:    stream://localhost/?p=/Music/track.mp3
-    |
-    v
-Rust stream:// protocol handler in lib.rs
-    |
-    v
-percent_decode_maybe_twice() -> normalize_local_path()
-    |
-    v  [#[cfg(target_os = "windows")]]
-    |
-Windows: replace '/' -> '\', handle UNC, collapse double slashes
-macOS:   collapse double slashes, ensure leading /
-    |
-    v
-try_read(file_path) -> std::fs::read(path)
-  [fallback 0: try backslashes on Windows]
-  [fallback 1: strip space before extension]
-  [fallback 2: directory listing match]
-    |
-    v
-HTTP response (206 Partial Content for Range, 200 otherwise)
-    |
-    v
-HTMLAudioElement plays
+App launches (new binary version installed)
+    ↓
+initializeApp()
+    ↓
+getSetting('last_seen_version')  ←→  SQLite settings table
+    ↓
+compare to package.json version (baked into binary at build time)
+    ↓  [version differs → first launch after update]
+getChangesForVersion(currentVersion)  ←  CHANGELOG.md (bundled via ?raw)
+    ↓
+setWhatsNew({ version, changes })
+    ↓
+WhatsNewDialog renders as modal overlay
+    ↓
+setSetting('last_seen_version', currentVersion)  →  SQLite (sentinel updated)
+    ↓
+User reads changelog → closes dialog → normal app usage
 ```
 
-### Build + Release Flow (Target State — Multi-Platform)
+### Manual Update Check (Settings → About → "Check for Updates")
 
 ```
-git push v* tag
-    |
-    v
-GitHub Actions triggered
-    |
-    +---------------------------+---------------------------+
-    |   build-macos job         |   build-windows job       |
-    |   macos-latest runner     |   windows-latest runner   |
-    |                           |                           |
-    |   1. npm ci               |   1. Install LLVM/clang   |
-    |   2. version:sync         |   2. npm ci               |
-    |   3. setup rust aarch64   |   3. version:sync         |
-    |   4. tauri build          |   4. setup rust x86_64-   |
-    |      --target aarch64-    |      pc-windows-msvc      |
-    |      apple-darwin         |   5. tauri build          |
-    |   5. sign .app.tar.gz     |      --target x86_64-pc-  |
-    |   6. write darwin         |      windows-msvc         |
-    |      fragment JSON        |   6. sign .nsis.zip       |
-    |   7. upload artifacts     |   7. write windows        |
-    |                           |      fragment JSON        |
-    |                           |   8. upload artifacts     |
-    +---------------------------+---------------------------+
-                    |
-                    v
-         create-release job (ubuntu-latest)
-            needs: [build-macos, build-windows]
-            1. download-artifact (all)
-            2. node scripts/generate-update-manifest.js --merge
-               -> reads darwin fragment + windows fragment
-               -> writes combined latest.json:
-                  { platforms: {
-                      "darwin-aarch64": { sig, url, sha256 },
-                      "windows-x86_64": { sig, url, sha256 }
-                  }}
-            3. softprops/action-gh-release
-               -> uploads .dmg, .app.tar.gz, .sig (mac)
-               -> uploads .exe, .nsis.zip, .nsis.zip.sig (win)
-               -> uploads latest.json
+User clicks "Check for Updates"
+    ↓
+handleCheckForUpdates()  [SettingsContext]
+    ↓
+setUpdateProgress({ status: 'checking', progress: 0 })
+    ↓
+check()  →  HTTPS GET https://github.com/.../releases/latest/download/latest.json
+    ↓
+[no update]  →  setUpdateProgress(null) + notification "You're on the latest version."
+[update found]  ↓
+setUpdateProgress({ status: 'downloading', progress: 0, downloadedBytes: 0, totalBytes: 0 })
+    ↓
+update.downloadAndInstall(progressCallback)
+    → Started: set totalBytes
+    → Progress: increment downloadedBytes, compute %
+    → Finished: status = 'installing'
+    ↓
+ask() dialog: "Restart now to apply?"
+    ↓ [Restart Now]        ↓ [Later]
+relaunch()             notification "Update applies on next restart"
 ```
 
-### Mobile PWA Path Resolution Flow
+### Auto-Check on Launch (Target — Currently Disabled)
 
 ```
-start_companion_server() called
-    |
-    v
-find_mobile_dist(Some(&app))
-    |
-    v  [Fallback 1 — production, all platforms]
-    Try: handle.path().resolve("mobile-dist", BaseDirectory::Resource)
-    -> Works on both macOS and Windows in production (Tauri handles the layout)
-    |
-    v  [not found -> Fallback 2 — development, all platforms]
-    Try: CARGO_MANIFEST_DIR/../mobile/dist
-    -> Works on both platforms in dev mode
-    |
-    v  [not found -> Fallback 3 — legacy exe-relative]
-    Windows: exe.parent()/mobile-dist/       <- MISSING TODAY, must add
-    macOS:   exe.parent()/../Resources/mobile-dist/  <- already works
+App mounts in production
+    ↓
+useEffect: setTimeout(3000ms)
+    ↓
+check()  →  GitHub Releases latest.json
+    ↓
+[no update]  →  silently do nothing (no notification)
+[update found]  ↓
+pendingUpdateRef.current = update
+setUpdateAvailable(update.version)
+    ↓
+Toast: "v{version} available  [Install]  [Later]"
+    ↓ [Install clicked]
+update.downloadAndInstall(progressCallback)
+    ↓
+ask() dialog → relaunch() or defer
+    ↓ [Later / dismissed]
+pendingUpdateRef.current remains — user can trigger via Settings → About
 ```
 
 ---
 
-## Integration Points — New vs Modified
+## Integration Points
 
-### Modified (Existing Files)
+### New vs Existing — What Actually Needs to Change
 
-| File | Change Type | What Changes |
-|------|-------------|--------------|
-| `src-tauri/src/commands/server.rs` | Bug fix | `find_mobile_dist()` Fallback 3: add Windows exe-sibling path check. Tauri Resource resolver (Fallback 1) handles production on both platforms; this is a safety net for edge cases. |
-| `.github/workflows/release.yml` | Rewrite | Add `build-windows` parallel job with windows-latest runner, LLVM setup, x86_64-pc-windows-msvc target, NSIS artifact upload. Add `create-release` merge job. Keep `build-macos` job intact with all existing steps. |
-| `scripts/generate-update-manifest.js` | Rewrite | Support `--platform` flag for per-build fragment output; support `--merge` flag that reads two fragment files and writes combined `latest.json`. Existing behavior (single-platform, macOS) becomes the `--platform darwin-aarch64` mode. |
-| `package.json` | Add scripts | Add `build:win` (`tauri build --target x86_64-pc-windows-msvc`), `release:sign:win` (path for NSIS zip signature). Existing `build:mac` and `release:manifest` unchanged. |
+| Item | Status | Action Required |
+|------|--------|----------------|
+| `tauri-plugin-updater` installed | Done | Nothing |
+| `tauri.conf.json` endpoint + pubkey | Done | Nothing |
+| Capabilities permissions | Done | Nothing |
+| `changelog.ts` parser | Done | Nothing |
+| `WhatsNewDialog.tsx` (changelog display) | Done | Minor: remove or delegate the duplicate "Update" button to use shared handler |
+| Version sentinel in `initializeApp` | Done | Nothing |
+| `handleCheckForUpdates()` in SettingsContext | Done | Nothing |
+| `AboutSection.tsx` progress bar | Done | Nothing |
+| Auto-check `useEffect` in `App.tsx` | Disabled | Fix macOS crash, then re-enable with non-blocking toast pattern |
+| Update-available toast/banner | Missing | New: add state + JSX to `AppContent`; reuse `Notification.tsx` or extend it with action button |
+| `UpdateProgress` type | Defined in `SettingsContext.tsx` | Extract to `src/types/updater.ts` if `WhatsNewDialog` also needs it |
 
-### New (CI/Toolchain Only — No New Source Files)
+### Internal Boundaries
 
-| Component | What | Notes |
-|-----------|------|-------|
-| Windows runner setup in CI | `KyleMayes/install-llvm-action` or `chocolatey install llvm` in release.yml | Required for `bindgen` feature of `bliss-audio-aubio-rs`. `LIBCLANG_PATH` env var must be set before cargo build. |
-| `TAURI_SIGNING_PRIVATE_KEY` in Windows job | GitHub secret (already exists) | Same minisign key used for macOS. No new secrets needed. |
-| NSIS installer | Auto-generated by Tauri | `tauri.conf.json` `bundle.targets: "all"` already includes NSIS. `icon.ico` already exists in `src-tauri/icons/`. |
+| Boundary | Communication | Notes |
+|----------|--------------|-------|
+| `App.tsx` ↔ `WhatsNewDialog` | React state (`whatsNew` prop + `onClose` callback) | Prop-drilled; acceptable given single mount point in `AppContent` |
+| `App.tsx` ↔ `Notification` | React state (`notification` prop) | Same existing pattern — reuse for "update available" toast |
+| `App.tsx` ↔ `Update` object | `useRef<Update | null>` | Store the resolved updater object for deferred install action |
+| `SettingsContext` ↔ `@tauri-apps/plugin-updater` | Direct import, no Rust IPC | Correct Tauri v2 plugin model |
+| `changelog.ts` ↔ `CHANGELOG.md` | Vite `?raw` import at build time | No IPC; pure frontend |
+| `App.tsx` ↔ SQLite (version sentinel) | `tauriApi.getSetting` / `setSetting` (IPC invoke) | Async; runs inside `initializeApp` before `setLoading(false)` |
 
-### Not Changing (Already Cross-Platform or Out of Scope)
+### External Services
 
-| Component | Why Untouched |
-|-----------|---------------|
-| `src-tauri/src/lib.rs` — stream protocol | Already has correct Windows `#[cfg]` branches. Needs integration testing but no code changes. |
-| `src/lib/audioPlayer.ts` — URL builder | Already detects Windows and uses `http://stream.localhost/`. No changes needed. |
-| Mobile server (`server/`) | `axum`, `tokio`, `tower-http` are fully cross-platform. No OS-specific code. |
-| `tauri.conf.json` | `targets: "all"` already produces NSIS. Resource bundling is cross-platform. |
-| Frontend (React, Zustand, TailwindCSS) | Fully cross-platform. Runs in WebView2 on Windows unchanged. |
-| `rusqlite` (`bundled` feature) | SQLite compiled in, cross-platform. No changes needed. |
-
-### Audit Required Before Closing Milestone
-
-| Area | Audit Question | Risk |
-|------|----------------|------|
-| `db/mod.rs` folder queries | `LIKE 'prefix/%'` queries — if Windows paths are stored with backslashes (`C:\Music\...`), these queries return 0 rows. Need to verify: does the scanner store forward-slash paths on Windows, or native backslash paths? | MEDIUM |
-| `commands/library.rs` path normalization | `normalize_file_paths` command — does it run on Windows paths correctly? | MEDIUM |
-| `scanner.rs` path output | Does `walkdir` return `PathBuf` that converts to backslash on Windows? If so, `to_string_lossy()` will produce `C:\Music\track.mp3` in DB. | MEDIUM |
-| CSP in `tauri.conf.json` | `media-src 'self' stream: http:` — `http://stream.localhost` may need explicit entry for Windows WebView2. | LOW |
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| GitHub Releases | `check()` calls `https://github.com/NM193/RecoDeck/releases/latest/download/latest.json` | Configured in `tauri.conf.json`. Must publish `latest.json` with correct platform entries on each release. |
+| `@tauri-apps/plugin-updater` | JS API — `check()`, `update.downloadAndInstall()` | v2.10.0 installed. No Rust command wrapper needed. |
+| `@tauri-apps/plugin-process` | JS API — `relaunch()` | Installed. Triggered after user confirms restart. |
 
 ---
 
-## Build Order — Suggested Sequence
+## Build Order for Remaining Work
 
-Aubio C compilation is the highest-risk unknown. Validate it first before writing CI pipelines.
+Dependencies: the macOS crash fix must come first. Toast UI can be built and tested in parallel but cannot be verified end-to-end until the auto-check is re-enabled.
 
 ```
-Step 1 — Validate Windows Rust Compilation (Highest Risk)
-  Goal: cargo build --target x86_64-pc-windows-msvc succeeds
-  Risk factors:
-    - bliss-audio-aubio-rs with features=["builtin","bindgen"] requires:
-      * MSVC C compiler (cl.exe, available on windows-latest)
-      * libclang for bindgen (NOT included on windows-latest by default)
-      * aubio C source compiling under MSVC or MinGW-w64
-    - If this fails, the milestone is blocked and needs a different aubio build strategy
-  How to test: Spin up a Windows VM or GitHub Actions workflow manually; run cargo build
-  Output: Compiles -> proceed. Fails -> fix build environment or patch Cargo.toml first.
+Step 1 — Diagnose macOS crash in tauri-plugin-updater (UNBLOCK)
+  The disabled code comment says "cross-device link, restart failures".
+  Likely causes:
+    a) `os_unfair_lock` panic in older plugin version — check if v2.10.0 fixes it
+    b) Cross-device file rename during install (temp dir on different volume)
+    c) Forced relaunch immediately after install without user confirmation
+  Action: Check tauri-plugin-updater v2 changelog for "macOS", "crash", "relaunch"
+           Test: call check() in prod build WITHOUT calling downloadAndInstall or relaunch
+           If check() alone is safe: crash was from the silent relaunch pattern, not the check itself
+  Output: Confirmed-safe call pattern (check-only, or check + download + user-confirmed relaunch)
 
-Step 2 — Fix find_mobile_dist() Windows Exe-Relative Path
-  Goal: Mobile companion correctly locates bundled assets on Windows in production
-  Risk: LOW — additive code change, easily testable
-  Code: Add Windows sibling path check (exe.parent().join("mobile-dist")) in Fallback 3
-  Output: find_mobile_dist() returns Some(path) on Windows production builds
+Step 2 — Add update-available state + toast to App.tsx (UI)
+  Files: src/App.tsx
+  Changes:
+    - Add `pendingUpdateRef = useRef<Update | null>(null)`
+    - Add `updateAvailable: string | null` state
+    - Add JSX: render Notification (or extended variant) when updateAvailable is set
+    - "Install" button action: call download + install + ask() + relaunch()
+    - "Later" button action: setUpdateAvailable(null), keep pendingUpdateRef
+  Dependencies: None — can be built before Step 1 and tested manually
 
-Step 3 — Audit and Fix Path Storage Convention
-  Goal: Confirm folder queries (LIKE 'prefix/%') work on Windows
-  Risk: MEDIUM — backslash vs forward slash in stored paths
-  Decision: Choose one convention (recommend: normalize to forward slashes on write in scanner)
-             and apply consistently at DB insert time
-  Output: Folder browsing, track counts, and path cleanup commands work on Windows
+Step 3 — Re-enable auto-check useEffect (once Step 1 confirmed safe)
+  Files: src/App.tsx
+  Changes:
+    - Uncomment / rewrite the disabled useEffect
+    - Use confirmed-safe call pattern from Step 1
+    - On update found: pendingUpdateRef.current = update; setUpdateAvailable(version)
+    - Do NOT call downloadAndInstall automatically — wait for user action (Step 2)
+  Dependencies: Step 1
 
-Step 4 — Add Windows Build Scripts to package.json
-  Goal: Local Windows build workflow mirrors macOS
-  Change: Add build:win and release:sign:win scripts
-  Output: Developer can run npm run build:win on Windows
+Step 4 — Clean up WhatsNewDialog duplicate update path (optional polish)
+  Files: src/components/WhatsNewDialog.tsx
+  Options:
+    A) Remove the "Update" button entirely — WhatsNewDialog is for reading changelog only;
+       update flow is entirely through Settings and the new toast
+    B) Keep the button but delegate to a shared callback passed as a prop from App.tsx,
+       which calls the same handler as SettingsContext.handleCheckForUpdates()
+  Recommendation: Option A is simpler. The toast (Step 2) and Settings → About already
+                  cover all update entry points.
+  Dependencies: None — independent cleanup
 
-Step 5 — Rewrite generate-update-manifest.js for Multi-Platform
-  Goal: Script supports --platform and --merge modes
-  Risk: LOW — pure Node.js, no build dependencies
-  Output: Can generate latest.json with both darwin-aarch64 and windows-x86_64 platforms
-
-Step 6 — Add build-windows CI Job to release.yml
-  Goal: Automated Windows builds on tag push
-  Key CI steps:
-    - KyleMayes/install-llvm-action (or equivalent) for libclang
-    - dtolnay/rust-toolchain@stable with targets: x86_64-pc-windows-msvc
-    - npm ci + tauri build --target x86_64-pc-windows-msvc
-    - Sign .nsis.zip artifact (TAURI_SIGNING_PRIVATE_KEY secret, same as macOS)
-    - Upload .exe, .nsis.zip, .nsis.zip.sig, and windows fragment JSON as artifacts
-  Risk: MEDIUM — libclang setup on Windows runner is the main friction
-
-Step 7 — Add create-release CI Job (depends on Steps 5 and 6)
-  Goal: Single GitHub Release with all platform artifacts and merged latest.json
-  Change: Add job to release.yml that runs after both platform jobs
-  Steps: download-artifact (both), node generate-update-manifest.js --merge, gh-release
-  Output: Tag push produces release with .dmg + .exe + latest.json covering both platforms
+Step 5 — Extract UpdateProgress type (optional polish)
+  Files: src/types/updater.ts (new), SettingsContext.tsx, WhatsNewDialog.tsx (if kept)
+  Change: Move the UpdateProgress interface to a shared types file
+  Dependencies: Step 4 decision determines whether WhatsNewDialog imports it
 ```
-
----
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 2 platforms (macOS + Windows) | Current target — parallel CI jobs, single merged latest.json |
-| 3 platforms (add Linux) | Add `build-linux` job with ubuntu-latest; add `linux-x86_64` block to manifest. `tauri.conf.json` `targets: "all"` already handles AppImage/deb. |
-| Code-signed Windows builds | Add EV certificate secret; set `tauri.windows.certificateThumbprint`. Removes Windows Defender SmartScreen warning for end users. Not required for MVP. |
-| Intel macOS (darwin-x86_64) | Add `targets` entry to macOS build job. Tauri supports universal (fat) binaries via `--target universal-apple-darwin`. Current CI only builds aarch64. |
 
 ---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Sequential Platform Builds in a Single CI Job
+### Anti-Pattern 1: Silent Auto-Download + Forced Relaunch
 
-**What people do:** Run `tauri build` for macOS then for Windows sequentially in one job with conditional `if: runner.os == 'macOS'` steps.
+**What people do:** `const update = await check(); await update.downloadAndInstall(); await relaunch()` — the original disabled code in `App.tsx`.
 
-**Why it's wrong:** Requires cross-compilation. Tauri v2 with aubio (C FFI + bindgen) does not cross-compile reliably. macOS cannot produce a Windows binary, and vice versa. Sequential also doubles wall-clock time.
+**Why it's wrong:** Forces a restart mid-session without user consent. On macOS, `relaunch()` after an in-place install can crash with "quit unexpectedly" (likely cross-device file rename or lock contention). Even when it works, silently restarting a running app is disruptive.
 
-**Do this instead:** Parallel jobs on native runners (`macos-latest` and `windows-latest`). A `create-release` job depending on both collects the artifacts.
+**Do this instead:** Check silently; show a non-blocking toast; download and install only on user consent; present a "Restart Now / Later" dialog before calling `relaunch()`.
 
-### Anti-Pattern 2: Each Platform Writes and Uploads its Own latest.json
+### Anti-Pattern 2: Duplicate Update Code Paths
 
-**What people do:** The macOS build writes `latest.json` with only `darwin-aarch64`. The Windows build writes `latest.json` with only `windows-x86_64`. Both upload to the same GitHub Release, one overwriting the other.
+**What people do:** `WhatsNewDialog` calls `check()` directly in its own `handleUpdate()`. `SettingsContext.handleCheckForUpdates()` is a second independent implementation of the same flow.
 
-**Why it's wrong:** The Tauri updater fetches a single `latest.json`. Whichever platform finishes last overwrites the first. macOS users then get no update (windows-only manifest) or vice versa.
+**Why it's wrong:** Two implementations of the same logic. Progress state is local to the modal, not surfaced in Settings. Bug fixes must be applied twice. If a third entry point (the toast) is added, there are now three.
 
-**Do this instead:** Each job uploads a platform *fragment* (partial JSON) as a build artifact. A final `create-release` job merges both fragments into one `latest.json` with both `platforms` entries before creating the release.
+**Do this instead:** One canonical update handler in `SettingsContext` (or lifted to `App.tsx` if the toast needs it). `WhatsNewDialog` and other UI components receive it as a callback prop or call it through a shared hook.
 
-### Anti-Pattern 3: Storing Windows Paths with Backslashes and Querying with Forward Slashes
+### Anti-Pattern 3: Calling `check()` in Development Mode
 
-**What people do:** Scanner stores `C:\Music\track.mp3` in SQLite. Folder query does `WHERE file_path LIKE 'C:/Music/%'`. Rows return 0, folder view is empty.
+**What people do:** Remove the `if (import.meta.env.DEV) return` guard during debugging, forget to restore it.
 
-**Why it's wrong:** Stored path separator does not match query separator. SQLite LIKE is case-sensitive by default and performs character-by-character matching.
+**Why it's wrong:** The updater plugin will check GitHub Releases in dev mode. If a release exists with a higher semver than the dev `package.json`, it may offer to "update" your dev build or, worse, install the release binary over the dev environment.
 
-**Do this instead:** Normalize all stored paths to forward slashes at write time (scanner output step). The stream protocol handler already normalizes in the opposite direction (forward slash to backslash for OS reads). This way: DB always has forward-slash paths; `stream://` handler converts them to OS-native for `std::fs::read`.
+**Do this instead:** Keep the `DEV` guard. Test update UI by mocking the `check()` call or by temporarily hardcoding a fake `UpdateInfo` object.
 
-### Anti-Pattern 4: Assuming `BaseDirectory::Resource` Resolves at Runtime Like macOS on Windows
+### Anti-Pattern 4: `latest.json` with Missing Platform Entries
 
-**What people do:** The Tauri Resource path resolver is used in production with an assumed macOS `.app/Resources/` layout. Windows NSIS installer places resources differently; the call returns `Err` or a non-existent path; mobile companion falls through to a broken fallback.
+**What people do:** Publish a `latest.json` that only contains `darwin-aarch64`. Windows users get no update notification because the plugin finds no matching platform.
 
-**Why it's wrong:** Tauri v2's `PathResolver` is platform-aware — it should return the correct path on both platforms when resources are declared in `tauri.conf.json`. The risk is in the legacy exe-relative fallback that runs when the resolver fails, which currently only handles macOS layout.
+**Why it's wrong:** Silent update failure. Windows users never see the toast or manual check succeed.
 
-**Do this instead:** Fix the exe-relative fallback to handle both layouts (as shown in Pattern 4 above). Trust the Resource resolver as primary; fix the fallback as safety net.
+**Do this instead:** Ensure the release workflow publishes a `latest.json` with entries for every supported platform. Current file has only `darwin-aarch64`. If Windows support is added later, the manifest script must be extended before Windows users receive updates.
 
 ---
 
-## Integration Points — External Services
+## Scaling Considerations
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| GitHub Releases (auto-updater source) | Single `latest.json` at `releases/latest/download/latest.json` | Must contain both `platforms.darwin-aarch64` and `platforms.windows-x86_64` for all users to receive updates. |
-| Tauri minisign signing | Same private key (`TAURI_SIGNING_PRIVATE_KEY`) for all platforms | Both `.app.tar.gz` (macOS) and `.nsis.zip` (Windows) are signed with the same minisign key. No new secrets. |
-| LLVM/libclang (Windows CI) | `KyleMayes/install-llvm-action@v2` in release.yml build-windows job | Required for `bindgen` feature of `bliss-audio-aubio-rs`. `LIBCLANG_PATH` env var must point to installed clang before `cargo build`. `windows-latest` runner does NOT include libclang by default. |
+This is a local desktop app for a small DJ community. Scale is not a concern for the update system itself. The relevant operational considerations:
 
-### Internal Boundaries
-
-| Boundary | Communication | Consideration |
-|----------|---------------|---------------|
-| `scanner.rs` → `db/mod.rs` | PathBuf → String conversion at insert time | Normalization contract: forward slash vs OS-native. Must be decided and enforced here before Windows launch. |
-| `lib.rs` stream handler → filesystem | `std::fs::read(path)` after normalization | Windows `#[cfg]` already handles. Validate with real Windows paths. |
-| `commands/server.rs` → filesystem (mobile PWA) | `PathBuf` from `find_mobile_dist()` | Fix Fallback 3. Tauri Resource resolver (Fallback 1) handles production correctly on both platforms when `tauri.conf.json` resources are declared — and they are (`"../mobile/dist/": "mobile-dist/"`). |
-| `release.yml` build-windows → create-release | GitHub Actions `upload-artifact` / `download-artifact` v4 | Fragment JSON files and installer binaries pass between jobs. Use `actions/upload-artifact@v4` with `name` scoped to platform. |
+| Concern | Approach |
+|---------|----------|
+| GitHub Releases rate limits | `check()` runs at most once per launch + on manual trigger. Negligible request volume for a small user base. |
+| Signature key rotation | `pubkey` in `tauri.conf.json` is the minisign public key. Private key stored as GitHub secret. Rotation requires a new `tauri.conf.json` commit before old clients lose the ability to verify. For this audience, rotation is unlikely to be needed. |
+| `latest.json` for multiple platforms | Currently darwin-aarch64 only. If Windows support lands (v1.5 milestone), the release script must merge both platform fragments into one manifest before publishing. |
+| Update during active playback | The current flow asks the user before calling `relaunch()`. If the user is mid-mix, "Later" is available. No special handling of audio state before relaunch is needed. |
 
 ---
 
 ## Sources
 
-- `src-tauri/src/lib.rs` — Windows `#[cfg]` branches confirmed at lines 99-145, 242-251, 283-313. Direct read. HIGH confidence.
-- `src/lib/audioPlayer.ts` — `isWindows` UA detection and `http://stream.localhost/` URL generation confirmed at lines 616-639. Direct read. HIGH confidence.
-- `src-tauri/src/commands/server.rs` — `find_mobile_dist()` Fallback 3 macOS-only exe path confirmed at lines 101-114. Direct read. HIGH confidence.
-- `.github/workflows/release.yml` — Single job, macos-latest, aarch64-apple-darwin, no Windows job confirmed. Direct read. HIGH confidence.
-- `scripts/generate-update-manifest.js` — Single-platform darwin block, macOS tarball path hardcoded. Direct read. HIGH confidence.
-- `src-tauri/Cargo.toml` — `bliss-audio-aubio-rs = { features = ["builtin","bindgen"] }` confirmed line 39. bindgen requires libclang. HIGH confidence.
-- `tauri.conf.json` — `bundle.targets: "all"`, `resources` section includes mobile-dist, `icon.ico` referenced. HIGH confidence.
-- [SQLite LIKE behavior](https://www.sqlite.org/lang_expr.html) — backslash is not a special character in standard SQLite LIKE; slash mismatch is a logical bug not an escaping issue. HIGH confidence.
-- [Tauri v2 Windows protocol mapping](https://v2.tauri.app/reference/config/) — custom protocols map to `http://scheme.localhost/` on Windows (WebView2 does not support custom schemes natively). MEDIUM confidence (verify against current docs during implementation).
-- [bliss-audio-aubio-rs bindgen Windows](https://github.com/nolanlawson/bliss-audio) — Windows C compilation of aubio via bindgen requires LIBCLANG_PATH; known friction point in the Rust audio ecosystem. MEDIUM confidence (community-sourced; validate by actually building).
+- Direct codebase inspection — HIGH confidence on all findings:
+  - `src/App.tsx` (`initializeApp` version sentinel lines 317–330; disabled auto-check lines 251–270)
+  - `src/components/WhatsNewDialog.tsx` (full implementation)
+  - `src/lib/changelog.ts` (CHANGELOG.md raw import + parser)
+  - `src/components/settings/SettingsContext.tsx` (`handleCheckForUpdates()` lines 536–590; `UpdateProgress` type lines 12–17)
+  - `src/components/settings/AboutSection.tsx` (button + progress bar UI)
+  - `src-tauri/tauri.conf.json` (plugins.updater config, createUpdaterArtifacts, endpoint)
+  - `src-tauri/capabilities/default.json` (updater:allow-check, process:allow-restart)
+  - `src-tauri/Cargo.toml` (tauri-plugin-updater v2, tauri-plugin-process v2)
+  - `package.json` (@tauri-apps/plugin-updater v2.10.0, @tauri-apps/plugin-process v2)
+  - `/latest.json` (current release manifest — darwin-aarch64 only)
+  - `CHANGELOG.md` (Keep a Changelog format confirmed)
 
 ---
 
-*Architecture research for: RecoDeck v1.5 — Windows Platform Support*
+*Architecture research for: RecoDeck v1.6 — Update Notifications + What's New Changelog*
 *Researched: 2026-03-14*
