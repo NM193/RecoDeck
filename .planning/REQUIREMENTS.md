@@ -16,17 +16,17 @@ Requirements for milestone v1.4 Equalizer. Each maps to roadmap phases.
 
 ### Presets
 
-- [ ] **EQPR-01**: User can select from 6 built-in presets: Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones
-- [ ] **EQPR-02**: Selecting a preset applies all 10 band gains smoothly (no audible clicks)
+- [x] **EQPR-01**: User can select from 6 built-in presets: Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones
+- [x] **EQPR-02**: Selecting a preset applies all 10 band gains smoothly (no audible clicks)
 
 ### UI
 
 - [ ] **EQUI-01**: An EQ icon appears next to the volume control in the NowPlayingBar
-- [ ] **EQUI-02**: Clicking the EQ icon opens a modal with 10 vertical sliders (one per frequency band) and frequency labels
-- [ ] **EQUI-03**: User can adjust individual band gain (±12 dB) by dragging sliders in custom mode
-- [ ] **EQUI-04**: Modal includes an on/off toggle and a preset selector dropdown
+- [x] **EQUI-02**: Clicking the EQ icon opens a modal with 10 vertical sliders (one per frequency band) and frequency labels
+- [x] **EQUI-03**: User can adjust individual band gain (±12 dB) by dragging sliders in custom mode
+- [x] **EQUI-04**: Modal includes an on/off toggle and a preset selector dropdown
 - [ ] **EQUI-05**: EQ icon shows an active indicator when EQ is enabled
-- [ ] **EQUI-06**: Modal uses the app's existing theme system (midnight/carbon) with a cool, minimal design
+- [x] **EQUI-06**: Modal uses the app's existing theme system (midnight/carbon) with a cool, minimal design
 
 ### Persistence
 
@@ -78,14 +78,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EQAP-02 | Phase 15 | Complete |
 | EQAP-03 | Phase 15 | Complete |
 | EQAP-04 | Phase 15 | Complete |
-| EQPR-01 | Phase 16 | Pending |
-| EQPR-02 | Phase 16 | Pending |
+| EQPR-01 | Phase 16 | Complete |
+| EQPR-02 | Phase 16 | Complete |
 | EQUI-01 | Phase 16 | Pending |
-| EQUI-02 | Phase 16 | Pending |
-| EQUI-03 | Phase 16 | Pending |
-| EQUI-04 | Phase 16 | Pending |
+| EQUI-02 | Phase 16 | Complete |
+| EQUI-03 | Phase 16 | Complete |
+| EQUI-04 | Phase 16 | Complete |
 | EQUI-05 | Phase 16 | Pending |
-| EQUI-06 | Phase 16 | Pending |
+| EQUI-06 | Phase 16 | Complete |
 | EQPE-01 | Phase 16 | Pending |
 
 **Coverage:**

@@ -240,4 +240,4 @@ Plans:
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
 | 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-14 |
-| 16. EQ UI, Presets, and Persistence | v1.4 | 0/2 | Not started | - |
+| 16. EQ UI, Presets, and Persistence | 1/2 | In Progress|  | - |

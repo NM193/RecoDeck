@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Library UX & Duplicate Management
 status: planning
-stopped_at: Completed 15-eq-audio-engine-01-PLAN.md
-last_updated: "2026-03-14T00:06:42.388Z"
+stopped_at: Completed 16-eq-ui-presets-persistence-01-PLAN.md
+last_updated: "2026-03-14T00:26:47.747Z"
 last_activity: 2026-03-13 — Roadmap created for v1.4 (Phases 15-16)
 progress:
   total_phases: 12
   completed_phases: 9
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 18
+  completed_plans: 17
   percent: 0
 ---
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 15-eq-audio-engine P01 | 2min | 2 tasks | 2 files |
+| Phase 16-eq-ui-presets-persistence P01 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ All v1.0–v1.3 decisions archived in PROJECT.md Key Decisions table and STATE.m
 - [Phase 15-eq-audio-engine]: EQ filter chain created lazily inside getAnalyser() to share _vizCtx — createMediaElementSource() can only be called once per HTMLAudioElement
 - [Phase 15-eq-audio-engine]: 30ms linearRamp for all EQ gain changes (cancel+anchor+ramp) to prevent audible clicks; no instant setValueAtTime for gains
 - [Phase 15-eq-audio-engine]: EQ gains and enabled state NOT reset in cleanup() — preserved as user preference across app sessions
+- [Phase 16-eq-ui-presets-persistence]: EQModal reads audioPlayer.getEqState() on open to sync with audio engine, not from persisted settings
+- [Phase 16-eq-ui-presets-persistence]: Custom preset option renders dynamically only when activePreset === custom — prevents it showing in dropdown when named preset is active
+- [Phase 16-eq-ui-presets-persistence]: Slider gradient uses linear-gradient inline style per slider to visually indicate boost/cut from center 0 dB
 
 ### Pending Todos
 
@@ -80,7 +84,7 @@ All v1.0–v1.3 decisions archived in PROJECT.md Key Decisions table and STATE.m
 
 ## Session Continuity
 
-Last session: 2026-03-13T20:33:36.241Z
-Stopped at: Completed 15-eq-audio-engine-01-PLAN.md
+Last session: 2026-03-14T00:26:47.744Z
+Stopped at: Completed 16-eq-ui-presets-persistence-01-PLAN.md
 Resume file: None
 Next action: /gsd:plan-phase 15
