@@ -33,6 +33,38 @@ Requirements for Windows Support milestone. Each maps to roadmap phases.
 - [ ] **UPDT-01**: `latest.json` manifest includes `windows-x86_64` platform entry
 - [ ] **UPDT-02**: `generate-update-manifest.js` supports multi-platform output
 
+## v1.6 Requirements
+
+Requirements for Update Notifications milestone. Each maps to roadmap phases.
+
+### Updater Configuration
+
+- [x] **UCFG-01**: `tauri.conf.json` has `"dialog": false` so JS API receives update events
+- [x] **UCFG-02**: `tauri.conf.json` has `"createUpdaterArtifacts": true` (v1Compatible removed)
+
+### Auto-Check & Toast
+
+- [ ] **UCHK-01**: App checks for updates on launch after a 3-5 second delay (check only, never auto-install)
+- [ ] **UCHK-02**: Update-available toast notification appears with Install and Later buttons
+- [ ] **UCHK-03**: Install button routes to Settings > About for user-initiated download and restart
+
+### What's New Modal
+
+- [ ] **WHNW-01**: `getChangesForVersion()` returns categorized object `{ added, changed, fixed }` instead of flat `string[]`
+- [ ] **WHNW-02**: What's New modal displays three labeled sections (New / Fixes / Changes)
+- [ ] **WHNW-03**: What's New modal does not fire on fresh install (null guard on `last_seen_version`)
+- [ ] **WHNW-04**: Duplicate update button removed from WhatsNewDialog
+
+### CI Release Pipeline
+
+- [ ] **CIUP-01**: `latest.json` contains both `darwin-aarch64` and `windows-x86_64` platform entries
+- [ ] **CIUP-02**: `generate-update-manifest.js` supports `--platform` fragment mode and `--merge` mode
+
+### Polish (P2)
+
+- [ ] **UPOL-01**: Section icons in What's New modal (Plus for Added, Wrench for Fixed, ArrowLeftRight for Changed)
+- [ ] **UPOL-02**: Suppress update toast during active audio playback
+
 ## Future Requirements
 
 ### Windows Enhancements
@@ -68,11 +100,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UPDT-01 | Phase 20 | Pending |
 | UPDT-02 | Phase 20 | Pending |
 
-**Coverage:**
+**v1.5 Coverage:**
 - v1.5 requirements: 11 total
 - Mapped to phases: 11
 - Unmapped: 0 ✓
 
+### v1.6 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| UCFG-01 | Phase 21 | Complete |
+| UCFG-02 | Phase 21 | Complete |
+| UCHK-01 | Phase 22 | Pending |
+| UCHK-02 | Phase 22 | Pending |
+| UCHK-03 | Phase 22 | Pending |
+| WHNW-01 | Phase 23 | Pending |
+| WHNW-02 | Phase 23 | Pending |
+| WHNW-03 | Phase 23 | Pending |
+| WHNW-04 | Phase 23 | Pending |
+| CIUP-01 | Phase 24 | Pending |
+| CIUP-02 | Phase 24 | Pending |
+| UPOL-01 | Phase 25 | Pending |
+| UPOL-02 | Phase 25 | Pending |
+
+**v1.6 Coverage:**
+- v1.6 requirements: 13 total
+- Mapped to phases: 13
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 — traceability filled after roadmap creation*
+*Last updated: 2026-03-14 — v1.6 requirements added*
