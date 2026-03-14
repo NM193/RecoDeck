@@ -4,7 +4,7 @@ milestone: v1.5
 milestone_name: Windows Support
 status: planning
 stopped_at: Completed 21-updater-config 21-01-PLAN.md
-last_updated: "2026-03-14T16:52:22.820Z"
+last_updated: "2026-03-14T16:54:16.920Z"
 last_activity: 2026-03-14 — v1.6 requirements defined, roadmap created
 progress:
   total_phases: 21
