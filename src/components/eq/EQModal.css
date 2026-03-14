@@ -1,0 +1,235 @@
+/* ============================================================
+   EQModal — 10-band graphic equalizer modal
+   All colors use CSS custom properties for theme compatibility
+   ============================================================ */
+
+/* ---- Backdrop ---- */
+.eq-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Modal container ---- */
+.eq-modal__container {
+  background: var(--surface, var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  min-width: 520px;
+  max-width: 600px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- Header row ---- */
+.eq-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.eq-modal__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, var(--text));
+}
+
+.eq-modal__close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.eq-modal__close-btn:hover {
+  color: var(--text-primary, var(--text));
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---- Controls row: toggle + preset select ---- */
+.eq-modal__controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ---- Toggle switch ---- */
+.eq-modal__toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.eq-modal__toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.eq-modal__toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  background: var(--border);
+  border-radius: 10px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.eq-modal__toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.eq-modal__toggle-input:checked + .eq-modal__toggle-switch {
+  background: var(--accent);
+}
+
+.eq-modal__toggle-input:checked + .eq-modal__toggle-switch::after {
+  transform: translateX(16px);
+}
+
+.eq-modal__toggle-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+/* ---- Preset select ---- */
+.eq-modal__preset-select {
+  background: var(--surface-hover, var(--bg-tertiary));
+  color: var(--text-primary, var(--text));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.eq-modal__preset-select:hover,
+.eq-modal__preset-select:focus {
+  border-color: var(--accent);
+}
+
+/* ---- Sliders grid: 10 equal columns ---- */
+.eq-modal__sliders {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+}
+
+/* ---- Per-band column ---- */
+.eq-modal__band-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.eq-modal__db-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-height: 14px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.eq-modal__freq-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* ---- Vertical range slider ---- */
+.eq-modal__slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 4px;
+  height: 120px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Webkit track */
+.eq-modal__slider::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+/* Webkit thumb */
+.eq-modal__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.1s;
+}
+
+.eq-modal__slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Firefox track */
+.eq-modal__slider::-moz-range-track {
+  background: transparent;
+  width: 4px;
+  border-radius: 2px;
+}
+
+/* Firefox thumb */
+.eq-modal__slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.1s;
+}
+
+.eq-modal__slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
