@@ -8,6 +8,7 @@
 - ✅ **v1.3 Library UX & Duplicate Management** — Phases 12-14 (shipped 2026-03-06)
 - ✅ **v1.4 Equalizer** — Phases 15-16 (shipped 2026-03-14)
 - 🚧 **v1.5 Windows Support** — Phases 17-20 (in progress)
+- 📋 **v1.6 Update Notifications** — Phases 21-25 (planned)
 
 ## Phases
 
@@ -261,7 +262,10 @@ Plans:
   1. Opening the mobile companion on a phone connected to the same network as a Windows host streams a track without a 403 Forbidden error — the UNC `\\?\` prefix is stripped before path comparison
   2. The mobile PWA loads its HTML/JS/CSS resources correctly when RecoDeck is installed via NSIS — `find_mobile_dist()` resolves to the correct sibling path on Windows
   3. The Windows Firewall network access prompt appears and, after the user approves it, mobile connections succeed without manual configuration
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
 
 ### Phase 19: NSIS Installer and CI Build
 **Goal**: A GitHub Actions `build-windows` job produces a signed-ready NSIS installer (`recodeck_*_x64-setup.exe`) on every tag push, with LLVM configured for Aubio bindgen and Windows artifacts uploaded alongside macOS
@@ -272,7 +276,10 @@ Plans:
   2. Installing the NSIS `.exe` on a clean Windows 10 or 11 machine completes without errors, RecoDeck launches from the Start Menu, and uninstalling via Add/Remove Programs removes all files cleanly
   3. Pushing a version tag triggers the GitHub Actions `build-windows` job, which installs LLVM, sets `LIBCLANG_PATH`, builds with the `x86_64-pc-windows-msvc` target, and uploads the `.exe` artifact
   4. The release workflow uploads Windows `.exe` and macOS `.dmg` artifacts together — both appear on the same GitHub Release page
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
 
 ### Phase 20: Auto-Updater Manifest
 **Goal**: The `latest.json` updater manifest covers both `darwin-aarch64` and `windows-x86_64` platform entries so existing macOS users continue to receive updates and Windows users receive their first auto-update
@@ -282,7 +289,88 @@ Plans:
   1. `latest.json` published on a GitHub Release contains both `darwin-aarch64` and `windows-x86_64` keys with correct download URLs and signatures — neither platform entry overwrites the other
   2. `generate-update-manifest.js` supports `--platform` fragment mode and `--merge` mode — each CI job produces a fragment, the `create-release` job merges them before publishing
   3. A macOS user running the previous version sees the update notification and upgrades successfully — existing macOS update flow is unbroken
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
+
+### 📋 v1.6 Update Notifications (Planned)
+
+**Milestone Goal:** In-app update notification system — auto-check on launch, toast banner to install, auto-restart, and "What's New" changelog modal after update.
+
+- [ ] **Phase 21: Updater Plugin Configuration** — Config unblocking (`dialog: false`, `createUpdaterArtifacts: true`) so JS API works
+- [ ] **Phase 22: Auto-Check and Update Toast** — Safe startup check + dismissible toast with Install/Later actions
+- [ ] **Phase 23: Categorized What's New Modal** — Structured changelog sections (New/Fixes/Changes), fresh install guard, remove duplicate update button
+- [ ] **Phase 24: CI Release Pipeline** — Multi-platform `latest.json` manifest for macOS + Windows
+- [ ] **Phase 25: Update UX Polish** — Section icons, playback-aware toast suppression
+
+## Phase Details — v1.6
+
+### Phase 21: Updater Plugin Configuration
+**Goal**: The Tauri updater JS API is unblocked — `dialog: false` enables JavaScript event handlers, `createUpdaterArtifacts: true` removes v1 deprecation debt, and signing key management is verified
+**Depends on**: Phase 20 (v1.5 complete) or can start independently (config-only, no runtime dependency)
+**Requirements**: UCFG-01, UCFG-02
+**Success Criteria** (what must be TRUE):
+  1. `tauri.conf.json` has `"dialog": false` in the updater plugin config — the JS `check()` call returns an update object instead of being silently consumed by a native dialog
+  2. `tauri.conf.json` has `"createUpdaterArtifacts": true` — no `v1Compatible` deprecation remains
+  3. `updater:default` and `process:allow-restart` permissions are confirmed in capabilities
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
+
+### Phase 22: Auto-Check and Update Toast
+**Goal**: RecoDeck checks for updates on launch and shows a non-blocking toast notification when an update is available — download and install only happen on explicit user action
+**Depends on**: Phase 21 (updater JS API must be unblocked before check() works)
+**Requirements**: UCHK-01, UCHK-02, UCHK-03
+**Success Criteria** (what must be TRUE):
+  1. On app launch, `check()` runs after a 3-5 second delay and stores the update object in a ref — no `downloadAndInstall()` is called automatically
+  2. When an update is available, a dismissible toast appears with Install and Later buttons — the toast does not block any UI interaction
+  3. Clicking Install navigates to Settings > About where the existing manual update flow handles download, install, and restart
+  4. On macOS, `relaunch()` is called after install; on Windows, `relaunch()` is skipped (NSIS auto-exits the process)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
+
+### Phase 23: Categorized What's New Modal
+**Goal**: The What's New modal displays changelog entries in labeled sections (New / Fixes / Changes) instead of a flat bullet list, and does not appear on fresh installs
+**Depends on**: Phase 21 (independent of Phase 22; only needs correct config baseline)
+**Requirements**: WHNW-01, WHNW-02, WHNW-03, WHNW-04
+**Success Criteria** (what must be TRUE):
+  1. `getChangesForVersion()` returns `{ added: string[], changed: string[], fixed: string[] }` — both callers updated
+  2. The What's New modal renders three labeled sections with non-empty sections only
+  3. On a fresh install (no `last_seen_version` in SQLite), the modal does not appear
+  4. The duplicate "Update Available" button is removed from `WhatsNewDialog.tsx` — all install actions route through Settings > About
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
+
+### Phase 24: CI Release Pipeline
+**Goal**: The `latest.json` updater manifest covers both macOS and Windows platforms, generated by CI on release tag push
+**Depends on**: Phase 22 (auto-check must work end-to-end to validate manifest is parsed correctly)
+**Requirements**: CIUP-01, CIUP-02
+**Success Criteria** (what must be TRUE):
+  1. `latest.json` contains both `darwin-aarch64` and `windows-x86_64` keys with correct download URLs, signatures, and RFC 3339 `pub_date`
+  2. `generate-update-manifest.js` supports `--platform` fragment mode (each CI job produces a fragment) and `--merge` mode (combine fragments before publishing)
+  3. A macOS user running the previous version receives the update notification — existing update flow is unbroken
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
+
+### Phase 25: Update UX Polish
+**Goal**: Visual polish and edge-case handling for the update notification system — section icons in What's New modal and playback-aware toast suppression
+**Depends on**: Phase 23 and Phase 22 (polish builds on top of verified core behavior)
+**Requirements**: UPOL-01, UPOL-02
+**Success Criteria** (what must be TRUE):
+  1. What's New modal sections show icons: Plus/sparkle for Added, Wrench for Fixed, ArrowLeftRight for Changed
+  2. The update toast does not appear while audio is actively playing — it defers until playback stops or the user pauses
+**Plans**: 1 plan
+
+Plans:
+- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
 
 ## Progress
 
@@ -308,3 +396,8 @@ Plans:
 | 18. Windows Runtime Fixes | v1.5 | 0/? | Not started | - |
 | 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
 | 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
+| 21. Updater Plugin Configuration | v1.6 | 0/? | Not started | - |
+| 22. Auto-Check and Update Toast | v1.6 | 0/? | Not started | - |
+| 23. Categorized What's New Modal | v1.6 | 0/? | Not started | - |
+| 24. CI Release Pipeline | v1.6 | 0/? | Not started | - |
+| 25. Update UX Polish | v1.6 | 0/? | Not started | - |
