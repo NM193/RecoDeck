@@ -41,17 +41,18 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.5 Windows Support
+## Current Milestone: v1.6 Update Notifications
 
-**Goal:** Ship-ready Windows support — compilation, NSIS installer, CI/CD builds, auto-updater, and platform-specific fixes.
+**Goal:** In-app update notification system — auto-check on launch, toast banner to install, auto-restart, and "What's New" changelog modal after update.
 
 **Target features:**
-- Windows compilation with Aubio C build toolchain
-- NSIS installer for Windows distribution
-- CI/CD pipeline with Windows build job
-- Auto-updater manifest with Windows platform entry
-- Platform-correct mobile companion PWA path resolution
-- Windows build scripts (build:win, release:sign, release:manifest)
+- Tauri updater plugin integration with auto-check on app launch
+- Toast/banner notification for available updates with Install and Later buttons
+- Auto-download, install, and restart flow
+- Bundled changelog.json with versioned entries (new/fixes/changes categories)
+- "What's New" modal after update showing categorized changelog
+- Version tracking to detect first launch after update
+- Cross-platform support (macOS and Windows)
 
 ### Out of Scope
 
@@ -105,4 +106,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-14 after v1.5 Windows Support milestone started*
+*Last updated: 2026-03-14 after v1.6 Update Notifications milestone started*
