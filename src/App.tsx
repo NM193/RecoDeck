@@ -4,6 +4,7 @@ import { confirm } from '@tauri-apps/plugin-dialog'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
 import { check, type Update } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { NowPlayingBar } from './components/layout/NowPlayingBar'
 import { HomeView } from './components/views/HomeView'
@@ -1294,17 +1295,27 @@ function AppContent() {
         />
       )}
 
-      {/* Update available toast — click Install to go to Settings > About */}
+      {/* Update available toast — click Install to download, install, and restart */}
       {pendingUpdate && (
         <UpdateToast
           version={pendingUpdate.version}
-          onInstall={() => {
+          onInstall={async () => {
+            const update = pendingUpdate
             setPendingUpdate(null)
-            setShowSettings(true)
-            setSelectedFolder(null)
-            setSelectedPlaylistId(null)
-            setShowAllTracks(false)
-            setShowSearch(false)
+            setNotification({ message: `Downloading update v${update.version}...`, type: 'info' })
+            try {
+              await update.downloadAndInstall()
+              const isWindows = navigator.platform.startsWith('Win')
+              if (isWindows) {
+                setNotification({ message: 'Update installed. The app will restart automatically.', type: 'success' })
+              } else {
+                setNotification({ message: 'Restarting app...', type: 'success' })
+                await relaunch()
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              setNotification({ message: `Update failed: ${msg}`, type: 'error' })
+            }
           }}
           onLater={() => setPendingUpdate(null)}
         />
