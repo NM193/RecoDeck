@@ -569,8 +569,14 @@ export function SettingsProvider({
         )
 
         if (restartNow) {
-          onNotification?.('Restarting app...', 'success')
-          await relaunch()
+          const isWindows = navigator.platform.startsWith('Win')
+          if (isWindows) {
+            // NSIS auto-exits the process after install — relaunch() would crash
+            onNotification?.('Update installed. The app will close and restart automatically.', 'success')
+          } else {
+            onNotification?.('Restarting app...', 'success')
+            await relaunch()
+          }
         } else {
           onNotification?.('Update will be applied when you restart the app.', 'info')
         }

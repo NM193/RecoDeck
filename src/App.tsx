@@ -3,8 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { confirm } from '@tauri-apps/plugin-dialog'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
-// import { check } from "@tauri-apps/plugin-updater";
-// import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from '@tauri-apps/plugin-updater'
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { NowPlayingBar } from './components/layout/NowPlayingBar'
 import { HomeView } from './components/views/HomeView'
@@ -18,6 +17,7 @@ import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion } from './lib/changelog'
 import appPackage from '../package.json'
 import { Notification } from './components/Notification'
+import { UpdateToast } from './components/UpdateToast'
 import {
   AnalysisProgress,
   type AnalysisProgressData,
@@ -128,6 +128,9 @@ function AppContent() {
     message: string
     type: 'info' | 'success' | 'warning' | 'error'
   } | null>(null)
+
+  // Pending update from auto-check on launch
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
 
   // What's New dialog state
   const [whatsNew, setWhatsNew] = useState<{
@@ -244,29 +247,20 @@ function AppContent() {
     })
   }, [])
 
-  // Check for app updates on startup (after a delay to not block UI)
-  // Skip in dev mode - updater can cause unexpected relaunch during development
-  // NOTE: Temporarily disabled - tauri-plugin-updater has known crash issues on macOS
-  // (cross-device link, restart failures). Re-enable when upstream is fixed.
+  // Check for app updates silently on launch (check-only, never auto-installs)
   useEffect(() => {
     if (import.meta.env.DEV) return
-    // Disabled: update check was causing "quit unexpectedly" crashes on macOS
-    // const timer = setTimeout(async () => {
-    //   try {
-    //     const update = await check();
-    //     if (update) {
-    //       setNotification({
-    //         message: `Update ${update.version} available. Downloading...`,
-    //         type: "info",
-    //       });
-    //       await update.downloadAndInstall();
-    //       await relaunch();
-    //     }
-    //   } catch (err) {
-    //     console.warn("Update check failed:", err);
-    //   }
-    // }, 2000);
-    // return () => clearTimeout(timer);
+    const timer = setTimeout(async () => {
+      try {
+        const update = await check()
+        if (update) {
+          setPendingUpdate(update)
+        }
+      } catch (err) {
+        console.warn('Auto update check failed:', err)
+      }
+    }, 4000)
+    return () => clearTimeout(timer)
   }, [])
 
   async function initializeApp() {
@@ -1294,6 +1288,22 @@ function AppContent() {
           companionUrl={sharePlaylistModal.companionUrl}
           companionToken={sharePlaylistModal.companionToken}
           onClose={() => setSharePlaylistModal(null)}
+        />
+      )}
+
+      {/* Update available toast — click Install to go to Settings > About */}
+      {pendingUpdate && (
+        <UpdateToast
+          version={pendingUpdate.version}
+          onInstall={() => {
+            setPendingUpdate(null)
+            setShowSettings(true)
+            setSelectedFolder(null)
+            setSelectedPlaylistId(null)
+            setShowAllTracks(false)
+            setShowSearch(false)
+          }}
+          onLater={() => setPendingUpdate(null)}
         />
       )}
 
