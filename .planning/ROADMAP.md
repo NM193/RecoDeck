@@ -248,7 +248,10 @@ Plans:
   2. RecoDeck launches on Windows, scans a folder containing tracks with spaces and Unicode characters in the path, and displays them in the library
   3. Clicking a track plays audio end-to-end — no CSP errors or autoplay policy blocks in the WebView2 DevTools console
   4. `npm run build:win` in `package.json` triggers a complete Windows build from a single command
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 17-01-PLAN.md — Windows setup guide, build:win script, build.rs LIBCLANG_PATH hint, tauri.conf.json autoplay fix
 
 ### Phase 18: Windows Runtime Fixes
 **Goal**: The mobile companion works correctly on Windows — streaming returns audio data instead of 403 Forbidden, and the PWA resource files resolve to the correct path in both dev and NSIS install layouts
@@ -301,7 +304,7 @@ Plans:
 | 14. Duplicate Review Dialog | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-13 |
 | 16. EQ UI, Presets, and Persistence | v1.4 | 2/2 | Complete | 2026-03-14 |
-| 17. Windows Compilation Baseline | v1.5 | 0/? | Not started | - |
+| 17. Windows Compilation Baseline | v1.5 | 0/1 | Not started | - |
 | 18. Windows Runtime Fixes | v1.5 | 0/? | Not started | - |
 | 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
 | 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
