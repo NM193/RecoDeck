@@ -14,7 +14,7 @@ import { SearchView } from './components/views/SearchView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
-import { getChangesForVersion } from './lib/changelog'
+import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import appPackage from '../package.json'
 import { Notification } from './components/Notification'
 import { UpdateToast } from './components/UpdateToast'
@@ -135,7 +135,7 @@ function AppContent() {
   // What's New dialog state
   const [whatsNew, setWhatsNew] = useState<{
     version: string
-    changes: string[]
+    changes: VersionChanges
   } | null>(null)
 
   // Header notification (small text next to logo, typing animation)
@@ -311,12 +311,15 @@ function AppContent() {
       try {
         const lastSeen = await tauriApi.getSetting('last_seen_version')
         const currentVersion = appPackage.version
-        if (lastSeen !== currentVersion) {
+        if (lastSeen === null) {
+          // Fresh install — record version, do NOT show modal
+          await tauriApi.setSetting('last_seen_version', currentVersion)
+        } else if (lastSeen !== currentVersion) {
           const changes = getChangesForVersion(currentVersion)
-          if (changes.length > 0) {
+          const hasAny = changes.added.length > 0 || changes.changed.length > 0 || changes.fixed.length > 0
+          if (hasAny) {
             setWhatsNew({ version: `v${currentVersion}`, changes })
           }
-          // Save even if no changes found, so we don't re-check
           await tauriApi.setSetting('last_seen_version', currentVersion)
         }
       } catch {
