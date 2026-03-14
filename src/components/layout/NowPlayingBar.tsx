@@ -8,6 +8,7 @@ import { getTrackArtworkUrl } from '../../lib/artworkCache'
 import type { Playlist, Track } from '../../types/track'
 import { Icon } from '../Icon'
 import { WaveformVisualizer } from '../WaveformVisualizer'
+import { EQModal } from '../eq/EQModal'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -63,6 +64,8 @@ export function NowPlayingBar({
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [showWaveform, setShowWaveform] = useState(false)
+  const [showEQModal, setShowEQModal] = useState(false)
+  const [eqEnabled, setEqEnabled] = useState(false)
   const [progressHover, setProgressHover] = useState(false)
   const [hoverX, setHoverX] = useState(0) // 0-1 ratio across bar
 
@@ -138,6 +141,22 @@ export function NowPlayingBar({
         audioPlayer.setCrossfadeDuration(durationSec)
       } catch (err) {
         console.warn('Failed to load crossfade settings:', err)
+      }
+    })()
+  }, [])
+
+  // Load EQ state on mount
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const raw = await tauriApi.getSetting('eq_state').catch(() => null)
+        if (raw) {
+          const state = JSON.parse(raw) as { enabled: boolean; bands: number[]; preset: string }
+          audioPlayer.loadEqState({ enabled: state.enabled, bands: state.bands })
+          setEqEnabled(state.enabled)
+        }
+      } catch (err) {
+        console.warn('[NowPlayingBar] Failed to load EQ state:', err)
       }
     })()
   }, [])
@@ -948,6 +967,15 @@ export function NowPlayingBar({
             <Icon name="AudioWaveform" size={18} />
           </button>
 
+          {/* EQ toggle */}
+          <button
+            className={`now-playing-bar__btn now-playing-bar__btn--action${eqEnabled ? ' now-playing-bar__btn--toggle now-playing-bar__btn--active' : ''}`}
+            onClick={() => setShowEQModal((v) => !v)}
+            title={eqEnabled ? 'Equalizer (active)' : 'Equalizer'}
+          >
+            <Icon name="SlidersHorizontal" size={18} />
+          </button>
+
           {/* Open Mini Player */}
           <button
             className="now-playing-bar__btn now-playing-bar__btn--action"
@@ -1036,6 +1064,13 @@ export function NowPlayingBar({
           )}
         </div>
       </div>
+      {showEQModal && (
+        <EQModal
+          open={showEQModal}
+          onClose={() => setShowEQModal(false)}
+          onEnabledChange={setEqEnabled}
+        />
+      )}
     </div>
   )
 }
