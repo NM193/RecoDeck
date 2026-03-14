@@ -5,9 +5,9 @@ milestone_name: Windows Support
 status: planning
 stopped_at: —
 last_updated: "2026-03-14"
-last_activity: 2026-03-14 — Milestone v1.5 started
+last_activity: 2026-03-14 — Roadmap created for v1.5 (Phases 17-20)
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** v1.5 Windows Support
+**Current focus:** v1.5 Windows Support — Phase 17: Windows Compilation Baseline
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-14 — Milestone v1.5 started
+Phase: 17 of 20 (Windows Compilation Baseline)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-14 — Roadmap created, phases 17-20 defined
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 - Total plans completed: 0 (v1.5)
-- Average duration: ~20 min (v1.3 baseline)
+- Average duration: ~20 min (v1.4 baseline)
 - Total execution time: —
 
 **By Phase:**
@@ -53,17 +53,21 @@ Progress: [░░░░░░░░░░] 0%
 
 All v1.0–v1.4 decisions archived in PROJECT.md Key Decisions table.
 
+**v1.5 decisions:**
+- Skip Windows code signing for v1.5 — SmartScreen "Run anyway" acceptable for small DJ friend group
+
 ### Pending Todos
 
 - [Deferred] Beatmatch crossfade (XFADE-01, XFADE-02) deferred from v1.2 — pitch correction complexity
 
 ### Blockers/Concerns
 
+- [Known risk] Aubio bindgen on Windows (`bliss-audio-aubio-rs` + MSVC + LLVM 17) not empirically validated — Phase 17 must open with a trial `cargo build` before declaring scope final
 - [Known limitation] EQ does not apply to crossfadeAudio during the crossfade window — incoming track plays without EQ for up to 8s
 
 ## Session Continuity
 
-Last session: —
-Stopped at: —
+Last session: 2026-03-14
+Stopped at: Roadmap created for v1.5 Windows Support
 Resume file: None
-Next action: Define requirements for v1.5
+Next action: `/gsd:plan-phase 17` — Windows Compilation Baseline

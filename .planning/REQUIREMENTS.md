@@ -56,23 +56,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BILD-01 | — | Pending |
-| BILD-02 | — | Pending |
-| RNTM-01 | — | Pending |
-| RNTM-02 | — | Pending |
-| INST-01 | — | Pending |
-| INST-02 | — | Pending |
-| CICD-01 | — | Pending |
-| CICD-02 | — | Pending |
-| CICD-03 | — | Pending |
-| UPDT-01 | — | Pending |
-| UPDT-02 | — | Pending |
+| BILD-01 | Phase 17 | Pending |
+| BILD-02 | Phase 17 | Pending |
+| RNTM-01 | Phase 18 | Pending |
+| RNTM-02 | Phase 18 | Pending |
+| INST-01 | Phase 19 | Pending |
+| INST-02 | Phase 19 | Pending |
+| CICD-01 | Phase 19 | Pending |
+| CICD-02 | Phase 19 | Pending |
+| CICD-03 | Phase 19 | Pending |
+| UPDT-01 | Phase 20 | Pending |
+| UPDT-02 | Phase 20 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 after initial definition*
+*Last updated: 2026-03-14 — traceability filled after roadmap creation*

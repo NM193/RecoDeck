@@ -5,8 +5,9 @@
 - ✅ **v1.0 MVP** — Phases 1-4 (shipped 2026-03-01)
 - ✅ **v1.1 Spotify Redesign** — Phases 5-9 (shipped 2026-03-06)
 - ✅ **v1.2 Playback & UX Polish** — Phases 10-11 (shipped 2026-03-06)
-- 🚧 **v1.3 Library UX & Duplicate Management** — Phases 12-14 (in progress)
-- 📋 **v1.4 Equalizer** — Phases 15-16 (planned)
+- ✅ **v1.3 Library UX & Duplicate Management** — Phases 12-14 (shipped 2026-03-06)
+- ✅ **v1.4 Equalizer** — Phases 15-16 (shipped 2026-03-14)
+- 🚧 **v1.5 Windows Support** — Phases 17-20 (in progress)
 
 ## Phases
 
@@ -39,20 +40,31 @@
 
 </details>
 
-### v1.3 Library UX & Duplicate Management (In Progress)
+<details>
+<summary>✅ v1.3 Library UX & Duplicate Management (Phases 12-14) — SHIPPED 2026-03-06</summary>
 
-**Milestone Goal:** Fix track table layout on window resize, load the full library upfront without scroll-to-load, and add a review-before-delete duplicate tracks dialog.
+- [x] Phase 12: CSS Layout Fix — completed 2026-03-06
+- [x] Phase 13: Full Library Load — completed 2026-03-06
+- [x] Phase 14: Duplicate Review Dialog — completed 2026-03-06
 
-- [x] **Phase 12: CSS Layout Fix** — Track table rows and header extend to full window width at any window size (completed 2026-03-06)
-- [ ] **Phase 13: Full Library Load** — All tracks load on startup; scroll-to-load pagination removed
-- [ ] **Phase 14: Duplicate Review Dialog** — Review-before-delete duplicate management with selective per-track deletion
+</details>
 
-### v1.4 Equalizer (Planned)
+<details>
+<summary>✅ v1.4 Equalizer (Phases 15-16) — SHIPPED 2026-03-14</summary>
 
-**Milestone Goal:** Add a 10-band graphic equalizer with presets, custom mode, and persistence — accessible from the NowPlayingBar. All processing in the existing Web Audio API graph; no Rust changes.
+- [x] Phase 15: EQ Audio Engine — completed 2026-03-13
+- [x] Phase 16: EQ UI, Presets, and Persistence — completed 2026-03-14
 
-- [x] **Phase 15: EQ Audio Engine** — 10 BiquadFilterNode chain inserted into existing _vizCtx; setEqBandGain/setEqEnabled methods; crossfade reconnect guard; visibilitychange resume guard (completed 2026-03-13)
-- [x] **Phase 16: EQ UI, Presets, and Persistence** — EQ modal with 10 vertical sliders, preset selector, on/off toggle, NowPlayingBar icon with active indicator, SQLite persistence (completed 2026-03-14)
+</details>
+
+### 🚧 v1.5 Windows Support (In Progress)
+
+**Milestone Goal:** Ship-ready Windows support — compilation with Aubio C toolchain, runtime code fixes for Windows path quirks, NSIS installer, CI/CD Windows build job, and multi-platform auto-updater manifest.
+
+- [ ] **Phase 17: Windows Compilation Baseline** — App compiles and runs on Windows; audio plays end-to-end
+- [ ] **Phase 18: Windows Runtime Fixes** — Mobile companion streaming and PWA resource resolution work correctly on Windows
+- [ ] **Phase 19: NSIS Installer and CI Build** — Automated Windows build in CI produces an installable NSIS setup.exe
+- [ ] **Phase 20: Auto-Updater Manifest** — Merged latest.json covers both macOS and Windows so all users receive updates
 
 ## Phase Details
 
@@ -168,7 +180,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 12-01-PLAN.md — Add min-width: 100% to .track-table-holder; visual verify at three window widths
+- [x] 12-01: Add min-width: 100% to .track-table-holder; visual verify at three window widths — completed 2026-03-06
 
 ### Phase 13: Full Library Load
 **Goal**: The entire music library is visible in the track list immediately after app startup — no "Scroll for more" prompt, no partial library, and the track count in the UI reflects the actual full library size
@@ -178,7 +190,10 @@ Plans:
   1. On startup, every track in the library is visible in the "All Tracks" view without scrolling to trigger additional loads
   2. The track count shown in the status bar and sidebar matches the total number of tracks in the database immediately after startup
   3. Sorting and searching operate on the full library — not on a capped first-page snapshot
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [x] 13-01: Remove pagination cap from getAllTracks(); update frontend store to load full set on mount — completed 2026-03-06
 
 ### Phase 14: Duplicate Review Dialog
 **Goal**: Users can review all duplicate track groups and selectively delete individual duplicates from a modal dialog — no track is deleted without explicit per-track confirmation, and the library refreshes accurately after deletion
@@ -189,7 +204,10 @@ Plans:
   2. Each duplicate group shows file path, date added, file size, and BPM for every track in the group
   3. The user can check or uncheck individual tracks within a group to select which ones to delete
   4. Confirming deletion removes only the checked tracks; the track table and track count update immediately to reflect the deletions without showing ghost entries
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [x] 14-01: Rust find_duplicates command, DuplicateReviewModal component, selective delete flow — completed 2026-03-06
 
 ### Phase 15: EQ Audio Engine
 **Goal**: The audio pipeline has a working 10-band graphic equalizer — BiquadFilterNode chain inserted into the existing _vizCtx AudioContext, with gain control, bypass, crossfade reconnect safety, and WebKit background suspension guard
@@ -203,7 +221,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [x] 15-01-PLAN.md — EQ filter chain, API methods, crossfade reconnect, visibilitychange guard
+- [x] 15-01: EQ filter chain, API methods, crossfade reconnect, visibilitychange guard — completed 2026-03-13
 
 ### Phase 16: EQ UI, Presets, and Persistence
 **Goal**: The EQ is fully operable from the NowPlayingBar — a modal exposes 10 vertical sliders and a preset selector, the icon shows active state, and all settings survive an app restart
@@ -218,8 +236,50 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 16-01-PLAN.md — EQ presets data module and EQModal component with sliders, dropdown, and toggle
-- [ ] 16-02-PLAN.md — NowPlayingBar EQ icon integration, active indicator, and persistence load
+- [x] 16-01: EQ presets data module and EQModal component with sliders, dropdown, and toggle — completed 2026-03-14
+- [x] 16-02: NowPlayingBar EQ icon integration, active indicator, and persistence load — completed 2026-03-14
+
+### Phase 17: Windows Compilation Baseline
+**Goal**: RecoDeck compiles and runs on Windows — `cargo build --target x86_64-pc-windows-msvc` succeeds with Aubio bindgen, a debug build launches, audio plays end-to-end, and the library scanner handles Windows paths
+**Depends on**: Phase 16 (v1.4 complete)
+**Requirements**: BILD-01, BILD-02
+**Success Criteria** (what must be TRUE):
+  1. `cargo build --target x86_64-pc-windows-msvc` completes without errors — Aubio bindgen resolves libclang via LLVM and produces a working binary
+  2. RecoDeck launches on Windows, scans a folder containing tracks with spaces and Unicode characters in the path, and displays them in the library
+  3. Clicking a track plays audio end-to-end — no CSP errors or autoplay policy blocks in the WebView2 DevTools console
+  4. `npm run build:win` in `package.json` triggers a complete Windows build from a single command
+**Plans**: TBD
+
+### Phase 18: Windows Runtime Fixes
+**Goal**: The mobile companion works correctly on Windows — streaming returns audio data instead of 403 Forbidden, and the PWA resource files resolve to the correct path in both dev and NSIS install layouts
+**Depends on**: Phase 17 (working Windows binary required to test mobile companion behavior)
+**Requirements**: RNTM-01, RNTM-02
+**Success Criteria** (what must be TRUE):
+  1. Opening the mobile companion on a phone connected to the same network as a Windows host streams a track without a 403 Forbidden error — the UNC `\\?\` prefix is stripped before path comparison
+  2. The mobile PWA loads its HTML/JS/CSS resources correctly when RecoDeck is installed via NSIS — `find_mobile_dist()` resolves to the correct sibling path on Windows
+  3. The Windows Firewall network access prompt appears and, after the user approves it, mobile connections succeed without manual configuration
+**Plans**: TBD
+
+### Phase 19: NSIS Installer and CI Build
+**Goal**: A GitHub Actions `build-windows` job produces a signed-ready NSIS installer (`recodeck_*_x64-setup.exe`) on every tag push, with LLVM configured for Aubio bindgen and Windows artifacts uploaded alongside macOS
+**Depends on**: Phase 18 (runtime fixes confirmed before automated CI produces distribution artifacts)
+**Requirements**: INST-01, INST-02, CICD-01, CICD-02, CICD-03
+**Success Criteria** (what must be TRUE):
+  1. `tauri.conf.json` has a `bundle.windows.nsis` section with `installMode: "perUser"` and `compression: "lzma"` — Tauri CLI produces an NSIS `.exe` artifact
+  2. Installing the NSIS `.exe` on a clean Windows 10 or 11 machine completes without errors, RecoDeck launches from the Start Menu, and uninstalling via Add/Remove Programs removes all files cleanly
+  3. Pushing a version tag triggers the GitHub Actions `build-windows` job, which installs LLVM, sets `LIBCLANG_PATH`, builds with the `x86_64-pc-windows-msvc` target, and uploads the `.exe` artifact
+  4. The release workflow uploads Windows `.exe` and macOS `.dmg` artifacts together — both appear on the same GitHub Release page
+**Plans**: TBD
+
+### Phase 20: Auto-Updater Manifest
+**Goal**: The `latest.json` updater manifest covers both `darwin-aarch64` and `windows-x86_64` platform entries so existing macOS users continue to receive updates and Windows users receive their first auto-update
+**Depends on**: Phase 19 (both macOS and Windows CI artifacts must exist before manifest URLs can reference them)
+**Requirements**: UPDT-01, UPDT-02
+**Success Criteria** (what must be TRUE):
+  1. `latest.json` published on a GitHub Release contains both `darwin-aarch64` and `windows-x86_64` keys with correct download URLs and signatures — neither platform entry overwrites the other
+  2. `generate-update-manifest.js` supports `--platform` fragment mode and `--merge` mode — each CI job produces a fragment, the `create-release` job merges them before publishing
+  3. A macOS user running the previous version sees the update notification and upgrades successfully — existing macOS update flow is unbroken
+**Plans**: TBD
 
 ## Progress
 
@@ -237,7 +297,11 @@ Plans:
 | 10. Settings Cleanup | v1.2 | 1/1 | Complete | 2026-03-06 |
 | 11. Playback Bug Fixes | v1.2 | 1/1 | Complete | 2026-03-06 |
 | 12. CSS Layout Fix | v1.3 | 1/1 | Complete | 2026-03-06 |
-| 13. Full Library Load | v1.3 | 0/? | Not started | - |
-| 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
-| 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-14 |
-| 16. EQ UI, Presets, and Persistence | 2/2 | Complete    | 2026-03-14 | - |
+| 13. Full Library Load | v1.3 | 1/1 | Complete | 2026-03-06 |
+| 14. Duplicate Review Dialog | v1.3 | 1/1 | Complete | 2026-03-06 |
+| 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-13 |
+| 16. EQ UI, Presets, and Persistence | v1.4 | 2/2 | Complete | 2026-03-14 |
+| 17. Windows Compilation Baseline | v1.5 | 0/? | Not started | - |
+| 18. Windows Runtime Fixes | v1.5 | 0/? | Not started | - |
+| 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
+| 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
