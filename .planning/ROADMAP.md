@@ -203,7 +203,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 15-01-PLAN.md — EQ filter chain, API methods, crossfade reconnect, visibilitychange guard
+- [x] 15-01-PLAN.md — EQ filter chain, API methods, crossfade reconnect, visibilitychange guard
 
 ### Phase 16: EQ UI, Presets, and Persistence
 **Goal**: The EQ is fully operable from the NowPlayingBar — a modal exposes 10 vertical sliders and a preset selector, the icon shows active state, and all settings survive an app restart
@@ -215,7 +215,11 @@ Plans:
   3. Selecting a preset from the dropdown (Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones) moves all 10 sliders smoothly and applies the correct gain values to the audio
   4. Closing the app and reopening it restores the last-used preset, enabled/disabled state, and any custom band positions — the EQ is immediately active before the first track play
   5. The modal renders correctly in both Midnight and Carbon themes using the app's existing CSS custom properties
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — EQ presets data module and EQModal component with sliders, dropdown, and toggle
+- [ ] 16-02-PLAN.md — NowPlayingBar EQ icon integration, active indicator, and persistence load
 
 ## Progress
 
@@ -235,5 +239,5 @@ Plans:
 | 12. CSS Layout Fix | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
-| 15. EQ Audio Engine | 1/1 | Complete    | 2026-03-14 | - |
-| 16. EQ UI, Presets, and Persistence | v1.4 | 0/? | Not started | - |
+| 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-14 |
+| 16. EQ UI, Presets, and Persistence | v1.4 | 0/2 | Not started | - |
