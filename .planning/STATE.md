@@ -62,6 +62,13 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 ## Session Continuity
 
 Last session: 2026-03-14
-Stopped at: Milestone v1.6 initialized
+Stopped at: Research complete, requirements scoping in progress
 Resume file: None
-Next action: Define requirements and create roadmap
+Next action: Resume /gsd:new-milestone — pick up at Step 9 (Define Requirements). Research is done (.planning/research/SUMMARY.md). User confirmed: table stakes for update check/toast, categorized sections for What's New modal (no icons), install/restart flow, config/pipeline. Need to write REQUIREMENTS.md and create roadmap.
+
+### Scoping Decisions Made
+- Update check: auto-check on launch (3s delay), toast with Install/Later
+- What's New: categorized sections (New/Fixes/Changes) — no icons
+- Install flow: user-initiated, auto-restart
+- Config: dialog:false, createUpdaterArtifacts:true as prerequisites
+- CI: multi-platform latest.json manifest
