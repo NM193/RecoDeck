@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-03-14
+
+### Added
+- Automatic update notifications — app checks for updates on launch and shows a toast
+- "What's New" modal with categorized sections (New / Fixed / Changes) after updating
+
+### Changed
+- Update toast shows Install / Later buttons instead of redirecting to GitHub
+- Updater plugin configured for v2 artifact generation
+
+### Fixed
+- Fresh installs no longer show an empty What's New modal
+
 ## [0.2.5] - 2026-03-06
 
 ### Added
@@ -74,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI-powered features
 - File watcher for automatic library updates
 
-[Unreleased]: https://github.com/NM193/RecoDeck/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/NM193/RecoDeck/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/NM193/RecoDeck/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/NM193/RecoDeck/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/NM193/RecoDeck/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/NM193/RecoDeck/compare/v0.2.2...v0.2.3
