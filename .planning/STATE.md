@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Library UX & Duplicate Management
 status: planning
-stopped_at: Completed 16-eq-ui-presets-persistence-01-PLAN.md
-last_updated: "2026-03-14T00:26:47.747Z"
+stopped_at: Completed 16-eq-ui-presets-persistence-02 Task 1, awaiting human-verify checkpoint
+last_updated: "2026-03-14T00:29:53.819Z"
 last_activity: 2026-03-13 — Roadmap created for v1.4 (Phases 15-16)
 progress:
   total_phases: 12
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
   percent: 0
 ---
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 15-eq-audio-engine P01 | 2min | 2 tasks | 2 files |
 | Phase 16-eq-ui-presets-persistence P01 | 2min | 2 tasks | 3 files |
+| Phase 16-eq-ui-presets-persistence P02 | 5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,7 @@ All v1.0–v1.3 decisions archived in PROJECT.md Key Decisions table and STATE.m
 - [Phase 16-eq-ui-presets-persistence]: EQModal reads audioPlayer.getEqState() on open to sync with audio engine, not from persisted settings
 - [Phase 16-eq-ui-presets-persistence]: Custom preset option renders dynamically only when activePreset === custom — prevents it showing in dropdown when named preset is active
 - [Phase 16-eq-ui-presets-persistence]: Slider gradient uses linear-gradient inline style per slider to visually indicate boost/cut from center 0 dB
+- [Phase 16-eq-ui-presets-persistence]: EQ state loaded in NowPlayingBar mount effect before first play to avoid 0 dB flash
 
 ### Pending Todos
 
@@ -84,7 +86,7 @@ All v1.0–v1.3 decisions archived in PROJECT.md Key Decisions table and STATE.m
 
 ## Session Continuity
 
-Last session: 2026-03-14T00:26:47.744Z
-Stopped at: Completed 16-eq-ui-presets-persistence-01-PLAN.md
+Last session: 2026-03-14T00:29:53.816Z
+Stopped at: Completed 16-eq-ui-presets-persistence-02 Task 1, awaiting human-verify checkpoint
 Resume file: None
 Next action: /gsd:plan-phase 15
