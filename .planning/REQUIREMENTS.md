@@ -1,72 +1,54 @@
 # Requirements: RecoDeck
 
-**Defined:** 2026-03-01
+**Defined:** 2026-03-14
 **Core Value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
 
-## v1.4 Requirements
+## v1.5 Requirements
 
-Requirements for milestone v1.4 Equalizer. Each maps to roadmap phases.
+Requirements for Windows Support milestone. Each maps to roadmap phases.
 
-### Audio Processing
+### Build & Compilation
 
-- [x] **EQAP-01**: User can enable/disable a 10-band graphic equalizer that processes audio in real time
-- [x] **EQAP-02**: EQ filter chain shares the existing AudioContext with the waveform visualizer (no second MediaElementSource)
-- [x] **EQAP-03**: EQ reconnects correctly after a crossfade completes (audio element swap)
-- [x] **EQAP-04**: AudioContext resumes automatically when the app window regains focus (WebKit background suspension guard)
+- [ ] **BILD-01**: App compiles on Windows with `x86_64-pc-windows-msvc` target including Aubio bindgen
+- [ ] **BILD-02**: `build:win` npm script produces a working Windows build
 
-### Presets
+### Runtime Fixes
 
-- [x] **EQPR-01**: User can select from 6 built-in presets: Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones
-- [x] **EQPR-02**: Selecting a preset applies all 10 band gains smoothly (no audible clicks)
+- [ ] **RNTM-01**: Mobile companion streaming works on Windows (fix `streaming.rs` canonicalize UNC prefix)
+- [ ] **RNTM-02**: Mobile companion PWA resources resolve correctly on Windows (fix `find_mobile_dist()`)
 
-### UI
+### Installer
 
-- [x] **EQUI-01**: An EQ icon appears next to the volume control in the NowPlayingBar
-- [x] **EQUI-02**: Clicking the EQ icon opens a modal with 10 vertical sliders (one per frequency band) and frequency labels
-- [x] **EQUI-03**: User can adjust individual band gain (±12 dB) by dragging sliders in custom mode
-- [x] **EQUI-04**: Modal includes an on/off toggle and a preset selector dropdown
-- [x] **EQUI-05**: EQ icon shows an active indicator when EQ is enabled
-- [x] **EQUI-06**: Modal uses the app's existing theme system (midnight/carbon) with a cool, minimal design
+- [ ] **INST-01**: NSIS installer installs and uninstalls RecoDeck cleanly on Windows
+- [ ] **INST-02**: `tauri.conf.json` has Windows NSIS bundle configuration
 
-### Persistence
+### CI/CD
 
-- [x] **EQPE-01**: EQ state (enabled, active preset, custom band gains) persists across app restarts via SQLite settings
+- [ ] **CICD-01**: GitHub Actions `build-windows` job produces Windows release artifacts
+- [ ] **CICD-02**: Windows build includes LLVM/libclang setup for Aubio bindgen
+- [ ] **CICD-03**: Release workflow uploads Windows artifacts alongside macOS
 
-## v1.3 Requirements (Previous)
+### Auto-Updater
 
-### Track Table Layout
-
-- [x] **LAYT-01**: Track table rows extend to the full window width at any window size
-- [x] **LAYT-02**: Track table header background extends to the full window width at any window size
-
-### Library Loading
-
-- [ ] **LOAD-01**: All tracks in the library load on startup (no "Scroll for more" pagination)
-- [ ] **LOAD-02**: Track count in status bar and sidebar reflects the full library after startup
-
-### Duplicate Management
-
-- [ ] **DUPL-01**: User can open a "Review Duplicates" dialog from Database Maintenance settings
-- [ ] **DUPL-02**: Dialog shows all duplicate groups with track details (file path, date added, file size, BPM)
-- [ ] **DUPL-03**: User can select individual tracks to delete within each duplicate group
-- [ ] **DUPL-04**: User can confirm deletion and the library refreshes without showing deleted tracks
+- [ ] **UPDT-01**: `latest.json` manifest includes `windows-x86_64` platform entry
+- [ ] **UPDT-02**: `generate-update-manifest.js` supports multi-platform output
 
 ## Future Requirements
 
-### Deferred from v1.2
+### Windows Enhancements
 
-- **XFADE-01**: Beatmatch crossfade — next track's playback rate shifts from current BPM to its own BPM during crossfade
-- **XFADE-02**: Crossfade audio plays synchronized to beat phase alignment
+- **WINS-01**: Windows code signing with EV/OV certificate (eliminates SmartScreen warning)
+- **WINS-02**: Windows file association for audio formats (.mp3, .flac, etc.)
+- **WINS-03**: Windows taskbar integration (thumbnail toolbar, progress bar)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| EQ on crossfade secondary audio | Crossfade is 8s transitional — EQ applies after swap completes |
-| EQ in native PCM fallback mode | Native mode is transient recovery path; not worth dual-context complexity |
-| User-defined named presets (CRUD) | 6 built-in + custom slot sufficient for v1.4 |
-| Parametric EQ (adjustable frequency/Q per band) | Graphic EQ with fixed frequencies is simpler and sufficient |
-| Beatmatch crossfade | Deferred from v1.2 — pitch correction complexity |
+| Windows code signing | $300-600/yr cert cost disproportionate for small DJ friend group; SmartScreen "Run Anyway" is acceptable |
+| Linux support | Separate milestone if needed; Windows is the priority |
+| ARM64 Windows | x86_64 covers the target audience; ARM64 can be added later |
+| Windows Store distribution | Not needed for personal/friend distribution |
 
 ## Traceability
 
@@ -74,25 +56,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EQAP-01 | Phase 15 | Complete |
-| EQAP-02 | Phase 15 | Complete |
-| EQAP-03 | Phase 15 | Complete |
-| EQAP-04 | Phase 15 | Complete |
-| EQPR-01 | Phase 16 | Complete |
-| EQPR-02 | Phase 16 | Complete |
-| EQUI-01 | Phase 16 | Complete |
-| EQUI-02 | Phase 16 | Complete |
-| EQUI-03 | Phase 16 | Complete |
-| EQUI-04 | Phase 16 | Complete |
-| EQUI-05 | Phase 16 | Complete |
-| EQUI-06 | Phase 16 | Complete |
-| EQPE-01 | Phase 16 | Complete |
+| BILD-01 | — | Pending |
+| BILD-02 | — | Pending |
+| RNTM-01 | — | Pending |
+| RNTM-02 | — | Pending |
+| INST-01 | — | Pending |
+| INST-02 | — | Pending |
+| CICD-01 | — | Pending |
+| CICD-02 | — | Pending |
+| CICD-03 | — | Pending |
+| UPDT-01 | — | Pending |
+| UPDT-02 | — | Pending |
 
 **Coverage:**
-- v1.4 requirements: 13 total
-- Mapped to phases: 13
-- Unmapped: 0
+- v1.5 requirements: 11 total
+- Mapped to phases: 0
+- Unmapped: 11 ⚠️
 
 ---
-*Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after v1.4 roadmap creation*
+*Requirements defined: 2026-03-14*
+*Last updated: 2026-03-14 after initial definition*
