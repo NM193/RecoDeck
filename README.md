@@ -1,6 +1,13 @@
-# Tauri + React + Typescript
+# RecoDeck
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+DJ music library manager with audio analysis, harmonic mixing, and playlist management.
+
+## Download
+
+- [Windows (x64)](https://github.com/NM193/RecoDeck/releases/latest/download/recodeck_0.2.7_x64-setup.exe)
+- [macOS (Apple Silicon)](https://github.com/NM193/RecoDeck/releases/latest/download/recodeck_0.2.7_aarch64.dmg)
+
+After installing, the app will notify you automatically when updates are available.
 
 ## Recommended IDE Setup
 
