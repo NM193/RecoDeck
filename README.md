@@ -4,8 +4,8 @@ DJ music library manager with audio analysis, harmonic mixing, and playlist mana
 
 ## Download
 
-- [Windows (x64)](https://github.com/NM193/RecoDeck/releases/latest/download/recodeck_0.2.10_x64-setup.exe)
-- [macOS (Apple Silicon)](https://github.com/NM193/RecoDeck/releases/latest/download/recodeck_0.2.10_aarch64.dmg)
+- [Windows (x64)](https://github.com/NM193/RecoDeck/releases/latest/download/recodeck_0.2.11_x64-setup.exe)
+- [macOS (Apple Silicon)](https://github.com/NM193/RecoDeck/releases/latest/download/recodeck_0.2.11_aarch64.dmg)
 
 After installing, the app will notify you automatically when updates are available.
 
