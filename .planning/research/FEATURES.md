@@ -1,237 +1,162 @@
 # Feature Research
 
-**Domain:** Desktop music library manager — DJ-focused, Tauri v2 + React 19
-**Researched:** 2026-03-06
-**Confidence:** HIGH (grounded in existing codebase + standard UX conventions for music library apps)
+**Domain:** Windows platform support — Tauri 2 desktop music player
+**Researched:** 2026-03-14
+**Confidence:** HIGH (grounded in existing codebase analysis, official Tauri 2 docs, and direct code review)
 
 ---
 
 ## Feature Landscape
 
-### Feature 1: Track Table Responsive Layout Fix
+### Table Stakes (Users Expect These)
 
-**Category:** Bug fix / polish — layout correctness when window is resized
-
-#### What Is Broken
-
-The current `TrackTable.css` uses `min-width: fit-content` on `.track-table-row`, which means rows shrink-wrap to their column widths. When the window is wider than the sum of column widths, neither the row background nor the column separator lines extend to the right edge. The header (`.track-table-header`, background `var(--bg-secondary)`) similarly does not stretch. The result is a visible content area that ends mid-screen with a raw background gap to the right.
-
-#### Table Stakes
+Features Windows users assume exist. Missing these = product feels broken or unprofessional on the platform.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Row backgrounds extend full width | Standard table UX — truncated rows look unfinished | LOW | CSS-only fix; rows need `min-width: max(fit-content, 100%)` or equivalent |
-| Header background extends full width | Header must visually match the scroll area at all window sizes | LOW | Same root cause as rows |
-| Column separators reach the right edge | Without this, the rightmost cell appears clipped against a raw background | LOW | Handled automatically once row width is fixed |
-| No horizontal scroll at normal widths | Horizontal scroll should only appear when window is narrower than the minimum column sum | LOW | Ensure overflow-x is correctly gated on the scroll container |
+| NSIS installer (.exe) | Windows users expect a standard Setup.exe, not a raw binary | LOW | Tauri 2 bundles NSIS by default; `tauri.conf.json` already has `"targets": "all"` which includes NSIS. Just needs a Windows build job in CI. |
+| App compiles and runs on Windows | Foundational — nothing else matters if it doesn't build | HIGH | Primary blocker: `bliss-audio-aubio-rs` uses `bindgen` + C build toolchain. Windows CI runner needs `libclang`, `llvm`, MSVC C compiler. |
+| Audio playback works on Windows | Core feature must function on the new platform | MEDIUM | Custom `stream://` protocol is already Windows-aware in `lib.rs` (uses `http://stream.localhost/?p=` on Windows). Needs Windows E2E verification. |
+| Auto-updater delivers Windows builds | Users expect updates without reinstalling manually | MEDIUM | `tauri.conf.json` already has updater configured with `createUpdaterArtifacts: "v1Compatible"`. The `latest.json` manifest needs a `windows-x86_64` platform entry. |
+| App data stored in correct Windows location | Library DB and settings must persist across sessions in the OS-standard location | LOW | Tauri 2's path resolver maps `AppLocalData` to `%LOCALAPPDATA%\recodeck` on Windows automatically. `init_database` already uses Tauri path API — no change needed. |
+| No console window on startup | Desktop apps on Windows must not flash a black terminal window | LOW | `src-tauri/build.rs` or `Cargo.toml` must include `#![windows_subsystem = "windows"]` linker flag. Tauri CLI adds this automatically in release builds. Verify it's not bypassed in debug. |
+| App icon in taskbar and title bar | Windows users expect a proper application icon | LOW | `icon.ico` already exists in `icons/`. Tauri NSIS installer registers it automatically. Verify the `.ico` file has all required sizes (16, 24, 32, 48, 64, 128, 256px). |
+| Window controls match Windows conventions | Windows title bar has minimize/maximize/close on the right, in that order | LOW | RecoDeck appears to use standard Tauri window chrome. Custom `frameless` or `decorations: false` would require implementing Windows-style controls. Check `tauri.conf.json`. |
+| Windows CI build job in release workflow | Shipping requires reproducible Windows builds from CI | MEDIUM | Current `release.yml` has only `build-macos` job. Needs a parallel `build-windows` job using `windows-latest` runner. |
+| Folder picker works for library setup | Users must be able to select music folders on Windows paths (`C:\Users\...`) | LOW | `tauri-plugin-dialog` already used for folder picking. Windows paths are native-handled by the dialog plugin. Verify the returned path is correctly passed through the stream protocol. |
 
-#### Anti-Features
+### Differentiators (What Would Make It Notable on Windows)
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Auto-stretch columns proportionally | Seems polished | Columns have defined widths (title flex, others fixed px); stretching distorts readability | Stretch only the title/flex column or add a blank spacer cell at the end |
-| Full rewrite to `<table>` element | True semantic tables extend naturally | Would require restructuring TanStack Virtual integration and all cell/column sizing | Keep virtualized flex layout, fix width calculation only |
-
-#### Complexity
-
-LOW. One or two CSS rule changes. The `min-width: fit-content` on `.track-table-row` is the primary culprit. Changing it to `min-width: max(fit-content, 100%)` resolves the issue without touching the virtualization layer, column definitions, or any Rust code.
-
----
-
-### Feature 2: Duplicate Tracks Review Dialog
-
-**Category:** Data management — replaces one-click destructive delete with a review-first modal
-
-#### What Currently Exists
-
-`DatabaseSection.tsx` has a single "Remove Duplicate Tracks" button. It calls `tauriApi.cleanupDuplicateTracks()` which invokes `db.remove_duplicate_tracks()` in Rust. The Rust function runs detection (hash match first, then filename+size match), silently picks the lowest-ID track to keep per group, deletes the rest, and returns a count. The user sees "Removed N duplicate tracks" with no ability to review which tracks were deleted or choose which copy to keep.
-
-#### What Users Expect in a Music Library App
-
-Reference behavior from Rekordbox, iTunes/Music.app, Swinsian, and MusicBrainz Picard:
-
-1. Show all duplicate groups before any deletion — each group lists the tracks considered duplicates, with metadata to distinguish them (title, artist, file path, duration, file size, date added, BPM if available).
-2. Auto-select the recommended deletion target — default selection marks the "worse" copy (higher ID = later import) for deletion, but does not act until user confirms.
-3. Allow per-track override — user can uncheck a track from the deletion list or switch which copy to keep.
-4. Bulk confirm or cancel — "Delete Selected" acts on all checked tracks; Cancel closes with no changes.
-5. Show count summary — "X duplicate groups found, Y tracks will be deleted" in the dialog header.
-6. Post-deletion notification — "Deleted N tracks" toast, then library reloads.
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| List all duplicate groups before deletion | Music libraries contain irreplaceable files; silent deletion is unacceptable | MEDIUM | Requires a new `get_duplicate_groups` backend command that returns groups without deleting |
-| Show file path for each duplicate | Users often have the same song in different folders — path identifies which copy is where | LOW | `file_path` already in TrackDTO |
-| Show duration and file size per track | Key signals for choosing which copy to keep (lossless vs. lossy) | LOW | `duration_ms`, `file_size` already in TrackDTO |
-| Pre-select the "worse" copy per group | Reduces click burden — users just review and confirm | LOW | Reuse existing "lowest ID = keeper" logic as the default selection |
-| Confirm before deleting | Required for any destructive action on user data | LOW | Dialog already implies this; just needs a confirm button |
-| Empty state when no duplicates found | Clear "No duplicates found" message prevents confusion when button appears to do nothing | LOW | Simple conditional render |
-
-#### Differentiators
+Features Windows desktop users appreciate but don't strictly require for Day 1 usability.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Show BPM/key per duplicate | DJs care which file has been analyzed; an unanalyzed copy is less valuable | LOW | `bpm`, `musical_key` already in TrackDTO |
-| Show date_added per track | Helps user trust which import was deliberate (first import is usually the intentional one) | LOW | `date_added` already in TrackDTO |
-| Allow choosing which copy to keep within a group | Full control, not just "delete these" | MEDIUM | Requires group-aware selection state in the dialog |
+| Unsigned installer with SmartScreen guidance | Small-team reality — OV cert is expensive; providing clear "Run Anyway" instructions reduces friction for trusted distribution | LOW | Document in README/release notes. SmartScreen shows "Windows protected your PC" prompt for unsigned apps. Users can click "More info" → "Run anyway". Consider submitting binary to Microsoft's file submission portal to build reputation over time. |
+| Windows-style keyboard shortcuts | Windows users expect Ctrl+Z, Ctrl+C, Ctrl+V for editing; media keys for play/pause | LOW | WebView2 (Chromium) handles standard Ctrl+* shortcuts natively. Media keys (F7/F8/F9 legacy keys) are a v2+ SMTC integration story. |
+| Correct Windows path display | Windows paths show as `C:\Music\Artist - Track.mp3` not `/C:/Music/...` | LOW | Track paths stored in SQLite will reflect whatever was scanned. The stream protocol `lib.rs` already handles Windows path normalization. UI display should respect OS-native path format. |
+| Mobile companion works on Windows | PWA companion server should function on Windows local network | MEDIUM | The Axum server binds to `0.0.0.0`. The `local-ip-address` crate resolves the machine's LAN IP. On Windows, firewall may block the port — need to document that Windows Firewall will prompt users to allow the app through. |
+| Proper high-DPI scaling | Windows 4K/HiDPI displays are common; UI must not appear blurry or tiny | LOW | WebView2 handles DPI scaling automatically. Tauri sets `highDpiAware` in the Windows manifest by default. Verify no pixel-snapped CSS values break on fractional DPI (125%, 150%). |
 
-#### Anti-Features
+### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Preview/play audio from dialog | "Let me hear which is higher quality" | Distracts from the primary task; dialog would need audio integration | Show bitrate and file size — sufficient quality signals |
-| Automatic smart-delete without dialog | "Just clean up everything fast" | Destroys files the user might need | Keep both paths: the existing one-click button for power users AND the new review dialog |
-| Merge metadata from duplicates | "Copy tags from the better copy to the keeper" | High complexity, out of scope for a cleanup operation | Defer to a dedicated metadata editor feature |
-
-#### UX Flow (Recommended)
-
-```
-Settings > Database Maintenance
-  ├── [Review Duplicate Tracks]    <- new button — opens dialog
-  └── [Remove Duplicates (quick)]  <- existing button kept for power users
-
-Dialog:
-  Header: "Duplicate Tracks — X groups found, Y tracks selected for deletion"
-  Body: Scrollable list of groups
-    Group 1:
-      [keep icon] Track row: title | artist | path | duration | size | BPM | date_added
-      [checkbox]  Track row: title | artist | path | duration | size | BPM | date_added  (pre-checked)
-    Group 2: ...
-  Footer: [Cancel]  [Delete N selected tracks]
-```
-
-#### New Backend Command Required
-
-The existing `remove_duplicate_tracks()` folds detection and deletion into one atomic operation. The dialog needs detection only:
-
-```
-get_duplicate_groups() -> Vec<DuplicateGroup>
-
-DuplicateGroup {
-  keep: TrackDTO,           // recommended track to keep (lowest ID)
-  duplicates: Vec<TrackDTO> // tracks recommended for deletion
-}
-```
-
-This is a read-only query — safe to call without side effects. Deletion then takes a list of track IDs (reusing existing delete logic per-ID, or a new `delete_tracks_batch` command for efficiency).
-
-#### Complexity
-
-MEDIUM overall:
-- Backend: new `get_duplicate_groups` command — extract detection logic from `remove_duplicate_tracks`, return structured data instead of deleting. LOW complexity, it is a pure refactor of existing code.
-- Frontend dialog component: modal with group list, per-row checkboxes, group-level selection state, confirm/cancel. MEDIUM complexity.
-- Connecting dialog to tauri-api and refreshing library state after deletion. LOW complexity.
+| Windows code signing (OV/EV certificate) | Prevents SmartScreen warnings entirely | OV certificates now require HSM hardware (post-June 2023); EV certificates cost $300-600/year; HSM setup adds CI complexity with Azure Key Vault or similar. For a small personal-use app distributed to friends, cost/complexity is disproportionate to benefit. | Ship unsigned with clear install instructions. Build SmartScreen reputation over time via Microsoft's file submission portal. Revisit when user base grows. |
+| System tray integration | Windows apps sometimes live in the system tray | Adds surface area: tray icon, context menu, click-to-restore, minimize-to-tray behavior. RecoDeck is a DJ library manager — you want it visible while working, not hidden. | Keep standard taskbar behavior. Tray is a v2+ consideration if users request background operation. |
+| SMTC (System Media Transport Controls) integration | Windows 11 shows media controls in taskbar flyout; media keys would control RecoDeck | Requires WinRT API bindings from Rust via `windows-rs` crate. Adds ~2MB to binary and significant Windows-only Rust code. Not a blocker for v1.5. | Defer to v2+. WebView2 already handles focus-based media key events (Space bar play/pause). SMTC is an enhancement, not table stakes. |
+| Windows Store (MSIX) distribution | Store provides auto-update and discovery | MSIX packaging changes app data paths to virtualized locations, breaking the existing SQLite path resolution. Requires a separate packaging target and Microsoft developer account. Not worth the complexity for a small DJ tool. | NSIS installer + GitHub Releases is the right approach for this audience. |
+| File association for audio files (MP3/FLAC opens RecoDeck) | Users might want to double-click a track to open it | RecoDeck is a library manager, not a default audio player. Registering as the default handler for MP3 would override users' existing players (Winamp, foobar2000, VLC). | Register an optional `.rdeck` project file association in v2+ if playlist files become a feature. Do not register generic audio MIME types. |
+| 32-bit (x86) build | Maximum compatibility | Virtually zero 32-bit Windows machines in 2026. `ort` (ONNX Runtime) and Aubio both have limited 32-bit support. Extra CI job for minimal gain. | x86_64 only. ARM64 Windows is a v2+ consideration. |
 
 ---
 
-### Feature 3: Full Library Load on Startup
+## Technical Context: Windows-Specific Code Paths Already in Codebase
 
-**Category:** Loading strategy change — remove "Scroll for more" pagination, load all tracks at once when "All Tracks" is selected
+### What Is Already Implemented
 
-#### What Currently Exists
+RecoDeck already has Windows-aware code in key areas. This significantly reduces the scope of v1.5.
 
-`App.tsx` `loadTracks()` for the "All Tracks" view:
-- Initial load: `getTracksPaginated(1000, 0)` — first 1000 tracks only
-- Sets `hasMoreTracks = true` if total count > 1000
-- `loadMoreTracks()` fetches subsequent 1000-track batches and appends to state
-- TrackTable uses TanStack Virtual for DOM-level virtualization — only renders visible rows regardless of array size
-- A "Scroll for more" footer is shown at the bottom whenever `hasMoreTracks` is true
+**Stream protocol URL (`lib.rs` line 73-74):**
+```
+// macOS URL:  stream://localhost/<absolute_path>
+// Windows URL: http://stream.localhost/<absolute_path>
+```
+The `register_uri_scheme_protocol("stream", ...)` handler already has `#[cfg(target_os = "windows")]` branches for path normalization (backslash-to-forward-slash conversion, UNC path handling, forward-slash-with-backslash fallback).
 
-#### What "Load All Tracks at Once" Means
+**Audio player URL construction (`audioPlayer.ts` lines 9-11):**
+```typescript
+// Windows:     http://stream.localhost/?p=<encoded_path>
+// macOS/Linux: stream://localhost/?p=<encoded_path>
+```
+The frontend already uses the correct platform URL format.
 
-Replace the paginated initial load with `getAllTracks()` (already exists in `tauri-api.ts`). Remove `loadMoreTracks`, `hasMoreTracks`, and `isLoadingMore` state. Remove the "Scroll for more" footer trigger. The virtualized renderer (TanStack Virtual) already handles rendering performance — it creates DOM nodes only for visible rows regardless of how large the in-memory array is.
+**Cargo.toml lib name workaround (`Cargo.toml` line 13-14):**
+```
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows
+```
+This is already handled.
 
-#### Performance Reality for This Audience
+### What Is Not Yet Implemented
 
-RecoDeck's audience (DJ friends, personal use) typically has libraries of 5,000–30,000 tracks.
-
-| Library Size | Rust Query Time | JS Parse + setState | DOM Nodes (virtual) | Verdict |
-|-------------|-----------------|---------------------|---------------------|---------|
-| 5,000 tracks | < 100ms | < 200ms | ~30–50 rows | Instant |
-| 20,000 tracks | ~300–500ms | ~500ms | ~30–50 rows | Fast, acceptable |
-| 50,000 tracks | ~1–2s | ~1–2s | ~30–50 rows | Brief spinner, fine |
-
-The additional wait for full load (vs. 1000-track page) is imperceptible at typical library sizes and removes significant UX friction.
-
-#### Why Pagination Causes Problems
-
-The paginated approach actively breaks several existing features:
-- **Scroll to now playing track** — `scrollToIndex` only works for tracks that have been loaded into the array. If the currently playing track is on page 3, "scroll to track" silently fails.
-- **Sort operates only on loaded page** — column sort in the UI sorts `tracks[]` in memory. With pagination, this sorts only the visible batch, not the full library.
-- **"All Tracks" count vs. visible count mismatch** — footer shows "Showing 1000 of 4231" which is confusing when TanStack Virtual already hides most rows visually.
-- **Backend search result count vs. loaded tracks mismatch** — `searchTracks` returns all results from the full DB, but displayed list might not include them all if pagination state is out of sync.
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| All tracks visible immediately in "All Tracks" view | Desktop apps do not paginate their own local data | LOW | Replace `getTracksPaginated` call with `getAllTracks` |
-| No "Scroll for more" prompt | This is a web/mobile pattern; wrong for a desktop music library | LOW | Remove `hasMoreTracks` state and footer rendering |
-| Loading indicator during fetch | Library load takes a moment; spinner prevents confusion | LOW | Already exists — the table shows loading state |
-| Sort operates on full library | Column sort must reflect the full dataset | LOW | Automatically fixed by full load |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Keep pagination as fallback for very large libraries | "What if someone has 100k tracks?" | RecoDeck's audience does not have 100k tracks; overengineering for this adds complexity without benefit. A 3–5s spinner for 100k tracks is acceptable. | Document the scale assumption in code comments |
-| Progressive load with background fetch | Hybrid approach that loads first page, then fetches the rest | Re-introduces the partial-list problem and adds complexity back | Just load all; the extra wait is acceptable |
-| Lazy-load artwork alongside tracks | "Load artwork too for better initial render" | Artwork is fetched on-demand via `artworkCache` — independent of track data load | No change needed |
-
-#### Complexity
-
-LOW. This is a targeted simplification:
-1. In `loadTracks()`, replace `getTracksPaginated(1000, 0)` with `getAllTracks()` for the "no folder, no playlist" path
-2. Remove `hasMoreTracks`, `isLoadingMore`, `loadMoreTracks` state and function from `App.tsx`
-3. Remove or make optional the `loadMoreTracks` / `hasMoreTracks` props passed to `TrackTable`
-4. Remove the "Scroll for more" footer from `TrackTable` rendering
-5. Remove the scroll-to-bottom trigger in `TrackTable` that called `loadMoreTracks`
-
-Net result: fewer lines of code, simpler App.tsx, and the "All Tracks" view works correctly for all existing features.
+| Gap | Location | Action Required |
+|-----|----------|-----------------|
+| Aubio C toolchain on Windows CI | `.github/workflows/release.yml` | Windows runner needs `libclang`, `llvm`, Visual Studio C++ build tools. `bliss-audio-aubio-rs` with `builtin` + `bindgen` features requires this. |
+| Windows CI build job | `.github/workflows/release.yml` | No `windows-latest` job exists; only `build-macos`. |
+| `latest.json` Windows platform entry | `scripts/generate-update-manifest.js` | Manifest generator currently only outputs `darwin-aarch64`. Need `windows-x86_64` entry. |
+| Windows build script | `package.json` | `build:mac` script exists; `build:win` does not. |
+| `release:sign` for Windows | `package.json` | Current `release:sign` is macOS-only. Windows NSIS artifacts are auto-signed by the updater plugin (using the existing Tauri signing key), so this may be a no-op. |
+| Mobile companion Windows Firewall | `src-tauri/src/server/` | Windows Firewall will prompt users when the Axum server tries to bind. The prompt is automatic (Windows dialog), but users must click Allow. No code change required — but needs documentation. |
+| Mobile companion path resolution on Windows | `src-tauri/src/server/routes.rs` | Mobile PWA served from `mobile-dist/`. Tauri `resources` copies it to the bundle. On Windows, the path to the bundled resource may differ. Needs verification. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-Layout fix (Feature 1)
-    └── independent — no dependencies on other v1.3 features
+Windows CI build job
+    └──requires──> Aubio C toolchain setup on windows-latest runner
+                       └──requires──> libclang/LLVM available in CI environment
+                                          └──uses──> bliss-audio-aubio-rs (bindgen feature)
 
-Full library load (Feature 3)
-    └── getAllTracks already exists in tauri-api.ts (no new backend command needed)
-        └── removes: loadMoreTracks, hasMoreTracks, isLoadingMore
+Windows auto-updater
+    └──requires──> Windows CI build job (to produce artifacts)
+    └──requires──> latest.json manifest with windows-x86_64 entry
+    └──uses──> tauri-plugin-updater (already in Cargo.toml)
+    └──uses──> TAURI_SIGNING_PRIVATE_KEY secret (already in CI)
 
-Duplicate review dialog (Feature 2)
-    ├── requires new backend: get_duplicate_groups command (read-only detection, no delete)
-    └── deletion uses: existing delete_track per-ID (or new delete_tracks_batch)
+Audio playback on Windows
+    └──requires──> stream:// protocol Windows path resolution (already implemented)
+    └──requires──> http://stream.localhost URL construction (already implemented in audioPlayer.ts)
+    └──needs verification──> Range request support in WebView2 (implemented in lib.rs, needs E2E test)
+
+Mobile companion on Windows
+    └──requires──> Windows Firewall rule (automatic prompt, user action)
+    └──requires──> mobile-dist resource path resolution on Windows (needs verification)
+    └──uses──> Axum server (already implemented, platform-agnostic)
+
+Auto-updater manifest
+    └──requires──> Windows NSIS artifact (.exe + .sig) from CI
+    └──requires──> generate-update-manifest.js updated for windows-x86_64
 ```
 
 ### Dependency Notes
 
-- **Feature 2 requires a new backend command before the dialog can be built.** It is a pure extraction of existing detection logic — no new algorithms. This is a prerequisite, not a blocker for the other features.
-- **Feature 3 simplifies App.tsx.** Removing pagination state reduces complexity and eliminates a prop chain into TrackTable. No Rust changes needed.
-- **Feature 1 is fully independent.** Pure CSS, no JS or Rust changes.
+- **Aubio is the critical path**: If `bliss-audio-aubio-rs` with `builtin` + `bindgen` features cannot be compiled on `windows-latest`, nothing else can ship. This must be validated first before investing in CI workflow, installer config, or updater manifest work.
+- **Stream protocol is already Windows-ready**: The `lib.rs` protocol handler and `audioPlayer.ts` URL construction both have Windows branches. The primary remaining risk is E2E audio playback testing on an actual Windows machine with real paths containing spaces and Unicode characters.
+- **Updater requires Windows artifacts first**: The `latest.json` manifest can only be generated after the Windows CI build produces `recodeck_*_x64-setup.exe` and its `.sig` file.
+- **Mobile companion is lowest priority**: It adds Windows Firewall complexity and resource path uncertainty. If it works without changes, great. If not, defer to v1.5.x.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.3 — all three features)
+### Launch With (v1.5)
 
-- [ ] Track table layout fix — rows and header extend full width on any window size (CSS fix)
-- [ ] Full library load — replace paginated load with `getAllTracks()`, remove "Scroll for more" UI
-- [ ] Duplicate review dialog — new `get_duplicate_groups` backend command + modal UI with group display, checkbox selection, confirm/cancel
+The minimum that makes RecoDeck usable on Windows for the existing DJ friend group.
 
-### Add After Validation (future)
+- [ ] Windows compilation passes with Aubio C toolchain — without this nothing ships
+- [ ] GitHub Actions `build-windows` job produces `recodeck_*_x64-setup.exe` artifact
+- [ ] NSIS installer installs and uninstalls cleanly on Windows 10/11
+- [ ] Audio playback works end-to-end on Windows (stream protocol, range requests, real music files)
+- [ ] Library scanning works with Windows paths (`C:\Users\...`)
+- [ ] `latest.json` updated to include `windows-x86_64` platform entry so auto-updater functions
+- [ ] `package.json` gets a `build:win` script
+- [ ] Release workflow updated to upload Windows artifacts alongside macOS `.dmg`
 
-- [ ] Batch delete command for duplicates — add `delete_tracks_batch` if per-ID loop is slow for large duplicate sets
-- [ ] "Choose which copy to keep" per group — allow flipping the keeper within each group in the dialog
+### Add After Validation (v1.5.x)
+
+- [ ] Mobile companion on Windows verified/fixed — trigger: first Windows user tries to use PWA feature
+- [ ] High-DPI display verification — trigger: user reports UI scaling issues
+- [ ] Windows Firewall documentation added to README — trigger: user can't connect mobile companion
 
 ### Future Consideration (v2+)
 
-- [ ] Duplicate detection across different file formats (same song, different format — e.g., MP3 vs. FLAC) — requires audio fingerprinting, out of scope
-- [ ] Smart metadata merge from duplicates — high complexity, low priority for this audience
+- [ ] SMTC media transport controls — when user base is large enough to justify WinRT bindings
+- [ ] Windows code signing (OV/EV certificate) — when distributing publicly beyond friend group
+- [ ] ARM64 Windows build — when ARM Windows hardware becomes common in target audience
+- [ ] System tray integration — if background operation becomes a requested use pattern
 
 ---
 
@@ -239,39 +164,76 @@ Duplicate review dialog (Feature 2)
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Layout fix | MEDIUM (polish, correctness) | LOW | P1 — quick win, do first |
-| Full library load | HIGH (removes friction, fixes scroll-to-track and sort) | LOW | P1 — simplification with UX improvement |
-| Duplicate review dialog | HIGH (data safety, replaces risky one-click delete) | MEDIUM | P1 — most work, highest user value |
+| Aubio Windows compilation | HIGH — blocks everything | HIGH (unknown until attempted) | P1 — must validate first |
+| Windows CI build job | HIGH — needed for distribution | MEDIUM | P1 |
+| NSIS installer | HIGH — table stakes for Windows | LOW (Tauri handles it) | P1 |
+| Audio playback E2E on Windows | HIGH — core function | LOW (code exists, needs test) | P1 |
+| Library scanning on Windows paths | HIGH — core function | LOW (code exists, needs test) | P1 |
+| latest.json Windows entry | HIGH — auto-updater | LOW | P1 |
+| build:win package.json script | MEDIUM — developer convenience | LOW | P1 |
+| Mobile companion on Windows | MEDIUM — existing feature | MEDIUM (firewall + path uncertainty) | P2 |
+| High-DPI verification | MEDIUM — usability | LOW | P2 |
+| Windows code signing | LOW for friend-group distribution | HIGH (cost + CI setup) | P3 |
+| SMTC integration | LOW for v1.5 | HIGH | P3 |
 
-**Suggested implementation order:**
-1. Layout fix — CSS only, lowest risk, immediate visible improvement
-2. Full library load — simplifies App.tsx before adding dialog complexity
-3. Duplicate review dialog — new backend command + UI, most changes but well-scoped
+**Priority key:**
+- P1: Must have for v1.5 launch
+- P2: Should have; add after P1 items verified
+- P3: Defer to v2+
+
+---
+
+## Platform Differences: Windows vs macOS Behavior Notes
+
+These are differences that affect user experience or developer workflow, even if no code changes are required.
+
+| Aspect | macOS (current) | Windows (target) | Action |
+|--------|----------------|------------------|--------|
+| Custom protocol URL | `stream://localhost/?p=...` | `http://stream.localhost/?p=...` | Already handled in both `lib.rs` and `audioPlayer.ts` |
+| Path separators | `/Users/name/Music/...` | `C:\Users\name\Music\...` | `lib.rs` normalizes backslashes; scanner uses Rust `Path` (cross-platform) |
+| App data directory | `~/Library/Application Support/recodeck/` | `%LOCALAPPDATA%\recodeck\` | Tauri path resolver abstracts this automatically |
+| WebView engine | WKWebView (WebKit/Safari) | WebView2 (Chromium/Edge) | CSS and JS behavior is more consistent with standard Chrome; some macOS-specific WebKit quirks disappear |
+| Font rendering | Subpixel antialiasing (Retina) | ClearType (CRT-legacy) | Minor visual difference; no CSS changes required |
+| Audio autoplay | Works without interaction | Fixed in wry#1287 — should work in current Tauri 2 | Verify on Windows; the bug was a typo in the autoplay browser arg, now resolved |
+| Installer format | `.dmg` (drag to Applications) | `.exe` NSIS setup wizard | Different artifact type; release workflow uploads both |
+| Updater behavior | Replaces `.app` bundle in-place | Automatically exits app, runs installer, restarts | Windows-specific: the app closes itself during update. Tauri handles this automatically with `tauri-plugin-updater`. |
+| Firewall | macOS firewall prompts are rare | Windows Defender Firewall prompts when Axum server tries to bind port | Mobile companion users will see a firewall dialog; they must click Allow. Document this. |
+| Code signing status | Unsigned (no Apple Developer Program) | Unsigned (no Windows certificate) | Both platforms will warn users. macOS Gatekeeper is stricter than Windows SmartScreen for unsigned apps. |
+| Window decorations | macOS-style traffic lights | Windows-style min/max/close on right | Tauri uses OS-native window chrome by default — nothing to do |
 
 ---
 
 ## Competitor Feature Analysis
 
-| Feature | Rekordbox 6 | iTunes / Music.app | Swinsian | RecoDeck v1.3 Approach |
-|---------|------------|-------------------|---------|----------------------|
-| Duplicate detection UX | "Show Duplicate Items" view filter — no review dialog | "Show Duplicate Items" menu — no review dialog | "Find Duplicates" with list preview | Review dialog with group list + selective delete |
-| Full library in table | Yes — all tracks always loaded | Yes — all tracks always loaded | Yes | Matches convention: always load all |
-| Table row full-width backgrounds | Yes | Yes | Yes | CSS fix to match standard |
-| Which copy to keep | Auto-keeps one (no user control) | Auto-keeps one (no user control) | User picks | Pre-select recommended, allow override |
+For context: how other DJ/music tools handle Windows distribution.
+
+| Feature | Rekordbox (DJ software) | foobar2000 (music player) | RecoDeck v1.5 Approach |
+|---------|------------------------|--------------------------|----------------------|
+| Windows installer | NSIS setup wizard | NSIS setup wizard | NSIS (Tauri default) |
+| Code signing | EV signed (Pioneer) | Unsigned → SmartScreen warning common | Unsigned; document workaround |
+| Auto-updater | Built-in launcher checks | Manual download | Tauri updater plugin |
+| Windows Firewall | Not applicable (no server) | Not applicable | Axum server triggers firewall prompt; document it |
+| System tray | Not used | Not used | Not used |
+| SMTC integration | Not integrated | Optional plugin | Deferred to v2+ |
 
 ---
 
 ## Sources
 
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/App.tsx` — pagination logic, loadTracks, loadMoreTracks, hasMoreTracks state
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/TrackTable.css` — row and header layout classes, `min-width: fit-content` on `.track-table-row`
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/components/settings/DatabaseSection.tsx` — current one-click duplicate removal button
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/db/mod.rs` `remove_duplicate_tracks()` — detection + deletion logic to be split
-- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/tauri-api.ts` — `getAllTracks`, `getTracksPaginated`, `cleanupDuplicateTracks` existing commands
-- UX convention: Rekordbox, iTunes/Music.app, Swinsian duplicate detection — industry standard is review-before-delete for music library management
-- Performance: TanStack Virtual renders only visible DOM rows regardless of in-memory array size — confirmed in existing TrackTable implementation
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/lib.rs` — existing Windows `#[cfg(target_os = "windows")]` branches in stream protocol handler; HIGH confidence
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/lib/audioPlayer.ts` — existing platform-conditional URL construction for stream protocol; HIGH confidence
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/Cargo.toml` — `bliss-audio-aubio-rs` dependency with `builtin` + `bindgen` features (C toolchain required); HIGH confidence
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/.github/workflows/release.yml` — macOS-only CI job; Windows job does not exist; HIGH confidence
+- Codebase: `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/tauri.conf.json` — `createUpdaterArtifacts: "v1Compatible"`, updater endpoints, `targets: "all"`; HIGH confidence
+- [Tauri 2 Windows Installer](https://v2.tauri.app/distribute/windows-installer/) — NSIS options, MSI options, WebView2 install modes; HIGH confidence
+- [Tauri 2 Updater Plugin](https://v2.tauri.app/plugin/updater/) — Windows install modes (`passive`, `basicUi`, `quiet`), manifest format, automatic app exit on Windows update; HIGH confidence
+- [Tauri 2 GitHub Actions](https://v2.tauri.app/distribute/pipelines/github/) — official multi-platform workflow structure; HIGH confidence
+- [Tauri Issue #9968](https://github.com/tauri-apps/tauri/issues/9968) — audio autoplay on Windows fixed via wry#1287 (typo in autoplay browser arg); HIGH confidence (issue closed)
+- [Tauri 2 Windows Code Signing](https://v2.tauri.app/distribute/sign/windows/) — OV/EV certificate options, SmartScreen behavior; HIGH confidence
+- [Microsoft SMTC docs](https://learn.microsoft.com/en-us/uwp/api/windows.media.systemmediatransportcontrols) — SMTC integration for Windows media apps; HIGH confidence (deferred to v2+)
+- [WebView2 autoplay issue](https://github.com/MicrosoftEdge/WebView2Feedback/issues/2159) — WebView2 autoplay policy details; MEDIUM confidence
 
 ---
 
-*Feature research for: RecoDeck v1.3 Library UX & Duplicate Management*
-*Researched: 2026-03-06*
+*Feature research for: RecoDeck v1.5 — Windows Platform Support*
+*Researched: 2026-03-14*

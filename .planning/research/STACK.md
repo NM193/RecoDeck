@@ -1,178 +1,316 @@
 # Stack Research
 
-**Project:** RecoDeck v1.3 Library UX & Duplicate Management
-**Researched:** 2026-03-06
-**Scope:** NEW additions only for three target features. Existing stack (Tauri v2, React 19, Rust, SQLite, Zustand, TailwindCSS 4, Framer Motion 11, TanStack Virtual 3, Vitest, ESLint 9) is validated and NOT re-researched.
-**Confidence:** HIGH for all three research questions.
+**Domain:** Windows platform support for Tauri 2 desktop music player (RecoDeck v1.5)
+**Researched:** 2026-03-14
+**Scope:** NEW stack additions and changes ONLY for Windows support. Existing stack (Tauri v2, React 19, Rust, SQLite, Zustand, TailwindCSS 4, bliss-audio-aubio-rs, Symphonia, Axum) is validated and NOT re-researched.
+**Confidence:** HIGH
 
 ---
 
 ## Executive Summary
 
-v1.3 adds three features: a track table responsive layout fix, a duplicate tracks review dialog with selective delete, and full library load on startup. Research focused on whether any of these require new dependencies.
+Windows support requires no new npm dependencies and no new Rust crates beyond what already ships in `Cargo.toml`. The work is entirely toolchain setup, CI environment configuration, `tauri.conf.json` additions, and a `latest.json` update manifest file.
 
-**Finding 1 — Track table layout fix: Pure CSS. No new libraries.** The root cause is `min-width: fit-content` on `.track-table-row` combined with the scroll area's `overflow: auto`. When the window is wider than the minimum content width, rows don't stretch to fill it because the absolute-positioned virtualizer children inherit width from the flex container, which itself is constrained by `fit-content`. The fix is applying `min-width: 100%` to `.track-table-holder` (the wrapper inside the scroll area) so the flex layout always fills available space. The header and body share this container, so both extend uniformly. This is a CSS-only change — no React, no new library.
+The single most important Windows-specific constraint: **`bliss-audio-aubio-rs` with `features = ["builtin", "bindgen"]` requires LLVM/libclang to be present during compilation.** On macOS this is satisfied automatically. On Windows it requires explicit environment variable setup (`LIBCLANG_PATH`) pointing to an LLVM installation. This is the primary Windows CI blocker.
 
-**Finding 2 — Duplicate tracks review dialog: New Rust command needed. No new frontend libraries.** The existing `cleanup_duplicate_tracks` command silently deletes all duplicates. The new feature requires a `get_duplicate_groups` query that returns duplicate groups (with metadata) so the user can review before deletion. The frontend already has every UI primitive needed: the `modal-overlay`/`modal-content` pattern (defined in TrackTable.css and used by the custom genre modal), Framer Motion for animated overlays (used in AIPlaylistDialog.tsx), checkbox state management via `useState<Set<number>>`, and the `deleteTrack` IPC wrapper (`tauriApi.deleteTrack`). The new dialog is a new React component using existing CSS classes — no new frontend dependency.
+The `ort` crate (ONNX Runtime) already uses `download-binaries` (the default feature), which auto-downloads prebuilt ONNX Runtime binaries from Microsoft's CDN at build time. No extra setup is needed for `ort` on Windows beyond what macOS already does — confirmed by ort's cargo feature documentation.
 
-**Finding 3 — Full library load on startup: No new dependencies.** `tauriApi.getAllTracks()` already exists at `src/lib/tauri-api.ts` line 29 and maps to the `get_all_tracks` Rust command at `src-tauri/src/commands/library.rs` line ~210. App.tsx currently calls `countTracks()` at startup and defers loading to `loadTracks()`. The v1.3 change is calling `getAllTracks()` inside `initializeApp()`, hydrating the `tracks` state immediately, and removing the `hasMoreTracks`/`loadMoreTracks`/`onLoadMore` pagination path. This was researched in v1.2 (see STACK.md) and confirmed feasible. No new library, no new Rust command.
+The `stream://` custom protocol is already Windows-aware in the codebase: `lib.rs` has `#[cfg(target_os = "windows")]` guards for backslash-to-slash conversion and UNC path handling, and the memory notes confirm Windows uses `http://stream.localhost/?p=...` format (WebView2 maps `http://[name].localhost` to custom protocol handlers).
 
 ---
 
 ## Recommended Stack
 
-### No New Frontend Dependencies Required for v1.3
+### Core Technologies (Windows-Specific Additions)
 
-All three features are either CSS corrections, wiring changes, or new Rust queries. The frontend stack is complete.
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| LLVM / Clang | 17.x or 18.x | Provides `libclang.dll` for `bindgen` during Rust compilation | `bliss-audio-aubio-rs` uses `bindgen` feature to generate FFI bindings for the aubio C library. Bindgen requires libclang >= 9.0. LLVM 17+ is widely available, well-tested with bindgen on Windows MSVC, and installable via `winget install LLVM.LLVM`. HIGH confidence — bindgen official docs confirm requirement. |
+| MSVC Build Tools (Desktop C++ workload) | Visual Studio 2022 Build Tools | C compiler and linker for MSVC Rust toolchain | Tauri v2 officially supports ONLY the MSVC Rust target (`x86_64-pc-windows-msvc`). GNU/MinGW targets are not supported. The "Desktop development with C++" workload in VS2022 Build Tools installs MSVC compiler, Windows SDK, and linker. HIGH confidence — Tauri v2 official prerequisites docs. |
+| Rust MSVC toolchain | stable (latest) | Default Rust host triple must be MSVC | Must be set with `rustup default stable-msvc` or by selecting MSVC during rustup install. The GNU toolchain will fail Tauri builds. HIGH confidence — Tauri v2 official docs. |
+| WebView2 Runtime | Evergreen (auto-installed on Win10 1803+) | Browser engine for Tauri's webview on Windows | WebView2 ships pre-installed on Windows 10 (v1803+) and Windows 11. Not a developer prerequisite — the NSIS installer handles the bootstrapper for older systems. HIGH confidence — Tauri v2 official docs. |
+| NSIS (Nullsoft Scriptable Install System) | Bundled by Tauri CLI | Windows installer packager | Tauri bundles NSIS internally — it is downloaded automatically by `tauri build` when targeting Windows. No manual NSIS install required. The developer configures NSIS options via `tauri.conf.json`. HIGH confidence — Tauri v2 Windows installer docs. |
 
-### Core Technologies (Existing — Confirmed Sufficient)
+### GitHub Actions CI Tooling
 
-| Technology | Version | Purpose in v1.3 | Why Sufficient |
-|------------|---------|-----------------|----------------|
-| CSS Flexbox / `min-width` | Browser API | Track table full-width layout fix | Row stretching is a CSS layout property. Setting `min-width: 100%` on the inner holder forces rows and header to span the scroll container width regardless of window size. |
-| `modal-overlay` / `modal-content` CSS classes | Defined in `src/components/TrackTable.css` lines 323-443 | Duplicate review dialog container | Already styled with backdrop blur, slide-in animation, and standard button variants (primary, secondary). The custom genre modal uses this pattern — duplicate review can use the same classes. |
-| Framer Motion `motion.div` + `AnimatePresence` | `^11.0.0` (installed) | Optional smooth open/close for duplicate dialog | AIPlaylistDialog already uses this pattern. Use or skip — the CSS `fadeIn`/`slideIn` keyframes in `modal-overlay` are sufficient without Framer Motion if consistency with the genre modal is preferred. |
-| `useState<Set<number>>` | React 19 (installed) | Track selection state in duplicate dialog | The AIPlaylistDialog uses `useState<Set<number>>` for `removedTrackIds`. Same pattern applies to the duplicate selection set. |
-| `tauriApi.deleteTrack(id)` | Exists in `src/lib/tauri-api.ts` line 47 | Delete individual duplicate tracks | One call per selected track. No batch delete command needed — the dialog deletes tracks one by one from the selected set on confirm. |
-| `tauriApi.getAllTracks()` | Exists in `src/lib/tauri-api.ts` line 29 | Full library load at startup | Returns `TrackDTO[]` with BPM/key populated from `LEFT JOIN`. Called once in `initializeApp()` to replace the paginated load. |
+| Tool | Version | Purpose | Why Recommended |
+|------|---------|---------|-----------------|
+| `KyleMayes/install-llvm-action@v2` | v2 (latest stable) | Installs LLVM on the `windows-latest` GitHub Actions runner and sets `LLVM_PATH` env var | The `windows-latest` runner (Windows Server 2022) does NOT include LLVM in PATH by default. This action installs a specific LLVM version and exposes `${{ env.LLVM_PATH }}`, from which `LIBCLANG_PATH` can be derived. Widely used solution confirmed by bindgen GitHub issues. MEDIUM confidence — community solution, not official Tauri docs. |
+| `tauri-apps/tauri-action@v0` | v0 (tracks latest v2-compatible) | Orchestrates Tauri build and GitHub Release artifact upload for multi-platform matrix | Official Tauri-maintained action. Handles per-platform `--target` args, signs artifacts using `TAURI_SIGNING_PRIVATE_KEY`, and uploads binaries to GitHub Releases. HIGH confidence — official Tauri tooling. |
+| `dtolnay/rust-toolchain@stable` | stable | Installs Rust on CI runners | Standard Rust CI toolchain action. Pairs with `swatinem/rust-cache@v2` for build caching. HIGH confidence — universal Rust CI practice. |
+| `swatinem/rust-cache@v2` | v2 | Caches `~/.cargo` and `target/` across CI runs | Windows Rust builds are slow (5-10 min cold). Cache reduces warm builds to ~2-3 min. HIGH confidence — standard practice. |
 
-### New Rust Command Required
+### Supporting Libraries (No New Additions Needed)
 
-| Command | Location | Purpose | Implementation |
-|---------|----------|---------|---------------|
-| `get_duplicate_groups` | `src-tauri/src/commands/library.rs` | Return duplicate groups for review | SQL query grouping by `file_hash` (where hash != 'unknown') and by `(LOWER(filename), file_size)`. Returns `Vec<DuplicateGroup>` where each group has a `keep` track (lowest ID) and a `duplicates` vec. Frontend renders the groups and lets user uncheck tracks they want to preserve. |
-
-The duplicate detection logic already exists in `db.remove_duplicate_tracks()` (lines 835-895 of `src-tauri/src/db/mod.rs`). The new command extracts the detection logic into a read-only query that returns groups instead of deleting immediately.
+| Library | Status | Notes |
+|---------|--------|-------|
+| `bliss-audio-aubio-rs` (existing, `builtin` + `bindgen`) | Requires LLVM on Windows | The `builtin` feature compiles aubio from source (no system aubio needed). The `bindgen` feature generates FFI bindings via libclang. Both work on Windows once `LIBCLANG_PATH` is set. |
+| `ort = "2.0.0-rc.11"` (existing) | Works on Windows out of box | Default `download-binaries` feature auto-downloads prebuilt ONNX Runtime `.dll` from Microsoft's CDN during `cargo build`. No `ORT_DYLIB_PATH` or static linking setup needed. The downloaded DLL must be bundled with the installer — Tauri's `externalBin` or `resources` config handles this. |
+| `rusqlite` with `bundled` (existing) | Works on Windows | `bundled` feature compiles SQLite from source — no system SQLite needed. No Windows-specific changes. |
+| `symphonia` (existing) | Works on Windows | Pure Rust, no C FFI, no LLVM required. No Windows-specific changes. |
 
 ---
 
-## What NOT to Add
+## tauri.conf.json Changes Required
 
-| Avoid | Why | What to Do Instead |
-|-------|-----|-------------------|
-| Headless UI / Radix UI / shadcn | Modal/dialog component libraries. Unnecessary: the project already has a working modal pattern in `TrackTable.css` with backdrop, animation, and button variants. Installing a headless library would require styling work to match the existing theme system and adds ~50-150KB to the bundle. | Use `.modal-overlay` + `.modal-content` CSS classes already defined. The duplicate dialog is a standard confirm-before-delete pattern — no accessibility-first dialog primitive needed for this audience. |
-| `react-window` or `@tanstack/react-table` | Alternative virtualization or table primitives. The layout bug is CSS, not a missing library. `@tanstack/react-virtual` (already installed at `^3.13.18`) handles virtualization. Adding a full table library would require migrating the entire `TrackTable.tsx` component. | Fix the CSS `min-width` property on `.track-table-holder`. One line. |
-| `immer` for Set mutations | Immutable state helper. The project uses plain `useState` with spread/`new Set()` patterns (see `removedTrackIds` in AIPlaylistDialog). | Continue using `new Set(prev)` pattern for checkbox state in the duplicate dialog, consistent with existing code. |
-| Tauri Channel IPC for library load | Channel API is for high-frequency streaming. Single `Vec<TrackDTO>` load is well-served by standard `invoke`. Previous v1.2 research confirmed JSON IPC handles 1K-5K tracks in <50ms on macOS. | Use `invoke('get_all_tracks')` via existing `tauriApi.getAllTracks()`. |
-| `rusqlite` batch transaction for group delete | The duplicate dialog deletes selected tracks one by one via `deleteTrack`. At typical duplicate counts (2-20 duplicates per library), sequential `invoke` calls are fast enough. | Call `tauriApi.deleteTrack(id)` for each checked track in the dialog's confirm handler. Reload library after all deletes complete. |
+The existing `tauri.conf.json` needs a `windows` section added under `bundle` for NSIS configuration:
+
+```json
+{
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": "v1Compatible",
+    "icon": [...],
+    "resources": {
+      "../mobile/dist/": "mobile-dist/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perUser",
+        "languages": ["English"],
+        "compression": "lzma",
+        "minimumWebview2Version": "110.0.1531.0"
+      }
+    }
+  }
+}
+```
+
+Key decisions:
+- `installMode: "perUser"` — installs to `%APPDATA%` without requiring admin elevation. Correct for a personal-use app targeting DJ friends.
+- `compression: "lzma"` — best compression ratio, 10-20 MB/s decompression. Default but explicit is better.
+- `minimumWebview2Version` — ensures WebView2 is modern enough. Any version from mid-2022 supports the features used.
+- No `template` override — Tauri's default NSIS template is sufficient for this scope.
+
+The existing `"targets": "all"` already includes NSIS and MSI — no change needed there.
+
+The existing CSP in `app.security.csp` needs a Windows-specific check:
+
+```
+"media-src 'self' stream: http: https: blob:"
+```
+
+This already includes `http:` which covers `http://stream.localhost/` on Windows WebView2. No change needed.
+
+---
+
+## Auto-Updater `latest.json` Multi-Platform Format
+
+The `createUpdaterArtifacts: "v1Compatible"` setting (already in `tauri.conf.json`) means the build produces `.nsis.zip` and `.msi.zip` archives (not raw `.exe`/`.msi`) with accompanying `.sig` files. This is the v1-compatible format required while users may still be on v1.
+
+The `latest.json` file (hosted at the GitHub Releases URL already configured in `tauri.conf.json`) must be extended from macOS-only to include Windows:
+
+```json
+{
+  "version": "1.5.0",
+  "notes": "Windows support — NSIS installer, CI/CD builds, auto-updater",
+  "pub_date": "2026-03-14T00:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "<content of .app.tar.gz.sig file>",
+      "url": "https://github.com/NM193/RecoDeck/releases/download/v1.5.0/recodeck_1.5.0_aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "<content of .app.tar.gz.sig file>",
+      "url": "https://github.com/NM193/RecoDeck/releases/download/v1.5.0/recodeck_1.5.0_x64.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "<content of .nsis.zip.sig file>",
+      "url": "https://github.com/NM193/RecoDeck/releases/download/v1.5.0/recodeck_1.5.0_x64-setup.nsis.zip"
+    }
+  }
+}
+```
+
+Platform key naming rules (HIGH confidence — Tauri v2 updater official docs):
+- OS: `darwin` (macOS), `windows`, `linux`
+- Arch: `x86_64`, `aarch64`, `i686`, `armv7`
+- Combined: `windows-x86_64`, `darwin-aarch64`, `darwin-x86_64`
+
+The `signature` field value must be the raw text content of the `.sig` file — NOT a path or URL. The `.sig` file is generated by `tauri build` when `TAURI_SIGNING_PRIVATE_KEY` is set.
+
+---
+
+## GitHub Actions Workflow Structure
+
+The CI workflow for Windows builds requires this structure around the standard `tauri-apps/tauri-action` matrix:
+
+```yaml
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows-only: Install LLVM for bindgen (aubio FFI requires libclang)
+      - name: Install LLVM and Clang (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "17"
+
+      # Windows-only: Set LIBCLANG_PATH from installed LLVM
+      - name: Set LIBCLANG_PATH (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: echo "LIBCLANG_PATH=${{ env.LLVM_PATH }}/bin" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+
+      - run: npm install
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: RecoDeck ${{ github.ref_name }}
+          releaseBody: 'See release notes.'
+          releaseDraft: true
+          args: ${{ matrix.args }}
+```
+
+Critical notes:
+- The `LIBCLANG_PATH` must point to the `bin/` subdirectory of the LLVM install, NOT the root — this is where `libclang.dll` lives and what clang-sys searches.
+- `fail-fast: false` is essential — a macOS signing failure should not cancel the Windows build.
+- `releaseDraft: true` — gives opportunity to edit release notes and add `latest.json` before publishing.
+- The `TAURI_SIGNING_PRIVATE_KEY` is needed even without code signing — it signs the updater artifacts (`.sig` files) which are separate from Windows code signing.
+
+---
+
+## Windows Code Signing
+
+**Verdict: Skip for v1.5.** Users will see a SmartScreen "Unknown publisher" warning on first install. This is acceptable for a personal-use app distributed to a small group of DJ friends.
+
+Official Tauri v2 docs confirm: *"It is not required to execute your application on Windows, as long as your end user is okay with ignoring the SmartScreen warning or your user does not download via the browser."*
+
+When code signing becomes needed (v2+), the options in priority order:
+1. **Azure Code Signing** (Microsoft's Trusted Signing service) — cheapest for indie developers, integrates with Tauri v2 via `signCommand` config
+2. **Azure Key Vault + relic** — open-source tool, works with Tauri's `CODESIGN_PRIVATE_KEY_PASSWORD` flow
+3. **EV Certificate (DigiCert/Sectigo)** — removes SmartScreen immediately but costs ~$400/year; overkill for this audience
+
+For v1.5, no `signCommand` configuration is needed in `tauri.conf.json`.
+
+---
+
+## Installation and Setup
+
+### Local Windows Development
+
+```powershell
+# 1. Install MSVC Build Tools
+# Download from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+# Select "Desktop development with C++" workload
+
+# 2. Install Rust with MSVC toolchain
+winget install Rustlang.Rustup
+rustup default stable-msvc
+
+# 3. Install LLVM (for aubio bindgen)
+winget install LLVM.LLVM
+# Then set env var (permanently via System Properties > Environment Variables):
+# LIBCLANG_PATH = C:\Program Files\LLVM\bin
+
+# 4. Verify build
+cargo build --release
+```
+
+### CI Secrets Required
+
+| Secret | Purpose |
+|--------|---------|
+| `TAURI_SIGNING_PRIVATE_KEY` | Signs updater `.sig` artifacts — required for auto-update to work |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password for the signing key |
+| `GITHUB_TOKEN` | Auto-provided by GitHub Actions — no setup needed |
+
+Generate the signing keypair with: `npx tauri signer generate -w ~/.tauri/myapp.key`
 
 ---
 
 ## Alternatives Considered
 
-| Recommended | Alternative | Why Not |
-|-------------|-------------|---------|
-| CSS `min-width: 100%` on `.track-table-holder` | Grid layout rewrite for the table | The table uses `display: flex` rows with fixed/flex column widths. Grid would require restructuring every column definition. The bug is specifically about the scroll container width — `min-width` on the inner wrapper solves it without restructuring. |
-| New `get_duplicate_groups` Rust command | Reuse existing `cleanup_duplicate_tracks` with dry-run flag | The existing command is not structured to return groups — it collects IDs and deletes. Adding a dry-run flag would require refactoring the internal logic and the return type. A separate read-only command that mirrors the detection logic is cleaner and easier to test. |
-| Sequential `deleteTrack` per confirmed duplicate | New `delete_tracks_batch` Rust command | At 2-20 tracks, N sequential IPC calls complete in under 100ms. A batch command adds Rust complexity (variadic ID list, partial failure handling) with no user-perceptible benefit. |
-| Call `getAllTracks()` in `initializeApp()` | Load tracks lazily when user opens "All Tracks" view | The feature request is to load on startup — specifically to avoid the "Scroll for more" experience. Lazy loading preserves the problem. The v1.2 analysis confirmed startup load is feasible at DJ library sizes. |
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| `KyleMayes/install-llvm-action` for LLVM | `chocolatey install llvm` in workflow | Chocolatey install is slower (~3 min) and less reproducible across runner image versions. `install-llvm-action` is faster, version-pinned, and sets `LLVM_PATH` automatically. |
+| NSIS installer | MSI installer | Use MSI if targeting enterprise environments that require MSI for Group Policy deployment. NSIS is simpler, requires no VBSCRIPT optional feature enabled, and produces a smaller installer. For personal-use distribution, NSIS is the right choice. |
+| `installMode: "perUser"` | `installMode: "perMachine"` | Use `perMachine` only if the app needs to be installed for all users on shared Windows PCs. `perUser` avoids UAC elevation prompts and is standard for consumer apps. |
+| Skip code signing for v1.5 | Azure Code Signing | Use Azure Code Signing when distributing publicly or to users unfamiliar with bypassing SmartScreen. Cost: ~$10/month via Azure Trusted Signing. |
+| `download-binaries` feature for `ort` (existing) | Static ONNX Runtime build | Static build eliminates DLL bundling concerns but requires building ONNX Runtime from source (30+ min). The `download-binaries` feature handles Windows correctly and is the right default. |
 
 ---
 
-## Integration Points
+## What NOT to Change
 
-### 1. Track table layout fix
-
-**File:** `src/components/TrackTable.css`
-
-The `.track-table-holder` div wraps both `.track-table-header` and `.track-table-body`. Currently, `track-table-row` has `min-width: fit-content` which makes rows shrink to content width. The scroll area is `overflow: auto` with no explicit width on the inner content.
-
-Fix: add `min-width: 100%` to `.track-table-holder`. This ensures the inner flex container is always at least as wide as the scroll area, making rows and header fill the full window width before horizontal scrolling activates.
-
-No React change. No TypeScript change. One CSS property.
-
-### 2. Duplicate review dialog
-
-**New files:**
-- `src/components/DuplicateReviewDialog.tsx` — dialog component
-- `src-tauri/src/commands/library.rs` — add `get_duplicate_groups` command (new `#[tauri::command]` fn + new `DuplicateGroup` and `DuplicateGroupEntry` structs)
-- `src/lib/tauri-api.ts` — add `getDuplicateGroups()` wrapper
-
-**Existing files modified:**
-- `src-tauri/src/db/mod.rs` — add `get_duplicate_groups()` DB method (extraction of detection logic from `remove_duplicate_tracks`)
-- `src-tauri/src/lib.rs` — register `get_duplicate_groups` in the Tauri builder
-- App.tsx or DatabaseSection settings — add "Find Duplicates" button that opens the dialog
-
-**DuplicateGroup shape (Rust → frontend):**
-
-```rust
-#[derive(Debug, Serialize)]
-pub struct DuplicateGroupEntry {
-    pub id: i64,
-    pub file_path: String,
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub duration_ms: Option<i32>,
-    pub file_size: Option<i64>,
-    pub date_added: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DuplicateGroup {
-    pub keep: DuplicateGroupEntry,       // lowest ID in group (suggested keep)
-    pub duplicates: Vec<DuplicateGroupEntry>, // higher IDs (suggested delete)
-    pub match_reason: String,            // "file_hash" or "filename+size"
-}
-```
-
-**Dialog behavior:**
-- Lists each duplicate group: shows "keep" track with a lock icon, shows duplicates with checkboxes (checked = will delete)
-- User can uncheck a duplicate to preserve it
-- "Delete Selected" button calls `tauriApi.deleteTrack(id)` for each checked track
-- After deletion, triggers `loadTracks()` and shows notification count
-
-**Reuse existing patterns:**
-- Use `.modal-overlay` and `.modal-content` CSS from `TrackTable.css`
-- Use `useState<Set<number>>` for selected-to-delete IDs (same as `removedTrackIds` in AIPlaylistDialog.tsx)
-- Use existing `Icon` component for action icons
-
-### 3. Full library load on startup
-
-**File:** `src/App.tsx`
-
-Current behavior in `initializeApp()` (line ~309-317): calls `countTracks()`, sets `totalTrackCount`, sets `tracks` to `[]`.
-
-v1.3 behavior: call `getAllTracks()` instead of `countTracks()`, set `tracks` to the result directly, set `hasMoreTracks` to `false`.
-
-Current behavior in `loadTracks()` (line ~360-368): for "All Tracks" view (no folder/playlist), calls `getTracksPaginated(1000, 0)` and sets `hasMoreTracks`.
-
-v1.3 behavior: simplify `loadTracks()` — remove the paginated branch, always call `getAllTracks()` for the "All Tracks" case (or rely on the startup-loaded tracks already being in state and skip the call).
-
-Remove:
-- `hasMoreTracks` state and its setter
-- `isLoadingMore` state and its setter
-- `loadMoreTracks` callback
-- `onLoadMore` prop passed to `TrackTable`
-- The scroll listener in `TrackTable.tsx` that calls `onLoadMore`
-- "Scroll for more" text in the footer
-
-The `TrackTable` props `onLoadMore`, `hasMoreTracks`, `isLoadingMore` can be removed from the interface and the component once the paginated path is gone.
+| Avoid | Why |
+|-------|-----|
+| Switching to `x86_64-pc-windows-gnu` toolchain | Tauri v2 does not support GNU target on Windows. MSVC only. |
+| Adding `winget` or `choco` to Cargo.toml | Not applicable — these are OS-level package managers, not Rust dependencies. |
+| Changing `stream://` protocol registration | The protocol handler already has correct `#[cfg(target_os = "windows")]` guards in `lib.rs`. Windows uses `http://stream.localhost/` automatically — Tauri/WRY handles the mapping. |
+| Adding a separate Windows-specific audio backend | HTML5 Audio in WebView2 (Chromium-based) on Windows supports the same audio formats as WebKit on macOS. Symphonia is already handling server-side format decoding. No changes needed. |
+| Adding `VBSCRIPT` optional feature for NSIS | VBSCRIPT is only required for MSI builds. Since we're using NSIS, this is not needed. |
+| New Tauri commands for Windows paths | Path normalization is already in `lib.rs` with Windows-aware logic. |
 
 ---
 
 ## Version Compatibility
 
-| API / Feature | Runtime | Notes |
-|---------------|---------|-------|
-| `get_all_tracks` Rust command | Tauri 2.x (project uses `"2"`) | Already registered in `lib.rs`. Returns `Vec<TrackDTO>` with LEFT JOIN on track_analysis. No version concern. |
-| CSS `min-width: 100%` | All browsers / WKWebView | Standard CSS. No compatibility risk. |
-| `useState<Set<number>>` | React 19 (installed) | Standard React hook. No version concern. |
-| `#[tauri::command]` for `get_duplicate_groups` | Tauri 2.x | Same pattern as all other commands in `library.rs`. No version concern. |
+| Component | Version | Windows Compatibility Notes |
+|-----------|---------|---------------------------|
+| Tauri v2 | 2.x (current) | `windows-latest` runner (Win Server 2022). Target: `x86_64-pc-windows-msvc`. HIGH confidence. |
+| bindgen (via bliss-audio-aubio-rs) | Pinned by crate | Requires LLVM >= 9.0. LLVM 17 recommended — widely available, stable with MSVC. |
+| WebView2 | Evergreen | Auto-installed on Win10 1803+. Installer bootstrapper handles older systems. |
+| `ort` v2.0.0-rc.11 | Fixed in Cargo.toml | `download-binaries` fetches prebuilt ONNX Runtime for `x86_64-pc-windows-msvc`. No manual action needed. |
+| NSIS | Bundled by Tauri CLI | No version to manage — Tauri downloads appropriate NSIS version automatically. |
 
 ---
 
 ## Sources
 
-- Direct code inspection: `src/components/TrackTable.tsx` (layout structure, virtualizer, props) — HIGH confidence
-- Direct code inspection: `src/components/TrackTable.css` (`.track-table-row min-width: fit-content`, `.modal-overlay`, `.modal-content`) — HIGH confidence
-- Direct code inspection: `src/components/ai/AIPlaylistDialog.tsx` (`useState<Set<number>>` for `removedTrackIds`, Framer Motion overlay pattern) — HIGH confidence
-- Direct code inspection: `src-tauri/src/db/mod.rs` lines 835-920 (`remove_duplicate_tracks` detection logic, SQL queries for hash and filename+size) — HIGH confidence
-- Direct code inspection: `src-tauri/src/commands/library.rs` lines 592-602 (`cleanup_duplicate_tracks` command, `db.remove_duplicate_tracks()` call) — HIGH confidence
-- Direct code inspection: `src/lib/tauri-api.ts` line 29 (`getAllTracks`), line 47 (`deleteTrack`) — HIGH confidence
-- Direct code inspection: `src/App.tsx` lines 309-427 (startup load, pagination logic, `loadMoreTracks`) — HIGH confidence
-- v1.2 STACK.md: confirmed `getAllTracks()` is feasible for DJ library sizes at startup — HIGH confidence (already validated)
+- [Tauri v2 Prerequisites](https://v2.tauri.app/start/prerequisites/) — MSVC toolchain requirement, WebView2, Windows setup. HIGH confidence.
+- [Tauri v2 Windows Installer](https://v2.tauri.app/distribute/windows-installer/) — NSIS config options, install modes, compression. HIGH confidence.
+- [Tauri v2 GitHub Actions Pipeline](https://v2.tauri.app/distribute/pipelines/github/) — tauri-action workflow structure. HIGH confidence.
+- [Tauri v2 Updater Plugin](https://v2.tauri.app/plugin/updater/) — `latest.json` format, platform key naming, `createUpdaterArtifacts` behavior. HIGH confidence.
+- [Tauri v2 Windows Code Signing](https://v2.tauri.app/distribute/sign/windows/) — No-signing option confirmed, SmartScreen behavior, Azure alternatives. HIGH confidence.
+- [bindgen Requirements](https://rust-lang.github.io/rust-bindgen/requirements.html) — libclang requirement, `LIBCLANG_PATH` env var. HIGH confidence.
+- [NsisConfig struct — tauri-utils docs.rs](https://docs.rs/tauri-utils/latest/tauri_utils/config/struct.NsisConfig.html) — All NSIS config fields. HIGH confidence.
+- [KyleMayes/install-llvm-action GitHub Marketplace](https://github.com/marketplace/actions/install-llvm-and-clang) — LLVM GitHub Action setup. MEDIUM confidence.
+- [bindgen issue #1797: libclang on GitHub Actions Windows](https://github.com/rust-lang/rust-bindgen/issues/1797) — `LIBCLANG_PATH` workaround for CI. MEDIUM confidence (community solution).
+- [ort Cargo Features](https://ort.pyke.io/setup/cargo-features) — `download-binaries` default behavior, Windows compatibility. HIGH confidence.
+- [ort Linking Guide](https://ort.pyke.io/setup/linking) — Static vs dynamic, `load-dynamic` feature, `ORT_LIB_PATH`. HIGH confidence.
+- `src-tauri/src/lib.rs` (codebase, direct read) — Windows `#[cfg]` guards, `http://stream.localhost/` protocol already handled. HIGH confidence.
+- `src-tauri/Cargo.toml` (codebase, direct read) — `bliss-audio-aubio-rs` with `["builtin", "bindgen"]` confirmed, `ort = "2.0.0-rc.11"` confirmed. HIGH confidence.
+- `src-tauri/tauri.conf.json` (codebase, direct read) — Current config structure, updater endpoint, `v1Compatible` confirmed. HIGH confidence.
 
 ---
 
-*Stack research for: RecoDeck v1.3 Library UX & Duplicate Management*
-*Researched: 2026-03-06*
+*Stack research for: RecoDeck v1.5 — Windows platform support*
+*Researched: 2026-03-14*
