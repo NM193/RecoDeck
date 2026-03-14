@@ -35,21 +35,23 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 - ✓ AI track recommendations (similar track + playlist-based) — v1.0
 - ✓ Mix prep: energy arc visualization and transition issue detection — v1.0
 - ✓ AI-optimized playlist reorder for key-compatible mixing — v1.0
+- ✓ 10-band graphic EQ with presets and custom mode — v1.4
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.4 Equalizer
+## Current Milestone: v1.5 Windows Support
 
-**Goal:** Add a 10-band graphic equalizer with presets and custom mode, accessible from the NowPlayingBar.
+**Goal:** Ship-ready Windows support — compilation, NSIS installer, CI/CD builds, auto-updater, and platform-specific fixes.
 
 **Target features:**
-- EQ icon next to volume control in NowPlayingBar
-- Modal with 10-band graphic equalizer (sliders per frequency band)
-- Preset EQ profiles (Flat, Bass Boost, Treble Boost, Vocal, etc.)
-- Custom EQ mode with per-band adjustment
-- Cool, minimal UI using existing app theme system (midnight/carbon)
+- Windows compilation with Aubio C build toolchain
+- NSIS installer for Windows distribution
+- CI/CD pipeline with Windows build job
+- Auto-updater manifest with Windows platform entry
+- Platform-correct mobile companion PWA path resolution
+- Windows build scripts (build:win, release:sign, release:manifest)
 
 ### Out of Scope
 
@@ -103,4 +105,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-13 after v1.4 Equalizer milestone started*
+*Last updated: 2026-03-14 after v1.5 Windows Support milestone started*
