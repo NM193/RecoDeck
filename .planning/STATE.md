@@ -4,7 +4,7 @@ milestone: v1.5
 milestone_name: Windows Support
 status: planning
 stopped_at: Completed 23-whats-new-modal 23-01-PLAN.md
-last_updated: "2026-03-14T17:41:04.120Z"
+last_updated: "2026-03-14T17:43:44.217Z"
 last_activity: 2026-03-14 — v1.6 requirements defined, roadmap created
 progress:
   total_phases: 21
