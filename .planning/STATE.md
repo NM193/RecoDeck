@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Windows Support
 status: planning
-stopped_at: Completed 21-updater-config 21-01-PLAN.md
-last_updated: "2026-03-14T16:54:16.920Z"
+stopped_at: Completed 22-auto-check-toast 22-01-PLAN.md
+last_updated: "2026-03-14T17:17:59.968Z"
 last_activity: 2026-03-14 — v1.6 requirements defined, roadmap created
 progress:
   total_phases: 21
-  completed_phases: 12
-  total_plans: 20
-  completed_plans: 20
+  completed_phases: 13
+  total_plans: 21
+  completed_plans: 21
 ---
 
 # Project State
@@ -44,6 +44,7 @@ Last activity: 2026-03-14 — v1.6 requirements defined, roadmap created
 
 *Updated after each plan completion*
 | Phase 21-updater-config P01 | 5 | 2 tasks | 1 files |
+| Phase 22-auto-check-toast P01 | 15 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -52,6 +53,8 @@ Last activity: 2026-03-14 — v1.6 requirements defined, roadmap created
 All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 21-updater-config]: Remove dialog key entirely (not set to false) — not valid in Tauri v2 updater Config struct
 - [Phase 21-updater-config]: Set createUpdaterArtifacts to boolean true (not string v1Compatible) — v2-native artifact format, v1Compatible removal planned for v3
+- [Phase 22-auto-check-toast]: check-only update flow: check() on launch routes to Settings for install, never auto-installs or calls relaunch()
+- [Phase 22-auto-check-toast]: Windows relaunch guard: navigator.platform.startsWith('Win') skips relaunch() after install since NSIS auto-exits the process
 
 ### Pending Todos
 
@@ -63,7 +66,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-14T16:52:22.818Z
-Stopped at: Completed 21-updater-config 21-01-PLAN.md
+Last session: 2026-03-14T17:17:59.965Z
+Stopped at: Completed 22-auto-check-toast 22-01-PLAN.md
 Resume file: None
 Next action: Plan Phase 21 (Updater Plugin Configuration) — small config phase, then Phase 22 is the core deliverable.

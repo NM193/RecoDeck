@@ -299,7 +299,7 @@ Plans:
 **Milestone Goal:** In-app update notification system — auto-check on launch, toast banner to install, auto-restart, and "What's New" changelog modal after update.
 
 - [x] **Phase 21: Updater Plugin Configuration** — Config unblocking (`dialog: false`, `createUpdaterArtifacts: true`) so JS API works (completed 2026-03-14)
-- [ ] **Phase 22: Auto-Check and Update Toast** — Safe startup check + dismissible toast with Install/Later actions
+- [x] **Phase 22: Auto-Check and Update Toast** — Safe startup check + dismissible toast with Install/Later actions (completed 2026-03-14)
 - [ ] **Phase 23: Categorized What's New Modal** — Structured changelog sections (New/Fixes/Changes), fresh install guard, remove duplicate update button
 - [ ] **Phase 24: CI Release Pipeline** — Multi-platform `latest.json` manifest for macOS + Windows
 - [ ] **Phase 25: Update UX Polish** — Section icons, playback-aware toast suppression
@@ -398,7 +398,7 @@ Plans:
 | 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
 | 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
 | 21. Updater Plugin Configuration | 1/1 | Complete    | 2026-03-14 | - |
-| 22. Auto-Check and Update Toast | v1.6 | 0/? | Not started | - |
+| 22. Auto-Check and Update Toast | 1/1 | Complete   | 2026-03-14 | - |
 | 23. Categorized What's New Modal | v1.6 | 0/? | Not started | - |
 | 24. CI Release Pipeline | v1.6 | 0/? | Not started | - |
 | 25. Update UX Polish | v1.6 | 0/? | Not started | - |

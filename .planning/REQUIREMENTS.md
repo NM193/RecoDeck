@@ -44,9 +44,9 @@ Requirements for Update Notifications milestone. Each maps to roadmap phases.
 
 ### Auto-Check & Toast
 
-- [ ] **UCHK-01**: App checks for updates on launch after a 3-5 second delay (check only, never auto-install)
-- [ ] **UCHK-02**: Update-available toast notification appears with Install and Later buttons
-- [ ] **UCHK-03**: Install button routes to Settings > About for user-initiated download and restart
+- [x] **UCHK-01**: App checks for updates on launch after a 3-5 second delay (check only, never auto-install)
+- [x] **UCHK-02**: Update-available toast notification appears with Install and Later buttons
+- [x] **UCHK-03**: Install button routes to Settings > About for user-initiated download and restart
 
 ### What's New Modal
 
@@ -111,9 +111,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | UCFG-01 | Phase 21 | Complete |
 | UCFG-02 | Phase 21 | Complete |
-| UCHK-01 | Phase 22 | Pending |
-| UCHK-02 | Phase 22 | Pending |
-| UCHK-03 | Phase 22 | Pending |
+| UCHK-01 | Phase 22 | Complete |
+| UCHK-02 | Phase 22 | Complete |
+| UCHK-03 | Phase 22 | Complete |
 | WHNW-01 | Phase 23 | Pending |
 | WHNW-02 | Phase 23 | Pending |
 | WHNW-03 | Phase 23 | Pending |
