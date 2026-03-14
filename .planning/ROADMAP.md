@@ -235,5 +235,5 @@ Plans:
 | 12. CSS Layout Fix | v1.3 | 1/1 | Complete | 2026-03-06 |
 | 13. Full Library Load | v1.3 | 0/? | Not started | - |
 | 14. Duplicate Review Dialog | v1.3 | 0/? | Not started | - |
-| 15. EQ Audio Engine | 1/1 | Complete   | 2026-03-13 | - |
+| 15. EQ Audio Engine | 1/1 | Complete    | 2026-03-14 | - |
 | 16. EQ UI, Presets, and Persistence | v1.4 | 0/? | Not started | - |

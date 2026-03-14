@@ -9,10 +9,10 @@ Requirements for milestone v1.4 Equalizer. Each maps to roadmap phases.
 
 ### Audio Processing
 
-- [ ] **EQAP-01**: User can enable/disable a 10-band graphic equalizer that processes audio in real time
-- [ ] **EQAP-02**: EQ filter chain shares the existing AudioContext with the waveform visualizer (no second MediaElementSource)
-- [ ] **EQAP-03**: EQ reconnects correctly after a crossfade completes (audio element swap)
-- [ ] **EQAP-04**: AudioContext resumes automatically when the app window regains focus (WebKit background suspension guard)
+- [x] **EQAP-01**: User can enable/disable a 10-band graphic equalizer that processes audio in real time
+- [x] **EQAP-02**: EQ filter chain shares the existing AudioContext with the waveform visualizer (no second MediaElementSource)
+- [x] **EQAP-03**: EQ reconnects correctly after a crossfade completes (audio element swap)
+- [x] **EQAP-04**: AudioContext resumes automatically when the app window regains focus (WebKit background suspension guard)
 
 ### Presets
 
@@ -74,10 +74,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EQAP-01 | Phase 15 | Pending |
-| EQAP-02 | Phase 15 | Pending |
-| EQAP-03 | Phase 15 | Pending |
-| EQAP-04 | Phase 15 | Pending |
+| EQAP-01 | Phase 15 | Complete |
+| EQAP-02 | Phase 15 | Complete |
+| EQAP-03 | Phase 15 | Complete |
+| EQAP-04 | Phase 15 | Complete |
 | EQPR-01 | Phase 16 | Pending |
 | EQPR-02 | Phase 16 | Pending |
 | EQUI-01 | Phase 16 | Pending |
