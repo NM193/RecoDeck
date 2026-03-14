@@ -14,6 +14,7 @@
     "version:minor": "npm version minor && npm run version:sync",
     "version:major": "npm version major && npm run version:sync",
     "build:mac": "npm run version:sync && tauri build --target universal-apple-darwin",
+    "build:win": "npm run version:sync && tauri build --target x86_64-pc-windows-msvc",
     "build:dev": "tauri build --debug",
     "release:sign": "tauri signer sign src-tauri/target/release/bundle/macos/recodeck.app.tar.gz -k ~/.tauri/recodeck.key",
     "release:manifest": "node scripts/generate-update-manifest.js",
