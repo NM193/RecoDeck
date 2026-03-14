@@ -50,10 +50,10 @@ Requirements for Update Notifications milestone. Each maps to roadmap phases.
 
 ### What's New Modal
 
-- [ ] **WHNW-01**: `getChangesForVersion()` returns categorized object `{ added, changed, fixed }` instead of flat `string[]`
-- [ ] **WHNW-02**: What's New modal displays three labeled sections (New / Fixes / Changes)
-- [ ] **WHNW-03**: What's New modal does not fire on fresh install (null guard on `last_seen_version`)
-- [ ] **WHNW-04**: Duplicate update button removed from WhatsNewDialog
+- [x] **WHNW-01**: `getChangesForVersion()` returns categorized object `{ added, changed, fixed }` instead of flat `string[]`
+- [x] **WHNW-02**: What's New modal displays three labeled sections (New / Fixes / Changes)
+- [x] **WHNW-03**: What's New modal does not fire on fresh install (null guard on `last_seen_version`)
+- [x] **WHNW-04**: Duplicate update button removed from WhatsNewDialog
 
 ### CI Release Pipeline
 
@@ -114,10 +114,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UCHK-01 | Phase 22 | Complete |
 | UCHK-02 | Phase 22 | Complete |
 | UCHK-03 | Phase 22 | Complete |
-| WHNW-01 | Phase 23 | Pending |
-| WHNW-02 | Phase 23 | Pending |
-| WHNW-03 | Phase 23 | Pending |
-| WHNW-04 | Phase 23 | Pending |
+| WHNW-01 | Phase 23 | Complete |
+| WHNW-02 | Phase 23 | Complete |
+| WHNW-03 | Phase 23 | Complete |
+| WHNW-04 | Phase 23 | Complete |
 | CIUP-01 | Phase 24 | Pending |
 | CIUP-02 | Phase 24 | Pending |
 | UPOL-01 | Phase 25 | Pending |
