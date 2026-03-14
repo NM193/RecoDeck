@@ -1,77 +1,82 @@
-// Generates latest.json manifest for Tauri updater
+// Generates latest.json manifest for Tauri updater (macOS + Windows)
 import fs from 'fs';
-import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { globSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Read package.json for version
-const packageJsonPath = path.join(__dirname, '../package.json');
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
 const version = packageJson.version;
+const repo = process.env.GITHUB_REPOSITORY || 'NM193/RecoDeck';
 
-// Path to the update bundle. With --target aarch64-apple-darwin: target/aarch64-apple-darwin/release/bundle/
-const targetDir = process.env.TAURI_BUNDLE_TARGET || 'release';
-const tarballPath = path.join(
-  __dirname,
-  `../src-tauri/target/${targetDir}/bundle/macos/recodeck.app.tar.gz`
-);
+const platforms = {};
 
-// Check if tarball exists
-if (!fs.existsSync(tarballPath)) {
-  console.error(`❌ Error: Update bundle not found at ${tarballPath}`);
-  console.error('   Run "npm run build:mac" first to create the bundle.');
+// --- macOS (Apple Silicon) ---
+const macTarball = findFile('artifacts/macos', '**/*.tar.gz', /\.sig$/);
+const macSig = macTarball ? `${macTarball}.sig` : null;
+
+if (macTarball && macSig && fs.existsSync(macSig)) {
+  const signature = fs.readFileSync(macSig, 'utf8').trim();
+  const filename = path.basename(macTarball);
+  platforms['darwin-aarch64'] = {
+    signature,
+    url: `https://github.com/${repo}/releases/download/v${version}/${filename}`,
+  };
+  console.log(`✓ darwin-aarch64: ${filename}`);
+}
+
+// --- Windows (x86_64 NSIS) ---
+const winExe = findFile('artifacts/windows', '**/*.exe', /\.sig$/);
+const winSig = winExe ? `${winExe}.sig` : null;
+
+if (winExe && winSig && fs.existsSync(winSig)) {
+  const signature = fs.readFileSync(winSig, 'utf8').trim();
+  const filename = path.basename(winExe);
+  platforms['windows-x86_64'] = {
+    signature,
+    url: `https://github.com/${repo}/releases/download/v${version}/${filename}`,
+  };
+  console.log(`✓ windows-x86_64: ${filename}`);
+}
+
+if (Object.keys(platforms).length === 0) {
+  console.error('❌ No platform artifacts found. Check artifacts/ directory.');
   process.exit(1);
 }
 
-// Calculate SHA256 checksum
-const fileBuffer = fs.readFileSync(tarballPath);
-const hashSum = crypto.createHash('sha256');
-hashSum.update(fileBuffer);
-const sha256 = hashSum.digest('hex');
-
-// Read the signature file
-const signaturePath = `${tarballPath}.sig`;
-if (!fs.existsSync(signaturePath)) {
-  console.error(`❌ Error: Signature file not found at ${signaturePath}`);
-  console.error('   Run signing command first:');
-  console.error(`   npm run tauri signer sign "${tarballPath}" -k ~/.tauri/recodeck.key`);
-  process.exit(1);
-}
-
-const signature = fs.readFileSync(signaturePath, 'utf8').trim();
-
-// Platform: darwin-aarch64 for Apple Silicon only, darwin-universal for universal builds
-const platform = process.env.TAURI_UPDATE_PLATFORM || 'darwin-universal';
-const repo = process.env.GITHUB_REPOSITORY || 'YOURUSERNAME/RecoDeck';
-
-// Create update manifest
 const manifest = {
-  version: version,
+  version,
   notes: `Release ${version}`,
   pub_date: new Date().toISOString(),
-  platforms: {
-    [platform]: {
-      signature: signature,
-      url: `https://github.com/${repo}/releases/download/v${version}/recodeck.app.tar.gz`,
-      sha256: sha256
-    }
-  }
+  platforms,
 };
 
-// Write manifest to project root
 const manifestPath = path.join(__dirname, '../latest.json');
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
-console.log('✓ Generated latest.json');
+console.log(`\n✓ Generated latest.json with ${Object.keys(platforms).length} platform(s)`);
 console.log(`  Version: ${version}`);
-console.log(`  SHA256: ${sha256}`);
-console.log(`  Signature: ${signature.substring(0, 50)}...`);
-console.log(`  Location: ${manifestPath}`);
-console.log('');
-console.log('⚠️  Remember to:');
-console.log('   1. Update GitHub username in the URL');
-console.log('   2. Upload both recodeck.app.tar.gz and recodeck.app.tar.gz.sig to GitHub Releases');
-console.log('   3. Upload latest.json to GitHub Releases');
+
+// --- Helpers ---
+
+function findFile(baseDir, _pattern, excludeRegex) {
+  const absBase = path.join(__dirname, '..', baseDir);
+  if (!fs.existsSync(absBase)) return null;
+  return findRecursive(absBase, excludeRegex);
+}
+
+function findRecursive(dir, excludeRegex) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findRecursive(fullPath, excludeRegex);
+      if (found) return found;
+    } else if (!excludeRegex.test(entry.name)) {
+      return fullPath;
+    }
+  }
+  return null;
+}
