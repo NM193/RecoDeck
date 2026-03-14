@@ -330,8 +330,9 @@ Plans:
   4. On macOS, `relaunch()` is called after install; on Windows, `relaunch()` is skipped (NSIS auto-exits the process)
 **Plans**: 1 plan
 
+
 Plans:
-- [ ] 21-01-PLAN.md — Remove stale v1 dialog key and set createUpdaterArtifacts to true
+- [ ] 22-01-PLAN.md — Auto-check on launch with UpdateToast component and Windows relaunch guard
 
 ### Phase 23: Categorized What's New Modal
 **Goal**: The What's New modal displays changelog entries in labeled sections (New / Fixes / Changes) instead of a flat bullet list, and does not appear on fresh installs
