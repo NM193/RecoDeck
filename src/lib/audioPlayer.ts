@@ -110,6 +110,10 @@ export class AudioPlayer {
     const clampedDb = Math.max(-12, Math.min(12, dB))
     this._eqGains[index] = clampedDb
     if (!this._eqEnabled) return
+    // Ensure audio graph exists when adjusting bands
+    if (!this._vizCtx && this._hasSource) {
+      this.getAnalyser()
+    }
     if (this._eqFilters[index] && this._vizCtx) {
       this._rampEqGain(this._eqFilters[index], clampedDb)
     }
@@ -119,9 +123,14 @@ export class AudioPlayer {
    * Enable or bypass the EQ.
    * When bypassed, all filter gains ramp to 0 dB (transparent).
    * When re-enabled, stored gains are restored.
+   * Initializes the audio graph if not yet created.
    */
   setEqEnabled(enabled: boolean): void {
     this._eqEnabled = enabled
+    // Ensure audio graph exists when enabling EQ
+    if (enabled && !this._vizCtx && this._hasSource) {
+      this.getAnalyser()
+    }
     if (!this._vizCtx || this._eqFilters.length === 0) return
     for (let i = 0; i < this._eqFilters.length; i++) {
       this._rampEqGain(this._eqFilters[i], enabled ? this._eqGains[i] : 0)
@@ -137,7 +146,12 @@ export class AudioPlayer {
       const clampedDb = Math.max(-12, Math.min(12, gains[i] ?? 0))
       this._eqGains[i] = clampedDb
     }
-    if (!this._eqEnabled || this._eqFilters.length === 0 || !this._vizCtx) return
+    if (!this._eqEnabled) return
+    // Ensure audio graph exists when applying preset gains
+    if (this._eqFilters.length === 0 && this._hasSource) {
+      this.getAnalyser()
+    }
+    if (this._eqFilters.length === 0 || !this._vizCtx) return
     for (let i = 0; i < this._eqFilters.length; i++) {
       this._rampEqGain(this._eqFilters[i], this._eqGains[i])
     }
@@ -153,6 +167,11 @@ export class AudioPlayer {
     const padded = [...state.bands]
     while (padded.length < EQ_BANDS.length) padded.push(0)
     this._eqGains = padded.slice(0, EQ_BANDS.length)
+
+    // If EQ is enabled and a source exists, ensure the audio graph is initialized
+    if (this._eqEnabled && this._eqFilters.length === 0 && this._hasSource) {
+      this.getAnalyser()
+    }
 
     if (this._eqFilters.length > 0 && this._vizCtx) {
       for (let i = 0; i < this._eqFilters.length; i++) {
