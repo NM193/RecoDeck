@@ -397,7 +397,6 @@ pub fn run() {
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,
-            commands::library::get_tracks_paginated,
             commands::library::get_track,
             commands::library::update_track,
             commands::library::delete_track,

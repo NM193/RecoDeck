@@ -205,7 +205,6 @@ pub fn init_database(
 }
 
 /// Get all tracks from the library (includes analysis data like BPM)
-/// WARNING: For large libraries (>1000 tracks), use get_tracks_paginated instead
 #[tauri::command]
 pub fn get_all_tracks(state: State<AppState>) -> Result<Vec<TrackDTO>, AppError> {
     let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
@@ -213,26 +212,6 @@ pub fn get_all_tracks(state: State<AppState>) -> Result<Vec<TrackDTO>, AppError>
 
     // Use LEFT JOIN query to include analysis data (BPM, key, etc.)
     let rows = db.get_all_tracks_with_analysis()
-        .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
-
-    Ok(rows.into_iter().map(|(track, bpm, bpm_conf, key, key_conf)| {
-        let mut dto = TrackDTO::from(track);
-        dto.bpm = bpm;
-        dto.bpm_confidence = bpm_conf;
-        dto.musical_key = key;
-        dto.key_confidence = key_conf;
-        dto
-    }).collect())
-}
-
-/// Get paginated tracks from the library (includes analysis data like BPM)
-/// PERFORMANCE: Use this for initial load and large libraries
-#[tauri::command]
-pub fn get_tracks_paginated(state: State<AppState>, limit: i64, offset: i64) -> Result<Vec<TrackDTO>, AppError> {
-    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-
-    let rows = db.get_tracks_with_analysis_paginated(limit, offset)
         .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
 
     Ok(rows.into_iter().map(|(track, bpm, bpm_conf, key, key_conf)| {
