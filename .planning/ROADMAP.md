@@ -424,7 +424,7 @@ Plans:
   3. A conversation auto-titles from the first user message, truncated to 50 characters — no manual title entry required
   4. Deleting a conversation removes it and all its messages from the database — `list_conversations` no longer returns the deleted entry
   5. Existing AI commands (ai_chat, ai_generate_playlist, ai_get_recommendations) return correct results unchanged — no behavioral regression
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 28-01: Rust conversation CRUD commands (create, list, get_messages, delete) with auto-title logic
@@ -439,7 +439,7 @@ Plans:
   2. Clicking "New Chat" clears the message thread and starts a fresh conversation with a new conversation_id
   3. Clicking a conversation in the sidebar loads its full message history into the chat thread — the user can read and continue from any past conversation
   4. On app mount, the conversation list populates automatically and the last active conversation restores its messages without any user action
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 29-01: Conversation sidebar component, new-chat button, click-to-load handler, and on-mount restore logic in AIChatPanel
