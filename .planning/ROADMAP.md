@@ -231,7 +231,7 @@ Plans:
 **Requirements**: EQPR-01, EQPR-02, EQUI-01, EQUI-02, EQUI-03, EQUI-04, EQUI-05, EQUI-06, EQPE-01
 **Success Criteria** (what must be TRUE):
   1. An EQ icon appears in the NowPlayingBar right section; clicking it opens the EQ modal; the icon shows an accent indicator when the EQ is enabled
-  2. The modal displays 10 vertical sliders with frequency labels (32 Hz–16 kHz); dragging any slider changes the sound in real time with no audible click or pop
+  2. The modal displays 10 vertical sliders with frequency labels (32 Hz-16 kHz); dragging any slider changes the sound in real time with no audible click or pop
   3. Selecting a preset from the dropdown (Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones) moves all 10 sliders smoothly and applies the correct gain values to the audio
   4. Closing the app and reopening it restores the last-used preset, enabled/disabled state, and any custom band positions — the EQ is immediately active before the first track play
   5. The modal renders correctly in both Midnight and Carbon themes using the app's existing CSS custom properties
@@ -375,7 +375,7 @@ Plans:
   3. Sorting the full library by any column (title, artist, BPM, key) reorders the complete set immediately — no partial sort on a capped dataset
   4. Folder view, playlist view, and search view behave identically to before — no regressions in non-"All Tracks" contexts
   5. Scrolling through a large library (1000+ tracks) is smooth with no UI jank — TanStack Virtual handles the full array without layout thrashing
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 26-01-PLAN.md — Replace getTracksPaginated with getAllTracks, remove pagination state and scroll detection, simplify footer
@@ -401,12 +401,12 @@ Plans:
 | 15. EQ Audio Engine | v1.4 | 1/1 | Complete | 2026-03-13 |
 | 16. EQ UI, Presets, and Persistence | v1.4 | 2/2 | Complete | 2026-03-14 |
 | 17. Windows Compilation Baseline | v1.5 | 1/1 | Complete | 2026-03-14 |
-| 18. Windows Runtime Fixes | v1.5 | 0/? | Not started | - |
-| 19. NSIS Installer and CI Build | v1.5 | 0/? | Not started | - |
-| 20. Auto-Updater Manifest | v1.5 | 0/? | Not started | - |
+| 18. Windows Runtime Fixes | v1.5 | 0/1 | Not started | - |
+| 19. NSIS Installer and CI Build | v1.5 | 0/1 | Not started | - |
+| 20. Auto-Updater Manifest | v1.5 | 0/1 | Not started | - |
 | 21. Updater Plugin Configuration | v1.6 | 1/1 | Complete | 2026-03-14 |
 | 22. Auto-Check and Update Toast | v1.6 | 1/1 | Complete | 2026-03-14 |
 | 23. Categorized What's New Modal | v1.6 | 1/1 | Complete | 2026-03-14 |
-| 24. CI Release Pipeline | v1.6 | 0/? | Not started | - |
-| 25. Update UX Polish | v1.6 | 0/? | Not started | - |
-| 26. Pagination Removal | v1.7 | 0/? | Not started | - |
+| 24. CI Release Pipeline | v1.6 | 0/1 | Not started | - |
+| 25. Update UX Polish | v1.6 | 0/1 | Not started | - |
+| 26. Pagination Removal | v1.7 | 0/1 | Not started | - |
