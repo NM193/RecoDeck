@@ -85,10 +85,6 @@ function AppContent() {
   // Total track count for "All Tracks" display
   const [totalTrackCount, setTotalTrackCount] = useState<number>(0)
 
-  // Pagination state for lazy loading
-  const [hasMoreTracks, setHasMoreTracks] = useState(false)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-
   // Name prompt modal (works in Tauri where window.prompt is not available)
   const [promptState, setPromptState] = useState<{
     open: boolean
@@ -371,23 +367,16 @@ function AppContent() {
 
         if (playlist) {
           result = await tauriApi.getPlaylistTracks(playlist)
-          setHasMoreTracks(false) // Playlists load all tracks at once
         } else if (folder) {
           // Use recursive query for library root folders, shallow for subfolders
           const isRootFolder = libraryFolders.includes(folder)
           result = isRootFolder
             ? await tauriApi.getTracksInFolder(folder)
             : await tauriApi.getTracksInFolderShallow(folder)
-          setHasMoreTracks(false) // Folder views load all tracks at once
         } else {
-          // PERFORMANCE: For "All Tracks" view, load in batches
-          // Load first 1000 tracks initially - good balance between performance and UX
-          const batchSize = 1000
-          result = await tauriApi.getTracksPaginated(batchSize, 0)
-
-          // Get total count to determine if there are more tracks
-          total = await tauriApi.countTracks()
-          setHasMoreTracks(result.length < total)
+          // Load all tracks in one shot — SQLite is fast and TanStack Virtual handles rendering
+          result = await tauriApi.getAllTracks()
+          total = result.length
         }
 
         setTracks(result)
@@ -408,47 +397,6 @@ function AppContent() {
     [selectedFolder, selectedPlaylistId, libraryFolders],
   )
 
-  // Load more tracks (for "All Tracks" pagination)
-  const loadMoreTracks = useCallback(async () => {
-    if (
-      isLoadingMore ||
-      !hasMoreTracks ||
-      selectedFolder ||
-      selectedPlaylistId
-    ) {
-      return
-    }
-
-    try {
-      setIsLoadingMore(true)
-      const batchSize = 1000
-      const currentOffset = tracks.length
-
-      const moreTracks = await tauriApi.getTracksPaginated(
-        batchSize,
-        currentOffset,
-      )
-
-      if (moreTracks.length > 0) {
-        setTracks((prev) => [...prev, ...moreTracks])
-        setHasMoreTracks(tracks.length + moreTracks.length < totalTrackCount)
-      } else {
-        setHasMoreTracks(false)
-      }
-    } catch (err) {
-      console.error('Failed to load more tracks:', err)
-    } finally {
-      setIsLoadingMore(false)
-    }
-  }, [
-    isLoadingMore,
-    hasMoreTracks,
-    selectedFolder,
-    selectedPlaylistId,
-    tracks.length,
-    totalTrackCount,
-  ])
-
   // Backend search for "All Tracks" view — searches entire DB, not just loaded tracks
   const handleSearch = useCallback(
     async (query: string) => {
@@ -456,7 +404,7 @@ function AppContent() {
       if (selectedFolder || selectedPlaylistId) return
 
       if (!query) {
-        // Search cleared — restore paginated view
+        // Search cleared — restore full library view
         loadTracks()
         return
       }
@@ -464,7 +412,6 @@ function AppContent() {
       try {
         const results = await tauriApi.searchTracks(query)
         setTracks(results)
-        setHasMoreTracks(false) // Search results are complete, no pagination
       } catch (err) {
         console.error('Backend search failed:', err)
       }
@@ -1225,9 +1172,6 @@ function AppContent() {
                     onSetGenre={handleSetGenre}
                     onClearGenre={handleClearGenre}
                     genreDefinitions={genreDefinitions}
-                    onLoadMore={loadMoreTracks}
-                    hasMoreTracks={hasMoreTracks}
-                    isLoadingMore={isLoadingMore}
                     onGenerateAIPlaylist={
                       AI_ENABLED ? handleGenerateAIPlaylist : undefined
                     }

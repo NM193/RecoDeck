@@ -54,9 +54,6 @@ interface TrackTableProps {
   onSetGenre?: (track: Track, genre: string) => void
   onClearGenre?: (track: Track) => void
   genreDefinitions?: Array<{ id: number; name: string; color?: string }>
-  onLoadMore?: () => void
-  hasMoreTracks?: boolean
-  isLoadingMore?: boolean
   onGenerateAIPlaylist?: (track: Track) => void
   onGetPlaylistRecommendations?: (
     playlistId: number,
@@ -85,9 +82,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       onSetGenre,
       onClearGenre,
       genreDefinitions = [],
-      onLoadMore,
-      hasMoreTracks = false,
-      isLoadingMore = false,
       onGenerateAIPlaylist,
       onGetPlaylistRecommendations,
       onOpenMixPrep,
@@ -409,25 +403,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       }),
       [currentTrack, sortedTracks, virtualizer],
     )
-
-    // Lazy loading: detect when scrolled near bottom
-    useEffect(() => {
-      const parent = parentRef.current
-      if (!parent || !onLoadMore || !hasMoreTracks || isLoadingMore) return
-
-      const handleScroll = () => {
-        const { scrollTop, scrollHeight, clientHeight } = parent
-        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight
-
-        // Load more when scrolled 80% down
-        if (scrollPercentage > 0.8) {
-          onLoadMore()
-        }
-      }
-
-      parent.addEventListener('scroll', handleScroll)
-      return () => parent.removeEventListener('scroll', handleScroll)
-    }, [onLoadMore, hasMoreTracks, isLoadingMore])
 
     // Format duration from milliseconds to MM:SS
     const formatDuration = (ms?: number) => {
@@ -968,37 +943,19 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
         )}
 
 
-        {/* Footer with track count + search result info */}
+        {/* Footer with track count + sort info */}
         <div className="track-table-footer">
-          {searchQuery ? (
-            <span>
-              {sortedTracks.length} of {tracks.length} tracks
-              {sort.column && (
-                <span className="footer-sort-info">
-                  {' '}
-                  · sorted by {sort.column}{' '}
-                  {sort.direction === 'asc' ? '↑' : '↓'}
-                </span>
-              )}
-            </span>
-          ) : (
-            <span>
-              {tracks.length} tracks
-              {sort.column && (
-                <span className="footer-sort-info">
-                  {' '}
-                  · sorted by {sort.column}{' '}
-                  {sort.direction === 'asc' ? '↑' : '↓'}
-                </span>
-              )}
-              {isLoadingMore && (
-                <span className="footer-loading-info"> · Loading more...</span>
-              )}
-              {hasMoreTracks && !isLoadingMore && (
-                <span className="footer-loading-info"> · Scroll for more</span>
-              )}
-            </span>
-          )}
+          <span>
+            {searchQuery
+              ? `${sortedTracks.length} of ${tracks.length} tracks`
+              : `${tracks.length} tracks`}
+            {sort.column && (
+              <span className="footer-sort-info">
+                {' '}· sorted by {sort.column}{' '}
+                {sort.direction === 'asc' ? '\u2191' : '\u2193'}
+              </span>
+            )}
+          </span>
         </div>
 
         {/* Custom Genre Input Modal */}

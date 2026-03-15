@@ -30,10 +30,6 @@ export const tauriApi = {
     return await invoke('get_all_tracks')
   },
 
-  async getTracksPaginated(limit: number, offset: number): Promise<Track[]> {
-    return await invoke('get_tracks_paginated', { limit, offset })
-  },
-
   async getTrack(id: number): Promise<Track> {
     return await invoke('get_track', { id })
   },
