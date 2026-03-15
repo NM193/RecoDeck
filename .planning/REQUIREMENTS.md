@@ -105,9 +105,9 @@ Requirements for AI Chat Persistence milestone. Each maps to roadmap phases.
 
 ### Message Persistence
 
-- [ ] **MSG-01**: Every sent user message is saved to the database
-- [ ] **MSG-02**: Every received AI response is saved to the database
-- [ ] **MSG-03**: Messages preserve role, content, and optional metadata
+- [x] **MSG-01**: Every sent user message is saved to the database
+- [x] **MSG-02**: Every received AI response is saved to the database
+- [x] **MSG-03**: Messages preserve role, content, and optional metadata
 
 ### Frontend UI
 
@@ -118,7 +118,7 @@ Requirements for AI Chat Persistence milestone. Each maps to roadmap phases.
 
 ### Compatibility
 
-- [ ] **COMPAT-01**: Existing AI commands (chat, playlist, recommendations) work unchanged with persistence
+- [x] **COMPAT-01**: Existing AI commands (chat, playlist, recommendations) work unchanged with persistence
 
 ## Future Requirements
 
@@ -221,14 +221,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONV-03 | Phase 28 | Complete |
 | CONV-04 | Phase 28 | Complete |
 | CONV-05 | Phase 28 | Complete |
-| MSG-01 | Phase 28 | Pending |
-| MSG-02 | Phase 28 | Pending |
-| MSG-03 | Phase 28 | Pending |
+| MSG-01 | Phase 28 | Complete |
+| MSG-02 | Phase 28 | Complete |
+| MSG-03 | Phase 28 | Complete |
 | UI-01 | Phase 29 | Pending |
 | UI-02 | Phase 29 | Pending |
 | UI-03 | Phase 29 | Pending |
 | UI-04 | Phase 29 | Pending |
-| COMPAT-01 | Phase 28 | Pending |
+| COMPAT-01 | Phase 28 | Complete |
 
 **v1.8 Coverage:**
 - v1.8 requirements: 15 total

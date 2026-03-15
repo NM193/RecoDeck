@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Windows Support
 status: executing
-stopped_at: "Completed 28-01-PLAN.md"
-last_updated: "2026-03-15T23:21:00Z"
+stopped_at: Completed 28-02-PLAN.md
+last_updated: "2026-03-15T23:25:01.210Z"
 last_activity: "2026-03-15 — Phase 28 Plan 01 executed: conversation CRUD backend commands + TS types"
 progress:
   total_phases: 25
-  completed_phases: 16
-  total_plans: 25
-  completed_plans: 25
+  completed_phases: 17
+  total_plans: 26
+  completed_plans: 26
   percent: 100
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 ## Current Position
 
 Phase: 28 of 29 (Backend Commands and Message Persistence)
-Plan: 1 of 2 in current phase (28-01 complete, 28-02 pending)
-Status: In progress — Plan 01 complete, ready for Plan 02
-Last activity: 2026-03-15 — Phase 28 Plan 01 executed: conversation CRUD backend commands + TS types
+Plan: 2 of 2 in current phase (28-01 complete, 28-02 complete)
+Status: Phase 28 complete — both plans executed
+Last activity: 2026-03-16 — Phase 28 Plan 02 executed: message persistence wired into ai_chat command + TypeScript wrapper updated
 
 Progress: [██████████] 100%
 
@@ -54,6 +54,8 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 28-01]: PRAGMA foreign_keys moved from run_migrations() to Database::new() and new_in_memory() so every connection enforces FK constraints on open
 - [Phase 28-01]: delete_conversation returns Err(QueryReturnedNoRows) when 0 rows affected (conversation not found), matching playlists.rs pattern
 - [Phase 28-01]: create_message auto-titles using content[..50] byte slice (matches plan spec for ASCII-compatible content)
+- [Phase 28]: Lock acquired and released in its own if-let scope in ai_chat, not held across async Claude API call boundary
+- [Phase 28]: Raw user message (not library-context-prepended version) saved to DB for conversation history fidelity
 
 ### Pending Todos
 
@@ -66,7 +68,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-15T23:21:00Z
-Stopped at: Completed 28-01-PLAN.md
-Resume file: .planning/phases/28-backend-commands-and-message-persistence/28-01-SUMMARY.md
-Next action: Execute 28-02-PLAN.md
+Last session: 2026-03-15T23:25:01.207Z
+Stopped at: Completed 28-02-PLAN.md
+Resume file: .planning/phases/28-backend-commands-and-message-persistence/28-02-SUMMARY.md
+Next action: Execute Phase 29 (AI Chat UI)
