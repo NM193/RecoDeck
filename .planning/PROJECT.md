@@ -41,18 +41,15 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.6 Update Notifications
+## Current Milestone: v1.7 Pagination Removal
 
-**Goal:** In-app update notification system — auto-check on launch, toast banner to install, auto-restart, and "What's New" changelog modal after update.
+**Goal:** Remove pagination from "All Tracks" loading — single fetch from SQLite on startup, remove scroll-triggered batch loading, clean up dead code.
 
 **Target features:**
-- Tauri updater plugin integration with auto-check on app launch
-- Toast/banner notification for available updates with Install and Later buttons
-- Auto-download, install, and restart flow
-- Bundled changelog.json with versioned entries (new/fixes/changes categories)
-- "What's New" modal after update showing categorized changelog
-- Version tracking to detect first launch after update
-- Cross-platform support (macOS and Windows)
+- Replace paginated loading with a single getAllTracks() call
+- Remove all pagination state and scroll-triggered load-more logic
+- Simplify footer to show total count and sort info only
+- Keep non-blocking initial load with loading spinner
 
 ### Out of Scope
 
@@ -106,4 +103,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-14 after v1.6 Update Notifications milestone started*
+*Last updated: 2026-03-15 after v1.7 Pagination Removal milestone started*
