@@ -544,9 +544,21 @@ pub async fn ai_chat(
     state: State<'_, AppState>,
     message: String,
     conversation_history: Vec<ChatMessage>,
+    conversation_id: Option<String>,
 ) -> Result<String, AppError> {
     let api_key = get_api_key_from_db(&state)?
         .ok_or(AppError::AiNoApiKey)?;
+
+    // Persist user message if conversation tracking is active
+    if let Some(ref conv_id) = conversation_id {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        if let Some(db) = db_guard.as_ref() {
+            if let Err(e) = db.create_message(conv_id, "user", &message) {
+                eprintln!("[ai_chat] Failed to save user message: {}", e);
+                // Non-fatal: continue with AI call even if DB save fails
+            }
+        }
+    }
 
     // Only include library context if the message is music-related
     let msg_lower = message.to_lowercase();
@@ -592,6 +604,17 @@ pub async fn ai_chat(
 
     let client = ClaudeClient::new(api_key);
     let response = client.chat(messages, Some(SYSTEM_PROMPT.to_string())).await?;
+
+    // Persist assistant response if conversation tracking is active
+    if let Some(ref conv_id) = conversation_id {
+        let db_guard = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        if let Some(db) = db_guard.as_ref() {
+            if let Err(e) = db.create_message(conv_id, "assistant", &response) {
+                eprintln!("[ai_chat] Failed to save assistant message: {}", e);
+                // Non-fatal: return response even if DB save fails
+            }
+        }
+    }
 
     Ok(response)
 }
