@@ -65,6 +65,27 @@ Requirements for Update Notifications milestone. Each maps to roadmap phases.
 - [ ] **UPOL-01**: Section icons in What's New modal (Plus for Added, Wrench for Fixed, ArrowLeftRight for Changed)
 - [ ] **UPOL-02**: Suppress update toast during active audio playback
 
+## v1.7 Requirements
+
+Requirements for Pagination Removal milestone. Each maps to roadmap phases.
+
+### Loading
+
+- [ ] **LOAD-03**: App loads ALL tracks on startup in a single fetch (no batched pagination)
+- [ ] **LOAD-04**: No scroll-triggered loading — full list available immediately after initial load
+- [ ] **LOAD-05**: Loading spinner shows while fetch runs, then full list renders
+
+### Cleanup
+
+- [ ] **CLNP-01**: All pagination state and logic removed (`hasMoreTracks`, `isLoadingMore`, `onLoadMore`, scroll detection)
+- [ ] **CLNP-02**: Footer shows simple "{count} tracks · sorted by {field}" (no "Scroll for more" or "Loading more...")
+
+### Integrity
+
+- [ ] **INTG-01**: Virtual scrolling handles the full array smoothly (no UI jank)
+- [ ] **INTG-02**: Sorting works on the complete dataset immediately
+- [ ] **INTG-03**: Folder/playlist/search views unchanged
+
 ## Future Requirements
 
 ### Windows Enhancements
@@ -128,6 +149,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 13
 - Unmapped: 0 ✓
 
+### v1.7 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| LOAD-03 | — | Pending |
+| LOAD-04 | — | Pending |
+| LOAD-05 | — | Pending |
+| CLNP-01 | — | Pending |
+| CLNP-02 | — | Pending |
+| INTG-01 | — | Pending |
+| INTG-02 | — | Pending |
+| INTG-03 | — | Pending |
+
+**v1.7 Coverage:**
+- v1.7 requirements: 8 total
+- Mapped to phases: 0
+- Unmapped: 8 ⚠️
+
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 — v1.6 requirements added*
+*Last updated: 2026-03-15 — v1.7 requirements added*
