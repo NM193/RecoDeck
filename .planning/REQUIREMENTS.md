@@ -71,20 +71,20 @@ Requirements for Pagination Removal milestone. Each maps to roadmap phases.
 
 ### Loading
 
-- [ ] **LOAD-03**: App loads ALL tracks on startup in a single fetch (no batched pagination)
-- [ ] **LOAD-04**: No scroll-triggered loading — full list available immediately after initial load
-- [ ] **LOAD-05**: Loading spinner shows while fetch runs, then full list renders
+- [x] **LOAD-03**: App loads ALL tracks on startup in a single fetch (no batched pagination)
+- [x] **LOAD-04**: No scroll-triggered loading — full list available immediately after initial load
+- [x] **LOAD-05**: Loading spinner shows while fetch runs, then full list renders
 
 ### Cleanup
 
-- [ ] **CLNP-01**: All pagination state and logic removed (`hasMoreTracks`, `isLoadingMore`, `onLoadMore`, scroll detection)
-- [ ] **CLNP-02**: Footer shows simple "{count} tracks · sorted by {field}" (no "Scroll for more" or "Loading more...")
+- [x] **CLNP-01**: All pagination state and logic removed (`hasMoreTracks`, `isLoadingMore`, `onLoadMore`, scroll detection)
+- [x] **CLNP-02**: Footer shows simple "{count} tracks · sorted by {field}" (no "Scroll for more" or "Loading more...")
 
 ### Integrity
 
-- [ ] **INTG-01**: Virtual scrolling handles the full array smoothly (no UI jank)
-- [ ] **INTG-02**: Sorting works on the complete dataset immediately
-- [ ] **INTG-03**: Folder/playlist/search views unchanged
+- [x] **INTG-01**: Virtual scrolling handles the full array smoothly (no UI jank)
+- [x] **INTG-02**: Sorting works on the complete dataset immediately
+- [x] **INTG-03**: Folder/playlist/search views unchanged
 
 ## Future Requirements
 
@@ -153,14 +153,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOAD-03 | Phase 26 | Pending |
-| LOAD-04 | Phase 26 | Pending |
-| LOAD-05 | Phase 26 | Pending |
-| CLNP-01 | Phase 26 | Pending |
-| CLNP-02 | Phase 26 | Pending |
-| INTG-01 | Phase 26 | Pending |
-| INTG-02 | Phase 26 | Pending |
-| INTG-03 | Phase 26 | Pending |
+| LOAD-03 | Phase 26 | Complete |
+| LOAD-04 | Phase 26 | Complete |
+| LOAD-05 | Phase 26 | Complete |
+| CLNP-01 | Phase 26 | Complete |
+| CLNP-02 | Phase 26 | Complete |
+| INTG-01 | Phase 26 | Complete |
+| INTG-02 | Phase 26 | Complete |
+| INTG-03 | Phase 26 | Complete |
 
 **v1.7 Coverage:**
 - v1.7 requirements: 8 total
@@ -169,4 +169,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-15 — v1.7 traceability mapped to Phase 26*
+*Last updated: 2026-03-15 — Phase 26 complete, all v1.7 requirements satisfied*

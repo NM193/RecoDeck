@@ -9,7 +9,7 @@
 - ✅ **v1.4 Equalizer** — Phases 15-16 (shipped 2026-03-14)
 - 🚧 **v1.5 Windows Support** — Phases 17-20 (in progress)
 - 📋 **v1.6 Update Notifications** — Phases 21-25 (planned)
-- 📋 **v1.7 Pagination Removal** — Phase 26 (planned)
+- ✅ **v1.7 Pagination Removal** — Phase 26 (shipped 2026-03-15)
 
 ## Phases
 
@@ -378,7 +378,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 26-01-PLAN.md — Replace getTracksPaginated with getAllTracks, remove pagination state and scroll detection, simplify footer
+- [x] 26-01-PLAN.md — Replace getTracksPaginated with getAllTracks, remove pagination state and scroll detection, simplify footer — completed 2026-03-15
 
 ## Progress
 
@@ -409,4 +409,4 @@ Plans:
 | 23. Categorized What's New Modal | v1.6 | 1/1 | Complete | 2026-03-14 |
 | 24. CI Release Pipeline | v1.6 | 0/1 | Not started | - |
 | 25. Update UX Polish | v1.6 | 0/1 | Not started | - |
-| 26. Pagination Removal | v1.7 | 0/1 | Not started | - |
+| 26. Pagination Removal | v1.7 | 1/1 | Complete | 2026-03-15 |
