@@ -2,6 +2,7 @@
 
 pub mod ai;
 pub mod analysis;
+pub mod conversations;
 pub mod genre;
 pub mod library;
 pub mod playback;

@@ -71,6 +71,25 @@ pub struct GenreDefinition {
     pub sort_order: i32,
 }
 
+/// Represents an AI conversation
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub created_at: i64,
+}
+
+/// Represents a message in an AI conversation
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConversationMessage {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub metadata_json: Option<String>,
+    pub created_at: i64,
+}
+
 /// Database connection wrapper
 pub struct Database {
     conn: Connection,
@@ -80,19 +99,19 @@ impl Database {
     /// Create a new database connection
     pub fn new(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Database { conn })
     }
 
     /// Create an in-memory database (for testing)
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Database { conn })
     }
 
     /// Run migrations to set up the database schema
     pub fn run_migrations(&self) -> Result<()> {
-        // Enable foreign key enforcement (required for ON DELETE CASCADE)
-        self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
         // Run all migrations in order
         let migration_001 = include_str!("migrations/001_init.sql");
@@ -1512,6 +1531,119 @@ impl Database {
         }
         Ok(count)
     }
+
+    // --- AI Conversation operations ---
+
+    /// Create a new AI conversation with a generated UUID and current Unix timestamp.
+    /// Returns the conversation ID.
+    pub fn create_conversation(&self) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?, '', ?)",
+            params![id, created_at],
+        )?;
+        Ok(id)
+    }
+
+    /// List all conversations ordered by created_at DESC (most recent first).
+    pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, created_at FROM ai_conversations ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Conversation {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get all messages for a conversation, ordered by created_at ASC (oldest first).
+    pub fn get_conversation_messages(&self, conversation_id: &str) -> Result<Vec<ConversationMessage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, conversation_id, role, content, metadata_json, created_at
+             FROM ai_messages WHERE conversation_id = ? ORDER BY created_at ASC"
+        )?;
+        let rows = stmt.query_map(params![conversation_id], |row| {
+            Ok(ConversationMessage {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                metadata_json: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Delete a conversation and all its messages (CASCADE enforced by FK + PRAGMA).
+    pub fn delete_conversation(&self, conversation_id: &str) -> Result<()> {
+        let changes = self.conn.execute(
+            "DELETE FROM ai_conversations WHERE id = ?",
+            params![conversation_id],
+        )?;
+        if changes == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    /// Rename a conversation (update its title).
+    pub fn rename_conversation(&self, conversation_id: &str, title: &str) -> Result<()> {
+        let changes = self.conn.execute(
+            "UPDATE ai_conversations SET title = ? WHERE id = ?",
+            params![title, conversation_id],
+        )?;
+        if changes == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    /// Create a message in a conversation. Returns the message ID.
+    /// If the conversation title is empty and the role is "user", auto-titles the conversation
+    /// with the first 50 characters of the message content.
+    pub fn create_message(&self, conversation_id: &str, role: &str, content: &str) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at)
+             VALUES (?, ?, ?, ?, NULL, ?)",
+            params![id, conversation_id, role, content, created_at],
+        )?;
+
+        // Auto-title: if role is "user" and conversation title is empty, set title
+        if role == "user" {
+            let current_title: String = self.conn.query_row(
+                "SELECT title FROM ai_conversations WHERE id = ?",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            if current_title.is_empty() {
+                let title: String = if content.len() > 50 {
+                    content[..50].to_string()
+                } else {
+                    content.to_string()
+                };
+                self.conn.execute(
+                    "UPDATE ai_conversations SET title = ? WHERE id = ?",
+                    params![title, conversation_id],
+                )?;
+            }
+        }
+
+        Ok(id)
+    }
 }
 
 #[cfg(test)]
@@ -2555,5 +2687,177 @@ mod tests {
             "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
             rusqlite::params!["conv-idem", "Idempotency Test", 1710000000i64],
         ).expect("Should still be able to insert after double migration");
+    }
+
+    // --- Conversation CRUD tests ---
+
+    #[test]
+    fn test_create_conversation() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let id = db.create_conversation().unwrap();
+
+        // UUID format: 36 chars with hyphens
+        assert_eq!(id.len(), 36, "Conversation ID should be 36 chars (UUID)");
+        assert!(id.contains('-'), "UUID should contain hyphens");
+
+        // Verify in DB with empty title
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].id, id);
+        assert_eq!(convs[0].title, "");
+    }
+
+    #[test]
+    fn test_list_conversations_order() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        // Insert two conversations with different timestamps manually to control ordering
+        let id1 = uuid::Uuid::new_v4().to_string();
+        let id2 = uuid::Uuid::new_v4().to_string();
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?, '', ?)",
+            params![id1, 1000i64],
+        ).unwrap();
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?, '', ?)",
+            params![id2, 2000i64],
+        ).unwrap();
+
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 2);
+        // Most recent first (created_at DESC)
+        assert_eq!(convs[0].id, id2, "Most recent (ts=2000) should be first");
+        assert_eq!(convs[1].id, id1, "Older (ts=1000) should be second");
+    }
+
+    #[test]
+    fn test_list_conversations_empty() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 0, "Fresh DB should have no conversations");
+    }
+
+    #[test]
+    fn test_get_conversation_messages() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Insert two messages with different timestamps
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'user', 'First', NULL, ?)",
+            params!["msg-a", conv_id, 1000i64],
+        ).unwrap();
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'assistant', 'Second', NULL, ?)",
+            params!["msg-b", conv_id, 2000i64],
+        ).unwrap();
+
+        let messages = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(messages.len(), 2);
+        // Oldest first (created_at ASC)
+        assert_eq!(messages[0].content, "First");
+        assert_eq!(messages[1].content, "Second");
+    }
+
+    #[test]
+    fn test_get_conversation_messages_empty() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+        let messages = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(messages.len(), 0, "Conversation with no messages should return empty Vec");
+    }
+
+    #[test]
+    fn test_delete_conversation_cascade() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Insert two messages
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'user', 'Hello', NULL, ?)",
+            params!["msg-del-1", conv_id, 1000i64],
+        ).unwrap();
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'assistant', 'Hi', NULL, ?)",
+            params!["msg-del-2", conv_id, 2000i64],
+        ).unwrap();
+
+        // Verify 2 messages exist
+        let msgs_before = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(msgs_before.len(), 2);
+
+        // Delete conversation
+        db.delete_conversation(&conv_id).unwrap();
+
+        // Conversation should be gone
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 0);
+
+        // Messages should also be gone (CASCADE)
+        let msgs_after = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(msgs_after.len(), 0, "CASCADE should delete all messages");
+    }
+
+    #[test]
+    fn test_rename_conversation() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Rename
+        db.rename_conversation(&conv_id, "My New Title").unwrap();
+
+        // Verify
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].title, "My New Title");
+    }
+
+    #[test]
+    fn test_create_message_auto_title() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Title is initially empty
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs[0].title, "");
+
+        // Create a user message
+        db.create_message(&conv_id, "user", "Hello world testing auto title").unwrap();
+
+        // Title should now be set to message content
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs[0].title, "Hello world testing auto title");
+    }
+
+    #[test]
+    fn test_create_message_auto_title_truncation() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Create a user message with 60+ characters
+        let long_content = "This is a very long message that exceeds fifty characters for testing purposes";
+        db.create_message(&conv_id, "user", long_content).unwrap();
+
+        // Title should be truncated to 50 chars
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs[0].title.len(), 50, "Title should be exactly 50 chars");
+        assert_eq!(convs[0].title, &long_content[..50]);
     }
 }

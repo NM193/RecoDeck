@@ -473,6 +473,12 @@ pub fn run() {
             commands::ai::ai_recommend_for_playlist,
             commands::ai::ai_optimize_playlist_order,
             commands::ai::ai_chat,
+            // Conversation commands
+            commands::conversations::create_conversation,
+            commands::conversations::list_conversations,
+            commands::conversations::get_conversation_messages,
+            commands::conversations::delete_conversation,
+            commands::conversations::rename_conversation,
             // Companion server commands
             commands::server::start_companion_server,
             commands::server::stop_companion_server,
