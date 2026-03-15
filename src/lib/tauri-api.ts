@@ -383,8 +383,13 @@ export const tauriApi = {
   async aiChat(
     message: string,
     conversationHistory: ChatMessage[],
+    conversationId?: string,
   ): Promise<string> {
-    return await invoke('ai_chat', { message, conversationHistory })
+    return await invoke('ai_chat', {
+      message,
+      conversationHistory,
+      conversationId: conversationId ?? null,
+    })
   },
 
   // Conversation commands
