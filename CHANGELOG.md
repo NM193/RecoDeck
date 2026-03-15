@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.13] - 2026-03-15
+
+### Fixed
+- macOS auto-update now works (platform was missing from update manifest)
+
 ## [0.2.12] - 2026-03-15
 
 ### Added
@@ -121,7 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI-powered features
 - File watcher for automatic library updates
 
-[Unreleased]: https://github.com/NM193/RecoDeck/compare/v0.2.12...HEAD
+[Unreleased]: https://github.com/NM193/RecoDeck/compare/v0.2.13...HEAD
+[0.2.13]: https://github.com/NM193/RecoDeck/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/NM193/RecoDeck/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/NM193/RecoDeck/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/NM193/RecoDeck/compare/v0.2.9...v0.2.10
