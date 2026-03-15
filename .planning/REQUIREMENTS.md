@@ -153,20 +153,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOAD-03 | — | Pending |
-| LOAD-04 | — | Pending |
-| LOAD-05 | — | Pending |
-| CLNP-01 | — | Pending |
-| CLNP-02 | — | Pending |
-| INTG-01 | — | Pending |
-| INTG-02 | — | Pending |
-| INTG-03 | — | Pending |
+| LOAD-03 | Phase 26 | Pending |
+| LOAD-04 | Phase 26 | Pending |
+| LOAD-05 | Phase 26 | Pending |
+| CLNP-01 | Phase 26 | Pending |
+| CLNP-02 | Phase 26 | Pending |
+| INTG-01 | Phase 26 | Pending |
+| INTG-02 | Phase 26 | Pending |
+| INTG-03 | Phase 26 | Pending |
 
 **v1.7 Coverage:**
 - v1.7 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️
+- Mapped to phases: 8
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-15 — v1.7 requirements added*
+*Last updated: 2026-03-15 — v1.7 traceability mapped to Phase 26*
