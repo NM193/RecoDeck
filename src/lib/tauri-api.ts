@@ -14,6 +14,8 @@ import type {
 } from '../types/track'
 import type {
   ChatMessage,
+  Conversation,
+  ConversationMessage,
   GeneratedPlaylist,
   RecommendationResult,
   RecommendedOrder,
@@ -383,6 +385,27 @@ export const tauriApi = {
     conversationHistory: ChatMessage[],
   ): Promise<string> {
     return await invoke('ai_chat', { message, conversationHistory })
+  },
+
+  // Conversation commands
+  async createConversation(): Promise<Conversation> {
+    return await invoke('create_conversation')
+  },
+
+  async listConversations(): Promise<Conversation[]> {
+    return await invoke('list_conversations')
+  },
+
+  async getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
+    return await invoke('get_conversation_messages', { conversationId })
+  },
+
+  async deleteConversation(conversationId: string): Promise<void> {
+    return await invoke('delete_conversation', { conversationId })
+  },
+
+  async renameConversation(conversationId: string, title: string): Promise<void> {
+    return await invoke('rename_conversation', { conversationId, title })
   },
 
   // Genre commands

@@ -41,6 +41,26 @@ export interface RecommendedOrder {
 }
 
 /**
+ * Conversation summary returned by list_conversations
+ */
+export interface Conversation {
+  id: string
+  title: string
+  created_at: number
+}
+
+/**
+ * Message from a conversation returned by get_conversation_messages
+ */
+export interface ConversationMessage {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: number
+}
+
+/**
  * AI chat state
  */
 export interface AIChatState {
