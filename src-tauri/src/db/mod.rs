@@ -91,6 +91,9 @@ impl Database {
 
     /// Run migrations to set up the database schema
     pub fn run_migrations(&self) -> Result<()> {
+        // Enable foreign key enforcement (required for ON DELETE CASCADE)
+        self.conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
         // Run all migrations in order
         let migration_001 = include_str!("migrations/001_init.sql");
         self.conn.execute_batch(migration_001)?;
@@ -119,6 +122,11 @@ impl Database {
             let migration_003 = include_str!("migrations/003_genre.sql");
             self.conn.execute_batch(migration_003)?;
         }
+
+        // Migration 005: AI conversation persistence tables
+        // Uses CREATE TABLE IF NOT EXISTS — no column check needed
+        let migration_005 = include_str!("migrations/005_ai_conversations.sql");
+        self.conn.execute_batch(migration_005)?;
 
         Ok(())
     }
@@ -2426,5 +2434,126 @@ mod tests {
         assert_eq!(db.get_track_genre(id1).unwrap().unwrap().0, "Tech House");
         assert_eq!(db.get_track_genre(id2).unwrap().unwrap().0, "Tech House");
         assert_eq!(db.get_track_genre(id3).unwrap().unwrap().0, "Tech House");
+    }
+
+    #[test]
+    fn test_ai_conversations_table_exists() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        // Enable FK enforcement for this connection
+        db.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // Insert a conversation
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-001", "Test Conversation", 1710000000i64],
+        ).expect("Should insert into ai_conversations");
+
+        // Read it back
+        let (id, title, created_at): (String, String, i64) = db.conn.query_row(
+            "SELECT id, title, created_at FROM ai_conversations WHERE id = ?1",
+            rusqlite::params!["conv-001"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+
+        assert_eq!(id, "conv-001");
+        assert_eq!(title, "Test Conversation");
+        assert_eq!(created_at, 1710000000i64);
+    }
+
+    #[test]
+    fn test_ai_messages_table_exists() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        db.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // Insert parent conversation first
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-002", "Messages Test", 1710000000i64],
+        ).unwrap();
+
+        // Insert a message
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-001", "conv-002", "user", "Hello AI", rusqlite::types::Null, 1710000001i64],
+        ).expect("Should insert into ai_messages");
+
+        // Read it back
+        let (id, role, content): (String, String, String) = db.conn.query_row(
+            "SELECT id, role, content FROM ai_messages WHERE id = ?1",
+            rusqlite::params!["msg-001"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+
+        assert_eq!(id, "msg-001");
+        assert_eq!(role, "user");
+        assert_eq!(content, "Hello AI");
+    }
+
+    #[test]
+    fn test_ai_messages_cascade_delete() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        db.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // Create conversation with two messages
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-003", "Cascade Test", 1710000000i64],
+        ).unwrap();
+
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["msg-010", "conv-003", "user", "First message", 1710000001i64],
+        ).unwrap();
+
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["msg-011", "conv-003", "assistant", "AI response", 1710000002i64],
+        ).unwrap();
+
+        // Verify 2 messages exist
+        let count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?1",
+            rusqlite::params!["conv-003"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+
+        // Delete the conversation
+        db.conn.execute(
+            "DELETE FROM ai_conversations WHERE id = ?1",
+            rusqlite::params!["conv-003"],
+        ).unwrap();
+
+        // Messages should be gone (CASCADE)
+        let count_after: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?1",
+            rusqlite::params!["conv-003"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count_after, 0, "CASCADE delete should remove all messages when conversation is deleted");
+    }
+
+    #[test]
+    fn test_ai_conversations_idempotent() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        // Running migrations a second time should not error
+        db.run_migrations().expect("Second run_migrations() call should succeed (idempotent)");
+
+        // Tables should still work
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-idem", "Idempotency Test", 1710000000i64],
+        ).expect("Should still be able to insert after double migration");
     }
 }
