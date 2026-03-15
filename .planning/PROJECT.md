@@ -41,15 +41,17 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 
 <!-- Current scope. Building toward these. -->
 
-## Current Milestone: v1.7 Pagination Removal
+## Current Milestone: v1.8 AI Chat Persistence
 
-**Goal:** Remove pagination from "All Tracks" loading — single fetch from SQLite on startup, remove scroll-triggered batch loading, clean up dead code.
+**Goal:** Persist AI chat conversations to SQLite so messages survive app restarts — full conversation history with list/load/delete.
 
 **Target features:**
-- Replace paginated loading with a single getAllTracks() call
-- Remove all pagination state and scroll-triggered load-more logic
-- Simplify footer to show total count and sort info only
-- Keep non-blocking initial load with loading spinner
+- SQLite tables for conversations and messages (ai_conversations, ai_messages)
+- Rust commands: create, list, get messages, delete conversations
+- Auto-title from first user message (truncated to 50 chars)
+- Frontend: conversation list sidebar, new chat button, restore last active
+- Save every message to DB after send/receive
+- Backward compatible — existing AI commands work unchanged, just persist messages
 
 ### Out of Scope
 
@@ -103,4 +105,4 @@ Smart, AI-powered music library management that understands DJ workflow — ener
 | Median BPM for playlist aggregation | More robust to outliers than mean | ✓ Good |
 
 ---
-*Last updated: 2026-03-15 after v1.7 Pagination Removal milestone started*
+*Last updated: 2026-03-15 after v1.8 AI Chat Persistence milestone started*
