@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.8
-milestone_name: AI Chat Persistence
-status: active
-stopped_at: ""
-last_updated: "2026-03-15"
-last_activity: 2026-03-15 — Roadmap created; phases 27-29 defined
+milestone: v1.5
+milestone_name: Windows Support
+status: planning
+stopped_at: Phase 27 context gathered
+last_updated: "2026-03-15T22:12:53.303Z"
+last_activity: 2026-03-15 — Roadmap created for v1.8; phases 27-29 defined
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 4
-  completed_plans: 0
+  total_phases: 25
+  completed_phases: 15
+  total_plans: 23
+  completed_plans: 23
   percent: 0
 ---
 
@@ -62,7 +62,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-15
-Stopped at: Roadmap created; ready to plan Phase 27
-Resume file: None
+Last session: 2026-03-15T22:12:53.294Z
+Stopped at: Phase 27 context gathered
+Resume file: .planning/phases/27-conversation-database-schema/27-CONTEXT.md
 Next action: /gsd:plan-phase 27
