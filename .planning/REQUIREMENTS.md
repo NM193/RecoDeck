@@ -214,27 +214,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DB-01 | — | Pending |
-| DB-02 | — | Pending |
-| CONV-01 | — | Pending |
-| CONV-02 | — | Pending |
-| CONV-03 | — | Pending |
-| CONV-04 | — | Pending |
-| CONV-05 | — | Pending |
-| MSG-01 | — | Pending |
-| MSG-02 | — | Pending |
-| MSG-03 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
-| UI-04 | — | Pending |
-| COMPAT-01 | — | Pending |
+| DB-01 | Phase 27 | Pending |
+| DB-02 | Phase 27 | Pending |
+| CONV-01 | Phase 28 | Pending |
+| CONV-02 | Phase 28 | Pending |
+| CONV-03 | Phase 28 | Pending |
+| CONV-04 | Phase 28 | Pending |
+| CONV-05 | Phase 28 | Pending |
+| MSG-01 | Phase 28 | Pending |
+| MSG-02 | Phase 28 | Pending |
+| MSG-03 | Phase 28 | Pending |
+| UI-01 | Phase 29 | Pending |
+| UI-02 | Phase 29 | Pending |
+| UI-03 | Phase 29 | Pending |
+| UI-04 | Phase 29 | Pending |
+| COMPAT-01 | Phase 28 | Pending |
 
 **v1.8 Coverage:**
 - v1.8 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-15 after v1.8 AI Chat Persistence requirements defined*
+*Last updated: 2026-03-15 after v1.8 roadmap created (phases 27-29)*

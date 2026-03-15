@@ -5,11 +5,11 @@ milestone_name: AI Chat Persistence
 status: active
 stopped_at: ""
 last_updated: "2026-03-15"
-last_activity: 2026-03-15 — Milestone v1.8 started
+last_activity: 2026-03-15 — Roadmap created; phases 27-29 defined
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
   percent: 0
 ---
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** v1.8 AI Chat Persistence
+**Current focus:** v1.8 AI Chat Persistence — Phase 27: Conversation Database Schema
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-15 — Milestone v1.8 started
+Phase: 27 of 29 (Conversation Database Schema)
+Plan: 0 of 1 in current phase
+Status: Ready to plan
+Last activity: 2026-03-15 — Roadmap created for v1.8; phases 27-29 defined
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -56,10 +58,11 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 ### Blockers/Concerns
 
 - [Known limitation] EQ does not apply to crossfadeAudio during the crossfade window — incoming track plays without EQ for up to 8s
+- [Constraint] Do not modify system_prompt.rs or context_builder.rs — AI behavior must stay unchanged (COMPAT-01)
 
 ## Session Continuity
 
 Last session: 2026-03-15
-Stopped at: —
+Stopped at: Roadmap created; ready to plan Phase 27
 Resume file: None
-Next action: Define requirements for v1.8
+Next action: /gsd:plan-phase 27
