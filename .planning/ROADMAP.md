@@ -83,7 +83,7 @@
 
 **Milestone Goal:** Persist AI chat conversations to SQLite so messages survive app restarts — full conversation history with list, load, and delete, plus a conversation sidebar UI in AIChatPanel.
 
-- [ ] **Phase 27: Conversation Database Schema** - SQLite tables for conversations and messages created on app startup
+- [x] **Phase 27: Conversation Database Schema** - SQLite tables for conversations and messages created on app startup (completed 2026-03-15)
 - [ ] **Phase 28: Backend Commands and Message Persistence** - Rust commands for conversation CRUD and per-message save with auto-title and backward-compatible AI command wiring
 - [ ] **Phase 29: Conversation UI** - AIChatPanel gains a conversation sidebar with new chat, load, and restore-on-mount behavior
 
@@ -474,6 +474,6 @@ Plans:
 | 24. CI Release Pipeline | v1.6 | 0/1 | Not started | - |
 | 25. Update UX Polish | v1.6 | 0/1 | Not started | - |
 | 26. Pagination Removal | v1.7 | 1/1 | Complete | 2026-03-15 |
-| 27. Conversation Database Schema | v1.8 | 0/1 | Not started | - |
+| 27. Conversation Database Schema | 1/1 | Complete   | 2026-03-15 | - |
 | 28. Backend Commands and Message Persistence | v1.8 | 0/2 | Not started | - |
 | 29. Conversation UI | v1.8 | 0/1 | Not started | - |

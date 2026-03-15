@@ -92,8 +92,8 @@ Requirements for AI Chat Persistence milestone. Each maps to roadmap phases.
 
 ### Database
 
-- [ ] **DB-01**: App creates `ai_conversations` table on startup (id TEXT PK, title TEXT, created_at INTEGER)
-- [ ] **DB-02**: App creates `ai_messages` table on startup (id TEXT PK, conversation_id TEXT FK, role TEXT, content TEXT, metadata_json TEXT NULL, created_at INTEGER)
+- [x] **DB-01**: App creates `ai_conversations` table on startup (id TEXT PK, title TEXT, created_at INTEGER)
+- [x] **DB-02**: App creates `ai_messages` table on startup (id TEXT PK, conversation_id TEXT FK, role TEXT, content TEXT, metadata_json TEXT NULL, created_at INTEGER)
 
 ### Conversation Management
 
@@ -214,8 +214,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DB-01 | Phase 27 | Pending |
-| DB-02 | Phase 27 | Pending |
+| DB-01 | Phase 27 | Complete |
+| DB-02 | Phase 27 | Complete |
 | CONV-01 | Phase 28 | Pending |
 | CONV-02 | Phase 28 | Pending |
 | CONV-03 | Phase 28 | Pending |
