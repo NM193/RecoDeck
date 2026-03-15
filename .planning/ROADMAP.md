@@ -409,10 +409,10 @@ Plans:
   1. App starts without errors and `ai_conversations` table exists in the SQLite database (id TEXT PK, title TEXT, created_at INTEGER)
   2. `ai_messages` table exists with conversation_id foreign key, role, content, and nullable metadata_json columns
   3. Both tables are created idempotently — app restarts do not fail or duplicate tables
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 27-01: Add ai_conversations and ai_messages CREATE TABLE IF NOT EXISTS migrations to db initialization
+- [ ] 27-01-PLAN.md — Create migration 005 with ai_conversations and ai_messages tables, wire into run_migrations()
 
 ### Phase 28: Backend Commands and Message Persistence
 **Goal**: All conversation and message operations are available as Tauri commands — create, list, load, delete, auto-title, and per-message save — and existing AI commands (chat, playlist, recommendations) continue to work with persistence layered in transparently
