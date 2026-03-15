@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14] - 2026-03-15
+
+### Added
+- 10-band graphic equalizer with 6 presets (Flat, Bass Boost, Treble Boost, Vocal, Electronic, Headphones)
+- EQ settings persist across app restarts
+
+### Changed
+- All tracks now load at once on startup — no more paginated scrolling or "Scroll for more" prompts
+- Track table footer shows clean "{count} tracks · sorted by {field}" display
+
+### Fixed
+- Sorting now operates on the full library immediately instead of a partial page
+
 ## [0.2.13] - 2026-03-15
 
 ### Fixed
@@ -126,7 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI-powered features
 - File watcher for automatic library updates
 
-[Unreleased]: https://github.com/NM193/RecoDeck/compare/v0.2.13...HEAD
+[Unreleased]: https://github.com/NM193/RecoDeck/compare/v0.2.14...HEAD
+[0.2.14]: https://github.com/NM193/RecoDeck/compare/v0.2.13...v0.2.14
 [0.2.13]: https://github.com/NM193/RecoDeck/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/NM193/RecoDeck/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/NM193/RecoDeck/compare/v0.2.10...v0.2.11

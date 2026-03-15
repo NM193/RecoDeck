@@ -3717,7 +3717,7 @@ dependencies = [
 
 [[package]]
 name = "recodeck"
-version = "0.2.6"
+version = "0.2.13"
 dependencies = [
  "axum",
  "bliss-audio-aubio-rs",
