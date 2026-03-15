@@ -409,4 +409,4 @@ Plans:
 | 23. Categorized What's New Modal | v1.6 | 1/1 | Complete | 2026-03-14 |
 | 24. CI Release Pipeline | v1.6 | 0/1 | Not started | - |
 | 25. Update UX Polish | v1.6 | 0/1 | Not started | - |
-| 26. Pagination Removal | v1.7 | 1/1 | Complete | 2026-03-15 |
+| 26. Pagination Removal | v1.7 | Complete    | 2026-03-15 | 2026-03-15 |
