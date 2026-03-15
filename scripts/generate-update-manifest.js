@@ -13,7 +13,7 @@ const repo = process.env.GITHUB_REPOSITORY || 'NM193/RecoDeck';
 const platforms = {};
 
 // --- macOS (Apple Silicon) ---
-const macTarball = findFile('artifacts/macos', '**/*.tar.gz', /\.sig$/);
+const macTarball = findFileByExtension('artifacts/macos', '.tar.gz');
 const macSig = macTarball ? `${macTarball}.sig` : null;
 
 if (macTarball && macSig && fs.existsSync(macSig)) {
@@ -27,7 +27,7 @@ if (macTarball && macSig && fs.existsSync(macSig)) {
 }
 
 // --- Windows (x86_64 NSIS) ---
-const winExe = findFile('artifacts/windows', '**/*.exe', /\.sig$/);
+const winExe = findFileByExtension('artifacts/windows', '.exe');
 const winSig = winExe ? `${winExe}.sig` : null;
 
 if (winExe && winSig && fs.existsSync(winSig)) {
@@ -60,20 +60,20 @@ console.log(`  Version: ${version}`);
 
 // --- Helpers ---
 
-function findFile(baseDir, _pattern, excludeRegex) {
+function findFileByExtension(baseDir, ext) {
   const absBase = path.join(__dirname, '..', baseDir);
   if (!fs.existsSync(absBase)) return null;
-  return findRecursive(absBase, excludeRegex);
+  return searchRecursive(absBase, ext);
 }
 
-function findRecursive(dir, excludeRegex) {
+function searchRecursive(dir, ext) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      const found = findRecursive(fullPath, excludeRegex);
+      const found = searchRecursive(fullPath, ext);
       if (found) return found;
-    } else if (!excludeRegex.test(entry.name)) {
+    } else if (entry.name.endsWith(ext) && !entry.name.endsWith('.sig')) {
       return fullPath;
     }
   }
