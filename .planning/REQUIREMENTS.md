@@ -97,11 +97,11 @@ Requirements for AI Chat Persistence milestone. Each maps to roadmap phases.
 
 ### Conversation Management
 
-- [ ] **CONV-01**: User can create a new conversation (returns conversation_id)
-- [ ] **CONV-02**: User can list all conversations (ordered by most recent)
-- [ ] **CONV-03**: User can load messages from a previous conversation
-- [ ] **CONV-04**: User can delete a conversation (and its messages)
-- [ ] **CONV-05**: Conversation auto-titles from first user message (truncated to 50 chars)
+- [x] **CONV-01**: User can create a new conversation (returns conversation_id)
+- [x] **CONV-02**: User can list all conversations (ordered by most recent)
+- [x] **CONV-03**: User can load messages from a previous conversation
+- [x] **CONV-04**: User can delete a conversation (and its messages)
+- [x] **CONV-05**: Conversation auto-titles from first user message (truncated to 50 chars)
 
 ### Message Persistence
 
@@ -216,11 +216,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | DB-01 | Phase 27 | Complete |
 | DB-02 | Phase 27 | Complete |
-| CONV-01 | Phase 28 | Pending |
-| CONV-02 | Phase 28 | Pending |
-| CONV-03 | Phase 28 | Pending |
-| CONV-04 | Phase 28 | Pending |
-| CONV-05 | Phase 28 | Pending |
+| CONV-01 | Phase 28 | Complete |
+| CONV-02 | Phase 28 | Complete |
+| CONV-03 | Phase 28 | Complete |
+| CONV-04 | Phase 28 | Complete |
+| CONV-05 | Phase 28 | Complete |
 | MSG-01 | Phase 28 | Pending |
 | MSG-02 | Phase 28 | Pending |
 | MSG-03 | Phase 28 | Pending |

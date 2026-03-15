@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Windows Support
 status: executing
-stopped_at: Phase 28 context gathered
-last_updated: "2026-03-15T22:55:56.639Z"
-last_activity: "2026-03-15 — Phase 27 Plan 01 executed: ai_conversations + ai_messages tables created"
+stopped_at: "Completed 28-01-PLAN.md"
+last_updated: "2026-03-15T23:21:00Z"
+last_activity: "2026-03-15 — Phase 28 Plan 01 executed: conversation CRUD backend commands + TS types"
 progress:
   total_phases: 25
   completed_phases: 16
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 25
+  completed_plans: 25
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** v1.8 AI Chat Persistence — Phase 27: Conversation Database Schema
+**Current focus:** v1.8 AI Chat Persistence — Phase 28: Backend Commands and Message Persistence
 
 ## Current Position
 
-Phase: 27 of 29 (Conversation Database Schema)
-Plan: 1 of 1 in current phase (Phase 27 complete)
-Status: In progress — ready for Phase 28
-Last activity: 2026-03-15 — Phase 27 Plan 01 executed: ai_conversations + ai_messages tables created
+Phase: 28 of 29 (Backend Commands and Message Persistence)
+Plan: 1 of 2 in current phase (28-01 complete, 28-02 pending)
+Status: In progress — Plan 01 complete, ready for Plan 02
+Last activity: 2026-03-15 — Phase 28 Plan 01 executed: conversation CRUD backend commands + TS types
 
 Progress: [██████████] 100%
 
@@ -51,6 +51,9 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 26]: Replace getTracksPaginated() batches with single getAllTracks() — SQLite is fast, TanStack Virtual handles full array rendering
 - [Phase 26]: Preserve db/mod.rs get_tracks_with_analysis_paginated — mobile companion /api/tracks still needs it (INTG-03)
 - [Phase 27-01]: TEXT primary keys for UUID-based IDs per DB-01/DB-02 requirements; PRAGMA foreign_keys = ON in run_migrations(); Migration 004 left unwired (pre-existing issue, out of scope)
+- [Phase 28-01]: PRAGMA foreign_keys moved from run_migrations() to Database::new() and new_in_memory() so every connection enforces FK constraints on open
+- [Phase 28-01]: delete_conversation returns Err(QueryReturnedNoRows) when 0 rows affected (conversation not found), matching playlists.rs pattern
+- [Phase 28-01]: create_message auto-titles using content[..50] byte slice (matches plan spec for ASCII-compatible content)
 
 ### Pending Todos
 
@@ -63,7 +66,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-15T22:55:56.634Z
-Stopped at: Phase 28 context gathered
-Resume file: .planning/phases/28-backend-commands-and-message-persistence/28-CONTEXT.md
-Next action: /gsd:plan-phase 28
+Last session: 2026-03-15T23:21:00Z
+Stopped at: Completed 28-01-PLAN.md
+Resume file: .planning/phases/28-backend-commands-and-message-persistence/28-01-SUMMARY.md
+Next action: Execute 28-02-PLAN.md
