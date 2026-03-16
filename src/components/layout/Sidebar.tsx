@@ -66,7 +66,7 @@ interface SidebarProps {
   selectedFolder: string | null
   selectedPlaylistId: number | null
   totalTrackCount?: number
-  activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search'
+  activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search' | 'ai-chat'
   toastMessage?: string | null
   onToastDismiss?: () => void
   onFolderSelect: (folderPath: string | null) => void
@@ -82,6 +82,7 @@ interface SidebarProps {
   onNavigateHome: () => void
   onShowAllTracks: () => void
   onSearch?: () => void
+  onNavigateAIChat?: () => void
 }
 
 // --- Main Sidebar ---
@@ -108,6 +109,7 @@ export function Sidebar({
   onNavigateHome,
   onShowAllTracks,
   onSearch,
+  onNavigateAIChat,
 }: SidebarProps) {
   // Section expand states — all start expanded
   const [foldersExpanded, setFoldersExpanded] = useState(true)
@@ -225,6 +227,14 @@ export function Sidebar({
           >
             <Icon name="Search" size={16} />
             <span>Search</span>
+          </button>
+          <button
+            className={`sidebar-nav-item ${activeView === 'ai-chat' ? 'sidebar-nav-item--active' : ''}`}
+            onClick={onNavigateAIChat}
+            type="button"
+          >
+            <Icon name="MessageSquare" size={16} />
+            <span>AI Chat</span>
           </button>
         </div>
 

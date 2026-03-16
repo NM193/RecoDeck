@@ -12,6 +12,7 @@ import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
 import { SettingsView } from './components/views/SettingsView'
 import { SearchView } from './components/views/SearchView'
+import { ChatView } from './components/ai/ChatView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
@@ -73,6 +74,7 @@ function AppContent() {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [showAllTracks, setShowAllTracks] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [showAIChat, setShowAIChat] = useState(false)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -563,6 +565,8 @@ function AppContent() {
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
     setShowSettings(false)
+    setShowSearch(false)
+    setShowAIChat(false)
 
     await loadTracks(folderPath, null)
   }
@@ -573,6 +577,8 @@ function AppContent() {
     setSelectedFolder(null)
     setShowAllTracks(false)
     setShowSettings(false)
+    setShowSearch(false)
+    setShowAIChat(false)
     await loadTracks(null, playlistId)
   }
 
@@ -997,25 +1003,29 @@ function AppContent() {
     ? 'settings'
     : showSearch
       ? 'search'
-      : selectedPlaylistId
-        ? `playlist-${selectedPlaylistId}`
-        : selectedFolder
-          ? `folder-${selectedFolder}`
-          : showAllTracks
-            ? 'all-tracks'
-            : 'home'
+      : showAIChat
+        ? 'ai-chat'
+        : selectedPlaylistId
+          ? `playlist-${selectedPlaylistId}`
+          : selectedFolder
+            ? `folder-${selectedFolder}`
+            : showAllTracks
+              ? 'all-tracks'
+              : 'home'
 
-  const activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search' = showSettings
+  const activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search' | 'ai-chat' = showSettings
     ? 'settings'
     : showSearch
       ? 'search'
-      : selectedPlaylistId
-        ? 'playlist'
-        : selectedFolder
-          ? 'folder'
-          : showAllTracks
-            ? 'all-tracks'
-            : 'home'
+      : showAIChat
+        ? 'ai-chat'
+        : selectedPlaylistId
+          ? 'playlist'
+          : selectedFolder
+            ? 'folder'
+            : showAllTracks
+              ? 'all-tracks'
+              : 'home'
 
   const sidebarEl = (
     <Sidebar
@@ -1042,6 +1052,7 @@ function AppContent() {
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
         setShowSearch(false)
+        setShowAIChat(false)
       }}
       onNavigateHome={() => {
         setSelectedFolder(null)
@@ -1049,6 +1060,7 @@ function AppContent() {
         setShowAllTracks(false)
         setShowSettings(false)
         setShowSearch(false)
+        setShowAIChat(false)
       }}
       onShowAllTracks={() => {
         setSelectedFolder(null)
@@ -1056,6 +1068,7 @@ function AppContent() {
         setShowAllTracks(true)
         setShowSettings(false)
         setShowSearch(false)
+        setShowAIChat(false)
         loadTracks(null, null)
       }}
       onSearch={() => {
@@ -1064,7 +1077,16 @@ function AppContent() {
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
         setShowSettings(false)
+        setShowAIChat(false)
         loadTracks(null, null)
+      }}
+      onNavigateAIChat={() => {
+        setShowAIChat(true)
+        setShowSettings(false)
+        setShowSearch(false)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
       }}
     />
   )
@@ -1134,6 +1156,8 @@ function AppContent() {
                   setShowSearch(false)
                 }}
               />
+            ) : showAIChat ? (
+              <ChatView />
             ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
               <HomeView
                 playlists={playlists}
