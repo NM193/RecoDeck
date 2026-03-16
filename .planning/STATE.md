@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Windows Support
 status: completed
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-03-16T07:32:08.804Z"
-last_activity: "2026-03-16 — Phase 29 Plan 01 executed: conversation state management, AI Chat sidebar nav, App.tsx routing"
+stopped_at: Completed 29-02-PLAN.md
+last_updated: "2026-03-16T09:27:08Z"
+last_activity: "2026-03-16 — Phase 29 Plan 02 executed: ChatView, ConversationList, ConversationItem, ChatArea components with full styling"
 progress:
   total_phases: 25
-  completed_phases: 17
+  completed_phases: 18
   total_plans: 28
-  completed_plans: 27
-  percent: 96
+  completed_plans: 28
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 ## Current Position
 
-Phase: 29 of 29 (Conversation UI)
-Plan: 1 of 2 in current phase (29-01 complete)
-Status: Plan 29-01 complete — aiStore conversation state, sidebar nav, and App.tsx routing wired
-Last activity: 2026-03-16 — Phase 29 Plan 01 executed: conversation state management, AI Chat sidebar nav, App.tsx routing
+Phase: 29 of 29 (Conversation UI) -- COMPLETE
+Plan: 2 of 2 in current phase (29-02 complete)
+Status: Phase 29 complete -- full AI Chat view with conversation list, chat area, context menus, inline rename, and session restore
+Last activity: 2026-03-16 -- Phase 29 Plan 02 executed: ChatView, ConversationList, ConversationItem, ChatArea components with full styling
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -57,6 +57,9 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 28]: Lock acquired and released in its own if-let scope in ai_chat, not held across async Claude API call boundary
 - [Phase 28]: Raw user message (not library-context-prepended version) saved to DB for conversation history fidelity
 - [Phase 29-01]: Capture isActive before set() in deleteConversation to avoid reading already-updated Zustand state
+- [Phase 29-02]: All ChatView CSS colors use var(--*) tokens; zero hardcoded hex values for theme consistency
+- [Phase 29-02]: Context menu uses conv-ctx-menu class names (not sidebar-ctx-menu) to avoid CSS coupling while keeping same visual pattern
+- [Phase 29-02]: On-mount restore wraps loadConversation in try/catch; if saved conversation was deleted, localStorage key is removed gracefully
 
 ### Pending Todos
 
@@ -69,7 +72,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-16T07:32:08.799Z
-Stopped at: Completed 29-01-PLAN.md
+Last session: 2026-03-16T09:27:08Z
+Stopped at: Completed 29-02-PLAN.md
 Resume file: None
-Next action: Execute Phase 29 (AI Chat UI)
+Next action: v1.8 AI Chat Persistence milestone complete -- all phases (27, 28, 29) done
