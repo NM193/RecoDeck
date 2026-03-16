@@ -45,7 +45,7 @@ Exceptions:
 - Conversation list panel width: 240px fixed (not a spacing token — structural layout value)
 - Chat area takes remaining flex space (no fixed width)
 - Touch targets (New Chat button, nav item): minimum 36px height — matches `--input-height`
-- Sidebar nav item padding: 8px 10px — matches existing `.sidebar-nav-item` pattern
+- Sidebar nav item padding: 8px 12px — aligns with New Chat button's 12px padding rhythm and the 4px grid
 
 ---
 
@@ -64,6 +64,7 @@ Notes:
 - Conversation title in header is editable on click — switches from Heading to an inline `<input>` using the same size/weight
 - Typing hint below message input uses Label (11px, --text-xs, `--text-muted` color)
 - Relative date stamps use Label color `--text-muted` (#6a6a6a in Midnight)
+- Body (13px) and Heading (14px) are intentionally 1px apart. Weight difference — 400 (regular) for Body vs 600 (semibold) for Heading — is the primary visual hierarchy signal. The size difference is a secondary reinforcement only.
 
 ---
 
@@ -248,11 +249,19 @@ Three dots animation while `isGenerating === true`:
 
 ### Send button states
 
+Accessibility: `aria-label="Send message"` always present on the button element; `aria-disabled="true"` when state is Empty or Generating.
+
 | State | Visual |
 |-------|--------|
 | Empty input | Background `--bg-tertiary`; icon `--text-muted`; cursor not-allowed |
 | Has input, not generating | Background `--accent`; icon white; cursor pointer |
 | Generating | Background `--bg-tertiary`; icon `--text-muted`; disabled |
+
+### Header overflow button
+
+The `[...]` button in the chat area header renders as an icon-only button.
+
+Accessibility: `aria-label="More options"` always present on the button element; tooltip (`title="More options"`) as additional fallback.
 
 ---
 
@@ -304,10 +313,10 @@ No third-party UI blocks declared. All components are hand-built using project's
 ## Checker Sign-Off
 
 - [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
+- [ ] Dimension 2 Visuals: PASS — aria-label declared for send button ("Send message") and header overflow button ("More options")
 - [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
+- [ ] Dimension 4 Typography: PASS — weight difference (400 vs 600) documented as primary hierarchy signal for Body/Heading 1px size gap
+- [ ] Dimension 5 Spacing: PASS — sidebar nav item padding corrected to 8px 12px (4px grid compliant)
 - [ ] Dimension 6 Registry Safety: PASS
 
 **Approval:** pending
