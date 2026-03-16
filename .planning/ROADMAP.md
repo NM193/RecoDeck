@@ -431,18 +431,19 @@ Plans:
 - [ ] 28-02: Message persistence hooks in ai.rs — save user message before send, save AI response after receive; verify COMPAT-01
 
 ### Phase 29: Conversation UI
-**Goal**: AIChatPanel shows a collapsible conversation sidebar so users can start new chats, browse history, and restore their last session — conversation state persists across app restarts
+**Goal**: A full main-content AI Chat view replaces the floating panel — conversation list panel (always visible) on the left, chat area on the right, with new chat, load, rename, delete, and on-mount session restore
 **Depends on**: Phase 28 (all backend commands must exist before the UI can call them)
 **Requirements**: UI-01, UI-02, UI-03, UI-04
 **Success Criteria** (what must be TRUE):
-  1. AIChatPanel renders a collapsible sidebar listing all past conversations ordered by most recent, with each entry showing its auto-generated title
+  1. AIChatPanel renders a conversation list panel listing all past conversations ordered by most recent, with each entry showing its auto-generated title
   2. Clicking "New Chat" clears the message thread and starts a fresh conversation with a new conversation_id
   3. Clicking a conversation in the sidebar loads its full message history into the chat thread — the user can read and continue from any past conversation
   4. On app mount, the conversation list populates automatically and the last active conversation restores its messages without any user action
 **Plans**: 2 plans
 
 Plans:
-- [ ] 29-01: Conversation sidebar component, new-chat button, click-to-load handler, and on-mount restore logic in AIChatPanel
+- [ ] 29-01-PLAN.md — Extend aiStore with conversation state, add AI Chat sidebar nav item, wire App.tsx routing
+- [ ] 29-02-PLAN.md — Build ChatView, ConversationList, ConversationItem, ChatArea components with full styling
 
 ## Progress
 
@@ -476,4 +477,4 @@ Plans:
 | 26. Pagination Removal | v1.7 | 1/1 | Complete | 2026-03-15 |
 | 27. Conversation Database Schema | 1/1 | Complete    | 2026-03-15 | - |
 | 28. Backend Commands and Message Persistence | 2/2 | Complete    | 2026-03-15 | - |
-| 29. Conversation UI | v1.8 | 0/1 | Not started | - |
+| 29. Conversation UI | v1.8 | 0/2 | Not started | - |
