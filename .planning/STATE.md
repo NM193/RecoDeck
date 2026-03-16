@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Windows Support
 status: completed
-stopped_at: Phase 29 context gathered
-last_updated: "2026-03-15T23:55:16.486Z"
-last_activity: "2026-03-16 — Phase 28 Plan 02 executed: message persistence wired into ai_chat command + TypeScript wrapper updated"
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-03-16T07:32:08.804Z"
+last_activity: "2026-03-16 — Phase 29 Plan 01 executed: conversation state management, AI Chat sidebar nav, App.tsx routing"
 progress:
   total_phases: 25
   completed_phases: 17
-  total_plans: 26
-  completed_plans: 26
-  percent: 100
+  total_plans: 28
+  completed_plans: 27
+  percent: 96
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Smart, AI-powered music library management that understands DJ workflow — energy flow, key compatibility, and mood progression
-**Current focus:** v1.8 AI Chat Persistence — Phase 28: Backend Commands and Message Persistence
+**Current focus:** v1.9 AI Chat UI — Phase 29: Conversation UI
 
 ## Current Position
 
-Phase: 28 of 29 (Backend Commands and Message Persistence)
-Plan: 2 of 2 in current phase (28-01 complete, 28-02 complete)
-Status: Phase 28 complete — both plans executed
-Last activity: 2026-03-16 — Phase 28 Plan 02 executed: message persistence wired into ai_chat command + TypeScript wrapper updated
+Phase: 29 of 29 (Conversation UI)
+Plan: 1 of 2 in current phase (29-01 complete)
+Status: Plan 29-01 complete — aiStore conversation state, sidebar nav, and App.tsx routing wired
+Last activity: 2026-03-16 — Phase 29 Plan 01 executed: conversation state management, AI Chat sidebar nav, App.tsx routing
 
-Progress: [██████████] 100%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 - [Phase 28-01]: create_message auto-titles using content[..50] byte slice (matches plan spec for ASCII-compatible content)
 - [Phase 28]: Lock acquired and released in its own if-let scope in ai_chat, not held across async Claude API call boundary
 - [Phase 28]: Raw user message (not library-context-prepended version) saved to DB for conversation history fidelity
+- [Phase 29-01]: Capture isActive before set() in deleteConversation to avoid reading already-updated Zustand state
 
 ### Pending Todos
 
@@ -68,7 +69,7 @@ All v1.0–v1.5 decisions archived in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last session: 2026-03-15T23:55:16.482Z
-Stopped at: Phase 29 context gathered
-Resume file: .planning/phases/29-conversation-ui/29-CONTEXT.md
+Last session: 2026-03-16T07:32:08.799Z
+Stopped at: Completed 29-01-PLAN.md
+Resume file: None
 Next action: Execute Phase 29 (AI Chat UI)

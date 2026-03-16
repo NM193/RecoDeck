@@ -477,4 +477,4 @@ Plans:
 | 26. Pagination Removal | v1.7 | 1/1 | Complete | 2026-03-15 |
 | 27. Conversation Database Schema | 1/1 | Complete    | 2026-03-15 | - |
 | 28. Backend Commands and Message Persistence | 2/2 | Complete    | 2026-03-15 | - |
-| 29. Conversation UI | v1.8 | 0/2 | Not started | - |
+| 29. Conversation UI | 1/2 | In Progress|  | - |

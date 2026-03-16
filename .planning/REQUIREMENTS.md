@@ -111,10 +111,10 @@ Requirements for AI Chat Persistence milestone. Each maps to roadmap phases.
 
 ### Frontend UI
 
-- [ ] **UI-01**: AIChatPanel shows a collapsible conversation list sidebar
-- [ ] **UI-02**: User can click "New Chat" to start a fresh conversation
-- [ ] **UI-03**: User can click a previous conversation to load its messages
-- [ ] **UI-04**: On app mount, conversation list loads and last active conversation restores
+- [x] **UI-01**: AIChatPanel shows a collapsible conversation list sidebar
+- [x] **UI-02**: User can click "New Chat" to start a fresh conversation
+- [x] **UI-03**: User can click a previous conversation to load its messages
+- [x] **UI-04**: On app mount, conversation list loads and last active conversation restores
 
 ### Compatibility
 
@@ -224,10 +224,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MSG-01 | Phase 28 | Complete |
 | MSG-02 | Phase 28 | Complete |
 | MSG-03 | Phase 28 | Complete |
-| UI-01 | Phase 29 | Pending |
-| UI-02 | Phase 29 | Pending |
-| UI-03 | Phase 29 | Pending |
-| UI-04 | Phase 29 | Pending |
+| UI-01 | Phase 29 | Complete |
+| UI-02 | Phase 29 | Complete |
+| UI-03 | Phase 29 | Complete |
+| UI-04 | Phase 29 | Complete |
 | COMPAT-01 | Phase 28 | Complete |
 
 **v1.8 Coverage:**
