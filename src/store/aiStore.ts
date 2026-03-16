@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getErrorMessage, isAppError } from '../types/ai'
-import type { ChatMessage, GeneratedPlaylist } from '../types/ai'
+import type { ChatMessage, GeneratedPlaylist, Conversation, ConversationMessage } from '../types/ai'
 import { tauriApi } from '../lib/tauri-api'
 
 interface AIState {
@@ -13,6 +13,10 @@ interface AIState {
   isGenerating: boolean
   streamingMessage: string
   error: string | null
+
+  // Conversation state
+  currentConversationId: string | null
+  conversations: Conversation[]
 
   // Playlist generation
   pendingPlaylist: GeneratedPlaylist | null
@@ -32,6 +36,14 @@ interface AIState {
   clearHistory: () => void
   setError: (error: string | null) => void
 
+  // Conversation actions
+  loadConversations: () => Promise<void>
+  createNewConversation: () => Promise<void>
+  loadConversation: (conversationId: string) => Promise<void>
+  deleteConversation: (conversationId: string) => Promise<void>
+  renameConversation: (conversationId: string, title: string) => Promise<void>
+  setCurrentConversationId: (id: string | null) => void
+
   // Playlist actions
   generatePlaylist: (prompt: string) => Promise<void>
   clearPendingPlaylist: () => void
@@ -45,6 +57,8 @@ export const useAIStore = create<AIState>((set, get) => ({
   isGenerating: false,
   streamingMessage: '',
   error: null,
+  currentConversationId: null,
+  conversations: [],
   pendingPlaylist: null,
   openSettingsCallback: null,
 
@@ -113,7 +127,7 @@ export const useAIStore = create<AIState>((set, get) => ({
     try {
       // Send to AI
       console.log('[AI Store] Calling tauriApi.aiChat...')
-      const response = await tauriApi.aiChat(message, chatHistory)
+      const response = await tauriApi.aiChat(message, chatHistory, get().currentConversationId ?? undefined)
 
       // Add assistant response to history
       const assistantMessage: ChatMessage = {
@@ -126,6 +140,9 @@ export const useAIStore = create<AIState>((set, get) => ({
         chatHistory: [...state.chatHistory, assistantMessage],
         isGenerating: false,
       }))
+
+      // Refresh conversations list to pick up auto-title changes
+      get().loadConversations()
     } catch (e) {
       if (
         isAppError(e) &&
@@ -138,7 +155,7 @@ export const useAIStore = create<AIState>((set, get) => ({
           })
           await new Promise((resolve) => setTimeout(resolve, 30_000))
           try {
-            const retryResponse = await tauriApi.aiChat(message, chatHistory)
+            const retryResponse = await tauriApi.aiChat(message, chatHistory, get().currentConversationId ?? undefined)
             const retryAssistantMessage: ChatMessage = {
               role: 'assistant',
               content: retryResponse,
@@ -149,6 +166,7 @@ export const useAIStore = create<AIState>((set, get) => ({
               isGenerating: false,
               error: null,
             }))
+            get().loadConversations()
             return
           } catch (retryErr) {
             if (attempt === 2) {
@@ -162,9 +180,87 @@ export const useAIStore = create<AIState>((set, get) => ({
     }
   },
 
-  clearHistory: () => set({ chatHistory: [], error: null }),
+  clearHistory: () => {
+    set({ chatHistory: [], error: null, currentConversationId: null })
+    localStorage.removeItem('lastActiveConversationId')
+  },
 
   setError: (error) => set({ error }),
+
+  // Conversation actions
+  loadConversations: async () => {
+    try {
+      const conversations = await tauriApi.listConversations()
+      set({ conversations })
+    } catch (e) {
+      console.error('[AI Store] Failed to load conversations:', e)
+    }
+  },
+
+  createNewConversation: async () => {
+    try {
+      const conversation = await tauriApi.createConversation()
+      set((state) => ({
+        conversations: [conversation, ...state.conversations],
+        currentConversationId: conversation.id,
+        chatHistory: [],
+        error: null,
+      }))
+      localStorage.setItem('lastActiveConversationId', conversation.id)
+    } catch (e) {
+      console.error('[AI Store] Failed to create conversation:', e)
+      set({ error: getErrorMessage(e) })
+    }
+  },
+
+  loadConversation: async (conversationId: string) => {
+    try {
+      const messages = await tauriApi.getConversationMessages(conversationId)
+      const chatHistory: ChatMessage[] = messages.map((m: ConversationMessage) => ({
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.created_at * 1000).toISOString(),
+      }))
+      set({ chatHistory, currentConversationId: conversationId, error: null })
+      localStorage.setItem('lastActiveConversationId', conversationId)
+    } catch (e) {
+      console.error('[AI Store] Failed to load conversation:', e)
+      set({ error: getErrorMessage(e) })
+    }
+  },
+
+  deleteConversation: async (conversationId: string) => {
+    try {
+      const isActive = conversationId === get().currentConversationId
+      await tauriApi.deleteConversation(conversationId)
+      set((state) => ({
+        conversations: state.conversations.filter((c) => c.id !== conversationId),
+        ...(isActive ? { currentConversationId: null, chatHistory: [] } : {}),
+      }))
+      if (isActive) {
+        localStorage.removeItem('lastActiveConversationId')
+      }
+    } catch (e) {
+      console.error('[AI Store] Failed to delete conversation:', e)
+      set({ error: getErrorMessage(e) })
+    }
+  },
+
+  renameConversation: async (conversationId: string, title: string) => {
+    try {
+      await tauriApi.renameConversation(conversationId, title)
+      set((state) => ({
+        conversations: state.conversations.map((c) =>
+          c.id === conversationId ? { ...c, title } : c,
+        ),
+      }))
+    } catch (e) {
+      console.error('[AI Store] Failed to rename conversation:', e)
+      set({ error: getErrorMessage(e) })
+    }
+  },
+
+  setCurrentConversationId: (id) => set({ currentConversationId: id }),
 
   // Playlist generation
   generatePlaylist: async (prompt: string) => {
