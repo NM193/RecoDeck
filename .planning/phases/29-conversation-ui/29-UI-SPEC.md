@@ -139,7 +139,7 @@ Components consumed, adapted, or created in this phase:
 ┌──────────────────────┐
 │ [+ New Chat button]  │  padding: 12px; height: 36px; full width; bg: --accent
 │──────────────────────│
-│ [Conversation item]  │  title (13px) + date (11px, muted); padding: 10px 12px
+│ [Conversation item]  │  title (13px) + date (11px, muted); padding: 8px 12px
 │   Title              │
 │   2h ago             │
 │──────────────────────│  border-bottom: 1px solid --border-subtle
