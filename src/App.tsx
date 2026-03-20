@@ -941,6 +941,12 @@ function AppContent() {
       // Set the queue with the sorted/filtered tracks array and start at the clicked track
       // This way next/previous buttons will work in the sorted order
       setQueue(sortedTracks, trackIndex)
+
+      // Record play event for dashboard
+      const trackToPlay = sortedTracks[trackIndex]
+      if (trackToPlay?.id) {
+        tauriApi.recordPlayEvent(trackToPlay.id, selectedPlaylistId ?? null).catch(console.error)
+      }
     } catch (err) {
       console.error('[App] Play error:', err)
       setPlayerError(err instanceof Error ? err.message : String(err))
@@ -1162,7 +1168,24 @@ function AppContent() {
               <HomeView
                 playlists={playlists}
                 totalTrackCount={totalTrackCount}
+                folderCount={libraryFolders.length}
                 onPlaylistSelect={handlePlaylistSelect}
+                onNavigateAIChat={() => {
+                  setShowAIChat(true)
+                  setSelectedPlaylistId(null)
+                  setSelectedFolder(null)
+                  setShowAllTracks(false)
+                  setShowSearch(false)
+                  setShowSettings(false)
+                }}
+                onOpenSettings={() => {
+                  setShowSettings(true)
+                  setShowAIChat(false)
+                  setSelectedPlaylistId(null)
+                  setSelectedFolder(null)
+                  setShowAllTracks(false)
+                  setShowSearch(false)
+                }}
               />
             ) : tracks.length === 0 ? (
               <div className="empty-state">
