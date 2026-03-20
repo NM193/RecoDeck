@@ -147,6 +147,11 @@ impl Database {
         let migration_005 = include_str!("migrations/005_ai_conversations.sql");
         self.conn.execute_batch(migration_005)?;
 
+        // Migration 006: Dashboard layout + play history
+        // Uses CREATE TABLE IF NOT EXISTS — no column check needed
+        let migration_006 = include_str!("migrations/006_dashboard.sql");
+        self.conn.execute_batch(migration_006)?;
+
         Ok(())
     }
 
@@ -1643,6 +1648,140 @@ impl Database {
         }
 
         Ok(id)
+    }
+
+    // --- Dashboard operations ---
+
+    /// Record a play event for a track.
+    pub fn record_play_event(&self, track_id: i64, playlist_id: Option<i64>) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO play_history (track_id, playlist_id) VALUES (?1, ?2)",
+            params![track_id, playlist_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get recently played tracks (joined with track data), ordered by most recent first.
+    pub fn get_recently_played(&self, limit: i64) -> Result<Vec<(i64, Option<i64>, i64, Option<String>, Option<String>, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ph.track_id, ph.playlist_id, ph.played_at, t.title, t.artist, t.file_path
+             FROM play_history ph
+             LEFT JOIN tracks t ON t.id = ph.track_id
+             ORDER BY ph.played_at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get recently added tracks ordered by date_added DESC.
+    pub fn get_recently_added(&self, limit: i64) -> Result<Vec<(i64, Option<String>, Option<String>, String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, artist, file_path, date_added
+             FROM tracks
+             ORDER BY date_added DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get library insight statistics.
+    pub fn get_library_insights(&self) -> Result<(i64, i64, Option<String>, Option<f64>, Option<f64>, Option<String>, Option<f64>)> {
+        let total_tracks: i64 = self.conn
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get::<_, i64>(0))
+            .unwrap_or(0);
+
+        let analyzed_tracks: i64 = self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM track_analysis WHERE bpm IS NOT NULL",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+
+        let top_genre: Option<String> = self.conn
+            .query_row(
+                "SELECT genre FROM tracks WHERE genre IS NOT NULL
+                 GROUP BY genre ORDER BY COUNT(*) DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+
+        let bpm_min: Option<f64> = self.conn
+            .query_row(
+                "SELECT MIN(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .ok();
+
+        let bpm_max: Option<f64> = self.conn
+            .query_row(
+                "SELECT MAX(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .ok();
+
+        let top_key: Option<String> = self.conn
+            .query_row(
+                "SELECT musical_key FROM track_analysis WHERE musical_key IS NOT NULL
+                 GROUP BY musical_key ORDER BY COUNT(*) DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+
+        let avg_energy: Option<f64> = self.conn
+            .query_row(
+                "SELECT AVG(energy_arousal) FROM track_deep_analysis WHERE energy_arousal IS NOT NULL",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .ok();
+
+        Ok((total_tracks, analyzed_tracks, top_genre, bpm_min, bpm_max, top_key, avg_energy))
+    }
+
+    /// Save the dashboard layout JSON (upsert with fixed id=1).
+    pub fn save_dashboard_layout(&self, layout_json: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO dashboard_layout (id, layout_json, updated_at)
+             VALUES (1, ?1, strftime('%s', 'now'))",
+            params![layout_json],
+        )?;
+        Ok(())
+    }
+
+    /// Get the stored dashboard layout JSON, or None if not saved yet.
+    pub fn get_dashboard_layout(&self) -> Result<Option<String>> {
+        let result: Option<String> = self.conn
+            .query_row(
+                "SELECT layout_json FROM dashboard_layout WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+        Ok(result)
     }
 }
 

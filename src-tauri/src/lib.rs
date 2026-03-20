@@ -484,6 +484,13 @@ pub fn run() {
             commands::server::stop_companion_server,
             commands::server::get_companion_status,
             commands::server::regenerate_companion_token,
+            // Dashboard commands
+            commands::dashboard::record_play_event,
+            commands::dashboard::get_recently_played,
+            commands::dashboard::get_recently_added,
+            commands::dashboard::get_library_insights,
+            commands::dashboard::save_dashboard_layout,
+            commands::dashboard::get_dashboard_layout,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;
