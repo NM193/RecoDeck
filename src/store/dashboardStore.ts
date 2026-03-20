@@ -1,11 +1,11 @@
 import { create } from 'zustand'
-import type { Layout } from 'react-grid-layout'
+import type { LayoutItem } from 'react-grid-layout/legacy'
 import { tauriApi } from '../lib/tauri-api'
 import { DEFAULT_LAYOUT } from '../components/views/widgets/widgetRegistry'
 
 interface DashboardState {
-  layout: Layout[]
-  savedLayout: Layout[]
+  layout: LayoutItem[]
+  savedLayout: LayoutItem[]
   isEditMode: boolean
   isLoaded: boolean
 
@@ -13,7 +13,7 @@ interface DashboardState {
   enterEditMode: () => void
   cancelEdit: () => void
   saveLayout: () => Promise<void>
-  updateLayout: (layout: Layout[]) => void
+  updateLayout: (layout: LayoutItem[]) => void
   addWidget: (widgetId: string, definition: { defaultW: number; defaultH: number; minW: number; minH: number; maxW: number; maxH: number }) => void
   removeWidget: (widgetId: string) => void
 }
@@ -28,7 +28,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     try {
       const json = await tauriApi.getDashboardLayout()
       if (json) {
-        const layout = JSON.parse(json) as Layout[]
+        const layout = JSON.parse(json) as LayoutItem[]
         set({ layout, savedLayout: layout, isLoaded: true })
       } else {
         set({ layout: DEFAULT_LAYOUT, savedLayout: DEFAULT_LAYOUT, isLoaded: true })
@@ -66,7 +66,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const { layout } = get()
     if (layout.some((item) => item.i === widgetId)) return
 
-    const newItem: Layout = {
+    const newItem: LayoutItem = {
       i: widgetId,
       x: 0,
       y: Infinity,

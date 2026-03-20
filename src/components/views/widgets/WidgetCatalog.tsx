@@ -1,10 +1,10 @@
 import { Icon } from '../../Icon'
 import { WIDGET_CATALOG } from './widgetRegistry'
-import type { Layout } from 'react-grid-layout'
+import type { LayoutItem } from 'react-grid-layout/legacy'
 import './WidgetCatalog.css'
 
 interface WidgetCatalogProps {
-  currentLayout: Layout[]
+  currentLayout: LayoutItem[]
   onAddWidget: (widgetId: string) => void
 }
 
@@ -25,7 +25,7 @@ export function WidgetCatalog({ currentLayout, onAddWidget }: WidgetCatalogProps
               disabled={isActive}
             >
               <div className="widget-catalog__item-icon">
-                <Icon name={widget.icon} size={16} />
+                <Icon name={widget.icon as any} size={16} />
               </div>
               <div className="widget-catalog__item-info">
                 <span className="widget-catalog__item-name">{widget.name}</span>

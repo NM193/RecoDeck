@@ -1,4 +1,4 @@
-import type { Layout } from 'react-grid-layout'
+import type { LayoutItem } from 'react-grid-layout/legacy'
 
 export interface WidgetDefinition {
   id: string
@@ -72,7 +72,7 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
   },
 ]
 
-export const DEFAULT_LAYOUT: Layout[] = [
+export const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: 'recently-played', x: 0, y: 0, w: 2, h: 1, minW: 2, minH: 1, maxW: 4, maxH: 2 },
   { i: 'quick-actions',   x: 2, y: 0, w: 2, h: 1, minW: 2, minH: 1, maxW: 4, maxH: 1 },
   { i: 'library-stats',   x: 0, y: 1, w: 2, h: 1, minW: 1, minH: 1, maxW: 4, maxH: 1 },

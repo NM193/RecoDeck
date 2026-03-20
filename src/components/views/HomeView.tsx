@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { Responsive, WidthProvider } from 'react-grid-layout'
+import { Responsive, WidthProvider } from 'react-grid-layout/legacy'
+import type { Layout } from 'react-grid-layout/legacy'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 import type { Playlist } from '../../types/track'
@@ -123,9 +124,9 @@ export function HomeView(props: HomeViewProps) {
             isResizable={isEditMode}
             draggableHandle=".drag-handle"
             compactType="vertical"
-            onLayoutChange={(newLayout) => {
+            onLayoutChange={(newLayout: Layout) => {
               if (isEditMode) {
-                updateLayout(newLayout)
+                updateLayout([...newLayout])
               }
             }}
           >
