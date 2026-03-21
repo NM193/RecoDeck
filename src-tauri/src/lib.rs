@@ -474,6 +474,7 @@ pub fn run() {
             commands::ai::ai_recommend_for_playlist,
             commands::ai::ai_optimize_playlist_order,
             commands::ai::ai_chat,
+            commands::ai::ai_chat_v2,
             // Conversation commands
             commands::conversations::create_conversation,
             commands::conversations::list_conversations,

@@ -6,7 +6,10 @@
 // - Playlist generation
 // - Chat interaction
 
-use crate::ai::{ClaudeClient, TrackContextBuilder, SYSTEM_PROMPT};
+use crate::ai::{
+    build_taste_profile, ChatV2Response, ClaudeClient, SessionContext, TrackContextBuilder,
+    SYSTEM_PROMPT,
+};
 use crate::commands::library::AppState;
 use crate::db::{Track, TrackAnalysis};
 use crate::error::AppError;
@@ -612,6 +615,150 @@ pub async fn ai_chat(
             if let Err(e) = db.create_message(conv_id, "assistant", &response) {
                 eprintln!("[ai_chat] Failed to save assistant message: {}", e);
                 // Non-fatal: return response even if DB save fails
+            }
+        }
+    }
+
+    Ok(response)
+}
+
+/// V2 chat command: multi-turn tool-use orchestration with full context assembly.
+///
+/// Replaces the older `ai_chat` command for new AI chat interactions.
+/// Returns the assistant text plus a list of tool actions executed in this turn.
+///
+/// # Thread-safety
+/// The `Database` (rusqlite) is not `Send`, so we NEVER hold a `MutexGuard<Database>`
+/// across an `.await`.  All DB operations are performed in narrow sync scopes:
+/// before the async loop starts and inside the synchronous `execute_tools` callback.
+#[tauri::command]
+pub async fn ai_chat_v2(
+    state: State<'_, AppState>,
+    message: String,
+    conversation_id: String,
+    session_context: Option<SessionContext>,
+) -> Result<ChatV2Response, AppError> {
+    use crate::ai::claude_client::ContentBlockV2;
+    use crate::ai::context_assembler::assemble_system_prompt;
+    use crate::ai::tool_executor::execute_tool;
+    use crate::ai::{build_metadata_json, orchestrate_chat_inner};
+
+    let lock_err = || AppError::Internal("State lock failed".to_string());
+    let db_err = || AppError::Database("Database not initialized".to_string());
+
+    // ── Step 1: Get API key ───────────────────────────────────────────────
+    let api_key = get_api_key_from_db(&state)?.ok_or(AppError::AiNoApiKey)?;
+
+    // ── Step 2: Get or build taste profile ───────────────────────────────
+    let taste_profile_opt: Option<String> = {
+        let cached = {
+            let cache = state.taste_profile_cache.lock().map_err(|_| lock_err())?;
+            cache.clone()
+        };
+        if let Some(p) = cached {
+            Some(p)
+        } else {
+            let profile = {
+                let db_guard = state.db.lock().map_err(|_| lock_err())?;
+                let db = db_guard.as_ref().ok_or_else(db_err)?;
+                build_taste_profile(db).ok()
+            };
+            if let Some(ref p) = profile {
+                let mut cache = state.taste_profile_cache.lock().map_err(|_| lock_err())?;
+                *cache = Some(p.clone());
+            }
+            profile
+        }
+    };
+
+    // ── Step 3: Pre-load everything from DB (before any await) ───────────
+    let (system_prompt, history_messages) = {
+        let db_guard = state.db.lock().map_err(|_| lock_err())?;
+        let db = db_guard.as_ref().ok_or_else(db_err)?;
+
+        let sys = assemble_system_prompt(db, taste_profile_opt.as_deref(), session_context.as_ref());
+
+        let history = db
+            .get_conversation_messages(&conversation_id)
+            .unwrap_or_default();
+
+        use crate::ai::claude_client::{ToolMessage, ToolMessageContent};
+        let msgs: Vec<ToolMessage> = history
+            .iter()
+            .rev()
+            .take(20)
+            .rev()
+            .map(|m| ToolMessage {
+                role: m.role.clone(),
+                content: ToolMessageContent::Text(m.content.clone()),
+            })
+            .collect();
+
+        // Persist user message now (still inside DB lock, before await)
+        if let Err(e) = db.create_message_with_metadata(&conversation_id, "user", &message, None) {
+            eprintln!("[ai_chat_v2] Failed to save user message: {}", e);
+        }
+
+        (sys, msgs)
+    };
+    // DB lock released here — safe to await below
+
+    // ── Step 4: Run the async tool-use loop ───────────────────────────────
+    let client = ClaudeClient::new(api_key);
+
+    // The tool executor callback is synchronous — it re-acquires the DB lock
+    // for each round, then releases it immediately.  No await inside.
+    let state_ref = &state;
+    let execute_tools = move |tool_use_blocks: &[ContentBlockV2]| -> (Vec<ContentBlockV2>, Vec<crate::ai::ActionResult>) {
+        let db_guard = match state_ref.db.lock() {
+            Ok(g) => g,
+            Err(_) => return (vec![], vec![]),
+        };
+        let db = match db_guard.as_ref() {
+            Some(d) => d,
+            None => return (vec![], vec![]),
+        };
+
+        let mut tool_result_blocks: Vec<ContentBlockV2> = Vec::new();
+        let mut action_results: Vec<crate::ai::ActionResult> = Vec::new();
+
+        for block in tool_use_blocks {
+            if let ContentBlockV2::ToolUse { id, name, input } = block {
+                let (result_text, action_result) = execute_tool(db, name, input);
+                action_results.push(action_result);
+                tool_result_blocks.push(ContentBlockV2::ToolResult {
+                    tool_use_id: id.clone(),
+                    content: result_text,
+                    is_error: None,
+                });
+            }
+        }
+
+        (tool_result_blocks, action_results)
+    };
+
+    let response = orchestrate_chat_inner(
+        &client,
+        system_prompt,
+        history_messages,
+        message.clone(),
+        execute_tools,
+    )
+    .await
+    .map_err(AppError::AiNetwork)?;
+
+    // ── Step 5: Persist assistant response ───────────────────────────────
+    {
+        let db_guard = state.db.lock().map_err(|_| lock_err())?;
+        if let Some(db) = db_guard.as_ref() {
+            let metadata_json = build_metadata_json(&response.actions);
+            if let Err(e) = db.create_message_with_metadata(
+                &conversation_id,
+                "assistant",
+                &response.text,
+                metadata_json.as_deref(),
+            ) {
+                eprintln!("[ai_chat_v2] Failed to save assistant message: {}", e);
             }
         }
     }
