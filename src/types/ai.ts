@@ -100,6 +100,32 @@ export function isAppError(e: unknown): e is AppError {
   return typeof e === 'object' && e !== null && 'kind' in e
 }
 
+export interface ActionResult {
+  tool_name: string;
+  success: boolean;
+  summary: string;
+  data?: Record<string, unknown>;
+}
+
+export interface ChatV2Response {
+  text: string;
+  actions: ActionResult[];
+}
+
+export interface SessionContext {
+  now_playing: TrackSummary | null;
+  recent_queue: TrackSummary[];
+  active_playlist_id: number | null;
+}
+
+export interface TrackSummary {
+  id: number;
+  title: string;
+  artist: string | null;
+  bpm: number | null;
+  key: string | null;
+}
+
 /**
  * Extract a user-friendly error message from any Tauri error.
  * Falls back to generic message if the error shape is unexpected.
