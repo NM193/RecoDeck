@@ -12,27 +12,6 @@ interface ConversationItemProps {
   onDelete: (id: string) => void
 }
 
-/** Format epoch seconds to a relative date string */
-function formatRelativeDate(epochSeconds: number): string {
-  const now = Date.now()
-  const diffMs = now - epochSeconds * 1000
-  const diffSec = Math.floor(diffMs / 1000)
-
-  if (diffSec < 60) return 'Just now'
-
-  const diffMin = Math.floor(diffSec / 60)
-  if (diffMin < 60) return `${diffMin}m ago`
-
-  const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return `${diffHr}h ago`
-
-  if (diffHr < 48) return 'Yesterday'
-
-  return new Date(epochSeconds * 1000).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  })
-}
 
 export function ConversationItem({
   conversation,
@@ -126,10 +105,6 @@ export function ConversationItem({
           {conversation.title || 'New conversation'}
         </p>
       )}
-      <p className="conv-item__date">
-        {formatRelativeDate(conversation.created_at)}
-      </p>
-
       {/* Context menu */}
       {ctxMenu && (
         <div
