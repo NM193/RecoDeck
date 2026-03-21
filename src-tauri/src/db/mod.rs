@@ -1,6 +1,6 @@
 // Database layer - SQLite connection, migrations, queries
 
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
 /// Track with optional analysis fields: (track, bpm, bpm_confidence, musical_key, key_confidence)
@@ -1792,6 +1792,440 @@ impl Database {
             )
             .ok();
         Ok(result)
+    }
+
+    // --- Taste Profile methods ---
+
+    /// Save (upsert) the taste profile JSON. Replaces any existing row (singleton at id=1).
+    pub fn save_taste_profile(&self, profile_json: &str) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO taste_profile (id, profile_json, rebuilt_at) VALUES (1, ?1, ?2)",
+            params![profile_json, now],
+        )?;
+        Ok(())
+    }
+
+    /// Get the stored taste profile JSON, or None if it has never been built.
+    pub fn get_taste_profile(&self) -> Result<Option<String>> {
+        let result = self.conn
+            .query_row(
+                "SELECT profile_json FROM taste_profile WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    // --- User Preferences methods ---
+
+    /// Insert a user preference. Returns the new row id.
+    pub fn save_preference(&self, category: &str, preference: &str, context: Option<&str>) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO user_preferences (category, preference, context) VALUES (?1, ?2, ?3)",
+            params![category, preference, context],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Get all user preferences ordered by created_at ascending.
+    /// Returns (id, category, preference, context).
+    pub fn get_all_preferences(&self) -> Result<Vec<(i64, String, String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, category, preference, context FROM user_preferences ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Delete a user preference by id.
+    pub fn delete_preference(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM user_preferences WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    // --- Conversation Search ---
+
+    /// Full-text LIKE search across ai_messages content.
+    /// Returns (conversation_id, conversation_title, matching_messages).
+    pub fn search_conversations(&self, query: &str, limit: usize) -> Result<Vec<(String, String, Vec<ConversationMessage>)>> {
+        let pattern = format!("%{}%", query);
+        let limit_i64 = limit as i64;
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.conversation_id, m.role, m.content, m.metadata_json, m.created_at,
+                    c.title
+             FROM ai_messages m
+             JOIN ai_conversations c ON c.id = m.conversation_id
+             WHERE m.content LIKE ?1
+             ORDER BY m.created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, limit_i64], |row| {
+            Ok((
+                ConversationMessage {
+                    id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    metadata_json: row.get(4)?,
+                    created_at: row.get(5)?,
+                },
+                row.get::<_, String>(6)?, // title
+            ))
+        })?;
+
+        // Group by conversation_id preserving order of first appearance
+        let mut seen: Vec<String> = Vec::new();
+        let mut map: std::collections::HashMap<String, (String, Vec<ConversationMessage>)> = std::collections::HashMap::new();
+        for item in rows {
+            let (msg, title) = item?;
+            let conv_id = msg.conversation_id.clone();
+            if !seen.contains(&conv_id) {
+                seen.push(conv_id.clone());
+                map.insert(conv_id.clone(), (title, Vec::new()));
+            }
+            map.get_mut(&conv_id).unwrap().1.push(msg);
+        }
+
+        let result = seen.into_iter().map(|conv_id| {
+            let (title, messages) = map.remove(&conv_id).unwrap();
+            (conv_id, title, messages)
+        }).collect();
+        Ok(result)
+    }
+
+    // --- Taste Profile Data Queries ---
+
+    /// Get top artists by track count. Returns (artist, count).
+    pub fn get_top_artists(&self, limit: usize) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT artist, COUNT(*) as cnt FROM tracks
+             WHERE artist IS NOT NULL AND artist != ''
+             GROUP BY artist ORDER BY cnt DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Get top genres from track_genres table. Returns (genre, count).
+    pub fn get_top_genres(&self, limit: usize) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT genre, COUNT(*) as cnt FROM track_genres
+             WHERE genre IS NOT NULL AND genre != ''
+             GROUP BY genre ORDER BY cnt DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Get BPM distribution (min, max, avg) from track_analysis.
+    pub fn get_bpm_distribution(&self) -> Result<(Option<f64>, Option<f64>, Option<f64>)> {
+        let result = self.conn.query_row(
+            "SELECT MIN(bpm), MAX(bpm), AVG(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<f64>>(0)?,
+                    row.get::<_, Option<f64>>(1)?,
+                    row.get::<_, Option<f64>>(2)?,
+                ))
+            },
+        )?;
+        Ok(result)
+    }
+
+    /// Get most played tracks ordered by play_count DESC.
+    /// Returns (id, title, artist, play_count).
+    pub fn get_most_played_tracks(&self, limit: usize) -> Result<Vec<(i64, String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, COALESCE(title, ''), COALESCE(artist, ''), CAST(play_count AS INTEGER)
+             FROM tracks
+             WHERE play_count > 0
+             ORDER BY play_count DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get top-rated tracks (rating >= 4) ordered by rating DESC.
+    /// Returns (id, title, artist, rating).
+    pub fn get_top_rated_tracks(&self, limit: usize) -> Result<Vec<(i64, String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, COALESCE(title, ''), COALESCE(artist, ''), CAST(rating AS INTEGER)
+             FROM tracks
+             WHERE rating >= 4
+             ORDER BY rating DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get tag usage counts by joining tags and track_tags.
+    /// Returns (tag_name, tag_category, count).
+    pub fn get_tag_usage(&self, limit: usize) -> Result<Vec<(String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.name, COALESCE(t.category, ''), COUNT(tt.track_id) as cnt
+             FROM tags t
+             JOIN track_tags tt ON tt.tag_id = t.id
+             GROUP BY t.id, t.name, t.category
+             ORDER BY cnt DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    // --- Filtered Track Search ---
+
+    /// Search tracks with optional filters. All filter parameters are optional.
+    /// Returns (Track, bpm, musical_key).
+    pub fn search_tracks_filtered(
+        &self,
+        query: Option<&str>,
+        artist: Option<&str>,
+        genre: Option<&str>,
+        bpm_min: Option<f64>,
+        bpm_max: Option<f64>,
+        key: Option<&str>,
+        tags: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<(Track, Option<f64>, Option<String>)>> {
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(q) = query {
+            if !q.is_empty() {
+                conditions.push("(t.title LIKE ? OR t.artist LIKE ? OR t.album LIKE ?)".to_string());
+                let pattern = format!("%{}%", q);
+                params_vec.push(Box::new(pattern.clone()));
+                params_vec.push(Box::new(pattern.clone()));
+                params_vec.push(Box::new(pattern));
+            }
+        }
+
+        if let Some(a) = artist {
+            if !a.is_empty() {
+                conditions.push("t.artist LIKE ?".to_string());
+                params_vec.push(Box::new(format!("%{}%", a)));
+            }
+        }
+
+        if let Some(g) = genre {
+            if !g.is_empty() {
+                conditions.push("t.genre LIKE ?".to_string());
+                params_vec.push(Box::new(format!("%{}%", g)));
+            }
+        }
+
+        if let Some(min) = bpm_min {
+            conditions.push("ta.bpm >= ?".to_string());
+            params_vec.push(Box::new(min));
+        }
+
+        if let Some(max) = bpm_max {
+            conditions.push("ta.bpm <= ?".to_string());
+            params_vec.push(Box::new(max));
+        }
+
+        if let Some(k) = key {
+            if !k.is_empty() {
+                conditions.push("ta.musical_key = ?".to_string());
+                params_vec.push(Box::new(k.to_string()));
+            }
+        }
+
+        if let Some(tag_list) = tags {
+            if !tag_list.is_empty() {
+                for tag_name in tag_list {
+                    conditions.push(
+                        "EXISTS (SELECT 1 FROM track_tags tt2 JOIN tags tg2 ON tg2.id = tt2.tag_id WHERE tt2.track_id = t.id AND tg2.name = ?)"
+                            .to_string(),
+                    );
+                    params_vec.push(Box::new(tag_name.clone()));
+                }
+            }
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
+                    t.track_number, t.year, t.label, t.duration_ms, t.file_format,
+                    t.bitrate, t.sample_rate, t.file_size, t.date_added, t.date_modified,
+                    t.play_count, t.rating, t.comment, t.artwork_path, t.genre, t.genre_source,
+                    ta.bpm, ta.musical_key
+             FROM tracks t
+             LEFT JOIN track_analysis ta ON ta.track_id = t.id
+             {where_clause}
+             ORDER BY t.title ASC
+             LIMIT {limit}",
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(refs.as_slice(), |row| {
+            let track = Track {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                file_hash: row.get(2)?,
+                title: row.get(3)?,
+                artist: row.get(4)?,
+                album: row.get(5)?,
+                album_artist: row.get(6)?,
+                track_number: row.get(7)?,
+                year: row.get(8)?,
+                label: row.get(9)?,
+                duration_ms: row.get(10)?,
+                file_format: row.get(11)?,
+                bitrate: row.get(12)?,
+                sample_rate: row.get(13)?,
+                file_size: row.get(14)?,
+                date_added: row.get(15)?,
+                date_modified: row.get(16)?,
+                play_count: row.get(17)?,
+                rating: row.get(18)?,
+                comment: row.get(19)?,
+                artwork_path: row.get(20)?,
+                genre: row.get(21)?,
+                genre_source: row.get(22)?,
+            };
+            let bpm: Option<f64> = row.get(23)?;
+            let musical_key: Option<String> = row.get(24)?;
+            Ok((track, bpm, musical_key))
+        })?;
+        rows.collect()
+    }
+
+    // --- Tag Helper methods ---
+
+    /// Look up a tag id by name. Returns None if not found.
+    pub fn get_tag_by_name(&self, name: &str) -> Result<Option<i64>> {
+        let result = self.conn
+            .query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Get an existing tag id by name, or create a new tag and return its id.
+    pub fn get_or_create_tag(&self, name: &str, category: &str) -> Result<i64> {
+        if let Some(id) = self.get_tag_by_name(name)? {
+            return Ok(id);
+        }
+        self.conn.execute(
+            "INSERT INTO tags (name, category) VALUES (?1, ?2)",
+            params![name, category],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Associate a tag with a track. Silently ignores duplicate associations.
+    pub fn add_tag_to_track(&self, track_id: i64, tag_id: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO track_tags (track_id, tag_id) VALUES (?1, ?2)",
+            params![track_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a tag association from a track.
+    pub fn remove_tag_from_track(&self, track_id: i64, tag_id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM track_tags WHERE track_id = ?1 AND tag_id = ?2",
+            params![track_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    // --- Message with metadata ---
+
+    /// Create a message in a conversation with an optional metadata JSON blob.
+    /// Returns the message ID.
+    /// If the conversation title is empty and the role is "user", auto-titles the conversation
+    /// with the first 50 characters of the message content.
+    pub fn create_message_with_metadata(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        metadata_json: Option<&str>,
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, conversation_id, role, content, metadata_json, created_at],
+        )?;
+
+        // Auto-title: if role is "user" and conversation title is empty, set title
+        if role == "user" {
+            let current_title: String = self.conn.query_row(
+                "SELECT title FROM ai_conversations WHERE id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            if current_title.is_empty() {
+                let title: String = if content.len() > 50 {
+                    content[..50].to_string()
+                } else {
+                    content.to_string()
+                };
+                self.conn.execute(
+                    "UPDATE ai_conversations SET title = ?1 WHERE id = ?2",
+                    params![title, conversation_id],
+                )?;
+            }
+        }
+
+        Ok(id)
     }
 }
 
