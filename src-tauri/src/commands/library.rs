@@ -16,6 +16,8 @@ pub struct AppState {
     pub db: Mutex<Option<Database>>,
     /// Pre-built AI context JSON, rebuilt on library changes
     pub ai_context_cache: Mutex<Option<String>>,
+    /// Cached taste profile JSON, rebuilt on library changes
+    pub taste_profile_cache: Mutex<Option<String>>,
     /// Path to the SQLite database file (needed for companion server's own connection)
     pub db_path: Mutex<Option<String>>,
     /// Cancellation flag for batch analysis (checked by Rayon workers)

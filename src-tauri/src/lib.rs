@@ -387,6 +387,7 @@ pub fn run() {
         .manage(AppState {
             db: Mutex::new(None),
             ai_context_cache: Mutex::new(None),
+            taste_profile_cache: Mutex::new(None),
             db_path: Mutex::new(None),
             analysis_cancelled: Arc::new(AtomicBool::new(false)),
         })
