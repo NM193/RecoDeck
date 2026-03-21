@@ -492,6 +492,107 @@
   opacity: 0.9;
 }
 
+/* ===== Message styles (redesign) ===== */
+
+.chat-msg {
+  margin-bottom: 20px;
+}
+
+.chat-msg--user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-msg__user-pill {
+  background: #2563eb;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 18px 18px 4px 18px;
+  max-width: 60%;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat-msg--assistant {
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  margin-bottom: 24px;
+}
+
+.chat-msg__assistant-text {
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 600px;
+}
+
+/* Markdown overrides for assistant messages */
+.chat-msg__assistant-text strong {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.chat-msg__assistant-text a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+.chat-msg__assistant-text a:hover {
+  color: #93bbfd;
+}
+
+.chat-msg__assistant-text ol,
+.chat-msg__assistant-text ul {
+  padding-left: 1.25em;
+  margin: 8px 0;
+}
+
+.chat-msg__assistant-text li {
+  margin-bottom: 4px;
+  color: #e2e8f0;
+}
+
+.chat-msg__assistant-text li::marker {
+  color: #6366f1;
+}
+
+.chat-msg__assistant-text code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.chat-msg__assistant-text pre {
+  background: rgba(255, 255, 255, 0.04);
+  padding: 12px;
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.chat-msg__assistant-text p {
+  margin: 0 0 8px;
+}
+
+.chat-msg__assistant-text p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-msg__assistant-text h1,
+.chat-msg__assistant-text h2,
+.chat-msg__assistant-text h3 {
+  color: #f1f5f9;
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+
+.chat-msg__assistant-text h1 { font-size: 18px; }
+.chat-msg__assistant-text h2 { font-size: 16px; }
+.chat-msg__assistant-text h3 { font-size: 14px; }
+
 /* ===== Context menu ===== */
 
 .conv-ctx-menu {
