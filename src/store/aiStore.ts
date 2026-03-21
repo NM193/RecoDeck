@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getErrorMessage, isAppError } from '../types/ai'
-import type { ChatMessage, GeneratedPlaylist, Conversation, ConversationMessage } from '../types/ai'
+import type { ChatMessage, ChatV2Response, ActionResult, SessionContext, GeneratedPlaylist, Conversation, ConversationMessage } from '../types/ai'
 import { tauriApi } from '../lib/tauri-api'
 
 interface AIState {
@@ -21,6 +21,9 @@ interface AIState {
   // Playlist generation
   pendingPlaylist: GeneratedPlaylist | null
 
+  // V2 action results
+  lastActions: ActionResult[]
+
   // Settings navigation callback
   openSettingsCallback: (() => void) | null
   registerOpenSettings: (callback: () => void) => void
@@ -33,6 +36,7 @@ interface AIState {
 
   // Chat actions
   sendMessage: (message: string) => Promise<void>
+  sendMessageV2: (sessionContext?: SessionContext) => Promise<void>
   clearHistory: () => void
   setError: (error: string | null) => void
 
@@ -60,6 +64,7 @@ export const useAIStore = create<AIState>((set, get) => ({
   currentConversationId: null,
   conversations: [],
   pendingPlaylist: null,
+  lastActions: [],
   openSettingsCallback: null,
 
   // UI actions
@@ -177,6 +182,40 @@ export const useAIStore = create<AIState>((set, get) => ({
       } else {
         set({ error: getErrorMessage(e), isGenerating: false })
       }
+    }
+  },
+
+  sendMessageV2: async (sessionContext?: SessionContext) => {
+    const state = get();
+    const lastMsg = state.chatHistory[state.chatHistory.length - 1];
+    if (!lastMsg || lastMsg.role !== 'user') return;
+
+    set({ isGenerating: true, error: null, lastActions: [] });
+
+    try {
+      const response: ChatV2Response = await tauriApi.aiChatV2(
+        lastMsg.content,
+        state.currentConversationId!,
+        sessionContext,
+      );
+
+      set((s) => ({
+        chatHistory: [
+          ...s.chatHistory,
+          {
+            role: 'assistant' as const,
+            content: response.text,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        isGenerating: false,
+        lastActions: response.actions,
+      }));
+
+      get().loadConversations();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      set({ isGenerating: false, error: errorMessage });
     }
   },
 
