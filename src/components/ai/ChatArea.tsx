@@ -6,7 +6,37 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { ChatMessage } from './ChatMessage'
 import { Icon } from '../Icon'
 import { tauriApi } from '../../lib/tauri-api'
-import type { ChatMessage as ChatMessageType, Conversation, GeneratedPlaylist } from '../../types/ai'
+import { useAIStore } from '../../store/aiStore'
+import type { ActionResult, ChatMessage as ChatMessageType, Conversation, GeneratedPlaylist } from '../../types/ai'
+
+function ActionCard({ action }: { action: ActionResult }) {
+  const iconMap: Record<string, string> = {
+    create_playlist: '📋',
+    tag_tracks: '🏷️',
+    queue_tracks: '▶️',
+    search_library: '🔍',
+    recall_conversations: '💬',
+    save_preference: '🧠',
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.5rem 0.75rem',
+      marginTop: '0.5rem',
+      borderRadius: '8px',
+      background: action.success ? 'rgba(52, 211, 153, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+      border: `1px solid ${action.success ? 'rgba(52, 211, 153, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+      fontSize: '0.8rem',
+      color: action.success ? '#6ee7b7' : '#fca5a5',
+    }}>
+      <span>{iconMap[action.tool_name] || '⚡'}</span>
+      <span>{action.summary}</span>
+    </div>
+  );
+}
 
 interface ChatAreaProps {
   currentConversationId: string | null
@@ -38,6 +68,7 @@ export function ChatArea({
   const [inputValue, setInputValue] = useState('')
   const [isRenamingTitle, setIsRenamingTitle] = useState(false)
   const [titleValue, setTitleValue] = useState('')
+  const lastActions = useAIStore((s) => s.lastActions)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -176,8 +207,19 @@ export function ChatArea({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              {chatHistory.map((message, index) => (
-                <ChatMessage key={index} message={message} />
+              {chatHistory.map((msg, index) => (
+                <div key={index}>
+                  <ChatMessage message={msg} />
+                  {msg.role === 'assistant' && lastActions.length > 0 && index === chatHistory.length - 1 && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                      {lastActions
+                        .filter((a) => a.tool_name !== 'search_library')
+                        .map((action, i) => (
+                          <ActionCard key={i} action={action} />
+                        ))}
+                    </div>
+                  )}
+                </div>
               ))}
 
               {/* Pending playlist card */}
