@@ -185,18 +185,21 @@ export function ChatArea({
             </p>
           </div>
         ) : !currentConversationId && chatHistory.length === 0 ? (
-          <div className="chat-messages__empty">
-            <Icon
-              name="MessageCircle"
-              size={40}
-              style={{ opacity: 0.3, marginBottom: 16 }}
-            />
-            <h2 className="chat-messages__empty-heading">
-              Start a conversation
-            </h2>
-            <p className="chat-messages__empty-body">
-              Ask anything about your library.
-            </p>
+          <div className="chat-empty">
+            <h2 className="chat-empty__heading">What can I help you with?</h2>
+            <p className="chat-empty__subheading">Ask anything about your music library</p>
+            <div className="chat-chips">
+              {['Make me a warm-up set', "What's in my library?", 'Tag my house tracks', 'Play something chill', 'Optimize my set order'].map((chip) => (
+                <button
+                  key={chip}
+                  className="chat-chip"
+                  onClick={() => onSendMessage(chip)}
+                  type="button"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <AnimatePresence mode="wait">
@@ -222,26 +225,18 @@ export function ChatArea({
                 </div>
               ))}
 
-              {/* Pending playlist card */}
+              {/* Pending playlist ghost button */}
               {pendingPlaylist && (
-                <div className="chat-pending-playlist">
-                  <p className="chat-pending-playlist__title">
-                    {pendingPlaylist.name}
-                  </p>
-                  <p className="chat-pending-playlist__desc">
-                    {pendingPlaylist.description}
-                  </p>
-                  <p className="chat-pending-playlist__meta">
-                    {pendingPlaylist.track_ids.length} tracks &middot;{' '}
-                    {pendingPlaylist.reasoning}
-                  </p>
-                  <button
-                    className="chat-pending-playlist__btn"
-                    onClick={handleCreatePlaylist}
-                    type="button"
-                  >
-                    Create Playlist
-                  </button>
+                <div
+                  className="chat-pending-playlist"
+                  onClick={handleCreatePlaylist}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <span className="chat-pending-playlist__icon">+</span>
+                  <span className="chat-pending-playlist__text">
+                    Add to Playlists — {pendingPlaylist.name} ({pendingPlaylist.track_ids.length} tracks)
+                  </span>
                 </div>
               )}
 
@@ -253,7 +248,7 @@ export function ChatArea({
                     <span className="chat-typing__dot" />
                     <span className="chat-typing__dot" />
                   </div>
-                  <span className="chat-typing__text">AI is thinking...</span>
+                  <span className="chat-typing__text">Thinking...</span>
                 </div>
               )}
 
