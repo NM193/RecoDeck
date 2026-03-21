@@ -152,6 +152,16 @@ impl Database {
         let migration_006 = include_str!("migrations/006_dashboard.sql");
         self.conn.execute_batch(migration_006)?;
 
+        // Migration 007: AI Phase 1 — taste profile + user preferences
+        let has_taste_profile: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='taste_profile'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_taste_profile {
+            self.conn.execute_batch(include_str!("migrations/007_ai_phase1.sql"))?;
+        }
+
         Ok(())
     }
 
