@@ -337,6 +337,9 @@ function AppContent() {
       // Set empty tracks array initially
       setTracks([])
 
+      // Rebuild taste profile cache in background (non-blocking)
+      tauriApi.rebuildTasteProfile().catch(console.error)
+
       // Start file watcher on library folders
       if (folders.length > 0) {
         try {

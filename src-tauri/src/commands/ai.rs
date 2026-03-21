@@ -766,6 +766,19 @@ pub async fn ai_chat_v2(
     Ok(response)
 }
 
+/// Rebuild and cache the taste profile from current library data.
+/// Called on app launch to ensure the cache is warm for ai_chat_v2.
+#[tauri::command]
+pub async fn rebuild_taste_profile(state: tauri::State<'_, AppState>) -> Result<(), AppError> {
+    let db_lock = state.db.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+    let db = db_lock.as_ref().ok_or(AppError::Internal("Database not initialized".to_string()))?;
+    let profile_json = build_taste_profile(db).map_err(|e| AppError::Internal(e))?;
+    let _ = db.save_taste_profile(&profile_json);
+    let mut cache = state.taste_profile_cache.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+    *cache = Some(profile_json);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
