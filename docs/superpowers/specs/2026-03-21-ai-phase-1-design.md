@@ -45,8 +45,15 @@ The tool-use loop caps at **5 round-trips** to prevent runaway API calls. Typica
 async fn ai_chat_v2(
     message: String,
     conversation_id: String,
+    session_context: Option<SessionContext>, // now playing, queue, active playlist from frontend
     state: State<'_, AppState>,
 ) -> Result<ChatV2Response, AppError>
+
+struct SessionContext {
+    now_playing: Option<TrackSummary>,   // current track from playerStore
+    recent_queue: Vec<TrackSummary>,     // last 5 queued tracks
+    active_playlist_id: Option<i64>,     // playlist being viewed
+}
 
 struct ChatV2Response {
     text: String,
@@ -122,7 +129,7 @@ Add or remove tags on tracks. Supports batch operations.
 
 ### 4. queue_tracks
 
-Control playback queue.
+Control playback queue. Note: the queue lives in the frontend `playerStore` (Zustand), not in Rust. The orchestrator returns queued track IDs in `ActionResult.data` and the frontend applies them to `playerStore` post-response.
 
 ```json
 {
