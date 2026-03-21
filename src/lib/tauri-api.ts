@@ -14,6 +14,8 @@ import type {
 } from '../types/track'
 import type {
   ChatMessage,
+  ChatV2Response,
+  SessionContext,
   Conversation,
   ConversationMessage,
   GeneratedPlaylist,
@@ -390,6 +392,22 @@ export const tauriApi = {
       conversationHistory,
       conversationId: conversationId ?? null,
     })
+  },
+
+  async aiChatV2(
+    message: string,
+    conversationId: string,
+    sessionContext?: SessionContext,
+  ): Promise<ChatV2Response> {
+    return invoke('ai_chat_v2', {
+      message,
+      conversationId,
+      sessionContext: sessionContext ?? null,
+    });
+  },
+
+  async rebuildTasteProfile(): Promise<void> {
+    return invoke('rebuild_taste_profile');
   },
 
   // Conversation commands
