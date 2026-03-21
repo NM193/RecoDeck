@@ -5,6 +5,30 @@ import { Icon } from '../Icon'
 import { ConversationItem } from './ConversationItem'
 import type { Conversation } from '../../types/ai'
 
+function groupByDate(conversations: Conversation[]): { label: string; items: Conversation[] }[] {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const yesterday = today - 86400000
+  const last7 = today - 7 * 86400000
+
+  const groups: { label: string; items: Conversation[] }[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'Previous 7 days', items: [] },
+    { label: 'Older', items: [] },
+  ]
+
+  for (const conv of conversations) {
+    const ts = conv.created_at * 1000
+    if (ts >= today) groups[0].items.push(conv)
+    else if (ts >= yesterday) groups[1].items.push(conv)
+    else if (ts >= last7) groups[2].items.push(conv)
+    else groups[3].items.push(conv)
+  }
+
+  return groups.filter((g) => g.items.length > 0)
+}
+
 interface ConversationListProps {
   conversations: Conversation[]
   currentConversationId: string | null
@@ -49,24 +73,31 @@ export function ConversationList({
             </p>
           </div>
         ) : (
-          <AnimatePresence>
-            {conversations.map((conv) => (
-              <motion.div
-                key={conv.id}
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ConversationItem
-                  conversation={conv}
-                  isActive={conv.id === currentConversationId}
-                  onSelect={onSelectConversation}
-                  onRename={onRenameConversation}
-                  onDelete={onDeleteConversation}
-                />
-              </motion.div>
+          <>
+            {groupByDate(conversations).map((group) => (
+              <div key={group.label}>
+                <div className="conv-list__date-group">{group.label}</div>
+                <AnimatePresence>
+                  {group.items.map((conv) => (
+                    <motion.div
+                      key={conv.id}
+                      initial={{ opacity: 1 }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ConversationItem
+                        conversation={conv}
+                        isActive={conv.id === currentConversationId}
+                        onSelect={onSelectConversation}
+                        onRename={onRenameConversation}
+                        onDelete={onDeleteConversation}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
             ))}
-          </AnimatePresence>
+          </>
         )}
       </div>
     </div>
