@@ -36,16 +36,18 @@ Full visual redesign of the AI chat interface (sidebar + chat area). Replace the
 - Markdown rendered with styled overrides (bold as `#f8fafc`, lists with indigo bullets, links as blue underlined)
 
 **Track lists (in assistant messages):**
-- Structured rows, not raw markdown numbered lists
-- Each row: track number (muted) | track title (white, 500 weight) | dot separator | artist (muted) | BPM right-aligned (indigo `#6366f1`)
-- Alternating subtle row backgrounds `rgba(255,255,255,0.02)`
-- Collapsible: show first 3-5 tracks + "+ N more tracks..." expandable
+- Keep as markdown rendering — do NOT attempt to parse/detect track lists from text
+- The `markdown-to-jsx` library renders numbered lists and bold text naturally
+- Style the markdown overrides so lists look clean: `ol`/`li` with proper spacing, bold track names in `#f1f5f9`
+- This is a cosmetic redesign, not a structured data renderer. Structured track rendering is a future enhancement.
 
 **Playlist action button:**
-- Appears inline after assistant messages that contain playlists
+- Uses the existing `pendingPlaylist` store state (global, not per-message)
+- When `pendingPlaylist` is non-null, render the "Add to Playlists" button as a standalone card below the latest assistant message (same position as today, just restyled)
 - Ghost button style: `background: rgba(99,102,241,0.12)`, `border: 1px solid rgba(99,102,241,0.25)`, `border-radius: 8px`
 - Text: "+ Add to Playlists" in `#a5b4fc`
-- On click: creates the playlist in the DB, shows in sidebar, button changes to "Added" (disabled)
+- On click: creates the playlist in the DB using existing `handleCreatePlaylist` logic, button becomes disabled with text "Added"
+- State resets when `pendingPlaylist` is cleared (existing behavior)
 
 ### Sidebar
 
@@ -98,7 +100,11 @@ Full visual redesign of the AI chat interface (sidebar + chat area). Replace the
 
 - Keep existing bouncing dots animation
 - Render in the same style as assistant messages (no bubble)
-- Text: "Thinking..." in `#94a3b8`
+- Text: "Thinking..." in `#94a3b8` (changed from "AI is thinking...")
+
+### CSS Location
+
+All new styles go into `ChatView.css` following the existing project convention. ChatMessage.tsx replaces Tailwind utility classes with CSS classes defined in ChatView.css.
 
 ### Action Confirmation Cards
 
