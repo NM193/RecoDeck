@@ -101,7 +101,10 @@ export function RecommendationsPanel({
     async (track: Track) => {
       if (playlistId == null) return
       try {
-        await tauriApi.addTrackToPlaylist(playlistId, track.id)
+        const wasAdded = await tauriApi.addTrackToPlaylist(playlistId, track.id)
+        if (!wasAdded) {
+          console.info('[RecommendationsPanel] Track already in playlist:', track.id)
+        }
       } catch (e) {
         console.error('[RecommendationsPanel] Add to playlist error:', e)
       }

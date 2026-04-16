@@ -180,8 +180,12 @@ export function AIPlaylistDialog({
       const activeTrackIds = result.track_ids.filter(
         (id) => !removedTrackIds.has(id),
       )
+      let added = 0
+      let skipped = 0
       for (const trackId of activeTrackIds) {
-        await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
+        const wasAdded = await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
+        if (wasAdded) added++
+        else skipped++
       }
       onPlaylistSaved(playlist.id!)
       onClose()

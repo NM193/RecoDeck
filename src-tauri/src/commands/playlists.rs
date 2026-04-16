@@ -152,13 +152,13 @@ pub fn get_playlist_tracks(state: State<AppState>, playlist_id: i64) -> Result<V
         .collect())
 }
 
-/// Add a track to a playlist
+/// Add a track to a playlist. Returns true if inserted, false if already present.
 #[tauri::command]
 pub fn add_track_to_playlist(
     state: State<AppState>,
     playlist_id: i64,
     track_id: i64,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 

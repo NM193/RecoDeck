@@ -844,10 +844,17 @@ function AppContent() {
   // Add track to playlist
   async function handleAddToPlaylist(track: Track, playlistId: number) {
     try {
-      await tauriApi.addTrackToPlaylist(playlistId, track.id)
-      await loadPlaylists() // Refresh playlist counts
-      const playlist = playlists.find((p) => p.id === playlistId)
-      setHeaderNotification(`Added to ${playlist?.name ?? 'playlist'}`)
+      const added = await tauriApi.addTrackToPlaylist(playlistId, track.id)
+      await loadPlaylists()
+      const playlistName = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+      if (added) {
+        setHeaderNotification(`Added to ${playlistName}`)
+      } else {
+        setNotification({
+          message: `Track is already in ${playlistName}`,
+          type: 'warning',
+        })
+      }
     } catch (err) {
       setNotification({
         message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
@@ -1363,10 +1370,17 @@ function AppContent() {
       onTrackMetaClick={handleScrollToCurrentTrack}
       onAddToPlaylist={async (trackId, playlistId) => {
         try {
-          await tauriApi.addTrackToPlaylist(playlistId, trackId)
+          const added = await tauriApi.addTrackToPlaylist(playlistId, trackId)
           await loadPlaylists()
-          const playlist = playlists.find((p) => p.id === playlistId)
-          setHeaderNotification(`Added to ${playlist?.name ?? 'playlist'}`)
+          const playlistName = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+          if (added) {
+            setHeaderNotification(`Added to ${playlistName}`)
+          } else {
+            setNotification({
+              message: `Track is already in ${playlistName}`,
+              type: 'warning',
+            })
+          }
         } catch (err) {
           setNotification({
             message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,

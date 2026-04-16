@@ -257,7 +257,7 @@ export const tauriApi = {
     return await invoke('get_playlist_tracks', { playlistId })
   },
 
-  async addTrackToPlaylist(playlistId: number, trackId: number): Promise<void> {
+  async addTrackToPlaylist(playlistId: number, trackId: number): Promise<boolean> {
     return await invoke('add_track_to_playlist', { playlistId, trackId })
   },
 
