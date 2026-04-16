@@ -30,7 +30,6 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 symphonia = { version = "0.5", features = ["all"] }
-ort = "2.0.0-rc.11"
 notify = "6.0"
 reqwest = { version = "0.12", features = ["json"] }
 lofty = "0.22"
