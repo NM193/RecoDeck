@@ -15,6 +15,7 @@ import { SearchView } from './components/views/SearchView'
 import { ChatView } from './components/ai/ChatView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
+import { ExportPlaylistModal } from './components/ExportPlaylistModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import appPackage from '../package.json'
@@ -30,6 +31,7 @@ import { RecommendationsPanel } from './components/ai/RecommendationsPanel'
 import { MixPrepPanel } from './components/ai/MixPrepPanel'
 import { AppShell } from './components/layout/AppShell'
 import { Sidebar } from './components/layout/Sidebar'
+import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
@@ -37,12 +39,14 @@ import type { Track, Playlist, AnalysisProgressEvent, AnalysisCompleteEvent } fr
 import './App.css'
 import './components/TrackTable.css'
 
-const AI_ENABLED = true
+const AI_ENABLED = false
 
 type PromptAction =
   | { kind: 'create-playlist'; parentId: number | null }
   | { kind: 'create-folder'; parentId: number | null }
   | { kind: 'rename'; id: number; currentName: string }
+  | { kind: 'create-subfolder'; parentPath: string }
+  | { kind: 'rename-folder'; folderPath: string; currentName: string }
 
 function App() {
   const [hash, setHash] = useState(() => window.location.hash)
@@ -95,6 +99,16 @@ function AppContent() {
     action: PromptAction | null
   }>({ open: false, title: '', defaultValue: '', action: null })
 
+  // Confirmation modal for deleting a library subfolder
+  const [deleteFolderModal, setDeleteFolderModal] = useState<{
+    open: boolean
+    folderPath: string
+    folderName: string
+  }>({ open: false, folderPath: '', folderName: '' })
+
+  // Ref into FolderTree to refresh a root after folder mutations
+  const folderTreeRef = useRef<FolderTreeRef>(null)
+
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
     open: boolean
@@ -102,6 +116,12 @@ function AppContent() {
     playlistName: string
     companionUrl: string
     companionToken: string
+  } | null>(null)
+
+  // Export playlist modal
+  const [exportModal, setExportModal] = useState<{
+    playlistId: number
+    playlistName: string
   } | null>(null)
 
   // AI Playlist dialog seed track
@@ -688,13 +708,84 @@ function AppContent() {
     try {
       if (action.kind === 'create-playlist') {
         await tauriApi.createPlaylist(value, action.parentId)
+        await loadPlaylists()
       } else if (action.kind === 'create-folder') {
         await tauriApi.createPlaylistFolder(value, action.parentId)
+        await loadPlaylists()
       } else if (action.kind === 'rename') {
         if (value === action.currentName) return
         await tauriApi.renamePlaylist(action.id, value)
+        await loadPlaylists()
+      } else if (action.kind === 'create-subfolder') {
+        await tauriApi.createFolderOnDisk(action.parentPath, value)
+        folderTreeRef.current?.refreshLibraryRoot(action.parentPath)
+        setNotification({
+          message: `Created folder "${value}"`,
+          type: 'success',
+        })
+      } else if (action.kind === 'rename-folder') {
+        if (value === action.currentName) return
+        const newPath = await tauriApi.renameFolderOnDisk(
+          action.folderPath,
+          value,
+        )
+        folderTreeRef.current?.refreshLibraryRoot(newPath)
+        if (selectedFolder === action.folderPath) {
+          setSelectedFolder(newPath)
+          await loadTracks(newPath, null)
+        } else {
+          await loadTracks()
+        }
       }
-      await loadPlaylists()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Create subfolder — open name modal, then call Rust command
+  function handleCreateSubfolder(parentPath: string) {
+    setPromptState({
+      open: true,
+      title: 'New folder name',
+      defaultValue: '',
+      action: { kind: 'create-subfolder', parentPath },
+    })
+  }
+
+  // Rename folder — open name modal, pre-filled
+  function handleRenameFolder(folderPath: string, currentName: string) {
+    setPromptState({
+      open: true,
+      title: 'Rename folder',
+      defaultValue: currentName,
+      action: { kind: 'rename-folder', folderPath, currentName },
+    })
+  }
+
+  // Delete folder — open confirmation modal with "empty only" / "delete all files" choice
+  function handleDeleteFolder(folderPath: string, folderName: string) {
+    setDeleteFolderModal({ open: true, folderPath, folderName })
+  }
+
+  async function confirmDeleteFolder(deleteFiles: boolean) {
+    const { folderPath } = deleteFolderModal
+    setDeleteFolderModal({ open: false, folderPath: '', folderName: '' })
+    if (!folderPath) return
+    try {
+      await tauriApi.deleteFolderOnDisk(folderPath, deleteFiles)
+      folderTreeRef.current?.refreshLibraryRoot(folderPath)
+      if (selectedFolder === folderPath) {
+        setSelectedFolder(null)
+        await loadTracks(null, null)
+      } else {
+        await loadTracks()
+      }
+      setNotification({
+        message: deleteFiles
+          ? 'Folder and files deleted'
+          : 'Folder removed',
+        type: 'success',
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -805,6 +896,16 @@ function AppContent() {
         message: `Genre cleared for ${track.title || 'track'}`,
         type: 'info',
       })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  // Persist a track update (rating, comment, etc.) and refresh the list
+  async function handleUpdateTrack(track: Track) {
+    try {
+      await tauriApi.updateTrack(track)
+      await loadTracks()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -1055,6 +1156,13 @@ function AppContent() {
       onRenamePlaylist={handleRenamePlaylist}
       onDeletePlaylist={handleDeletePlaylist}
       onSharePlaylist={handleSharePlaylist}
+      onExportPlaylist={(id, name) =>
+        setExportModal({ playlistId: id, playlistName: name })
+      }
+      onCreateSubfolder={handleCreateSubfolder}
+      onRenameFolder={handleRenameFolder}
+      onDeleteFolder={handleDeleteFolder}
+      folderTreeRef={folderTreeRef}
       onOpenSettings={() => {
         setShowSettings(true)
         setSelectedFolder(null)
@@ -1089,14 +1197,18 @@ function AppContent() {
         setShowAIChat(false)
         loadTracks(null, null)
       }}
-      onNavigateAIChat={() => {
-        setShowAIChat(true)
-        setShowSettings(false)
-        setShowSearch(false)
-        setSelectedFolder(null)
-        setSelectedPlaylistId(null)
-        setShowAllTracks(false)
-      }}
+      onNavigateAIChat={
+        AI_ENABLED
+          ? () => {
+              setShowAIChat(true)
+              setShowSettings(false)
+              setShowSearch(false)
+              setSelectedFolder(null)
+              setSelectedPlaylistId(null)
+              setShowAllTracks(false)
+            }
+          : undefined
+      }
     />
   )
 
@@ -1166,21 +1278,25 @@ function AppContent() {
                 }}
               />
             ) : showAIChat ? (
-              <ChatView />
+              <ChatView onPlaylistCreated={loadPlaylists} />
             ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
               <HomeView
                 playlists={playlists}
                 totalTrackCount={totalTrackCount}
                 folderCount={libraryFolders.length}
                 onPlaylistSelect={handlePlaylistSelect}
-                onNavigateAIChat={() => {
-                  setShowAIChat(true)
-                  setSelectedPlaylistId(null)
-                  setSelectedFolder(null)
-                  setShowAllTracks(false)
-                  setShowSearch(false)
-                  setShowSettings(false)
-                }}
+                onNavigateAIChat={
+                  AI_ENABLED
+                    ? () => {
+                        setShowAIChat(true)
+                        setSelectedPlaylistId(null)
+                        setSelectedFolder(null)
+                        setShowAllTracks(false)
+                        setShowSearch(false)
+                        setShowSettings(false)
+                      }
+                    : undefined
+                }
                 onOpenSettings={() => {
                   setShowSettings(true)
                   setShowAIChat(false)
@@ -1221,6 +1337,7 @@ function AppContent() {
                     onRemoveFromPlaylist={handleRemoveFromPlaylist}
                     onSetGenre={handleSetGenre}
                     onClearGenre={handleClearGenre}
+                    onUpdateTrack={handleUpdateTrack}
                     genreDefinitions={genreDefinitions}
                     onGenerateAIPlaylist={
                       AI_ENABLED ? handleGenerateAIPlaylist : undefined
@@ -1277,6 +1394,54 @@ function AppContent() {
         }
       />
 
+      {/* Confirmation modal for deleting a library subfolder */}
+      {deleteFolderModal.open && (
+        <div
+          className="modal-overlay"
+          onClick={() =>
+            setDeleteFolderModal({
+              open: false,
+              folderPath: '',
+              folderName: '',
+            })
+          }
+        >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete {deleteFolderModal.folderName}?</h3>
+            <p className="modal-subtitle">{deleteFolderModal.folderPath}</p>
+            <div className="modal-actions" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+              <button
+                type="button"
+                className="modal-button modal-button-secondary"
+                onClick={() => confirmDeleteFolder(false)}
+              >
+                Remove from library only
+              </button>
+              <button
+                type="button"
+                className="modal-button modal-button-primary"
+                onClick={() => confirmDeleteFolder(true)}
+              >
+                Delete folder and all files
+              </button>
+              <button
+                type="button"
+                className="modal-button modal-button-secondary"
+                onClick={() =>
+                  setDeleteFolderModal({
+                    open: false,
+                    folderPath: '',
+                    folderName: '',
+                  })
+                }
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Share playlist modal (QR + link) */}
       {sharePlaylistModal && (
         <SharePlaylistModal
@@ -1286,6 +1451,23 @@ function AppContent() {
           companionUrl={sharePlaylistModal.companionUrl}
           companionToken={sharePlaylistModal.companionToken}
           onClose={() => setSharePlaylistModal(null)}
+        />
+      )}
+
+      {/* Export playlist modal (copy tracks to a destination folder) */}
+      {exportModal && (
+        <ExportPlaylistModal
+          playlistId={exportModal.playlistId}
+          playlistName={exportModal.playlistName}
+          onClose={() => setExportModal(null)}
+          onSuccess={(msg, folderPath) => {
+            setNotification({ message: msg, type: 'success' })
+            // Refresh tracks + the library tree root that contains the new folder
+            // so auto-imported files appear immediately.
+            void loadTracks()
+            void folderTreeRef.current?.refreshLibraryRoot(folderPath)
+          }}
+          onError={(msg) => setNotification({ message: msg, type: 'error' })}
         />
       )}
 

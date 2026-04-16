@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Icon, type IconName } from '../Icon'
 import type { Playlist } from '../../types/track'
-import { FolderTree } from '../FolderTree'
+import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import './Sidebar.css'
 
 // --- Constants ---
@@ -78,6 +78,11 @@ interface SidebarProps {
   onRenamePlaylist: (id: number, currentName: string) => void
   onDeletePlaylist: (id: number, name: string) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
+  onExportPlaylist?: (playlistId: number, playlistName: string) => void
+  onCreateSubfolder: (parentPath: string) => void
+  onRenameFolder: (folderPath: string, currentName: string) => void
+  onDeleteFolder: (folderPath: string, folderName: string) => void
+  folderTreeRef?: React.Ref<FolderTreeRef>
   onOpenSettings: () => void
   onNavigateHome: () => void
   onShowAllTracks: () => void
@@ -105,6 +110,11 @@ export function Sidebar({
   onRenamePlaylist,
   onDeletePlaylist,
   onSharePlaylist,
+  onExportPlaylist,
+  onCreateSubfolder,
+  onRenameFolder,
+  onDeleteFolder,
+  folderTreeRef,
   onOpenSettings,
   onNavigateHome,
   onShowAllTracks,
@@ -228,14 +238,16 @@ export function Sidebar({
             <Icon name="Search" size={16} />
             <span>Search</span>
           </button>
-          <button
-            className={`sidebar-nav-item ${activeView === 'ai-chat' ? 'sidebar-nav-item--active' : ''}`}
-            onClick={onNavigateAIChat}
-            type="button"
-          >
-            <Icon name="MessageSquare" size={16} />
-            <span>AI Chat</span>
-          </button>
+          {onNavigateAIChat && (
+            <button
+              className={`sidebar-nav-item ${activeView === 'ai-chat' ? 'sidebar-nav-item--active' : ''}`}
+              onClick={onNavigateAIChat}
+              type="button"
+            >
+              <Icon name="MessageSquare" size={16} />
+              <span>AI Chat</span>
+            </button>
+          )}
         </div>
 
         {/* Folders section */}
@@ -246,6 +258,7 @@ export function Sidebar({
           onToggle={() => setFoldersExpanded((v) => !v)}
         >
           <FolderTree
+            ref={folderTreeRef}
             libraryFolders={libraryFolders}
             playlists={playlists}
             selectedFolder={selectedFolder}
@@ -260,6 +273,10 @@ export function Sidebar({
             onRenamePlaylist={onRenamePlaylist}
             onDeletePlaylist={onDeletePlaylist}
             onSharePlaylist={onSharePlaylist}
+            onExportPlaylist={onExportPlaylist}
+            onCreateSubfolder={onCreateSubfolder}
+            onRenameFolder={onRenameFolder}
+            onDeleteFolder={onDeleteFolder}
             section="folders"
           />
         </Section>
@@ -293,6 +310,10 @@ export function Sidebar({
             onRenamePlaylist={onRenamePlaylist}
             onDeletePlaylist={onDeletePlaylist}
             onSharePlaylist={onSharePlaylist}
+            onExportPlaylist={onExportPlaylist}
+            onCreateSubfolder={onCreateSubfolder}
+            onRenameFolder={onRenameFolder}
+            onDeleteFolder={onDeleteFolder}
             section="playlists"
           />
         </Section>

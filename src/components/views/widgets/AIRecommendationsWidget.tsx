@@ -1,7 +1,7 @@
 import { Icon } from '../../Icon'
 
 interface AIRecommendationsWidgetProps {
-  onNavigateAIChat: () => void
+  onNavigateAIChat?: () => void
 }
 
 export function AIRecommendationsWidget({ onNavigateAIChat }: AIRecommendationsWidgetProps) {

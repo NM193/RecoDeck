@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { useSettingsContext } from './SettingsContext'
+import { DuplicatesModal } from '../DuplicatesModal'
 
 export function DatabaseSection() {
-  const {
-    cleaningDuplicates, normalizingPaths,
-    handleCleanupDuplicates, handleNormalizePaths,
-  } = useSettingsContext()
+  const { cleaningDuplicates, onFoldersChanged, onNotification } =
+    useSettingsContext()
+
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
 
   return (
     <section className="sv-section">
@@ -16,34 +18,28 @@ export function DatabaseSection() {
       <div className="sv-subsection" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <div>
           <button
-            onClick={handleCleanupDuplicates}
-            disabled={cleaningDuplicates || normalizingPaths}
+            onClick={() => setShowDuplicatesModal(true)}
+            disabled={cleaningDuplicates}
             className="btn-primary btn-small"
             style={{ width: '100%' }}
           >
-            {cleaningDuplicates ? 'Removing Duplicates...' : 'Remove Duplicate Tracks'}
+            Review Duplicate Tracks
           </button>
           <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
-            Finds and removes duplicate tracks based on file content and filename.
-            Keeps the earliest imported version of each track.
-          </p>
-        </div>
-
-        <div>
-          <button
-            onClick={handleNormalizePaths}
-            disabled={cleaningDuplicates || normalizingPaths}
-            className="btn-secondary btn-small"
-            style={{ width: '100%' }}
-          >
-            {normalizingPaths ? 'Normalizing Paths...' : 'Normalize File Paths'}
-          </button>
-          <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
-            Fixes file paths with double slashes or other formatting issues.
-            Run this if you have path-related problems.
+            Review and selectively remove duplicate tracks from your library.
           </p>
         </div>
       </div>
+
+      {showDuplicatesModal && (
+        <DuplicatesModal
+          onClose={() => setShowDuplicatesModal(false)}
+          onTracksChanged={onFoldersChanged}
+          onNotification={(msg, type) =>
+            onNotification?.(msg, type)
+          }
+        />
+      )}
     </section>
   )
 }

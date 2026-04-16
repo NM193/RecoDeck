@@ -582,6 +582,60 @@ pub fn cleanup_duplicate_tracks(state: State<AppState>) -> Result<usize, AppErro
         .map_err(|e| AppError::Database(format!("Failed to cleanup duplicates: {}", e)))
 }
 
+/// A group of duplicate tracks, returned by the "review" flow (get_duplicate_groups).
+/// `tracks` is ordered by id ASC — the first element is the earliest import and
+/// the recommended "keep". `detection_reason` explains why the group was flagged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateGroupDTO {
+    pub detection_reason: String,
+    pub tracks: Vec<TrackDTO>,
+}
+
+/// Return every duplicate group the app can detect, without deleting anything.
+#[tauri::command]
+pub fn get_duplicate_groups(
+    state: State<AppState>,
+) -> Result<Vec<DuplicateGroupDTO>, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let groups = db
+        .get_duplicate_groups()
+        .map_err(|e| AppError::Database(format!("Failed to get duplicate groups: {}", e)))?;
+
+    Ok(groups
+        .into_iter()
+        .map(|(reason, tracks)| DuplicateGroupDTO {
+            detection_reason: reason,
+            tracks: tracks.into_iter().map(TrackDTO::from).collect(),
+        })
+        .collect())
+}
+
+/// Delete a list of tracks in bulk. Cleans up `track_analysis` and
+/// `playlist_tracks` rows for each id. Returns the number of rows removed.
+#[tauri::command]
+pub fn delete_tracks_bulk(
+    state: State<AppState>,
+    track_ids: Vec<i64>,
+) -> Result<usize, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    db.bulk_delete_tracks(&track_ids)
+        .map_err(|e| AppError::Database(format!("Failed to bulk-delete tracks: {}", e)))
+}
+
 /// Normalize all file paths in the database (remove double slashes, trailing slashes).
 /// Fixes paths that were stored incorrectly during scanning.
 /// Returns the number of tracks updated.
@@ -675,4 +729,211 @@ pub async fn get_track_artwork(
     }
 
     Err("no_artwork".to_string())
+}
+
+// --- Folder mutation helpers ---
+
+/// Reject empty names or names containing path separators / shell-unsafe chars.
+fn validate_folder_name(name: &str) -> Result<String, AppError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(
+            "Folder name cannot be empty".to_string(),
+        ));
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err(AppError::Validation("Invalid folder name".to_string()));
+    }
+    const FORBIDDEN: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+    if trimmed.chars().any(|c| FORBIDDEN.contains(&c)) {
+        return Err(AppError::Validation(
+            "Folder name cannot contain any of: / \\ : * ? \" < > |".to_string(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Load registered library root folders from settings.
+fn library_roots(db: &Database) -> Result<Vec<String>, AppError> {
+    let raw = db
+        .get_setting("library_folders")
+        .map_err(|e| AppError::Database(format!("Failed to read library_folders: {}", e)))?;
+    match raw {
+        Some(json) => serde_json::from_str::<Vec<String>>(&json).map_err(|e| {
+            AppError::Internal(format!("Invalid library_folders JSON: {}", e))
+        }),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Canonicalize and confirm `target` sits inside one of the registered library roots.
+fn assert_within_library_roots(db: &Database, target: &Path) -> Result<(), AppError> {
+    let canonical = std::fs::canonicalize(target)
+        .map_err(|e| AppError::Validation(format!("Invalid path '{}': {}", target.display(), e)))?;
+    let roots = library_roots(db)?;
+    let within = roots.iter().any(|folder| {
+        std::fs::canonicalize(folder)
+            .map(|canon| canonical.starts_with(&canon))
+            .unwrap_or(false)
+    });
+    if !within {
+        return Err(AppError::Validation(format!(
+            "Path is not within a registered library folder: {}",
+            target.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Reject operating on a path that IS itself a library root.
+fn assert_not_library_root(db: &Database, target: &Path) -> Result<(), AppError> {
+    let canonical = std::fs::canonicalize(target)
+        .map_err(|e| AppError::Validation(format!("Invalid path '{}': {}", target.display(), e)))?;
+    let roots = library_roots(db)?;
+    let is_root = roots.iter().any(|folder| {
+        std::fs::canonicalize(folder)
+            .map(|canon| canon == canonical)
+            .unwrap_or(false)
+    });
+    if is_root {
+        return Err(AppError::Validation(
+            "Cannot modify a library root folder; remove it from the library instead".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Create a new subdirectory inside `parent_path`. Returns the absolute path of the new folder.
+#[tauri::command]
+pub fn create_folder_on_disk(
+    state: State<AppState>,
+    parent_path: String,
+    folder_name: String,
+) -> Result<String, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let clean_name = validate_folder_name(&folder_name)?;
+    let parent = Path::new(&parent_path);
+    if !parent.is_dir() {
+        return Err(AppError::Validation(format!(
+            "Parent path is not a directory: {}",
+            parent_path
+        )));
+    }
+    assert_within_library_roots(db, parent)?;
+
+    let new_path = parent.join(&clean_name);
+    if new_path.exists() {
+        return Err(AppError::Validation(format!(
+            "A file or folder already exists at: {}",
+            new_path.display()
+        )));
+    }
+    std::fs::create_dir(&new_path)
+        .map_err(|e| AppError::Internal(format!("Failed to create folder: {}", e)))?;
+
+    Ok(new_path.to_string_lossy().to_string())
+}
+
+/// Rename an existing folder. Also rewrites tracks.file_path rows whose prefix matched.
+#[tauri::command]
+pub fn rename_folder_on_disk(
+    state: State<AppState>,
+    folder_path: String,
+    new_name: String,
+) -> Result<String, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let clean_name = validate_folder_name(&new_name)?;
+
+    let old = Path::new(&folder_path);
+    if !old.is_dir() {
+        return Err(AppError::Validation(format!(
+            "Folder does not exist: {}",
+            folder_path
+        )));
+    }
+    assert_within_library_roots(db, old)?;
+    assert_not_library_root(db, old)?;
+
+    let parent = old
+        .parent()
+        .ok_or_else(|| AppError::Validation("Folder has no parent directory".to_string()))?;
+    let new_path = parent.join(&clean_name);
+
+    if new_path == old {
+        return Ok(folder_path);
+    }
+    if new_path.exists() {
+        return Err(AppError::Validation(format!(
+            "A file or folder already exists at: {}",
+            new_path.display()
+        )));
+    }
+
+    std::fs::rename(old, &new_path)
+        .map_err(|e| AppError::Internal(format!("Failed to rename folder: {}", e)))?;
+
+    let new_path_str = new_path.to_string_lossy().to_string();
+    db.rename_tracks_folder(&folder_path, &new_path_str)
+        .map_err(|e| AppError::Database(format!("Failed to update track paths: {}", e)))?;
+
+    Ok(new_path_str)
+}
+
+/// Delete a folder. If `delete_files` is true, recursively removes the folder and
+/// all its contents; otherwise std::fs::remove_dir will fail on non-empty folders
+/// (the caller should ensure it's empty first).
+#[tauri::command]
+pub fn delete_folder_on_disk(
+    state: State<AppState>,
+    folder_path: String,
+    delete_files: bool,
+) -> Result<(), AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let target = Path::new(&folder_path);
+    if !target.is_dir() {
+        return Err(AppError::Validation(format!(
+            "Folder does not exist: {}",
+            folder_path
+        )));
+    }
+    assert_within_library_roots(db, target)?;
+    assert_not_library_root(db, target)?;
+
+    if delete_files {
+        std::fs::remove_dir_all(target)
+            .map_err(|e| AppError::Internal(format!("Failed to delete folder: {}", e)))?;
+    } else {
+        std::fs::remove_dir(target).map_err(|e| {
+            AppError::Validation(format!(
+                "Folder is not empty or could not be removed: {}",
+                e
+            ))
+        })?;
+    }
+
+    db.delete_tracks_in_folder_prefix(&folder_path)
+        .map_err(|e| AppError::Database(format!("Failed to delete tracks: {}", e)))?;
+
+    Ok(())
 }

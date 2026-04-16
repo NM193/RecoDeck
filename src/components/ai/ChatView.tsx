@@ -10,7 +10,11 @@ import type { SessionContext } from '../../types/ai'
 import type { Track } from '../../types/track'
 import './ChatView.css'
 
-export function ChatView() {
+interface ChatViewProps {
+  onPlaylistCreated?: () => void
+}
+
+export function ChatView({ onPlaylistCreated }: ChatViewProps) {
   const {
     chatHistory,
     isGenerating,
@@ -129,6 +133,11 @@ export function ChatView() {
       }
     }
 
+    // Refresh playlists if a create_playlist action occurred
+    if (actions.some((a) => a.tool_name === 'create_playlist' && a.success)) {
+      onPlaylistCreated?.()
+    }
+
     // Refresh conversation list to pick up auto-title
     await loadConversations()
   }
@@ -153,7 +162,7 @@ export function ChatView() {
         conversations={conversations}
         onSendMessage={handleSendMessage}
         onRenameConversation={handleRenameConversation}
-        onCreatePlaylist={() => loadConversations()}
+        onCreatePlaylist={() => { loadConversations(); onPlaylistCreated?.() }}
         onClearPendingPlaylist={clearPendingPlaylist}
       />
     </div>

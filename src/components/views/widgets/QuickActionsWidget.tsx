@@ -1,7 +1,7 @@
 import { Icon } from '../../Icon'
 
 interface QuickActionsWidgetProps {
-  onNavigateAIChat: () => void
+  onNavigateAIChat?: () => void
   onOpenSettings: () => void
 }
 

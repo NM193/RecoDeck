@@ -3,13 +3,26 @@
 //   1. Track Collection — scanned library folders with track counts
 //   2. Playlists — user-created playlists and folders
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+} from 'react'
 import { tauriApi } from '../lib/tauri-api'
 import type { FolderInfo, Playlist } from '../types/track'
 import { Icon } from './Icon'
 import './FolderTree.css'
 
 // --- Types ---
+
+export interface FolderTreeRef {
+  /** Invalidate cached children for the library root containing `affectedPath`
+   *  and re-fetch subdirectories from disk. */
+  refreshLibraryRoot: (affectedPath: string) => Promise<void>
+}
 
 interface FolderTreeProps {
   libraryFolders: string[]
@@ -26,6 +39,10 @@ interface FolderTreeProps {
   onRenamePlaylist: (id: number, currentName: string) => void
   onDeletePlaylist: (id: number, name: string) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
+  onExportPlaylist?: (playlistId: number, playlistName: string) => void
+  onCreateSubfolder: (parentPath: string) => void
+  onRenameFolder: (folderPath: string, currentName: string) => void
+  onDeleteFolder: (folderPath: string, folderName: string) => void
   /** When set, render only the given section instead of both sections */
   section?: 'folders' | 'playlists'
 }
@@ -39,6 +56,7 @@ interface FolderNodeData {
 type ContextMenuType =
   | 'all-tracks'
   | 'library'
+  | 'subfolder'
   | 'playlist-header'
   | 'playlist-item'
   | 'folder-item'
@@ -138,23 +156,31 @@ function FolderNode({
 
 // --- Main FolderTree Component ---
 
-export function FolderTree({
-  libraryFolders,
-  playlists,
-  selectedFolder,
-  selectedPlaylistId,
-  totalTrackCount,
-  onFolderSelect,
-  onPlaylistSelect,
-  onAnalyzeFolder,
-  onAnalyzeAll,
-  onCreatePlaylist,
-  onCreateFolder,
-  onRenamePlaylist,
-  onDeletePlaylist,
-  onSharePlaylist,
-  section,
-}: FolderTreeProps) {
+export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
+  function FolderTree(
+    {
+      libraryFolders,
+      playlists,
+      selectedFolder,
+      selectedPlaylistId,
+      totalTrackCount,
+      onFolderSelect,
+      onPlaylistSelect,
+      onAnalyzeFolder,
+      onAnalyzeAll,
+      onCreatePlaylist,
+      onCreateFolder,
+      onRenamePlaylist,
+      onDeletePlaylist,
+      onSharePlaylist,
+      onExportPlaylist,
+      onCreateSubfolder,
+      onRenameFolder,
+      onDeleteFolder,
+      section,
+    },
+    ref,
+  ) {
   // ===== TRACK COLLECTION state =====
   const [libraryNodes, setLibraryNodes] = useState<
     Map<string, FolderNodeData[]>
@@ -215,6 +241,40 @@ export function FolderTree({
       }
     },
     [],
+  )
+
+  // Invalidate cached children for the library root containing `affectedPath`
+  // and re-fetch them. Also refreshes the root's track count.
+  const refreshLibraryRoot = useCallback(
+    async (affectedPath: string) => {
+      const root = libraryFolders.find(
+        (r) => affectedPath === r || affectedPath.startsWith(r + '/'),
+      )
+      if (!root) return
+      const children = await loadSubdirectories(root)
+      setLibraryNodes((prev) => {
+        const next = new Map(prev)
+        next.set(root, children)
+        return next
+      })
+      try {
+        const count = await tauriApi.countTracksInFolder(root)
+        setRootCounts((prev) => {
+          const next = new Map(prev)
+          next.set(root, count)
+          return next
+        })
+      } catch {
+        // ignore count refresh failures
+      }
+    },
+    [libraryFolders, loadSubdirectories],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({ refreshLibraryRoot }),
+    [refreshLibraryRoot],
   )
 
   // Toggle library root
@@ -482,7 +542,9 @@ export function FolderTree({
                             onToggle={toggleLibraryNode}
                             onContextMenu={(e, path, n) =>
                               showContextMenu(e, {
-                                type: 'library',
+                                type: libraryFolders.includes(path)
+                                  ? 'library'
+                                  : 'subfolder',
                                 folderPath: path,
                                 folderName: n,
                               })
@@ -573,6 +635,58 @@ export function FolderTree({
                   <Icon name="Zap" size={16} className="context-menu-icon" />
                   Analyze Tracks
                 </div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreateSubfolder(contextMenu.folderPath!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="FolderPlus" size={16} className="context-menu-icon" />
+                  New Subfolder
+                </div>
+              </>
+            )}
+            {contextMenu.type === 'subfolder' && (
+              <>
+                <div className="context-menu-header">{contextMenu.folderName}</div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onCreateSubfolder(contextMenu.folderPath!)
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="FolderPlus" size={16} className="context-menu-icon" />
+                  New Subfolder
+                </div>
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onRenameFolder(
+                      contextMenu.folderPath!,
+                      contextMenu.folderName!,
+                    )
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Pencil" size={16} className="context-menu-icon" />
+                  Rename Folder
+                </div>
+                <div className="context-menu-separator" />
+                <div
+                  className="context-menu-item context-menu-item-danger"
+                  onClick={() => {
+                    onDeleteFolder(
+                      contextMenu.folderPath!,
+                      contextMenu.folderName!,
+                    )
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon name="Trash2" size={16} className="context-menu-icon" />
+                  Delete Folder
+                </div>
               </>
             )}
           </div>
@@ -631,6 +745,21 @@ export function FolderTree({
                   >
                     <Icon name="Share2" size={16} className="context-menu-icon" />
                     Share playlist
+                  </div>
+                )}
+                {onExportPlaylist && (
+                  <div
+                    className="context-menu-item"
+                    onClick={() => {
+                      onExportPlaylist(
+                        contextMenu.playlistId!,
+                        contextMenu.playlistName!,
+                      )
+                      closeContextMenu()
+                    }}
+                  >
+                    <Icon name="FolderOutput" size={16} className="context-menu-icon" />
+                    Export to folder
                   </div>
                 )}
                 <div
@@ -802,7 +931,9 @@ export function FolderTree({
                             onToggle={toggleLibraryNode}
                             onContextMenu={(e, path, n) =>
                               showContextMenu(e, {
-                                type: 'library',
+                                type: libraryFolders.includes(path)
+                                  ? 'library'
+                                  : 'subfolder',
                                 folderPath: path,
                                 folderName: n,
                               })
@@ -915,6 +1046,70 @@ export function FolderTree({
                 <Icon name="Zap" size={16} className="context-menu-icon" />
                 Analyze Tracks
               </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  onCreateSubfolder(contextMenu.folderPath!)
+                  closeContextMenu()
+                }}
+              >
+                <Icon
+                  name="FolderPlus"
+                  size={16}
+                  className="context-menu-icon"
+                />
+                New Subfolder
+              </div>
+            </>
+          )}
+
+          {/* --- Subfolder context menu --- */}
+          {contextMenu.type === 'subfolder' && (
+            <>
+              <div className="context-menu-header">
+                {contextMenu.folderName}
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  onCreateSubfolder(contextMenu.folderPath!)
+                  closeContextMenu()
+                }}
+              >
+                <Icon
+                  name="FolderPlus"
+                  size={16}
+                  className="context-menu-icon"
+                />
+                New Subfolder
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  onRenameFolder(
+                    contextMenu.folderPath!,
+                    contextMenu.folderName!,
+                  )
+                  closeContextMenu()
+                }}
+              >
+                <Icon name="Pencil" size={16} className="context-menu-icon" />
+                Rename Folder
+              </div>
+              <div className="context-menu-separator" />
+              <div
+                className="context-menu-item context-menu-item-danger"
+                onClick={() => {
+                  onDeleteFolder(
+                    contextMenu.folderPath!,
+                    contextMenu.folderName!,
+                  )
+                  closeContextMenu()
+                }}
+              >
+                <Icon name="Trash2" size={16} className="context-menu-icon" />
+                Delete Folder
+              </div>
             </>
           )}
 
@@ -968,6 +1163,25 @@ export function FolderTree({
                 >
                   <Icon name="Share2" size={16} className="context-menu-icon" />
                   Share playlist
+                </div>
+              )}
+              {onExportPlaylist && (
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    onExportPlaylist(
+                      contextMenu.playlistId!,
+                      contextMenu.playlistName!,
+                    )
+                    closeContextMenu()
+                  }}
+                >
+                  <Icon
+                    name="FolderOutput"
+                    size={16}
+                    className="context-menu-icon"
+                  />
+                  Export to folder
                 </div>
               )}
               <div
@@ -1062,4 +1276,5 @@ export function FolderTree({
       )}
     </div>
   )
-}
+  },
+)

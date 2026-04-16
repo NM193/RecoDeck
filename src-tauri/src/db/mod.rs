@@ -162,6 +162,11 @@ impl Database {
             self.conn.execute_batch(include_str!("migrations/007_ai_phase1.sql"))?;
         }
 
+        // Migration 008: Index on file_hash for duplicate detection
+        // Uses CREATE INDEX IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/008_duplicate_index.sql"))?;
+
         Ok(())
     }
 
@@ -328,6 +333,39 @@ impl Database {
     pub fn delete_track(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM tracks WHERE id = ?", [id])?;
         Ok(())
+    }
+
+    /// Rewrite track file_paths whose prefix matches `old_path` to start with `new_path`.
+    /// Matches both `file_path = old_path` and `file_path LIKE old_path || '/%'`.
+    /// Returns number of rows updated.
+    pub fn rename_tracks_folder(&self, old_path: &str, new_path: &str) -> Result<usize> {
+        let like_pattern = format!("{}/%", old_path);
+        let rows = self.conn.execute(
+            "UPDATE tracks SET file_path = replace(file_path, ?1, ?2)
+             WHERE file_path = ?1 OR file_path LIKE ?3",
+            params![old_path, new_path, like_pattern],
+        )?;
+        Ok(rows)
+    }
+
+    /// Delete all tracks whose file_path is within `folder_path`. Cleans up
+    /// related rows in track_analysis and playlist_tracks first to respect FKs.
+    /// Returns number of track rows deleted.
+    pub fn delete_tracks_in_folder_prefix(&self, folder_path: &str) -> Result<usize> {
+        let like_pattern = format!("{}/%", folder_path);
+        self.conn.execute(
+            "DELETE FROM track_analysis WHERE track_id IN (SELECT id FROM tracks WHERE file_path LIKE ?1)",
+            params![like_pattern],
+        )?;
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM tracks WHERE file_path LIKE ?1)",
+            params![like_pattern],
+        )?;
+        let rows = self.conn.execute(
+            "DELETE FROM tracks WHERE file_path LIKE ?1",
+            params![like_pattern],
+        )?;
+        Ok(rows)
     }
 
     /// Count total tracks
@@ -961,6 +999,185 @@ impl Database {
 
         println!("Successfully removed {} duplicate tracks", count);
         Ok(count)
+    }
+
+    /// Return all duplicate groups (2+ tracks each) without deleting anything.
+    /// Three passes — by file_hash, then by (lowercase filename, file_size),
+    /// finally by (lowercase title, lowercase artist). A track can only appear
+    /// in one group total (first-seen pass wins). Each group's tracks are
+    /// sorted by id ASC, so `tracks[0]` is the earliest import (recommended keep).
+    pub fn get_duplicate_groups(&self) -> Result<Vec<(String, Vec<Track>)>> {
+        let mut groups: Vec<(String, Vec<Track>)> = Vec::new();
+        let mut seen_ids: std::collections::HashSet<i64> =
+            std::collections::HashSet::new();
+
+        // Pass 1: groups that share a file_hash
+        {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, file_path, file_hash, title, artist, album, album_artist,
+                        track_number, year, label, duration_ms, file_format,
+                        bitrate, sample_rate, file_size, date_added, date_modified,
+                        play_count, rating, comment, artwork_path, genre, genre_source
+                 FROM tracks
+                 WHERE file_hash != 'unknown'
+                   AND file_hash IN (
+                       SELECT file_hash FROM tracks
+                       WHERE file_hash != 'unknown'
+                       GROUP BY file_hash
+                       HAVING COUNT(*) > 1
+                   )
+                 ORDER BY file_hash, id ASC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(Track {
+                    id: row.get(0)?,
+                    file_path: row.get(1)?,
+                    file_hash: row.get(2)?,
+                    title: row.get(3)?,
+                    artist: row.get(4)?,
+                    album: row.get(5)?,
+                    album_artist: row.get(6)?,
+                    track_number: row.get(7)?,
+                    year: row.get(8)?,
+                    label: row.get(9)?,
+                    duration_ms: row.get(10)?,
+                    file_format: row.get(11)?,
+                    bitrate: row.get(12)?,
+                    sample_rate: row.get(13)?,
+                    file_size: row.get(14)?,
+                    date_added: row.get(15)?,
+                    date_modified: row.get(16)?,
+                    play_count: row.get(17)?,
+                    rating: row.get(18)?,
+                    comment: row.get(19)?,
+                    artwork_path: row.get(20)?,
+                    genre: row.get(21)?,
+                    genre_source: row.get(22)?,
+                })
+            })?;
+
+            let mut by_hash: std::collections::BTreeMap<String, Vec<Track>> =
+                std::collections::BTreeMap::new();
+            for row in rows {
+                let track = row?;
+                by_hash
+                    .entry(track.file_hash.clone())
+                    .or_default()
+                    .push(track);
+            }
+            for (_, tracks) in by_hash {
+                if tracks.len() > 1 {
+                    // Mark all members so later passes skip them.
+                    for t in &tracks {
+                        if let Some(id) = t.id {
+                            seen_ids.insert(id);
+                        }
+                    }
+                    groups.push(("identical_content".to_string(), tracks));
+                }
+            }
+        }
+
+        // Pass 2: remaining tracks grouped by (lowercase filename, file_size).
+        // Catches identical copies with different (or "unknown") hashes.
+        let all_tracks = self.get_all_tracks()?;
+        {
+            let mut by_name_size: std::collections::HashMap<
+                (String, i64),
+                Vec<Track>,
+            > = std::collections::HashMap::new();
+
+            for track in &all_tracks {
+                if track.id.map(|id| seen_ids.contains(&id)).unwrap_or(true) {
+                    continue;
+                }
+                let size = match track.file_size {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let filename = std::path::Path::new(&track.file_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                    .unwrap_or_else(|| track.file_path.to_lowercase());
+                by_name_size
+                    .entry((filename, size))
+                    .or_default()
+                    .push(track.clone());
+            }
+
+            for (_, mut tracks) in by_name_size {
+                if tracks.len() > 1 {
+                    tracks.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    for t in &tracks {
+                        if let Some(id) = t.id {
+                            seen_ids.insert(id);
+                        }
+                    }
+                    groups.push(("identical_filename_size".to_string(), tracks));
+                }
+            }
+        }
+
+        // Pass 3: remaining tracks grouped by (lowercase trimmed title, artist).
+        // These are "probable" duplicates — different bytes but the same song.
+        {
+            let mut by_title_artist: std::collections::HashMap<
+                (String, String),
+                Vec<Track>,
+            > = std::collections::HashMap::new();
+
+            for track in &all_tracks {
+                if track.id.map(|id| seen_ids.contains(&id)).unwrap_or(true) {
+                    continue;
+                }
+                let title = match &track.title {
+                    Some(t) => t.trim().to_lowercase(),
+                    None => continue,
+                };
+                if title.is_empty() {
+                    continue;
+                }
+                let artist = match &track.artist {
+                    Some(a) => a.trim().to_lowercase(),
+                    None => continue,
+                };
+                if artist.is_empty() {
+                    continue;
+                }
+                by_title_artist
+                    .entry((title, artist))
+                    .or_default()
+                    .push(track.clone());
+            }
+
+            for (_, mut tracks) in by_title_artist {
+                if tracks.len() > 1 {
+                    tracks.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    groups.push(("same_title_artist".to_string(), tracks));
+                }
+            }
+        }
+
+        Ok(groups)
+    }
+
+    /// Delete a batch of tracks, cleaning up related analysis + playlist rows.
+    /// Returns the number of track rows actually deleted (may be less than
+    /// `ids.len()` if some ids were already gone).
+    pub fn bulk_delete_tracks(&self, ids: &[i64]) -> Result<usize> {
+        let mut deleted: usize = 0;
+        for id in ids {
+            self.conn
+                .execute("DELETE FROM track_analysis WHERE track_id = ?", [id])?;
+            self.conn
+                .execute("DELETE FROM playlist_tracks WHERE track_id = ?", [id])?;
+            let n = self
+                .conn
+                .execute("DELETE FROM tracks WHERE id = ?", [id])?;
+            deleted += n;
+        }
+        Ok(deleted)
     }
 
     /// Count tracks whose file_path starts with a given folder path prefix.

@@ -1,6 +1,7 @@
 // Tauri API wrapper for invoking backend commands
 
 import { invoke } from '@tauri-apps/api/core'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
   Track,
   ScanResult,
@@ -11,6 +12,7 @@ import type {
   Playlist,
   GenreCount,
   GenreDefinition,
+  DuplicateGroup,
 } from '../types/track'
 import type {
   ChatMessage,
@@ -85,6 +87,68 @@ export const tauriApi = {
     return await invoke('remove_library_folder', { path })
   },
 
+  async createFolderOnDisk(
+    parentPath: string,
+    folderName: string,
+  ): Promise<string> {
+    return await invoke('create_folder_on_disk', {
+      parentPath,
+      folderName,
+    })
+  },
+
+  async renameFolderOnDisk(
+    folderPath: string,
+    newName: string,
+  ): Promise<string> {
+    return await invoke('rename_folder_on_disk', {
+      folderPath,
+      newName,
+    })
+  },
+
+  async deleteFolderOnDisk(
+    folderPath: string,
+    deleteFiles: boolean,
+  ): Promise<void> {
+    return await invoke('delete_folder_on_disk', {
+      folderPath,
+      deleteFiles,
+    })
+  },
+
+  async pickExportFolder(): Promise<string | null> {
+    // Use the JS-side dialog plugin directly — the Rust blocking_pick_folder
+    // deadlocks on macOS, and the callback + channel pattern also hangs when
+    // the main thread is busy. The JS plugin runs the dialog via the native
+    // Tauri IPC dialog handler which does the right thing on every platform.
+    const selected = await openDialog({ directory: true, multiple: false })
+    return typeof selected === 'string' ? selected : null
+  },
+
+  async exportPlaylistToFolder(
+    playlistId: number,
+    destPath: string,
+    folderName: string,
+    renameFiles: boolean,
+    exportM3u: boolean,
+  ): Promise<{
+    exported: number
+    skipped: number
+    errors: string[]
+    folder_name: string
+    folder_path: string
+    imported: number
+  }> {
+    return await invoke('export_playlist_to_folder', {
+      playlistId,
+      destPath,
+      folderName,
+      renameFiles,
+      exportM3u,
+    })
+  },
+
   async getTheme(): Promise<string> {
     return await invoke('get_theme')
   },
@@ -143,9 +207,13 @@ export const tauriApi = {
     return await invoke('cleanup_duplicate_tracks')
   },
 
-  // Normalize file paths - removes double slashes from stored paths
-  async normalizeFilePaths(): Promise<number> {
-    return await invoke('normalize_file_paths')
+  // Review-based duplicate management
+  async getDuplicateGroups(): Promise<DuplicateGroup[]> {
+    return await invoke('get_duplicate_groups')
+  },
+
+  async deleteTracksBulk(trackIds: number[]): Promise<number> {
+    return await invoke('delete_tracks_bulk', { trackIds })
   },
 
   // Debug: get all tracks with their hashes (for troubleshooting)

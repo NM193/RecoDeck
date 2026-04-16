@@ -25,7 +25,7 @@ interface HomeViewProps {
   totalTrackCount: number
   folderCount: number
   onPlaylistSelect: (id: number) => void
-  onNavigateAIChat: () => void
+  onNavigateAIChat?: () => void
   onOpenSettings: () => void
 }
 

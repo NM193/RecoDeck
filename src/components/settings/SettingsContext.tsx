@@ -49,9 +49,13 @@ export interface SettingsContextValue {
 
   // Database
   cleaningDuplicates: boolean
-  normalizingPaths: boolean
   handleCleanupDuplicates: () => Promise<void>
-  handleNormalizePaths: () => Promise<void>
+  // Callbacks surfaced for sub-components that need them (e.g. DuplicatesModal)
+  onFoldersChanged: () => void
+  onNotification?: (
+    message: string,
+    type: 'info' | 'success' | 'warning' | 'error',
+  ) => void
 
   // AI
   isApiKeyConfigured: boolean
@@ -120,7 +124,6 @@ export function SettingsProvider({
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [scanStartTime, setScanStartTime] = useState<number | null>(null)
   const [cleaningDuplicates, setCleaningDuplicates] = useState(false)
-  const [normalizingPaths, setNormalizingPaths] = useState(false)
   const [updateChecking, setUpdateChecking] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null)
@@ -391,26 +394,6 @@ export function SettingsProvider({
     }
   }
 
-  async function handleNormalizePaths() {
-    try {
-      setError(null)
-      setNormalizingPaths(true)
-      const pathsNormalized = await tauriApi.normalizeFilePaths()
-      if (pathsNormalized > 0) {
-        onNotification?.(`Successfully normalized ${pathsNormalized} file path${pathsNormalized > 1 ? 's' : ''}`, 'success')
-        onFoldersChanged()
-      } else {
-        onNotification?.('All file paths are already normalized', 'info')
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      setError(errorMsg)
-      onNotification?.(errorMsg, 'error')
-    } finally {
-      setNormalizingPaths(false)
-    }
-  }
-
   // --- AI handlers ---
 
   async function handleSaveApiKey() {
@@ -603,8 +586,9 @@ export function SettingsProvider({
     currentTheme, handleThemeChange,
     crossfadeEnabled, crossfadeDuration,
     handleCrossfadeEnabledChange, handleCrossfadeDurationChange,
-    cleaningDuplicates, normalizingPaths,
-    handleCleanupDuplicates, handleNormalizePaths,
+    cleaningDuplicates,
+    handleCleanupDuplicates,
+    onFoldersChanged, onNotification,
     isApiKeyConfigured, apiKeyInput, setApiKeyInput, showApiKey, setShowApiKey, aiSaving,
     handleSaveApiKey, handleDeleteApiKey,
     companionRunning, companionUrl, companionToken, companionPortInput, setCompanionPortInput,

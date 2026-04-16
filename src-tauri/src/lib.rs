@@ -412,9 +412,14 @@ pub fn run() {
             commands::library::count_tracks_in_folder_shallow,
             commands::library::cleanup_stray_tracks,
             commands::library::cleanup_duplicate_tracks,
+            commands::library::get_duplicate_groups,
+            commands::library::delete_tracks_bulk,
             commands::library::normalize_file_paths,
             commands::library::get_debug_tracks,
             commands::library::get_track_artwork,
+            commands::library::create_folder_on_disk,
+            commands::library::rename_folder_on_disk,
+            commands::library::delete_folder_on_disk,
             // Playback commands
             commands::playback::load_track,
             commands::playback::play,
@@ -443,6 +448,8 @@ pub fn run() {
             commands::playlists::add_track_to_playlist,
             commands::playlists::remove_track_from_playlist,
             commands::playlists::reorder_playlist_tracks,
+            commands::playlists::export_playlist_to_folder,
+            commands::playlists::pick_export_folder,
             // Genre commands
             commands::genre::set_track_genre,
             commands::genre::clear_track_genre,
