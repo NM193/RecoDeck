@@ -94,8 +94,12 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
       const playlist = await tauriApi.createPlaylist(pendingPlaylist.name, null)
 
       // Add tracks to playlist
+      let added = 0
+      let skipped = 0
       for (const trackId of pendingPlaylist.track_ids) {
-        await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
+        const wasAdded = await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
+        if (wasAdded) added++
+        else skipped++
       }
 
       // Notify parent
@@ -108,7 +112,7 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
 
       // Add success message to chat
       await sendMessage(
-        `Great! Created playlist "${pendingPlaylist.name}" with ${pendingPlaylist.track_ids.length} tracks.`,
+        `Great! Created playlist "${pendingPlaylist.name}" with ${added} tracks${skipped > 0 ? ` (${skipped} already in playlist)` : ''}.`,
       )
     } catch (error) {
       console.error('Failed to create playlist:', error)

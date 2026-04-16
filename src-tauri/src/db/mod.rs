@@ -538,7 +538,18 @@ impl Database {
     }
 
     /// Add a track to a playlist at the end.
-    pub fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<()> {
+    /// Returns `true` if the row was inserted, `false` if the track was already
+    /// in the playlist (checked before attempting the INSERT).
+    pub fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<bool> {
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?)",
+            params![playlist_id, track_id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            return Ok(false);
+        }
+
         let max_pos: i64 = self.conn.query_row(
             "SELECT COALESCE(MAX(position), 0) FROM playlist_tracks WHERE playlist_id = ?",
             [playlist_id],
@@ -546,10 +557,10 @@ impl Database {
         )?;
 
         self.conn.execute(
-            "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
             params![playlist_id, track_id, max_pos + 1],
         )?;
-        Ok(())
+        Ok(true)
     }
 
     /// Remove a track from a playlist.

@@ -128,8 +128,12 @@ export function ChatArea({
     try {
       const playlist = await tauriApi.createPlaylist(pendingPlaylist.name, null)
 
+      let added = 0
+      let skipped = 0
       for (const trackId of pendingPlaylist.track_ids) {
-        await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
+        const wasAdded = await tauriApi.addTrackToPlaylist(playlist.id!, trackId)
+        if (wasAdded) added++
+        else skipped++
       }
 
       onCreatePlaylist()
