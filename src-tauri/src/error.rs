@@ -35,4 +35,7 @@ pub enum AppError {
 
     #[error("{0}")]
     Validation(String),
+
+    #[error("AI tool execution error: {0}")]
+    AiToolExecution(String),
 }

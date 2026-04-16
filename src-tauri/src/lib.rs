@@ -387,6 +387,7 @@ pub fn run() {
         .manage(AppState {
             db: Mutex::new(None),
             ai_context_cache: Mutex::new(None),
+            taste_profile_cache: Mutex::new(None),
             db_path: Mutex::new(None),
             analysis_cancelled: Arc::new(AtomicBool::new(false)),
         })
@@ -411,9 +412,14 @@ pub fn run() {
             commands::library::count_tracks_in_folder_shallow,
             commands::library::cleanup_stray_tracks,
             commands::library::cleanup_duplicate_tracks,
+            commands::library::get_duplicate_groups,
+            commands::library::delete_tracks_bulk,
             commands::library::normalize_file_paths,
             commands::library::get_debug_tracks,
             commands::library::get_track_artwork,
+            commands::library::create_folder_on_disk,
+            commands::library::rename_folder_on_disk,
+            commands::library::delete_folder_on_disk,
             // Playback commands
             commands::playback::load_track,
             commands::playback::play,
@@ -442,6 +448,8 @@ pub fn run() {
             commands::playlists::add_track_to_playlist,
             commands::playlists::remove_track_from_playlist,
             commands::playlists::reorder_playlist_tracks,
+            commands::playlists::export_playlist_to_folder,
+            commands::playlists::pick_export_folder,
             // Genre commands
             commands::genre::set_track_genre,
             commands::genre::clear_track_genre,
@@ -473,11 +481,26 @@ pub fn run() {
             commands::ai::ai_recommend_for_playlist,
             commands::ai::ai_optimize_playlist_order,
             commands::ai::ai_chat,
+            commands::ai::ai_chat_v2,
+            commands::ai::rebuild_taste_profile,
+            // Conversation commands
+            commands::conversations::create_conversation,
+            commands::conversations::list_conversations,
+            commands::conversations::get_conversation_messages,
+            commands::conversations::delete_conversation,
+            commands::conversations::rename_conversation,
             // Companion server commands
             commands::server::start_companion_server,
             commands::server::stop_companion_server,
             commands::server::get_companion_status,
             commands::server::regenerate_companion_token,
+            // Dashboard commands
+            commands::dashboard::record_play_event,
+            commands::dashboard::get_recently_played,
+            commands::dashboard::get_recently_added,
+            commands::dashboard::get_library_insights,
+            commands::dashboard::save_dashboard_layout,
+            commands::dashboard::get_dashboard_layout,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;

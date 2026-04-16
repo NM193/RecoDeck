@@ -41,6 +41,7 @@ interface PlayerState {
   setRepeatMode: (mode: 'off' | 'all' | 'one') => void
   setShuffle: (enabled: boolean) => void
   playTrackAtIndex: (index: number) => void
+  applyQueueAction: (tracks: Track[], mode: string) => void
 }
 
 const initialState = {
@@ -178,6 +179,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const state = get()
     if (index >= 0 && index < state.queue.length) {
       set({ currentTrackIndex: index })
+    }
+  },
+
+  applyQueueAction: (tracks: Track[], mode: string) => {
+    const state = get();
+    if (mode === 'play_now') {
+      set({
+        queue: tracks,
+        originalQueue: tracks,
+        currentTrackIndex: 0,
+        currentTrack: tracks[0] || null,
+      });
+    } else if (mode === 'play_next') {
+      const newQueue = [
+        ...state.queue.slice(0, state.currentTrackIndex + 1),
+        ...tracks,
+        ...state.queue.slice(state.currentTrackIndex + 1),
+      ];
+      set({ queue: newQueue, originalQueue: newQueue });
+    } else {
+      const newQueue = [...state.queue, ...tracks];
+      set({ queue: newQueue, originalQueue: newQueue });
     }
   },
 }))

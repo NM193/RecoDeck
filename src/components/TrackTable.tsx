@@ -15,6 +15,7 @@ import {
 import type { Track, Playlist } from '../types/track'
 import { usePlayerStore } from '../store/playerStore'
 import { Icon } from './Icon'
+import { StarRating } from './StarRating'
 
 // --- Sort types ---
 
@@ -27,6 +28,8 @@ type SortColumn =
   | 'genre'
   | 'duration'
   | 'format'
+  | 'rating'
+  | 'comment'
 
 type SortDirection = 'asc' | 'desc'
 
@@ -53,6 +56,7 @@ interface TrackTableProps {
   onRemoveFromPlaylist?: (track: Track) => void
   onSetGenre?: (track: Track, genre: string) => void
   onClearGenre?: (track: Track) => void
+  onUpdateTrack?: (track: Track) => void
   genreDefinitions?: Array<{ id: number; name: string; color?: string }>
   onGenerateAIPlaylist?: (track: Track) => void
   onGetPlaylistRecommendations?: (
@@ -81,6 +85,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       onRemoveFromPlaylist,
       onSetGenre,
       onClearGenre,
+      onUpdateTrack,
       genreDefinitions = [],
       onGenerateAIPlaylist,
       onGetPlaylistRecommendations,
@@ -154,6 +159,13 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
 
     // Custom genre input state
     const [customGenreInput, setCustomGenreInput] = useState<{
+      visible: boolean
+      track: Track | null
+      value: string
+    }>({ visible: false, track: null, value: '' })
+
+    // Comment editor state
+    const [commentInput, setCommentInput] = useState<{
       visible: boolean
       track: Track | null
       value: string
@@ -297,6 +309,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             valA = a.file_format?.toLowerCase() ?? ''
             valB = b.file_format?.toLowerCase() ?? ''
             break
+          case 'rating':
+            valA = a.rating ?? 0
+            valB = b.rating ?? 0
+            break
+          case 'comment':
+            valA = (a.comment ?? '').toLowerCase()
+            valB = (b.comment ?? '').toLowerCase()
+            break
         }
 
         // Compare: strings use localeCompare, numbers use subtraction
@@ -330,8 +350,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             direction: prev.direction === 'asc' ? 'desc' : 'asc',
           }
         }
-        // New column: start ascending
-        return { column, direction: 'asc' }
+        // Rating defaults to descending (5 stars first); others start ascending
+        return { column, direction: column === 'rating' ? 'desc' : 'asc' }
       })
     }
 
@@ -529,6 +549,18 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                 Genre {sortIndicator('genre')}
               </div>
               <div
+                className={`table-cell cell-comment sortable ${sort.column === 'comment' ? 'sorted' : ''}`}
+                onClick={() => handleSort('comment')}
+              >
+                Comment {sortIndicator('comment')}
+              </div>
+              <div
+                className={`table-cell cell-rating sortable ${sort.column === 'rating' ? 'sorted' : ''}`}
+                onClick={() => handleSort('rating')}
+              >
+                Rating {sortIndicator('rating')}
+              </div>
+              <div
                 className={`table-cell cell-duration sortable ${sort.column === 'duration' ? 'sorted' : ''}`}
                 onClick={() => handleSort('duration')}
               >
@@ -634,6 +666,37 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                     </div>
                     <div className="table-cell cell-genre" title={track.genre}>
                       {track.genre || <span className="text-muted">—</span>}
+                    </div>
+                    <div
+                      className="table-cell cell-comment"
+                      title={track.comment}
+                      onClick={(e) => {
+                        if (!onUpdateTrack) return
+                        e.stopPropagation()
+                        setCommentInput({
+                          visible: true,
+                          track,
+                          value: track.comment || '',
+                        })
+                      }}
+                    >
+                      {track.comment || (
+                        <span className="text-muted">
+                          {onUpdateTrack ? '+ Add' : '—'}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className="table-cell cell-rating"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <StarRating
+                        value={track.rating ?? 0}
+                        readonly={!onUpdateTrack}
+                        onChange={(rating) => {
+                          onUpdateTrack?.({ ...track, rating })
+                        }}
+                      />
                     </div>
                     <div className="table-cell cell-duration">
                       {formatDuration(track.duration_ms)}
@@ -779,6 +842,29 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               >
                 <Icon name="X" size={16} className="context-menu-icon" />
                 Clear Genre
+              </button>
+            )}
+
+            {/* Add / Edit Comment option */}
+            {onUpdateTrack && (
+              <button
+                type="button"
+                className="context-menu-item"
+                onClick={() => {
+                  setCommentInput({
+                    visible: true,
+                    track: contextMenu.track,
+                    value: contextMenu.track.comment || '',
+                  })
+                  setContextMenu(null)
+                }}
+              >
+                <Icon
+                  name="MessageSquare"
+                  size={16}
+                  className="context-menu-icon"
+                />
+                {contextMenu.track.comment ? 'Edit Comment' : 'Add Comment'}
               </button>
             )}
 
@@ -1036,6 +1122,91 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   disabled={!customGenreInput.value.trim()}
                 >
                   Set Genre
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Comment Editor Modal */}
+        {commentInput.visible && commentInput.track && onUpdateTrack && (
+          <div
+            className="modal-overlay"
+            onClick={() =>
+              setCommentInput({ visible: false, track: null, value: '' })
+            }
+          >
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <h3>
+                {commentInput.track.comment ? 'Edit Comment' : 'Add Comment'}
+              </h3>
+              <p className="modal-subtitle">
+                {commentInput.track.title || 'Untitled'}
+              </p>
+              <textarea
+                className="modal-input modal-textarea"
+                placeholder="Enter a comment..."
+                value={commentInput.value}
+                onChange={(e) =>
+                  setCommentInput((prev) => ({
+                    ...prev,
+                    value: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    const trimmed = commentInput.value.trim()
+                    onUpdateTrack({
+                      ...commentInput.track!,
+                      comment: trimmed ? trimmed : undefined,
+                    })
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  } else if (e.key === 'Escape') {
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  }
+                }}
+                autoFocus
+              />
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="modal-button modal-button-secondary"
+                  onClick={() =>
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  }
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="modal-button modal-button-primary"
+                  onClick={() => {
+                    const trimmed = commentInput.value.trim()
+                    onUpdateTrack({
+                      ...commentInput.track!,
+                      comment: trimmed ? trimmed : undefined,
+                    })
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  }}
+                >
+                  Save
                 </button>
               </div>
             </div>

@@ -41,6 +41,26 @@ export interface RecommendedOrder {
 }
 
 /**
+ * Conversation summary returned by list_conversations
+ */
+export interface Conversation {
+  id: string
+  title: string
+  created_at: number
+}
+
+/**
+ * Message from a conversation returned by get_conversation_messages
+ */
+export interface ConversationMessage {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: number
+}
+
+/**
  * AI chat state
  */
 export interface AIChatState {
@@ -78,6 +98,32 @@ export interface AppError {
  */
 export function isAppError(e: unknown): e is AppError {
   return typeof e === 'object' && e !== null && 'kind' in e
+}
+
+export interface ActionResult {
+  tool_name: string;
+  success: boolean;
+  summary: string;
+  data?: Record<string, unknown>;
+}
+
+export interface ChatV2Response {
+  text: string;
+  actions: ActionResult[];
+}
+
+export interface SessionContext {
+  now_playing: TrackSummary | null;
+  recent_queue: TrackSummary[];
+  active_playlist_id: number | null;
+}
+
+export interface TrackSummary {
+  id: number;
+  title: string;
+  artist: string | null;
+  bpm: number | null;
+  key: string | null;
 }
 
 /**

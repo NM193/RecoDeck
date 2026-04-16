@@ -86,7 +86,47 @@ Requirements for Pagination Removal milestone. Each maps to roadmap phases.
 - [x] **INTG-02**: Sorting works on the complete dataset immediately
 - [x] **INTG-03**: Folder/playlist/search views unchanged
 
+## v1.8 Requirements
+
+Requirements for AI Chat Persistence milestone. Each maps to roadmap phases.
+
+### Database
+
+- [x] **DB-01**: App creates `ai_conversations` table on startup (id TEXT PK, title TEXT, created_at INTEGER)
+- [x] **DB-02**: App creates `ai_messages` table on startup (id TEXT PK, conversation_id TEXT FK, role TEXT, content TEXT, metadata_json TEXT NULL, created_at INTEGER)
+
+### Conversation Management
+
+- [x] **CONV-01**: User can create a new conversation (returns conversation_id)
+- [x] **CONV-02**: User can list all conversations (ordered by most recent)
+- [x] **CONV-03**: User can load messages from a previous conversation
+- [x] **CONV-04**: User can delete a conversation (and its messages)
+- [x] **CONV-05**: Conversation auto-titles from first user message (truncated to 50 chars)
+
+### Message Persistence
+
+- [x] **MSG-01**: Every sent user message is saved to the database
+- [x] **MSG-02**: Every received AI response is saved to the database
+- [x] **MSG-03**: Messages preserve role, content, and optional metadata
+
+### Frontend UI
+
+- [x] **UI-01**: AIChatPanel shows a collapsible conversation list sidebar
+- [x] **UI-02**: User can click "New Chat" to start a fresh conversation
+- [x] **UI-03**: User can click a previous conversation to load its messages
+- [x] **UI-04**: On app mount, conversation list loads and last active conversation restores
+
+### Compatibility
+
+- [x] **COMPAT-01**: Existing AI commands (chat, playlist, recommendations) work unchanged with persistence
+
 ## Future Requirements
+
+### Chat Enhancements
+
+- **CHAT-01**: User can rename a conversation title
+- **CHAT-02**: User can search across conversation history
+- **CHAT-03**: User can export conversation to text file
 
 ### Windows Enhancements
 
@@ -98,6 +138,9 @@ Requirements for Pagination Removal milestone. Each maps to roadmap phases.
 
 | Feature | Reason |
 |---------|--------|
+| Cloud sync of conversations | Local-first architecture — no cloud dependency |
+| Multi-user conversations | Single-user desktop app |
+| Modifications to system_prompt.rs or context_builder.rs | Explicit constraint — AI behavior stays unchanged |
 | Windows code signing | $300-600/yr cert cost disproportionate for small DJ friend group; SmartScreen "Run Anyway" is acceptable |
 | Linux support | Separate milestone if needed; Windows is the priority |
 | ARM64 Windows | x86_64 covers the target audience; ARM64 can be added later |
@@ -167,6 +210,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 8
 - Unmapped: 0 ✓
 
+### v1.8 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DB-01 | Phase 27 | Complete |
+| DB-02 | Phase 27 | Complete |
+| CONV-01 | Phase 28 | Complete |
+| CONV-02 | Phase 28 | Complete |
+| CONV-03 | Phase 28 | Complete |
+| CONV-04 | Phase 28 | Complete |
+| CONV-05 | Phase 28 | Complete |
+| MSG-01 | Phase 28 | Complete |
+| MSG-02 | Phase 28 | Complete |
+| MSG-03 | Phase 28 | Complete |
+| UI-01 | Phase 29 | Complete |
+| UI-02 | Phase 29 | Complete |
+| UI-03 | Phase 29 | Complete |
+| UI-04 | Phase 29 | Complete |
+| COMPAT-01 | Phase 28 | Complete |
+
+**v1.8 Coverage:**
+- v1.8 requirements: 15 total
+- Mapped to phases: 15
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-15 — Phase 26 complete, all v1.7 requirements satisfied*
+*Last updated: 2026-03-15 after v1.8 roadmap created (phases 27-29)*

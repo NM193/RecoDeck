@@ -118,3 +118,15 @@ export interface AnalysisCompleteEvent {
   total_failed: number
   cancelled: boolean
 }
+
+// Duplicate-track detection
+export type DuplicateReason =
+  | 'identical_content'
+  | 'identical_filename_size'
+  | 'same_title_artist'
+
+export interface DuplicateGroup {
+  detection_reason: DuplicateReason
+  /** Sorted by id ASC — first track is the earliest import (recommended keep). */
+  tracks: Track[]
+}

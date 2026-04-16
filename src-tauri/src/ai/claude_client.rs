@@ -54,6 +54,63 @@ pub struct PlaylistResponse {
     pub reasoning: String,
 }
 
+// ── Tool-Use Types ─────────────────────────────────────────────────
+
+#[derive(Serialize, Debug, Clone)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ClaudeToolRequest {
+    pub model: String,
+    pub max_tokens: u32,
+    pub system: String,
+    pub messages: Vec<ToolMessage>,
+    pub tools: Vec<ToolDefinition>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ToolMessage {
+    pub role: String,
+    pub content: ToolMessageContent,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum ToolMessageContent {
+    Text(String),
+    Blocks(Vec<ContentBlockV2>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum ContentBlockV2 {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ClaudeToolResponse {
+    pub content: Vec<ContentBlockV2>,
+    pub stop_reason: String,
+}
+
 pub struct ClaudeClient {
     api_key: String,
     client: Client,
@@ -157,6 +214,43 @@ impl ClaudeClient {
         // Parse the JSON response
         serde_json::from_str::<PlaylistResponse>(&json_text)
             .map_err(|e| AppError::AiParsing(format!("Playlist response invalid: {}", e)))
+    }
+
+    /// Send a message with tool definitions and return the raw tool response
+    pub async fn chat_with_tools(
+        &self,
+        system: &str,
+        messages: Vec<ToolMessage>,
+        tools: &[ToolDefinition],
+    ) -> Result<ClaudeToolResponse, String> {
+        let request = ClaudeToolRequest {
+            model: CLAUDE_MODEL.to_string(),
+            max_tokens: MAX_TOKENS,
+            system: system.to_string(),
+            messages,
+            tools: tools.to_vec(),
+        };
+
+        let response = self.client
+            .post(CLAUDE_API_URL)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", CLAUDE_VERSION)
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        let status = response.status();
+        let body = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+
+        if !status.is_success() {
+            return Err(format!("Claude API error ({}): {}", status, body));
+        }
+
+        serde_json::from_str::<ClaudeToolResponse>(&body)
+            .map_err(|e| format!("Failed to parse tool response: {} — body: {}", e, &body[..200.min(body.len())]))
     }
 
     /// Extract JSON from response text (handles markdown code blocks)

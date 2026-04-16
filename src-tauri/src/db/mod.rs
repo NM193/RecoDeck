@@ -1,6 +1,6 @@
 // Database layer - SQLite connection, migrations, queries
 
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
 /// Track with optional analysis fields: (track, bpm, bpm_confidence, musical_key, key_confidence)
@@ -71,6 +71,25 @@ pub struct GenreDefinition {
     pub sort_order: i32,
 }
 
+/// Represents an AI conversation
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub created_at: i64,
+}
+
+/// Represents a message in an AI conversation
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConversationMessage {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub metadata_json: Option<String>,
+    pub created_at: i64,
+}
+
 /// Database connection wrapper
 pub struct Database {
     conn: Connection,
@@ -80,17 +99,20 @@ impl Database {
     /// Create a new database connection
     pub fn new(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Database { conn })
     }
 
     /// Create an in-memory database (for testing)
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Database { conn })
     }
 
     /// Run migrations to set up the database schema
     pub fn run_migrations(&self) -> Result<()> {
+
         // Run all migrations in order
         let migration_001 = include_str!("migrations/001_init.sql");
         self.conn.execute_batch(migration_001)?;
@@ -119,6 +141,31 @@ impl Database {
             let migration_003 = include_str!("migrations/003_genre.sql");
             self.conn.execute_batch(migration_003)?;
         }
+
+        // Migration 005: AI conversation persistence tables
+        // Uses CREATE TABLE IF NOT EXISTS — no column check needed
+        let migration_005 = include_str!("migrations/005_ai_conversations.sql");
+        self.conn.execute_batch(migration_005)?;
+
+        // Migration 006: Dashboard layout + play history
+        // Uses CREATE TABLE IF NOT EXISTS — no column check needed
+        let migration_006 = include_str!("migrations/006_dashboard.sql");
+        self.conn.execute_batch(migration_006)?;
+
+        // Migration 007: AI Phase 1 — taste profile + user preferences
+        let has_taste_profile: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='taste_profile'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_taste_profile {
+            self.conn.execute_batch(include_str!("migrations/007_ai_phase1.sql"))?;
+        }
+
+        // Migration 008: Index on file_hash for duplicate detection
+        // Uses CREATE INDEX IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/008_duplicate_index.sql"))?;
 
         Ok(())
     }
@@ -286,6 +333,39 @@ impl Database {
     pub fn delete_track(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM tracks WHERE id = ?", [id])?;
         Ok(())
+    }
+
+    /// Rewrite track file_paths whose prefix matches `old_path` to start with `new_path`.
+    /// Matches both `file_path = old_path` and `file_path LIKE old_path || '/%'`.
+    /// Returns number of rows updated.
+    pub fn rename_tracks_folder(&self, old_path: &str, new_path: &str) -> Result<usize> {
+        let like_pattern = format!("{}/%", old_path);
+        let rows = self.conn.execute(
+            "UPDATE tracks SET file_path = replace(file_path, ?1, ?2)
+             WHERE file_path = ?1 OR file_path LIKE ?3",
+            params![old_path, new_path, like_pattern],
+        )?;
+        Ok(rows)
+    }
+
+    /// Delete all tracks whose file_path is within `folder_path`. Cleans up
+    /// related rows in track_analysis and playlist_tracks first to respect FKs.
+    /// Returns number of track rows deleted.
+    pub fn delete_tracks_in_folder_prefix(&self, folder_path: &str) -> Result<usize> {
+        let like_pattern = format!("{}/%", folder_path);
+        self.conn.execute(
+            "DELETE FROM track_analysis WHERE track_id IN (SELECT id FROM tracks WHERE file_path LIKE ?1)",
+            params![like_pattern],
+        )?;
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM tracks WHERE file_path LIKE ?1)",
+            params![like_pattern],
+        )?;
+        let rows = self.conn.execute(
+            "DELETE FROM tracks WHERE file_path LIKE ?1",
+            params![like_pattern],
+        )?;
+        Ok(rows)
     }
 
     /// Count total tracks
@@ -921,6 +1001,185 @@ impl Database {
         Ok(count)
     }
 
+    /// Return all duplicate groups (2+ tracks each) without deleting anything.
+    /// Three passes — by file_hash, then by (lowercase filename, file_size),
+    /// finally by (lowercase title, lowercase artist). A track can only appear
+    /// in one group total (first-seen pass wins). Each group's tracks are
+    /// sorted by id ASC, so `tracks[0]` is the earliest import (recommended keep).
+    pub fn get_duplicate_groups(&self) -> Result<Vec<(String, Vec<Track>)>> {
+        let mut groups: Vec<(String, Vec<Track>)> = Vec::new();
+        let mut seen_ids: std::collections::HashSet<i64> =
+            std::collections::HashSet::new();
+
+        // Pass 1: groups that share a file_hash
+        {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, file_path, file_hash, title, artist, album, album_artist,
+                        track_number, year, label, duration_ms, file_format,
+                        bitrate, sample_rate, file_size, date_added, date_modified,
+                        play_count, rating, comment, artwork_path, genre, genre_source
+                 FROM tracks
+                 WHERE file_hash != 'unknown'
+                   AND file_hash IN (
+                       SELECT file_hash FROM tracks
+                       WHERE file_hash != 'unknown'
+                       GROUP BY file_hash
+                       HAVING COUNT(*) > 1
+                   )
+                 ORDER BY file_hash, id ASC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                Ok(Track {
+                    id: row.get(0)?,
+                    file_path: row.get(1)?,
+                    file_hash: row.get(2)?,
+                    title: row.get(3)?,
+                    artist: row.get(4)?,
+                    album: row.get(5)?,
+                    album_artist: row.get(6)?,
+                    track_number: row.get(7)?,
+                    year: row.get(8)?,
+                    label: row.get(9)?,
+                    duration_ms: row.get(10)?,
+                    file_format: row.get(11)?,
+                    bitrate: row.get(12)?,
+                    sample_rate: row.get(13)?,
+                    file_size: row.get(14)?,
+                    date_added: row.get(15)?,
+                    date_modified: row.get(16)?,
+                    play_count: row.get(17)?,
+                    rating: row.get(18)?,
+                    comment: row.get(19)?,
+                    artwork_path: row.get(20)?,
+                    genre: row.get(21)?,
+                    genre_source: row.get(22)?,
+                })
+            })?;
+
+            let mut by_hash: std::collections::BTreeMap<String, Vec<Track>> =
+                std::collections::BTreeMap::new();
+            for row in rows {
+                let track = row?;
+                by_hash
+                    .entry(track.file_hash.clone())
+                    .or_default()
+                    .push(track);
+            }
+            for (_, tracks) in by_hash {
+                if tracks.len() > 1 {
+                    // Mark all members so later passes skip them.
+                    for t in &tracks {
+                        if let Some(id) = t.id {
+                            seen_ids.insert(id);
+                        }
+                    }
+                    groups.push(("identical_content".to_string(), tracks));
+                }
+            }
+        }
+
+        // Pass 2: remaining tracks grouped by (lowercase filename, file_size).
+        // Catches identical copies with different (or "unknown") hashes.
+        let all_tracks = self.get_all_tracks()?;
+        {
+            let mut by_name_size: std::collections::HashMap<
+                (String, i64),
+                Vec<Track>,
+            > = std::collections::HashMap::new();
+
+            for track in &all_tracks {
+                if track.id.map(|id| seen_ids.contains(&id)).unwrap_or(true) {
+                    continue;
+                }
+                let size = match track.file_size {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let filename = std::path::Path::new(&track.file_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                    .unwrap_or_else(|| track.file_path.to_lowercase());
+                by_name_size
+                    .entry((filename, size))
+                    .or_default()
+                    .push(track.clone());
+            }
+
+            for (_, mut tracks) in by_name_size {
+                if tracks.len() > 1 {
+                    tracks.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    for t in &tracks {
+                        if let Some(id) = t.id {
+                            seen_ids.insert(id);
+                        }
+                    }
+                    groups.push(("identical_filename_size".to_string(), tracks));
+                }
+            }
+        }
+
+        // Pass 3: remaining tracks grouped by (lowercase trimmed title, artist).
+        // These are "probable" duplicates — different bytes but the same song.
+        {
+            let mut by_title_artist: std::collections::HashMap<
+                (String, String),
+                Vec<Track>,
+            > = std::collections::HashMap::new();
+
+            for track in &all_tracks {
+                if track.id.map(|id| seen_ids.contains(&id)).unwrap_or(true) {
+                    continue;
+                }
+                let title = match &track.title {
+                    Some(t) => t.trim().to_lowercase(),
+                    None => continue,
+                };
+                if title.is_empty() {
+                    continue;
+                }
+                let artist = match &track.artist {
+                    Some(a) => a.trim().to_lowercase(),
+                    None => continue,
+                };
+                if artist.is_empty() {
+                    continue;
+                }
+                by_title_artist
+                    .entry((title, artist))
+                    .or_default()
+                    .push(track.clone());
+            }
+
+            for (_, mut tracks) in by_title_artist {
+                if tracks.len() > 1 {
+                    tracks.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    groups.push(("same_title_artist".to_string(), tracks));
+                }
+            }
+        }
+
+        Ok(groups)
+    }
+
+    /// Delete a batch of tracks, cleaning up related analysis + playlist rows.
+    /// Returns the number of track rows actually deleted (may be less than
+    /// `ids.len()` if some ids were already gone).
+    pub fn bulk_delete_tracks(&self, ids: &[i64]) -> Result<usize> {
+        let mut deleted: usize = 0;
+        for id in ids {
+            self.conn
+                .execute("DELETE FROM track_analysis WHERE track_id = ?", [id])?;
+            self.conn
+                .execute("DELETE FROM playlist_tracks WHERE track_id = ?", [id])?;
+            let n = self
+                .conn
+                .execute("DELETE FROM tracks WHERE id = ?", [id])?;
+            deleted += n;
+        }
+        Ok(deleted)
+    }
+
     /// Count tracks whose file_path starts with a given folder path prefix.
     /// Matches tracks directly in the folder and all subfolders.
     pub fn count_tracks_in_folder(&self, folder_path: &str) -> Result<i64> {
@@ -1503,6 +1762,687 @@ impl Database {
             count += 1;
         }
         Ok(count)
+    }
+
+    // --- AI Conversation operations ---
+
+    /// Create a new AI conversation with a generated UUID and current Unix timestamp.
+    /// Returns the conversation ID.
+    pub fn create_conversation(&self) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?, '', ?)",
+            params![id, created_at],
+        )?;
+        Ok(id)
+    }
+
+    /// List all conversations ordered by created_at DESC (most recent first).
+    pub fn list_conversations(&self) -> Result<Vec<Conversation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, created_at FROM ai_conversations ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Conversation {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get all messages for a conversation, ordered by created_at ASC (oldest first).
+    pub fn get_conversation_messages(&self, conversation_id: &str) -> Result<Vec<ConversationMessage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, conversation_id, role, content, metadata_json, created_at
+             FROM ai_messages WHERE conversation_id = ? ORDER BY created_at ASC"
+        )?;
+        let rows = stmt.query_map(params![conversation_id], |row| {
+            Ok(ConversationMessage {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                metadata_json: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Delete a conversation and all its messages (CASCADE enforced by FK + PRAGMA).
+    pub fn delete_conversation(&self, conversation_id: &str) -> Result<()> {
+        let changes = self.conn.execute(
+            "DELETE FROM ai_conversations WHERE id = ?",
+            params![conversation_id],
+        )?;
+        if changes == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    /// Rename a conversation (update its title).
+    pub fn rename_conversation(&self, conversation_id: &str, title: &str) -> Result<()> {
+        let changes = self.conn.execute(
+            "UPDATE ai_conversations SET title = ? WHERE id = ?",
+            params![title, conversation_id],
+        )?;
+        if changes == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    /// Create a message in a conversation. Returns the message ID.
+    /// If the conversation title is empty and the role is "user", auto-titles the conversation
+    /// with the first 50 characters of the message content.
+    pub fn create_message(&self, conversation_id: &str, role: &str, content: &str) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at)
+             VALUES (?, ?, ?, ?, NULL, ?)",
+            params![id, conversation_id, role, content, created_at],
+        )?;
+
+        // Auto-title: if role is "user" and conversation title is empty, set title
+        if role == "user" {
+            let current_title: String = self.conn.query_row(
+                "SELECT title FROM ai_conversations WHERE id = ?",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            if current_title.is_empty() {
+                let title: String = if content.len() > 50 {
+                    content[..50].to_string()
+                } else {
+                    content.to_string()
+                };
+                self.conn.execute(
+                    "UPDATE ai_conversations SET title = ? WHERE id = ?",
+                    params![title, conversation_id],
+                )?;
+            }
+        }
+
+        Ok(id)
+    }
+
+    // --- Dashboard operations ---
+
+    /// Record a play event for a track.
+    pub fn record_play_event(&self, track_id: i64, playlist_id: Option<i64>) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO play_history (track_id, playlist_id) VALUES (?1, ?2)",
+            params![track_id, playlist_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get recently played tracks (joined with track data), ordered by most recent first.
+    pub fn get_recently_played(&self, limit: i64) -> Result<Vec<(i64, Option<i64>, i64, Option<String>, Option<String>, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ph.track_id, ph.playlist_id, ph.played_at, t.title, t.artist, t.file_path
+             FROM play_history ph
+             LEFT JOIN tracks t ON t.id = ph.track_id
+             ORDER BY ph.played_at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get recently added tracks ordered by date_added DESC.
+    pub fn get_recently_added(&self, limit: i64) -> Result<Vec<(i64, Option<String>, Option<String>, String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, artist, file_path, date_added
+             FROM tracks
+             ORDER BY date_added DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get library insight statistics.
+    pub fn get_library_insights(&self) -> Result<(i64, i64, Option<String>, Option<f64>, Option<f64>, Option<String>, Option<f64>)> {
+        let total_tracks: i64 = self.conn
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get::<_, i64>(0))
+            .unwrap_or(0);
+
+        let analyzed_tracks: i64 = self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM track_analysis WHERE bpm IS NOT NULL",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0);
+
+        let top_genre: Option<String> = self.conn
+            .query_row(
+                "SELECT genre FROM tracks WHERE genre IS NOT NULL
+                 GROUP BY genre ORDER BY COUNT(*) DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+
+        let bpm_min: Option<f64> = self.conn
+            .query_row(
+                "SELECT MIN(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .ok();
+
+        let bpm_max: Option<f64> = self.conn
+            .query_row(
+                "SELECT MAX(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .ok();
+
+        let top_key: Option<String> = self.conn
+            .query_row(
+                "SELECT musical_key FROM track_analysis WHERE musical_key IS NOT NULL
+                 GROUP BY musical_key ORDER BY COUNT(*) DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+
+        let avg_energy: Option<f64> = self.conn
+            .query_row(
+                "SELECT AVG(energy_arousal) FROM track_deep_analysis WHERE energy_arousal IS NOT NULL",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .ok();
+
+        Ok((total_tracks, analyzed_tracks, top_genre, bpm_min, bpm_max, top_key, avg_energy))
+    }
+
+    /// Save the dashboard layout JSON (upsert with fixed id=1).
+    pub fn save_dashboard_layout(&self, layout_json: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO dashboard_layout (id, layout_json, updated_at)
+             VALUES (1, ?1, strftime('%s', 'now'))",
+            params![layout_json],
+        )?;
+        Ok(())
+    }
+
+    /// Get the stored dashboard layout JSON, or None if not saved yet.
+    pub fn get_dashboard_layout(&self) -> Result<Option<String>> {
+        let result: Option<String> = self.conn
+            .query_row(
+                "SELECT layout_json FROM dashboard_layout WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+        Ok(result)
+    }
+
+    // --- Taste Profile methods ---
+
+    /// Save (upsert) the taste profile JSON. Replaces any existing row (singleton at id=1).
+    pub fn save_taste_profile(&self, profile_json: &str) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO taste_profile (id, profile_json, rebuilt_at) VALUES (1, ?1, ?2)",
+            params![profile_json, now],
+        )?;
+        Ok(())
+    }
+
+    /// Get the stored taste profile JSON, or None if it has never been built.
+    pub fn get_taste_profile(&self) -> Result<Option<String>> {
+        let result = self.conn
+            .query_row(
+                "SELECT profile_json FROM taste_profile WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    // --- User Preferences methods ---
+
+    /// Insert a user preference. Returns the new row id.
+    pub fn save_preference(&self, category: &str, preference: &str, context: Option<&str>) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO user_preferences (category, preference, context) VALUES (?1, ?2, ?3)",
+            params![category, preference, context],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Get all user preferences ordered by created_at ascending.
+    /// Returns (id, category, preference, context).
+    pub fn get_all_preferences(&self) -> Result<Vec<(i64, String, String, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, category, preference, context FROM user_preferences ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Delete a user preference by id.
+    pub fn delete_preference(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM user_preferences WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    // --- Conversation Search ---
+
+    /// Full-text LIKE search across ai_messages content.
+    /// Returns (conversation_id, conversation_title, matching_messages).
+    pub fn search_conversations(&self, query: &str, limit: usize) -> Result<Vec<(String, String, Vec<ConversationMessage>)>> {
+        let pattern = format!("%{}%", query);
+        let limit_i64 = limit as i64;
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.conversation_id, m.role, m.content, m.metadata_json, m.created_at,
+                    c.title
+             FROM ai_messages m
+             JOIN ai_conversations c ON c.id = m.conversation_id
+             WHERE m.content LIKE ?1
+             ORDER BY m.created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, limit_i64], |row| {
+            Ok((
+                ConversationMessage {
+                    id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    metadata_json: row.get(4)?,
+                    created_at: row.get(5)?,
+                },
+                row.get::<_, String>(6)?, // title
+            ))
+        })?;
+
+        // Group by conversation_id preserving order of first appearance
+        let mut seen: Vec<String> = Vec::new();
+        let mut map: std::collections::HashMap<String, (String, Vec<ConversationMessage>)> = std::collections::HashMap::new();
+        for item in rows {
+            let (msg, title) = item?;
+            let conv_id = msg.conversation_id.clone();
+            if !seen.contains(&conv_id) {
+                seen.push(conv_id.clone());
+                map.insert(conv_id.clone(), (title, Vec::new()));
+            }
+            map.get_mut(&conv_id).unwrap().1.push(msg);
+        }
+
+        let result = seen.into_iter().map(|conv_id| {
+            let (title, messages) = map.remove(&conv_id).unwrap();
+            (conv_id, title, messages)
+        }).collect();
+        Ok(result)
+    }
+
+    // --- Taste Profile Data Queries ---
+
+    /// Get top artists by track count. Returns (artist, count).
+    pub fn get_top_artists(&self, limit: usize) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT artist, COUNT(*) as cnt FROM tracks
+             WHERE artist IS NOT NULL AND artist != ''
+             GROUP BY artist ORDER BY cnt DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Get top genres from track_genres table. Returns (genre, count).
+    pub fn get_top_genres(&self, limit: usize) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT genre, COUNT(*) as cnt FROM track_genres
+             WHERE genre IS NOT NULL AND genre != ''
+             GROUP BY genre ORDER BY cnt DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        rows.collect()
+    }
+
+    /// Get BPM distribution (min, max, avg) from track_analysis.
+    pub fn get_bpm_distribution(&self) -> Result<(Option<f64>, Option<f64>, Option<f64>)> {
+        let result = self.conn.query_row(
+            "SELECT MIN(bpm), MAX(bpm), AVG(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<f64>>(0)?,
+                    row.get::<_, Option<f64>>(1)?,
+                    row.get::<_, Option<f64>>(2)?,
+                ))
+            },
+        )?;
+        Ok(result)
+    }
+
+    /// Get most played tracks ordered by play_count DESC.
+    /// Returns (id, title, artist, play_count).
+    pub fn get_most_played_tracks(&self, limit: usize) -> Result<Vec<(i64, String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, COALESCE(title, ''), COALESCE(artist, ''), CAST(play_count AS INTEGER)
+             FROM tracks
+             WHERE play_count > 0
+             ORDER BY play_count DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get top-rated tracks (rating >= 4) ordered by rating DESC.
+    /// Returns (id, title, artist, rating).
+    pub fn get_top_rated_tracks(&self, limit: usize) -> Result<Vec<(i64, String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, COALESCE(title, ''), COALESCE(artist, ''), CAST(rating AS INTEGER)
+             FROM tracks
+             WHERE rating >= 4
+             ORDER BY rating DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get tag usage counts by joining tags and track_tags.
+    /// Returns (tag_name, tag_category, count).
+    pub fn get_tag_usage(&self, limit: usize) -> Result<Vec<(String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.name, COALESCE(t.category, ''), COUNT(tt.track_id) as cnt
+             FROM tags t
+             JOIN track_tags tt ON tt.tag_id = t.id
+             GROUP BY t.id, t.name, t.category
+             ORDER BY cnt DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    // --- Filtered Track Search ---
+
+    /// Search tracks with optional filters. All filter parameters are optional.
+    /// Returns (Track, bpm, musical_key).
+    pub fn search_tracks_filtered(
+        &self,
+        query: Option<&str>,
+        artist: Option<&str>,
+        genre: Option<&str>,
+        bpm_min: Option<f64>,
+        bpm_max: Option<f64>,
+        key: Option<&str>,
+        tags: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<(Track, Option<f64>, Option<String>)>> {
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(q) = query {
+            if !q.is_empty() {
+                conditions.push("(t.title LIKE ? OR t.artist LIKE ? OR t.album LIKE ?)".to_string());
+                let pattern = format!("%{}%", q);
+                params_vec.push(Box::new(pattern.clone()));
+                params_vec.push(Box::new(pattern.clone()));
+                params_vec.push(Box::new(pattern));
+            }
+        }
+
+        if let Some(a) = artist {
+            if !a.is_empty() {
+                conditions.push("t.artist LIKE ?".to_string());
+                params_vec.push(Box::new(format!("%{}%", a)));
+            }
+        }
+
+        if let Some(g) = genre {
+            if !g.is_empty() {
+                conditions.push("t.genre LIKE ?".to_string());
+                params_vec.push(Box::new(format!("%{}%", g)));
+            }
+        }
+
+        if let Some(min) = bpm_min {
+            conditions.push("ta.bpm >= ?".to_string());
+            params_vec.push(Box::new(min));
+        }
+
+        if let Some(max) = bpm_max {
+            conditions.push("ta.bpm <= ?".to_string());
+            params_vec.push(Box::new(max));
+        }
+
+        if let Some(k) = key {
+            if !k.is_empty() {
+                conditions.push("ta.musical_key = ?".to_string());
+                params_vec.push(Box::new(k.to_string()));
+            }
+        }
+
+        if let Some(tag_list) = tags {
+            if !tag_list.is_empty() {
+                for tag_name in tag_list {
+                    conditions.push(
+                        "EXISTS (SELECT 1 FROM track_tags tt2 JOIN tags tg2 ON tg2.id = tt2.tag_id WHERE tt2.track_id = t.id AND tg2.name = ?)"
+                            .to_string(),
+                    );
+                    params_vec.push(Box::new(tag_name.clone()));
+                }
+            }
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
+                    t.track_number, t.year, t.label, t.duration_ms, t.file_format,
+                    t.bitrate, t.sample_rate, t.file_size, t.date_added, t.date_modified,
+                    t.play_count, t.rating, t.comment, t.artwork_path, t.genre, t.genre_source,
+                    ta.bpm, ta.musical_key
+             FROM tracks t
+             LEFT JOIN track_analysis ta ON ta.track_id = t.id
+             {where_clause}
+             ORDER BY t.title ASC
+             LIMIT {limit}",
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(refs.as_slice(), |row| {
+            let track = Track {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                file_hash: row.get(2)?,
+                title: row.get(3)?,
+                artist: row.get(4)?,
+                album: row.get(5)?,
+                album_artist: row.get(6)?,
+                track_number: row.get(7)?,
+                year: row.get(8)?,
+                label: row.get(9)?,
+                duration_ms: row.get(10)?,
+                file_format: row.get(11)?,
+                bitrate: row.get(12)?,
+                sample_rate: row.get(13)?,
+                file_size: row.get(14)?,
+                date_added: row.get(15)?,
+                date_modified: row.get(16)?,
+                play_count: row.get(17)?,
+                rating: row.get(18)?,
+                comment: row.get(19)?,
+                artwork_path: row.get(20)?,
+                genre: row.get(21)?,
+                genre_source: row.get(22)?,
+            };
+            let bpm: Option<f64> = row.get(23)?;
+            let musical_key: Option<String> = row.get(24)?;
+            Ok((track, bpm, musical_key))
+        })?;
+        rows.collect()
+    }
+
+    // --- Tag Helper methods ---
+
+    /// Look up a tag id by name. Returns None if not found.
+    pub fn get_tag_by_name(&self, name: &str) -> Result<Option<i64>> {
+        let result = self.conn
+            .query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Get an existing tag id by name, or create a new tag and return its id.
+    pub fn get_or_create_tag(&self, name: &str, category: &str) -> Result<i64> {
+        if let Some(id) = self.get_tag_by_name(name)? {
+            return Ok(id);
+        }
+        self.conn.execute(
+            "INSERT INTO tags (name, category) VALUES (?1, ?2)",
+            params![name, category],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Associate a tag with a track. Silently ignores duplicate associations.
+    pub fn add_tag_to_track(&self, track_id: i64, tag_id: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO track_tags (track_id, tag_id) VALUES (?1, ?2)",
+            params![track_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a tag association from a track.
+    pub fn remove_tag_from_track(&self, track_id: i64, tag_id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM track_tags WHERE track_id = ?1 AND tag_id = ?2",
+            params![track_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    // --- Message with metadata ---
+
+    /// Create a message in a conversation with an optional metadata JSON blob.
+    /// Returns the message ID.
+    /// If the conversation title is empty and the role is "user", auto-titles the conversation
+    /// with the first 50 characters of the message content.
+    pub fn create_message_with_metadata(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        metadata_json: Option<&str>,
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, conversation_id, role, content, metadata_json, created_at],
+        )?;
+
+        // Auto-title: if role is "user" and conversation title is empty, set title
+        if role == "user" {
+            let current_title: String = self.conn.query_row(
+                "SELECT title FROM ai_conversations WHERE id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            if current_title.is_empty() {
+                let title: String = if content.len() > 50 {
+                    content[..50].to_string()
+                } else {
+                    content.to_string()
+                };
+                self.conn.execute(
+                    "UPDATE ai_conversations SET title = ?1 WHERE id = ?2",
+                    params![title, conversation_id],
+                )?;
+            }
+        }
+
+        Ok(id)
     }
 }
 
@@ -2426,5 +3366,298 @@ mod tests {
         assert_eq!(db.get_track_genre(id1).unwrap().unwrap().0, "Tech House");
         assert_eq!(db.get_track_genre(id2).unwrap().unwrap().0, "Tech House");
         assert_eq!(db.get_track_genre(id3).unwrap().unwrap().0, "Tech House");
+    }
+
+    #[test]
+    fn test_ai_conversations_table_exists() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        // Enable FK enforcement for this connection
+        db.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // Insert a conversation
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-001", "Test Conversation", 1710000000i64],
+        ).expect("Should insert into ai_conversations");
+
+        // Read it back
+        let (id, title, created_at): (String, String, i64) = db.conn.query_row(
+            "SELECT id, title, created_at FROM ai_conversations WHERE id = ?1",
+            rusqlite::params!["conv-001"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+
+        assert_eq!(id, "conv-001");
+        assert_eq!(title, "Test Conversation");
+        assert_eq!(created_at, 1710000000i64);
+    }
+
+    #[test]
+    fn test_ai_messages_table_exists() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        db.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // Insert parent conversation first
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-002", "Messages Test", 1710000000i64],
+        ).unwrap();
+
+        // Insert a message
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["msg-001", "conv-002", "user", "Hello AI", rusqlite::types::Null, 1710000001i64],
+        ).expect("Should insert into ai_messages");
+
+        // Read it back
+        let (id, role, content): (String, String, String) = db.conn.query_row(
+            "SELECT id, role, content FROM ai_messages WHERE id = ?1",
+            rusqlite::params!["msg-001"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+
+        assert_eq!(id, "msg-001");
+        assert_eq!(role, "user");
+        assert_eq!(content, "Hello AI");
+    }
+
+    #[test]
+    fn test_ai_messages_cascade_delete() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        db.conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // Create conversation with two messages
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-003", "Cascade Test", 1710000000i64],
+        ).unwrap();
+
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["msg-010", "conv-003", "user", "First message", 1710000001i64],
+        ).unwrap();
+
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["msg-011", "conv-003", "assistant", "AI response", 1710000002i64],
+        ).unwrap();
+
+        // Verify 2 messages exist
+        let count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?1",
+            rusqlite::params!["conv-003"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+
+        // Delete the conversation
+        db.conn.execute(
+            "DELETE FROM ai_conversations WHERE id = ?1",
+            rusqlite::params!["conv-003"],
+        ).unwrap();
+
+        // Messages should be gone (CASCADE)
+        let count_after: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?1",
+            rusqlite::params!["conv-003"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count_after, 0, "CASCADE delete should remove all messages when conversation is deleted");
+    }
+
+    #[test]
+    fn test_ai_conversations_idempotent() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        // Running migrations a second time should not error
+        db.run_migrations().expect("Second run_migrations() call should succeed (idempotent)");
+
+        // Tables should still work
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params!["conv-idem", "Idempotency Test", 1710000000i64],
+        ).expect("Should still be able to insert after double migration");
+    }
+
+    // --- Conversation CRUD tests ---
+
+    #[test]
+    fn test_create_conversation() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let id = db.create_conversation().unwrap();
+
+        // UUID format: 36 chars with hyphens
+        assert_eq!(id.len(), 36, "Conversation ID should be 36 chars (UUID)");
+        assert!(id.contains('-'), "UUID should contain hyphens");
+
+        // Verify in DB with empty title
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].id, id);
+        assert_eq!(convs[0].title, "");
+    }
+
+    #[test]
+    fn test_list_conversations_order() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        // Insert two conversations with different timestamps manually to control ordering
+        let id1 = uuid::Uuid::new_v4().to_string();
+        let id2 = uuid::Uuid::new_v4().to_string();
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?, '', ?)",
+            params![id1, 1000i64],
+        ).unwrap();
+        db.conn.execute(
+            "INSERT INTO ai_conversations (id, title, created_at) VALUES (?, '', ?)",
+            params![id2, 2000i64],
+        ).unwrap();
+
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 2);
+        // Most recent first (created_at DESC)
+        assert_eq!(convs[0].id, id2, "Most recent (ts=2000) should be first");
+        assert_eq!(convs[1].id, id1, "Older (ts=1000) should be second");
+    }
+
+    #[test]
+    fn test_list_conversations_empty() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 0, "Fresh DB should have no conversations");
+    }
+
+    #[test]
+    fn test_get_conversation_messages() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Insert two messages with different timestamps
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'user', 'First', NULL, ?)",
+            params!["msg-a", conv_id, 1000i64],
+        ).unwrap();
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'assistant', 'Second', NULL, ?)",
+            params!["msg-b", conv_id, 2000i64],
+        ).unwrap();
+
+        let messages = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(messages.len(), 2);
+        // Oldest first (created_at ASC)
+        assert_eq!(messages[0].content, "First");
+        assert_eq!(messages[1].content, "Second");
+    }
+
+    #[test]
+    fn test_get_conversation_messages_empty() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+        let messages = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(messages.len(), 0, "Conversation with no messages should return empty Vec");
+    }
+
+    #[test]
+    fn test_delete_conversation_cascade() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Insert two messages
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'user', 'Hello', NULL, ?)",
+            params!["msg-del-1", conv_id, 1000i64],
+        ).unwrap();
+        db.conn.execute(
+            "INSERT INTO ai_messages (id, conversation_id, role, content, metadata_json, created_at) VALUES (?, ?, 'assistant', 'Hi', NULL, ?)",
+            params!["msg-del-2", conv_id, 2000i64],
+        ).unwrap();
+
+        // Verify 2 messages exist
+        let msgs_before = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(msgs_before.len(), 2);
+
+        // Delete conversation
+        db.delete_conversation(&conv_id).unwrap();
+
+        // Conversation should be gone
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 0);
+
+        // Messages should also be gone (CASCADE)
+        let msgs_after = db.get_conversation_messages(&conv_id).unwrap();
+        assert_eq!(msgs_after.len(), 0, "CASCADE should delete all messages");
+    }
+
+    #[test]
+    fn test_rename_conversation() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Rename
+        db.rename_conversation(&conv_id, "My New Title").unwrap();
+
+        // Verify
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].title, "My New Title");
+    }
+
+    #[test]
+    fn test_create_message_auto_title() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Title is initially empty
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs[0].title, "");
+
+        // Create a user message
+        db.create_message(&conv_id, "user", "Hello world testing auto title").unwrap();
+
+        // Title should now be set to message content
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs[0].title, "Hello world testing auto title");
+    }
+
+    #[test]
+    fn test_create_message_auto_title_truncation() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let conv_id = db.create_conversation().unwrap();
+
+        // Create a user message with 60+ characters
+        let long_content = "This is a very long message that exceeds fifty characters for testing purposes";
+        db.create_message(&conv_id, "user", long_content).unwrap();
+
+        // Title should be truncated to 50 chars
+        let convs = db.list_conversations().unwrap();
+        assert_eq!(convs[0].title.len(), 50, "Title should be exactly 50 chars");
+        assert_eq!(convs[0].title, &long_content[..50]);
     }
 }

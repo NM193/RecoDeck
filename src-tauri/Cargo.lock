@@ -3717,7 +3717,7 @@ dependencies = [
 
 [[package]]
 name = "recodeck"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "axum",
  "bliss-audio-aubio-rs",
@@ -3746,6 +3746,7 @@ dependencies = [
  "tokio",
  "tower-http",
  "urlencoding",
+ "uuid",
  "walkdir",
 ]
 

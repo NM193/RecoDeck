@@ -765,6 +765,13 @@ export class AudioPlayer {
       this.audio.volume = prevVolume
       this.setupEventListeners()
 
+      // Reconnect the new Audio element to the existing Web Audio EQ chain.
+      // Without this, the new element plays directly to speakers, bypassing
+      // the BiquadFilter graph — EQ sliders move but don't affect sound.
+      if (this._vizCtx && this._eqEnabled) {
+        this.getAnalyser()
+      }
+
       this._isPlaying = false
       this._position = 0
       this._duration = 0
@@ -1379,6 +1386,11 @@ export class AudioPlayer {
 
     // Reattach event listeners to the new audio element
     this.setupEventListeners()
+
+    // Reconnect the swapped Audio element to the Web Audio EQ chain
+    if (this._vizCtx && this._eqEnabled) {
+      this.getAnalyser()
+    }
 
     // Update state
     this._hasSource = true
