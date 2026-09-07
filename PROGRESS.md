@@ -687,6 +687,39 @@ Two things the gate caught, both fixed:
   `YtInvalidKey`, `YtQuotaExceeded`, `YtApiNotEnabled` — the raw object reached the UI instead
   of a sentence. Any future `AppError` variant has to be added there too.
 
+---
+
+### 2026-09-07 — M2: tracklist parser ported to TypeScript (yt-tracklist port)
+
+The parsing half of the standalone tool now lives in `src/lib/tracklist/`, split into
+`text.ts` (names and timestamps), `extract.ts` (one block of text), `comments.ts` (everything
+mined out of the comment section), `merge.ts` (consensus across lists) and `index.ts`.
+
+**The port is literal on purpose.** Every threshold in it was measured against real sets, not
+chosen: a ±20s cue window, a 150s name window, containment of 0.8 for titles and 0.6 for
+artists, and a floor of 0.5 under `artistShape` — that last one exists because a DJ playing
+their own records is listed by title alone, and without the floor such a set scored zero and
+was discarded as a false positive. Rewriting any of it "more cleanly" would quietly undo
+measurements nobody would think to re-run.
+
+**Testing:** the tool's six saved fixtures are now the regression suite
+(`src/lib/tracklist/__fixtures__/`, 544K of raw API responses), together with `expected.json`
+— that tool's own output over them. The suite compares field by field and then whole:
+
+| set | tracks | status |
+|---|---|---|
+| Solomun @ Cercle | 25 | ok, 7 sources agreeing |
+| Luciano @ Thuishaven | 18 | ok |
+| Dr Banana / Mixmag | 7 | assembled from comments, no written list |
+| Priku B2B Traumer | 35 | ok |
+| Boris Brejcha @ Cercle | 20 | ok |
+| Hot Since 82 / Mixmag | 42 | ok, 4 sources |
+
+All six reproduce exactly. The suite was then mutation-checked to prove it can fail: dropping
+the title containment threshold from 0.8 to 0.5 breaks two of the six sets.
+
+90 frontend tests passing, tsc clean, no new lint findings.
+
 ## Next Steps
 
 1. **NOW**: Continue Phase 2 — Next milestone: 2.1 Mel spectrogram or 2.4 Waveform peaks

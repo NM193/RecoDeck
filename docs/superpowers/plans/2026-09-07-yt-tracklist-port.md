@@ -75,17 +75,23 @@ error variants were added to `getErrorMessage`, which had been letting raw error
 
 ---
 
-## M2 — Parser in TypeScript, with real tests
+## M2 — Parser in TypeScript, with real tests — DONE
 
-- [ ] Port the pure functions to `src/lib/tracklist/`: `extractTracklist`,
+- [x] Port the pure functions to `src/lib/tracklist/`: `extractTracklist`,
       `assembleFromComments`, `resolveUnknowns`, `collectCandidates`, `mergeCandidates`,
       `analyse`, cue helpers
-- [ ] Turn `fixtures/` into vitest inputs — the port is only correct if it reproduces the
+- [x] Turn `fixtures/` into vitest inputs — the port is only correct if it reproduces the
       tool's current output on the user's own sets
-- [ ] Keep the measured tuning intact: ±20s cue window, 150s name window, containment ≥0.8
+- [x] Keep the measured tuning intact: ±20s cue window, 150s name window, containment ≥0.8
       title / ≥0.6 artist, `artistShape` floor of 0.5
 
-**Gate:** identical tracklists to the standalone tool on all six fixture sets.
+**Gate passed:** identical output to the standalone tool on all six fixture sets — status,
+confidence, source count and every track field, including the 42-track Hot Since 82 set and the
+Dr Banana one that has no written list and is assembled from comments.
+
+The suite was mutation-checked rather than trusted: lowering the title containment threshold
+from 0.8 to 0.5 fails two of the six sets, so the fixtures genuinely detect a change in
+behaviour instead of passing vacuously.
 
 ---
 
