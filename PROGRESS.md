@@ -1,6 +1,6 @@
 # RecoDeck Development Progress
 
-Last Updated: 2026-02-12
+Last Updated: 2026-09-07
 
 ---
 
@@ -587,6 +587,105 @@ The app previously used an in-memory database (`:memory:`) which lost all data o
   - Uses refs for callbacks to avoid stale closures in event listener
 
 ---
+
+---
+
+### 2026-09-07 — M0 spike: YouTube embedded playback is not viable (yt-tracklist port)
+
+**Context:** porting the `yt-tracklist` tool into RecoDeck. The original tool runs in a
+browser, where an embedded YouTube player is trivial. Before building anything, M0 asked
+one question: does that player work inside RecoDeck?
+
+**Answer: no, and for two independent reasons. Do not retry this.**
+
+**Wall 1 — the `tauri://localhost` origin.** A production build serves the frontend over a
+custom scheme, not http. YouTube's player then fails with error 153 ("no valid Referer"),
+because a custom-scheme page sends no Referer header. Measured against all six real DJ sets
+in the tool's `fixtures/`: 6 of 6 failed. All four known workarounds failed too —
+`host: youtube-nocookie`, `playerVars.origin`, `widget_referrer`, and a plain iframe with no
+JS API. This is invisible in `tauri dev`, where the origin is `http://localhost:1420` and
+everything appears to work.
+
+This wall *is* breakable: serving the player page from the Axum companion server the app
+already runs gives a real http origin, and one set then genuinely played inside RecoDeck.
+
+**Wall 2 — the sets themselves refuse embedding.** Surveyed the same six sets from a plain
+Chrome tab, outside the app entirely:
+
+| set | result |
+|---|---|
+| Solomun @ Cercle (`QHDRRxKlimY`) | embeddable |
+| Luciano @ Thuishaven (`X6WpzQoI0mc`) | error 150 |
+| Dr Banana / Mixmag (`fjR4idz1-MA`) | error 150 |
+| Priku B2B Traumer (`ucfEH7g9JWI`) | error 150 |
+| Boris Brejcha @ Cercle (`vqz8c4ZP3Wg`) | error 150 |
+| Hot Since 82 / Mixmag (`xJR7q0XN8oU`) | error 150 |
+
+Five of six refuse embedded playback anywhere — Chrome gives the same verdict as our webview,
+so this is not a Tauri problem and no origin change fixes it. Verified it is not an artifact
+of the test harness: re-ran with a fresh document per video, and again with a single player
+alone (no rapid-fire loads). Same result each time.
+
+**Trap for later:** the YouTube Data API reports `status.embeddable: true` for all six. That
+field does not predict playback and must not be used as a pre-check. The only reliable signal
+is attempting playback and catching error 150/101.
+
+**Decision:** listening happens by opening the set in the user's browser at the right
+timestamp (`&t=1260s`) via `tauri-plugin-opener`, which is already a dependency. Consequence
+for CSP: only `img-src` needs `https://i.ytimg.com` for thumbnails — no `frame-src`, no
+`script-src`, which is also the safer outcome.
+
+**Side finding:** thumbnails from `i.ytimg.com` load fine under CSP once `img-src` allows them.
+
+---
+
+### 2026-09-07 — M1: YouTube key, quota counter, and network layer (yt-tracklist port)
+
+**Rust**
+- `external/` finally declared in `lib.rs` — the directory had existed unused since the
+  original scaffold and was never part of the crate
+- `external/youtube.rs` — Data API v3 client. Fetching a set returns the exact shape the
+  standalone tool writes into `fixtures/`, which is why these three structs are camelCase
+  while the rest of the app's IPC is snake_case: the ported parser reads that shape verbatim
+  and the fixtures are its tests
+- `external/youtube_time.rs` — Pacific calendar helpers. Quota resets at midnight Pacific
+  (about 09:00 local), so the quota bucket cannot key off the local date. Written by hand
+  rather than adding a date crate (Rule 1), including the US daylight-saving rule
+- `commands/youtube.rs` — key save/status/delete, 1-unit connection test, quota reading,
+  and set fetching. Locks are never held across a network call (the Phase 28 rule)
+- Google bills the attempt, so quota is recorded even when a call is rejected
+- 20 new unit tests: quota day rollover against a real database, DST transitions, error
+  mapping for `quotaExceeded` / `keyInvalid` / `accessNotConfigured`, ISO durations, and
+  video-id extraction from every link shape. Suite is 135 passing, 0 clippy warnings from
+  the new code
+
+**Frontend**
+- `types/youtube.ts`, IPC wrappers in `tauri-api.ts`, YouTube state in `SettingsContext`
+- `YouTubeSection.tsx` in Settings: masked key field, Test Connection, a quota bar, and
+  step-by-step instructions for creating a personal key
+
+**Why each user brings their own key:** the 10,000 unit daily allowance is charged per key.
+One key shipped inside the app would be one budget shared by everyone — a single search costs
+100 units — and a key inside a binary is trivially extracted.
+
+**Measured, not assumed:** a live fetch of `fjR4idz1-MA` cost 2 units (1 video + 1 comment
+page) and produced 35 comments, 11 of them replies — identical to the fixture the standalone
+tool wrote for the same video. Note that the quota spent during this check went through a
+throwaway harness, not the app, so the in-app counter starts from zero.
+
+**Gate passed 2026-09-07** — verified in the running app: saving a key, Test Connection moving
+the quota by one unit, and a deliberately wrong key producing a readable sentence.
+
+Two things the gate caught, both fixed:
+
+- The failure was announced only by a toast in the corner while the section itself still said
+  "✓ API key configured", which is exactly the moment a user needs to be told to try another
+  key. The section now carries the result inline, and the saved-key line no longer claims the
+  key is good until it has actually been tested.
+- Underneath that: `getErrorMessage` in `types/ai.ts` maps backend errors to human sentences,
+  but the new YouTube variants were missing from it. For unit variants carrying no message —
+  `YtInvalidKey`, `YtQuotaExceeded`, `YtApiNotEnabled` — the raw object reached the UI instead
+  of a sentence. Any future `AppError` variant has to be added there too.
 
 ## Next Steps
 
