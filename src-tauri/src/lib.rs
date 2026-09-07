@@ -4,6 +4,7 @@ pub mod audio;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod external;
 pub mod scanner;
 pub mod server;
 
@@ -395,6 +396,13 @@ pub fn run() {
         .manage(WatcherState::new())
         .manage(CompanionState::new())
         .invoke_handler(tauri::generate_handler![
+            // YouTube tracklist
+            commands::youtube::set_youtube_api_key,
+            commands::youtube::get_youtube_api_key_status,
+            commands::youtube::delete_youtube_api_key,
+            commands::youtube::get_youtube_quota,
+            commands::youtube::test_youtube_api_key,
+            commands::youtube::fetch_youtube_set,
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,
