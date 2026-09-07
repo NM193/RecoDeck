@@ -6,6 +6,8 @@ import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { tauriApi } from '../../lib/tauri-api'
 import { useAIStore } from '../../store/aiStore'
+import type { YouTubeQuotaStatus } from '../../types/youtube'
+import { getErrorMessage } from '../../types/ai'
 
 // --- Types ---
 
@@ -66,6 +68,21 @@ export interface SettingsContextValue {
   aiSaving: boolean
   handleSaveApiKey: () => Promise<void>
   handleDeleteApiKey: () => Promise<void>
+
+  // YouTube (tracklist)
+  ytKeyConfigured: boolean
+  ytKeyInput: string
+  setYtKeyInput: (value: string) => void
+  showYtKey: boolean
+  setShowYtKey: (value: boolean) => void
+  ytSaving: boolean
+  ytTesting: boolean
+  ytQuota: YouTubeQuotaStatus | null
+  /** Result of the last Test Connection, shown in the section itself. */
+  ytTestResult: { ok: boolean; message: string } | null
+  handleSaveYouTubeKey: () => Promise<void>
+  handleDeleteYouTubeKey: () => Promise<void>
+  handleTestYouTubeKey: () => Promise<void>
 
   // Companion
   companionRunning: boolean
@@ -133,6 +150,23 @@ export function SettingsProvider({
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
   const [aiSaving, setAiSaving] = useState(false)
+
+  // YouTube (tracklist) -- each user brings their own key: the 10,000 unit
+  // daily allowance is charged per key, so one shared key would be one shared
+  // budget.
+  const [ytKeyConfigured, setYtKeyConfigured] = useState(false)
+  const [ytKeyInput, setYtKeyInput] = useState('')
+  const [showYtKey, setShowYtKey] = useState(false)
+  const [ytSaving, setYtSaving] = useState(false)
+  const [ytTesting, setYtTesting] = useState(false)
+  const [ytQuota, setYtQuota] = useState<YouTubeQuotaStatus | null>(null)
+  const [ytTestResult, setYtTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  // Typing a new key invalidates whatever the last test said about the old one.
+  function updateYtKeyInput(value: string) {
+    setYtKeyInput(value)
+    if (ytTestResult) setYtTestResult(null)
+  }
 
   // Companion
   const [companionRunning, setCompanionRunning] = useState(false)
@@ -205,6 +239,15 @@ export function SettingsProvider({
       ])
 
       await checkApiKeyStatus()
+
+      try {
+        const [configured, quota] = await Promise.all([
+          tauriApi.getYouTubeApiKeyStatus(),
+          tauriApi.getYouTubeQuota(),
+        ])
+        setYtKeyConfigured(configured)
+        setYtQuota(quota)
+      } catch { /* YouTube commands may not be available */ }
 
       try {
         const status = await tauriApi.getCompanionStatus()
@@ -437,6 +480,74 @@ export function SettingsProvider({
     }
   }
 
+  // --- YouTube handlers ---
+
+  async function handleSaveYouTubeKey() {
+    if (!ytKeyInput.trim()) {
+      setError('Please enter a YouTube API key')
+      return
+    }
+    try {
+      setError(null)
+      setYtSaving(true)
+      await tauriApi.setYouTubeApiKey(ytKeyInput.trim())
+      setYtKeyConfigured(true)
+      setYtKeyInput('')
+      setYtTestResult(null)
+      onNotification?.('YouTube API key saved. Use Test to check it works.', 'success')
+    } catch (err) {
+      const errorMsg = getErrorMessage(err)
+      setError(errorMsg)
+      onNotification?.(errorMsg, 'error')
+    } finally {
+      setYtSaving(false)
+    }
+  }
+
+  async function handleDeleteYouTubeKey() {
+    const confirmed = await ask('Are you sure you want to delete your YouTube API key?', {
+      title: 'Delete YouTube API Key',
+      kind: 'warning',
+      okLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    })
+    if (!confirmed) return
+    try {
+      setError(null)
+      await tauriApi.deleteYouTubeApiKey()
+      setYtKeyConfigured(false)
+      setYtKeyInput('')
+      setYtTestResult(null)
+      onNotification?.('YouTube API key deleted', 'info')
+    } catch (err) {
+      const errorMsg = getErrorMessage(err)
+      setError(errorMsg)
+      onNotification?.(errorMsg, 'error')
+    }
+  }
+
+  /** Costs 1 quota unit, which is why the quota reading is refreshed after. */
+  async function handleTestYouTubeKey() {
+    try {
+      setError(null)
+      setYtTesting(true)
+      const quota = await tauriApi.testYouTubeApiKey()
+      setYtQuota(quota)
+      setYtTestResult({ ok: true, message: 'Key works — YouTube answered' })
+      onNotification?.('YouTube API key works', 'success')
+    } catch (err) {
+      const errorMsg = getErrorMessage(err)
+      setYtTestResult({ ok: false, message: errorMsg })
+      onNotification?.(errorMsg, 'error')
+      // The attempt is billed even when rejected, so show the new number.
+      try {
+        setYtQuota(await tauriApi.getYouTubeQuota())
+      } catch { /* leave the previous reading */ }
+    } finally {
+      setYtTesting(false)
+    }
+  }
+
   // --- Companion handlers ---
 
   async function handleStartCompanion() {
@@ -591,6 +702,8 @@ export function SettingsProvider({
     onFoldersChanged, onNotification,
     isApiKeyConfigured, apiKeyInput, setApiKeyInput, showApiKey, setShowApiKey, aiSaving,
     handleSaveApiKey, handleDeleteApiKey,
+    ytKeyConfigured, ytKeyInput, setYtKeyInput: updateYtKeyInput, showYtKey, setShowYtKey, ytSaving, ytTesting,
+    ytQuota, ytTestResult, handleSaveYouTubeKey, handleDeleteYouTubeKey, handleTestYouTubeKey,
     companionRunning, companionUrl, companionToken, companionPortInput, setCompanionPortInput,
     companionActiveStreams, companionLoading, companionAutostart,
     handleStartCompanion, handleStopCompanion, handleRegenerateToken, handleCompanionAutostartChange,

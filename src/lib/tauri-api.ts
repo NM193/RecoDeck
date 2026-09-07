@@ -2,6 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import type { YouTubeQuotaStatus, RawSet } from '../types/youtube'
 import type {
   Track,
   ScanResult,
@@ -397,6 +398,35 @@ export const tauriApi = {
     sample_rate: number
   }> {
     return await invoke('get_playback_status')
+  },
+
+  // YouTube tracklist commands
+  // The key stays in Rust: it never crosses into the webview, and every call
+  // goes through one quota counter.
+  async setYouTubeApiKey(apiKey: string): Promise<void> {
+    return await invoke('set_youtube_api_key', { apiKey })
+  },
+
+  async getYouTubeApiKeyStatus(): Promise<boolean> {
+    return await invoke('get_youtube_api_key_status')
+  },
+
+  async deleteYouTubeApiKey(): Promise<void> {
+    return await invoke('delete_youtube_api_key')
+  },
+
+  async getYouTubeQuota(): Promise<YouTubeQuotaStatus> {
+    return await invoke('get_youtube_quota')
+  },
+
+  /** Cheapest possible call (1 unit) -- verifies the key without a real fetch. */
+  async testYouTubeApiKey(): Promise<YouTubeQuotaStatus> {
+    return await invoke('test_youtube_api_key')
+  },
+
+  /** Accepts a full URL or a bare video id. Costs 5-7 units. */
+  async fetchYouTubeSet(input: string): Promise<RawSet> {
+    return await invoke('fetch_youtube_set', { input })
   },
 
   // AI commands

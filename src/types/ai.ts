@@ -86,6 +86,12 @@ export type AppErrorKind =
   | 'AiParsing'
   | 'Internal'
   | 'Validation'
+  | 'AiToolExecution'
+  | 'YtNoApiKey'
+  | 'YtInvalidKey'
+  | 'YtApiNotEnabled'
+  | 'YtQuotaExceeded'
+  | 'YtNetwork'
 
 export interface AppError {
   kind: AppErrorKind
@@ -138,6 +144,14 @@ export function getErrorMessage(e: unknown): string {
         return 'No API key configured -- add your Claude API key in Settings'
       case 'AiInvalidKey':
         return 'API key is invalid -- check your key in Settings'
+      case 'YtNoApiKey':
+        return 'No YouTube API key configured -- add your own key in Settings'
+      case 'YtInvalidKey':
+        return 'This YouTube API key is not valid -- check it and try another'
+      case 'YtApiNotEnabled':
+        return 'YouTube Data API v3 is not enabled for this key\'s Google Cloud project'
+      case 'YtQuotaExceeded':
+        return 'Daily YouTube quota is spent -- it resets at midnight Pacific time'
       default:
         return e.message ?? 'An unexpected error occurred'
     }

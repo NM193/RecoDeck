@@ -5,6 +5,7 @@ import { AppearanceSection } from '../settings/AppearanceSection'
 import { AudioSection } from '../settings/AudioSection'
 import { DatabaseSection } from '../settings/DatabaseSection'
 import { AISection } from '../settings/AISection'
+import { YouTubeSection } from '../settings/YouTubeSection'
 import { CompanionSection } from '../settings/CompanionSection'
 import { AboutSection } from '../settings/AboutSection'
 import { Icon } from '../Icon'
@@ -36,6 +37,8 @@ function SettingsContent() {
         <DatabaseSection />
         <hr className="settings-view__divider" />
         <AISection />
+        <hr className="settings-view__divider" />
+        <YouTubeSection />
         <hr className="settings-view__divider" />
         <CompanionSection />
         <hr className="settings-view__divider" />
