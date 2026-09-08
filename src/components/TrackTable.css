@@ -311,9 +311,13 @@
 }
 
 .cell-rating {
-  flex: 0 0 96px;
+  flex: 0 0 80px;
+  min-width: 80px;
   justify-content: center;
   padding: 0 6px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 .cell-duration {
