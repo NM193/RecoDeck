@@ -130,6 +130,11 @@ export interface Candidate {
   weight: number
   tracks: ExtractedTrack[]
   confidence: number
+  /**
+   * A numbered list with no timestamps in it. Present only when true, so the
+   * six fixtures the tool produced compare unchanged.
+   */
+  untimed?: true
 }
 
 export type TracklistStatus =
@@ -148,4 +153,10 @@ export interface TracklistResult {
   trackCount: number
   tracks: Track[]
   loose: LooseName[]
+  /**
+   * The tracklist carries no timestamps, so nothing can be seeked to and the
+   * timeline has nothing to draw. Present only when true — the standalone tool
+   * had no such field, and its saved output is the parity baseline.
+   */
+  untimed?: true
 }

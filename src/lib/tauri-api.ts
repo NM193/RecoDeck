@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
   YouTubeQuotaStatus,
+  WatchedDj,
   RawSet,
   YtSetSummary,
   SavedTrack,
@@ -460,6 +461,44 @@ export const tauriApi = {
 
   async checkYouTubeChannels(): Promise<ChannelNews[]> {
     return await invoke('check_youtube_channels')
+  },
+
+  /** How often a channel is checked on its own. 0 never, 24 daily, 168 weekly. */
+  async setYouTubeChannelInterval(channelId: string, hours: number): Promise<void> {
+    return await invoke('set_youtube_channel_interval', { channelId, hours })
+  },
+
+  // Watched DJs. A DJ is searched for, not listed, so each check costs 100.
+
+  async watchYouTubeDj(name: string): Promise<void> {
+    return await invoke('watch_youtube_dj', { name })
+  },
+
+  async listYouTubeDjs(): Promise<WatchedDj[]> {
+    return await invoke('list_youtube_djs')
+  },
+
+  async unwatchYouTubeDj(nameKey: string): Promise<void> {
+    return await invoke('unwatch_youtube_dj', { nameKey })
+  },
+
+  async setYouTubeDjInterval(nameKey: string, hours: number): Promise<void> {
+    return await invoke('set_youtube_dj_interval', { nameKey, hours })
+  },
+
+  /** Whether a DJ's new sets are fetched and stored without being asked. */
+  async setYouTubeDjAutoImport(nameKey: string, enabled: boolean): Promise<void> {
+    return await invoke('set_youtube_dj_auto_import', { nameKey, enabled })
+  },
+
+  /** Searches for every watched DJ — 100 units each. */
+  async checkYouTubeDjs(): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_djs')
+  },
+
+  /** Everything a DJ's searches have turned up so far. Costs nothing. */
+  async listYouTubeDjFinds(nameKey: string): Promise<ChannelUpload[]> {
+    return await invoke('list_youtube_dj_finds', { nameKey })
   },
 
   async markYouTubeChannelSeen(channelId: string, videoId: string): Promise<void> {

@@ -107,6 +107,68 @@ pub fn iso_now() -> String {
     )
 }
 
+/// The same instant without fractional seconds, which is the shape the YouTube
+/// API wants for `publishedAfter`.
+pub fn iso_seconds(unix_secs: i64) -> String {
+    let (y, m, d) = civil_from_days(floor_div(unix_secs, SECONDS_PER_DAY));
+    let time_of_day = unix_secs.rem_euclid(SECONDS_PER_DAY);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        time_of_day / 3_600,
+        (time_of_day % 3_600) / 60,
+        time_of_day % 60
+    )
+}
+
+/// Reads back a timestamp written by `iso_now` — `YYYY-MM-DDTHH:MM:SS...Z`.
+///
+/// Only the shape this module writes is accepted. Anything else returns None,
+/// and every caller treats that as "never checked", which errs towards doing
+/// the work rather than silently skipping a channel forever.
+pub fn unix_from_iso(text: &str) -> Option<i64> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 19 {
+        return None;
+    }
+
+    fn number(part: &str) -> Option<i64> {
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        part.parse().ok()
+    }
+
+    if bytes[4] != b'-' || bytes[7] != b'-' || bytes[13] != b':' || bytes[16] != b':' {
+        return None;
+    }
+    // The separator between date and time is 'T' in what we write; SQLite's own
+    // datetime('now') uses a space, and rows written by it must still parse.
+    if bytes[10] != b'T' && bytes[10] != b' ' {
+        return None;
+    }
+
+    let year = number(&text[0..4])?;
+    let month = number(&text[5..7])?;
+    let day = number(&text[8..10])?;
+    let hour = number(&text[11..13])?;
+    let minute = number(&text[14..16])?;
+    let second = number(&text[17..19])?;
+
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    if hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+
+    Some(
+        days_from_civil(year, month as u32, day as u32) * SECONDS_PER_DAY
+            + hour * 3_600
+            + minute * 60
+            + second,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +217,49 @@ mod tests {
             // Crossing that many seconds must land on a different Pacific day.
             assert_ne!(pacific_day(secs), pacific_day(secs + left));
         }
+    }
+
+    #[test]
+    fn a_written_timestamp_reads_back_as_the_same_instant() {
+        for secs in [0_i64, 1_768_478_400, 1_780_290_000, 1_783_188_123] {
+            let text = {
+                // iso_now() reads the clock, so build the same shape from a fixed instant.
+                let (y, m, d) = civil_from_days(floor_div(secs, SECONDS_PER_DAY));
+                let time_of_day = secs.rem_euclid(SECONDS_PER_DAY);
+                format!(
+                    "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.000Z",
+                    time_of_day / 3_600,
+                    (time_of_day % 3_600) / 60,
+                    time_of_day % 60
+                )
+            };
+            assert_eq!(unix_from_iso(&text), Some(secs), "{text}");
+        }
+    }
+
+    #[test]
+    fn sqlite_datetime_now_is_also_accepted() {
+        // Rows written by `datetime('now')` use a space, not a 'T'.
+        assert_eq!(
+            unix_from_iso("2026-01-15 12:00:00"),
+            unix_from_iso("2026-01-15T12:00:00.000Z")
+        );
+    }
+
+    #[test]
+    fn nonsense_is_rejected_rather_than_guessed_at() {
+        for text in ["", "yesterday", "2026-01-15", "20260115T120000Z", "2026-13-01T00:00:00Z"] {
+            assert_eq!(unix_from_iso(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn published_after_carries_no_fractional_seconds() {
+        // The API rejects the fractional form iso_now() writes.
+        assert_eq!(iso_seconds(1_768_478_400), "2026-01-15T12:00:00Z");
+        assert!(!iso_seconds(1_768_478_400).contains('.'));
+        // And it still reads back as the same instant.
+        assert_eq!(unix_from_iso(&iso_seconds(1_768_478_400)), Some(1_768_478_400));
     }
 
     #[test]

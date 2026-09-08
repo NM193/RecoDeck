@@ -19,6 +19,8 @@ import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { ExportPlaylistModal } from './components/ExportPlaylistModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
+import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
+import type { ChannelNews } from './types/youtube'
 import appPackage from '../package.json'
 import { Notification } from './components/Notification'
 import { UpdateToast } from './components/UpdateToast'
@@ -501,6 +503,60 @@ function AppContent() {
 
   // Ref for TrackTable to access scroll methods
   const trackTableRef = useRef<TrackTableRef>(null)
+
+  // The automatic check for new sets runs in the background, so its result has
+  // to arrive somewhere the user is actually looking — the Sets view may well be
+  // closed. The Following tab carries the same event and shows the sets themselves.
+  useEffect(() => {
+    const stop = listen<ChannelNews[]>('yt-new-sets', async (event) => {
+      const found = event.payload
+      const total = found.reduce((sum, c) => sum + c.new_sets.length, 0)
+      if (total === 0) return
+
+      const who =
+        found.length === 1
+          ? (found[0].title ?? 'a channel you follow')
+          : `${found.length} of the channels and DJs you follow`
+      setNotification({
+        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see Sets › Following`,
+        type: 'info',
+      })
+
+      // Automatic import lives here rather than in the background task that
+      // found these, because the parser is TypeScript: the backend can fetch a
+      // set but has nothing to turn it into a tracklist.
+      const wanted = found
+        .filter((item) => item.auto_import)
+        .flatMap((item) => item.new_sets.map((set) => set.video_id))
+      if (wanted.length === 0) return
+
+      const quota = await tauriApi.getYouTubeQuota().catch(() => null)
+      const toImport = setsToAutoImport(wanted, quota?.remaining ?? 0)
+      if (toImport.length === 0) return
+
+      let imported = 0
+      for (const videoId of toImport) {
+        try {
+          await importSet(videoId)
+          imported += 1
+        } catch {
+          // One set that will not fetch must not stop the rest.
+        }
+      }
+
+      if (imported > 0) {
+        setNotification({
+          message: `${imported} ${imported === 1 ? 'set' : 'sets'} imported automatically${
+            imported < wanted.length ? ` · ${wanted.length - imported} left to fetch by hand` : ''
+          }`,
+          type: 'success',
+        })
+      }
+    })
+    return () => {
+      void stop.then((unlisten) => unlisten())
+    }
+  }, [])
 
   // Listen for file system changes and auto-refresh
   useEffect(() => {

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-08
+
+### Added
+- **Sets** — a new section under Home that reads the tracklist of any DJ set on YouTube and tells you which tracks you already own
+- Paste a set link and get the full tracklist, with each track marked as in your library or missing, and agreement counts showing how many people typed the same thing
+- Play your own file straight from a row, or press play on a track to jump the video to that moment
+- The video plays inside the app, above the tracklist, and collapses to a small bar that keeps playing while you browse
+- A library of every set you have opened — reopening one costs nothing and never touches your quota again
+- Heart any track to collect it across sets, with links to Beatport, Discogs, Bandcamp and Spotify, and a button to copy the whole list
+- Search every track in every set you have stored, to answer "where did I hear this?"
+- Statistics: your most played labels, artists and the sets they came from
+- Follow a channel — Cercle, Boiler Room, Mixmag — and see when a new set appears
+- **Watch a DJ by name** and be told when a set of theirs turns up anywhere, not just on the channels you follow
+- Automatic checking on a schedule you choose per channel and per DJ — daily, weekly, or never
+- Optionally have a watched DJ's new sets fetched and stored for you, without being asked
+- Your library of sets is filed under the DJ who played, not the channel that hosted it
+- Bring your own YouTube API key in Settings, with a quota bar and a countdown to the daily reset
+
+### Changed
+- Every action that spends YouTube quota says what it costs before you click, and refuses when there is not enough left
+- Nothing checks or fetches anything on its own until you switch it on — new channels and DJs start at "Never"
+
+### Fixed
+- A tracklist written as a numbered list with no timestamps is now read properly, instead of being ignored in favour of a stray comment
+- A remix is no longer offered as the record you own when both name a different version
+- A track is no longer matched on its title alone — dozens of records are called "Lost" or "Jolene"
+- Someone narrating a set in the comments with timestamps is no longer mistaken for a tracklist
+- Library matching now looks at your whole library rather than only the folder on screen
+
 ## [0.2.14] - 2026-03-15
 
 ### Added

@@ -150,24 +150,86 @@ standalone tool still accepts.
 
 ---
 
-## M6 — Automatic checking for new sets (next session)
+## M6 — Automatic checking for new sets — BUILT, AWAITING THE DEMO GATE
 
 Asked for on 2026-09-08: set an interval per followed channel — daily or weekly — and have the
 app check on its own and say when a new set turns up.
 
-Everything it builds on already exists: `check_youtube_channels` does the work, `yt_channels`
+Everything it builds on already existed: `check_youtube_channels` does the work, `yt_channels`
 holds `last_checked` and `last_seen_video`, and the Following tab already shows a badge.
 
-- [ ] Migration 011: `check_interval_hours` on `yt_channels`. 0 means never, 24 daily,
+- [x] Migration 011: `check_interval_hours` on `yt_channels`. 0 means never, 24 daily,
       168 weekly. Default 0 — nothing starts spending quota because it was installed
-- [ ] A background task started with the app: wake periodically, check only channels whose
+- [x] A background task started with the app: wake every 15 minutes, check only channels whose
       `last_checked` is older than their interval, and write `last_checked` whether or not
       anything new turned up
-- [ ] Emit a Tauri event with what was found; the frontend shows it through the existing
-      `Notification` component and the badge already on the Following tab
-- [ ] Per-channel interval selector in the Following tab
-- [ ] Tests: the due-or-not decision is a pure function of (interval, last_checked, now) and
-      should be tested as one, including the case of a channel checked manually a minute ago
+- [x] Emits `yt-new-sets`; App shows it through the existing `Notification` component, and the
+      Following tab takes the same event for its list and its badge — a second check would
+      cost quota to learn what the app already knows
+- [x] Per-channel interval selector in the Following tab, and the date of the last check
+- [x] Tests: `is_due(interval, last_checked, now)` is a pure function and is tested as one —
+      never, never-checked, the hour boundary both ways, a manual check a minute ago, an
+      unreadable timestamp, and a clock that went backwards. Mutation-checked: turning hours
+      into minutes, and `<= 0` into `< 0`, each fail tests
+
+**Two things the build added that the plan did not have.**
+
+`last_checked` is an ISO string, so reading it back needed `unix_from_iso` in
+`external/youtube_time.rs` — the module that writes it. It also accepts SQLite's own
+`datetime('now')` shape, because rows written by the default came out that way.
+
+Migration 011 is an `ALTER TABLE`, which is not idempotent, and migrations run on every launch.
+Without the `pragma_table_info` guard the *second* launch after the update fails, not the
+first — the worst shape of bug to ship. Two tests cover it: migrations run three times over,
+and a channel row that existed before the column comes out set to Never.
+
+**Costs**, since that is what governs every decision in this feature: a check is 1-2 units per
+channel. Ten channels daily is roughly 20 units against a 10,000 allowance. The interval is
+honoured off `last_checked`, and the manual button now writes it too, so a manual check counts
+and the automatic one does not repeat it.
+
+**Watch out for:** the quota day rolls over at midnight Pacific, not local (see
+`external/youtube_time.rs`), and a check that fails does not update `last_checked`, so a
+channel that is temporarily unreachable stays due rather than being silently skipped for a day.
+
+---
+
+## M7 — Watching a DJ by name — DONE
+
+Asked for during the M6 demo. A DJ is not a channel: their sets land on Cercle, Boiler Room and
+Mixmag, and the only call that finds one on a channel nobody follows is `search`, at 100 units —
+a hundred times a channel check. The whole design is built around that number.
+
+- [x] Migration 012: `yt_watched_djs`, with the same Never/Daily/Weekly interval as channels
+- [x] `search_sets_since` — `order=date` plus `publishedAfter`, not `search_sets`'s relevance
+      ordering, which returns the same famous sets every week and never surfaces the new one
+- [x] `AUTOMATIC_QUOTA_RESERVE` of 2,000 the automatic run will not spend below; buttons may
+- [x] Migration 013: `yt_dj_finds`, so novelty is a fact about what the user has been shown
+      rather than about where a search window happened to start
+- [x] Migration 014: optional automatic import, off by default, running in the frontend because
+      the parser is TypeScript — the backend can fetch a set but cannot parse one
+- [x] Every rule that spends or decides novelty is a pure function with tests: `is_due`,
+      `djs_within_budget`, `title_mentions`, `setsToAutoImport`
+
+**Two bugs the demo found in ten minutes**, both recorded in PROGRESS.md 2026-09-08: a
+misspelled name silently discarding every result at 100 units a try, and "nothing found" being
+indistinguishable from "never looked".
+
+---
+
+## M8 — A tracklist with no timestamps — DONE
+
+Found on a real set during the M7 demo, and it is a gap the standalone tool has too.
+
+- [x] `extractNumberedList`: the numbering replaces the cue as evidence, required to be dense
+      rather than merely present
+- [x] Runs only when nothing anywhere carried a timestamp — the cue is the better evidence
+      wherever there is one
+- [x] `mergeCandidates` clusters by row number when there are no cues, or a 20-second window
+      folds every row into one slot
+- [x] No seek button and no timeline where there is nothing to seek to
+- [x] `_wfwSaA5GeE.json` kept as a fixture; the tool never saw this set, so it is excluded from
+      the parity comparison and tested on its own terms
 
 **Costs**, since that is what governs every decision in this feature: a check is 1-2 units per
 channel. Ten channels daily is roughly 20 units against a 10,000 allowance. The interval must

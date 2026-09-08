@@ -362,6 +362,43 @@ pub async fn fetch_set(
 }
 
 
+/// Searches for sets published since a given instant, newest first.
+///
+/// Deliberately not `search_sets`. That one orders by relevance, which is right
+/// for "find me a Solomun set" and useless for "has one appeared since
+/// Tuesday" — relevance returns the same famous sets every week and the new one
+/// never surfaces. Here `order=date` plus `publishedAfter` means an empty
+/// result is the honest common answer.
+///
+/// Still 100 units, which is why the caller decides when this is worth running.
+pub async fn search_sets_since(
+    api_key: &str,
+    query: &str,
+    published_after: &str,
+    max: u8,
+    spent: &mut u32,
+) -> Result<Vec<SetSearchHit>, AppError> {
+    let data = call_api(
+        api_key,
+        "search",
+        &[
+            ("part", "snippet".into()),
+            ("q", query.to_string()),
+            ("type", "video".into()),
+            ("order", "date".into()),
+            // YouTube's own definition of long is over twenty minutes, which is
+            // the same floor the rest of this feature uses for what a set is.
+            ("videoDuration", "long".into()),
+            ("publishedAfter", published_after.to_string()),
+            ("maxResults", max.clamp(1, 50).to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    Ok(parse_search_items(&data))
+}
+
 /// A set found by searching, before anything has been fetched about it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -400,13 +437,18 @@ pub async fn search_sets(
     )
     .await?;
 
+    Ok(parse_search_items(&data))
+}
+
+/// The search hits out of a `search` response, shared by both search callers.
+fn parse_search_items(data: &serde_json::Value) -> Vec<SetSearchHit> {
     let items = data
         .get("items")
         .and_then(|i| i.as_array())
         .cloned()
         .unwrap_or_default();
 
-    Ok(items
+    items
         .iter()
         .filter_map(|item| {
             let video_id = item.pointer("/id/videoId")?.as_str()?.to_string();
@@ -429,7 +471,7 @@ pub async fn search_sets(
                     .map(str::to_string),
             })
         })
-        .collect())
+        .collect()
 }
 
 

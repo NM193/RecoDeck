@@ -62,7 +62,11 @@ use audio::audio_mime_type;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_app| {
+        .setup(|app| {
+            // Checks followed channels for new sets on their own interval.
+            // Nothing is due until the user sets one, so this costs nothing
+            // until it is asked for.
+            commands::youtube::spawn_channel_watcher(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -423,6 +427,14 @@ pub fn run() {
             commands::youtube::list_youtube_channels,
             commands::youtube::unfollow_youtube_channel,
             commands::youtube::check_youtube_channels,
+            commands::youtube::set_youtube_channel_interval,
+            commands::youtube::watch_youtube_dj,
+            commands::youtube::list_youtube_djs,
+            commands::youtube::unwatch_youtube_dj,
+            commands::youtube::set_youtube_dj_interval,
+            commands::youtube::set_youtube_dj_auto_import,
+            commands::youtube::check_youtube_djs,
+            commands::youtube::list_youtube_dj_finds,
             commands::youtube::mark_youtube_channel_seen,
             // Library commands
             commands::library::init_database,

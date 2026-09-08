@@ -12,7 +12,7 @@ import { collectCandidates, mergeCandidates } from './merge'
 import type { SetComment, SetVideo, TracklistResult } from './types'
 
 export * from './types'
-export { extractTracklist } from './extract'
+export { extractTracklist, extractNumberedList } from './extract'
 export { collectCandidates, mergeCandidates } from './merge'
 export {
   assembleFromComments,
@@ -46,6 +46,10 @@ export function analyse(
     ? merged.tracks
     : (assembled?.tracks ?? [])
 
+  // A numbered list has nowhere to seek to, and the UI has to know rather than
+  // send every row to 0:00.
+  const untimed = best?.untimed && merged?.tracks.length ? true : undefined
+
   return {
     video: {
       id: video.id,
@@ -70,5 +74,6 @@ export function analyse(
     trackCount: tracks.length,
     tracks,
     loose: assembled?.loose ?? [],
+    ...(untimed ? { untimed } : {}),
   }
 }

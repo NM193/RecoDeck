@@ -865,6 +865,103 @@ across forty rows would drown out the tracklist if they were always visible.
 
 Tests: 116 frontend, 143 Rust.
 
+### 2026-09-08 — M6 and M7: checking on its own, watching a DJ, and a parser blind spot
+
+**M6 — automatic checking (migration 011).** `check_interval_hours` per followed channel:
+0 never, 24 daily, 168 weekly. A background task wakes every 15 minutes and asks a pure
+function which channels have waited long enough.
+
+The decision is `is_due(interval, last_checked, now)` and it is tested as one: never,
+never-checked, the hour boundary both ways, a manual check a minute ago, an unreadable
+timestamp, and a clock that went backwards. `last_checked` is written **per channel and only
+when the channel was actually reached** — a network blip must leave a channel due rather than
+skipping it for a day. The manual button now writes it too, so a manual check counts.
+
+Two things the plan did not anticipate:
+
+- `last_checked` is an ISO string, so reading it back needed `unix_from_iso` in the module that
+  writes it. It also accepts SQLite's `datetime('now')` shape, because rows written by the
+  column default came out that way.
+- **Migration 011 is an `ALTER TABLE`, and migrations run on every launch.** Without the
+  `pragma_table_info` guard the *second* launch after an update fails, not the first. Two tests
+  cover it, and removing the guard fails them.
+
+**M7 — watching a DJ (migrations 012-014).** Asked for during the M6 demo: "can I put a DJ name
+in the follow box?" The honest answer was no, and finding out why was worth the detour — a bare
+name in that box falls through to `search` with `type=channel`, so it costs 100 units and
+returns the DJ's *own* channel, where releases live rather than the sets they play. It appears
+to work and gives the wrong thing, which is the worst outcome available.
+
+So a DJ is a separate list with a separate mechanism, and the whole design is built around one
+number: a channel check is a listing at 1-2 units, a DJ has to be searched for at **100**.
+
+- Not `search_sets`. That orders by relevance, which is right for "find me a Solomun set" and
+  useless for "has one appeared since Tuesday" — relevance returns the same famous sets every
+  week and the new one never surfaces. `search_sets_since` uses `order=date` plus
+  `publishedAfter`, so an empty result is the honest common answer.
+- `AUTOMATIC_QUOTA_RESERVE` of 2,000: the automatic run will not spend below it. Buttons may,
+  because a button was asked for. `djs_within_budget` is a pure function and is tested.
+- A DJ watched for the first time looks back 30 days. Without a floor the first search reports
+  a decade of sets as new.
+
+**Two bugs found by using it, in the space of ten minutes, both worth recording.**
+
+1. *A missing letter silently discarded every result.* The name was typed "Josep Capriati", and
+   the title filter asked whether the title contained the name as one string. It does not —
+   after "josep" comes "h", not a space — so every genuine hit was thrown away while the app
+   reported, truthfully and uselessly, that it found nothing. **Cost: 100 units per attempt, and
+   no signal that anything was wrong.** The rule now requires every *word* of the name to appear,
+   which survives a typo, a reordering, and anything inserted between the words. Deliberately
+   looser: being strict here fails invisibly, being loose costs one row you can ignore. Proved
+   in the wild immediately — "Josep" then found seven real Joseph Capriati sets.
+2. *"Nothing found" and "never looked" were the same screen.* A DJ that had never been searched
+   showed "No long uploads found", which reads as an answer. It now says which it is.
+
+**The parser blind spot, found on a real set (`_wfwSaA5GeE`).** HOT SINCE 82 at the BBC Radio 1
+Essential Mix: all 24 tracks written into the description as a numbered list, and **not one
+timestamp**. Every structural test in `extract.ts` is built on cues — ascending order, coverage
+of the runtime — so the description yielded nothing and the set fell through to being assembled
+from comments, giving one track, from somebody shouting "OH MY F*K, CHANTE!". **The standalone
+tool has the same blind spot.**
+
+`extractNumberedList` replaces the cue with the numbering as evidence: prose does not carry four
+or more consecutively numbered lines, so the run of numbers is the structure, and it has to be
+*dense* (≥80% of steps counting up) rather than merely present. It runs **only when nothing
+anywhere carried a timestamp** — running it alongside would let a numbering inside a real list
+compete with the list itself, and the cue is always the better evidence where there is one.
+Checked before writing it: no reference fixture has a numbered list in its description, and the
+one assembled from comments has none anywhere, so parity was never at risk.
+
+Underneath it was a second bug: `mergeCandidates` clusters by cue with a 20-second window, and
+with every cue at zero all 24 rows collapsed into **one** slot. Where nobody wrote a timestamp
+the row number is the only ordering there is, so that is what identifies a slot.
+
+Rows with no cue get no seek button and no timeline — a "0:00" on every row would read as a
+time somebody wrote down. Reopening an affected set reparses it from the stored fetch at zero
+quota cost, which is exactly what keeping the raw JSON was for.
+
+**Remembering what a search found (migration 013).** Novelty used to rest entirely on
+`publishedAfter`, so a set found and not imported fell through the gap: the next window starts
+after it and it is never mentioned again. Every hit is now recorded per DJ, and the insert
+itself reports whether it was the first sighting. A set is news exactly once and stays on the
+list to go back to. That also made a 2-day overlap on the search window affordable — publish
+time and the moment a set becomes findable are not the same instant.
+
+**Automatic import (migration 014), off by default.** It runs in the *frontend*, on the
+`yt-new-sets` event, because the parser is TypeScript: the backend can fetch a set but has
+nothing to turn it into a tracklist. `setsToAutoImport` keeps a 1,000-unit reserve and a cap of
+five per run, and is a pure function with its own tests — it is the only place the app spends
+quota with nobody watching.
+
+**Tests:** 168 Rust (was 143 at the start of the day), 123 frontend (was 116). Every rule that
+governs spending or novelty was mutation-checked rather than trusted: hours into minutes,
+`<= 0` into `< 0`, the migration guard removed, the reserve removed, the numbered path run
+alongside the timestamped one, position-clustering broken, `INSERT OR IGNORE` into `OR REPLACE`,
+and the name filter returned to a substring test. Each one fails tests.
+
+**Released as 0.3.0** — the first release containing any of the Sets work. The last public
+release, v0.2.15, has none of it.
+
 ## Next Steps
 
 1. **NOW**: Continue Phase 2 — Next milestone: 2.1 Mel spectrogram or 2.4 Waveform peaks

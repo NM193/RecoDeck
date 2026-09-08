@@ -86,6 +86,33 @@ pub struct YtTrack {
     pub set_title: Option<String>,
 }
 
+/// A DJ watched for new sets, wherever they turn up.
+///
+/// Separate from `YtChannel` because the mechanism is different, not just the
+/// name: a channel is listed for a unit or two, a DJ has to be searched for at
+/// a hundred.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtWatchedDj {
+    /// Lower-cased, so the same name is not watched twice.
+    pub name_key: String,
+    pub display_name: String,
+    pub check_interval_hours: i64,
+    pub last_checked: Option<String>,
+    /// Fetch and store what a search turns up, without being asked. Off by
+    /// default: a set is another 5-7 units on top of the search's hundred.
+    pub auto_import: bool,
+}
+
+/// A set a DJ search turned up, remembered so it is news only once.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtDjFind {
+    pub name_key: String,
+    pub video_id: String,
+    pub title: String,
+    pub channel: Option<String>,
+    pub published_at: Option<String>,
+}
+
 /// A channel watched for new sets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct YtChannel {
@@ -95,6 +122,8 @@ pub struct YtChannel {
     pub uploads_id: Option<String>,
     pub last_checked: Option<String>,
     pub last_seen_video: Option<String>,
+    /// 0 never, 24 daily, 168 weekly. Never is the default on purpose.
+    pub check_interval_hours: i64,
 }
 
 /// Represents a track in the database
@@ -239,6 +268,40 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/010_yt_tracks.sql"))?;
+
+        // Migration 011: per-channel automatic check interval
+        // ALTER TABLE is not idempotent, so the column is checked for first.
+        let has_check_interval: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('yt_channels') WHERE name = 'check_interval_hours'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_check_interval {
+            self.conn
+                .execute_batch(include_str!("migrations/011_yt_channel_interval.sql"))?;
+        }
+
+        // Migration 012: DJs watched for new sets
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/012_yt_watched_djs.sql"))?;
+
+        // Migration 013: what a DJ search has already turned up
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/013_yt_dj_finds.sql"))?;
+
+        // Migration 014: automatic import of a watched DJ's new sets
+        // ALTER TABLE is not idempotent, so the column is checked for first.
+        let has_auto_import: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('yt_watched_djs') WHERE name = 'auto_import'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_auto_import {
+            self.conn
+                .execute_batch(include_str!("migrations/014_yt_dj_auto_import.sql"))?;
+        }
 
         Ok(())
     }
@@ -2671,14 +2734,15 @@ impl Database {
 
     pub fn save_yt_channel(&self, channel: &YtChannel) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO yt_channels (channel_id, handle, title, uploads_id, last_checked, last_seen_video)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO yt_channels (channel_id, handle, title, uploads_id, last_checked, last_seen_video, check_interval_hours)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(channel_id) DO UPDATE SET
                 handle = excluded.handle,
                 title = excluded.title,
                 uploads_id = excluded.uploads_id,
                 last_checked = excluded.last_checked,
-                last_seen_video = excluded.last_seen_video",
+                last_seen_video = excluded.last_seen_video,
+                check_interval_hours = excluded.check_interval_hours",
             params![
                 channel.channel_id,
                 channel.handle,
@@ -2686,14 +2750,38 @@ impl Database {
                 channel.uploads_id,
                 channel.last_checked,
                 channel.last_seen_video,
+                channel.check_interval_hours,
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Records that a channel was checked, and nothing else.
+    ///
+    /// Deliberately not a read-modify-write of the whole row: the automatic
+    /// check runs while the user may be following or unfollowing channels, and
+    /// the only field it has any business touching is this one.
+    pub fn touch_yt_channel_checked(&self, channel_id: &str, checked_at: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE yt_channels SET last_checked = ?2 WHERE channel_id = ?1",
+            params![channel_id, checked_at],
+        )?;
+        Ok(())
+    }
+
+    /// Sets how often a channel is checked on its own. 0 never, 24 daily, 168 weekly.
+    pub fn set_yt_channel_interval(&self, channel_id: &str, hours: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE yt_channels SET check_interval_hours = ?2 WHERE channel_id = ?1",
+            params![channel_id, hours],
         )?;
         Ok(())
     }
 
     pub fn list_yt_channels(&self) -> Result<Vec<YtChannel>> {
         let mut stmt = self.conn.prepare(
-            "SELECT channel_id, handle, title, uploads_id, last_checked, last_seen_video
+            "SELECT channel_id, handle, title, uploads_id, last_checked, last_seen_video,
+                    check_interval_hours
              FROM yt_channels ORDER BY title COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -2704,6 +2792,7 @@ impl Database {
                 uploads_id: row.get(3)?,
                 last_checked: row.get(4)?,
                 last_seen_video: row.get(5)?,
+                check_interval_hours: row.get(6)?,
             })
         })?;
         rows.collect()
@@ -2712,6 +2801,120 @@ impl Database {
     pub fn delete_yt_channel(&self, channel_id: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM yt_channels WHERE channel_id = ?", [channel_id])?;
+        Ok(())
+    }
+
+    // --- watched DJs ---------------------------------------------------
+
+    pub fn save_yt_watched_dj(&self, dj: &YtWatchedDj) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO yt_watched_djs (name_key, display_name, check_interval_hours, last_checked, auto_import)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(name_key) DO UPDATE SET
+                display_name = excluded.display_name,
+                check_interval_hours = excluded.check_interval_hours,
+                last_checked = excluded.last_checked,
+                auto_import = excluded.auto_import",
+            params![
+                dj.name_key,
+                dj.display_name,
+                dj.check_interval_hours,
+                dj.last_checked,
+                dj.auto_import,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_yt_watched_djs(&self) -> Result<Vec<YtWatchedDj>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name_key, display_name, check_interval_hours, last_checked, auto_import
+             FROM yt_watched_djs ORDER BY display_name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(YtWatchedDj {
+                name_key: row.get(0)?,
+                display_name: row.get(1)?,
+                check_interval_hours: row.get(2)?,
+                last_checked: row.get(3)?,
+                auto_import: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn delete_yt_watched_dj(&self, name_key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM yt_watched_djs WHERE name_key = ?", [name_key])?;
+        Ok(())
+    }
+
+    pub fn set_yt_dj_interval(&self, name_key: &str, hours: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE yt_watched_djs SET check_interval_hours = ?2 WHERE name_key = ?1",
+            params![name_key, hours],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_yt_dj_auto_import(&self, name_key: &str, enabled: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE yt_watched_djs SET auto_import = ?2 WHERE name_key = ?1",
+            params![name_key, enabled],
+        )?;
+        Ok(())
+    }
+
+    /// Records that a DJ was searched for, and nothing else.
+    pub fn touch_yt_dj_checked(&self, name_key: &str, checked_at: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE yt_watched_djs SET last_checked = ?2 WHERE name_key = ?1",
+            params![name_key, checked_at],
+        )?;
+        Ok(())
+    }
+
+    /// One set a DJ search turned up. New to the user exactly once.
+    ///
+    /// Returns true when this was the first sighting, which is what makes it
+    /// news — the caller does not have to read the table back to find out.
+    pub fn record_yt_dj_find(&self, find: &YtDjFind) -> Result<bool> {
+        let inserted = self.conn.execute(
+            "INSERT OR IGNORE INTO yt_dj_finds (name_key, video_id, title, channel, published_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                find.name_key,
+                find.video_id,
+                find.title,
+                find.channel,
+                find.published_at,
+            ],
+        )?;
+        Ok(inserted > 0)
+    }
+
+    pub fn list_yt_dj_finds(&self, name_key: &str) -> Result<Vec<YtDjFind>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT name_key, video_id, title, channel, published_at
+             FROM yt_dj_finds WHERE name_key = ?1
+             ORDER BY published_at DESC",
+        )?;
+        let rows = stmt.query_map([name_key], |row| {
+            Ok(YtDjFind {
+                name_key: row.get(0)?,
+                video_id: row.get(1)?,
+                title: row.get(2)?,
+                channel: row.get(3)?,
+                published_at: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Unwatching a DJ takes their history with them.
+    pub fn delete_yt_dj_finds(&self, name_key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM yt_dj_finds WHERE name_key = ?", [name_key])?;
         Ok(())
     }
 
@@ -3968,6 +4171,81 @@ mod tests {
         // Oldest first (created_at ASC)
         assert_eq!(messages[0].content, "First");
         assert_eq!(messages[1].content, "Second");
+    }
+
+    /// Migration 011 is an ALTER TABLE, which is not idempotent on its own.
+    /// Every existing install runs migrations on each launch, so a missing guard
+    /// would fail the second launch after the update — not the first.
+    #[test]
+    fn migrations_survive_being_run_again() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        db.run_migrations().expect("migrations must be safe to re-run");
+        db.run_migrations().expect("migrations must be safe to re-run");
+
+        db.save_yt_channel(&YtChannel {
+            channel_id: "UC1".to_string(),
+            handle: None,
+            title: Some("Cercle".to_string()),
+            uploads_id: Some("UU1".to_string()),
+            last_checked: None,
+            last_seen_video: None,
+            check_interval_hours: 168,
+        })
+        .unwrap();
+        assert_eq!(db.list_yt_channels().unwrap()[0].check_interval_hours, 168);
+    }
+
+    /// Migration 014 is an ALTER TABLE on a table that already holds rows, and
+    /// the column it adds governs spending. Defaulting it wrong would have
+    /// every existing watched DJ start fetching sets after an update.
+    #[test]
+    fn an_existing_watched_dj_does_not_start_importing_after_an_update() {
+        let db = Database::new_in_memory().unwrap();
+        db.conn
+            .execute_batch(include_str!("migrations/012_yt_watched_djs.sql"))
+            .expect("the schema as it stood before 014");
+        db.conn
+            .execute(
+                "INSERT INTO yt_watched_djs (name_key, display_name, check_interval_hours)
+                 VALUES ('solomun', 'Solomun', 24)",
+                [],
+            )
+            .expect("a DJ watched before the column existed");
+
+        db.run_migrations().unwrap();
+
+        let djs = db.list_yt_watched_djs().unwrap();
+        assert_eq!(djs.len(), 1, "the row must survive the migration");
+        assert!(!djs[0].auto_import, "an update must not start importing on its own");
+        assert_eq!(djs[0].check_interval_hours, 24);
+    }
+
+    /// The column is added to a table that already holds rows, which is the
+    /// only case that matters: everyone updating already follows channels.
+    #[test]
+    fn an_existing_channel_gets_the_new_column_set_to_never() {
+        let db = Database::new_in_memory().unwrap();
+
+        // The schema as it stood before migration 011.
+        db.conn
+            .execute_batch(include_str!("migrations/009_yt_sets.sql"))
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO yt_channels (channel_id, title, uploads_id) VALUES ('UC1', 'Cercle', 'UU1')",
+                [],
+            )
+            .unwrap();
+
+        db.run_migrations().unwrap();
+
+        let channels = db.list_yt_channels().unwrap();
+        assert_eq!(channels.len(), 1, "the row must survive the migration");
+        assert_eq!(
+            channels[0].check_interval_hours, 0,
+            "an update must not start checking channels nobody asked to be checked"
+        );
     }
 
     #[test]

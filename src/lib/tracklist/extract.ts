@@ -49,6 +49,87 @@ function isProse(track: ExtractedTrack): boolean {
   return !track.artist && wordCount(track.title) >= PROSE_MIN_WORDS
 }
 
+/**
+ * A numbered tracklist with no timestamps anywhere:
+ *
+ *   01. Hot Since 82 & Shades Of Rhythm - Shaded [KNEE DEEP IN SOUND]
+ *   02. Hot Since 82 - Benoit
+ *
+ * Every other rule in this file is built on cues — ascending order, coverage of
+ * the runtime, a slot to seek to. A radio mix posted with the full list and not
+ * one timestamp passes none of them, and used to yield nothing at all.
+ *
+ * What replaces the cue as evidence is the numbering itself. Prose does not
+ * carry four or more consecutively numbered lines, so the run of numbers is the
+ * structure, and it is required to be dense rather than merely present.
+ */
+const NUMBERED_LINE = /^\s*(\d{1,3})[.)]\s+(.+?)\s*$/
+
+/** Below this, a run of numbers is a coincidence rather than a list. */
+const NUMBERED_MIN_ROWS = 4
+
+/**
+ * How much of the numbering has to actually count up.
+ *
+ * A real list is 01, 02, 03 with at most a stumble. Scattered "1." and "5."
+ * across a paragraph is not a list, and this is what tells them apart.
+ */
+const NUMBERED_MIN_DENSITY = 0.8
+
+export function extractNumberedList(text: string): ExtractResult {
+  const rows: Array<{ number: number; track: ExtractedTrack }> = []
+
+  for (const line of text.split(/\r?\n/)) {
+    const match = NUMBERED_LINE.exec(line)
+    if (!match) continue
+
+    const rest = match[2].trim()
+    if (!rest || (rest.length < 3 && !UNKNOWN_TOKEN.test(rest))) continue
+
+    const parsed = splitArtistTitle(rest)
+    rows.push({
+      number: Number(match[1]),
+      track: {
+        index: 0,
+        // There is no timestamp, and inventing one would put a play button on a
+        // position nobody wrote down. Empty is the honest answer.
+        cue: '',
+        cueMs: 0,
+        ...parsed,
+        artistNorm: normalise(parsed.artist),
+        titleNorm: normalise([parsed.title, parsed.mix].filter(Boolean).join(' ')),
+        raw: line.trim(),
+      },
+    })
+  }
+
+  if (rows.length < NUMBERED_MIN_ROWS) return { tracks: [], confidence: 0 }
+
+  const steps = rows.filter((row, i) => i > 0 && row.number === rows[i - 1].number + 1).length
+  const density = steps / (rows.length - 1)
+  if (density < NUMBERED_MIN_DENSITY) return { tracks: [], confidence: 0 }
+
+  // The same judgement the timestamped path makes: a block that is mostly prose
+  // is somebody telling a story, whatever it is numbered like.
+  const tracks = rows.map((row) => row.track)
+  const proseRows = tracks.filter(isProse).length
+  if (proseRows / tracks.length >= PROSE_BLOCK_RATIO) return { tracks: [], confidence: 0 }
+
+  const kept = tracks
+    .filter((t) => !isProse(t))
+    .map((t, i) => ({ ...t, index: i + 1 }))
+  if (kept.length < NUMBERED_MIN_ROWS) return { tracks: [], confidence: 0 }
+
+  // No cues means no coverage term. What is left is how well the numbering held
+  // up and whether the rows are credited, on the same 0.5 floor as above — a DJ
+  // playing their own material is listed by title alone here too.
+  const withArtist = kept.filter((t) => t.artist).length / kept.length
+  const artistShape = 0.5 + 0.5 * withArtist
+  const confidence = Number((density * artistShape).toFixed(3))
+
+  return { tracks: kept, confidence }
+}
+
 export function extractTracklist(
   text: string,
   durationMs: number,

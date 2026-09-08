@@ -6,13 +6,13 @@
 //! binary is trivially extracted.
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::library::AppState;
-use crate::db::{Database, YtChannel, YtSavedTrack, YtSet, YtTrack};
+use crate::db::{Database, YtChannel, YtDjFind, YtSavedTrack, YtSet, YtTrack, YtWatchedDj};
 use crate::error::AppError;
 use crate::external::youtube::{self, ChannelInfo, RawSet, SetSearchHit, DAILY_QUOTA};
-use crate::external::youtube_time::{now_unix, pacific_day, seconds_until_pacific_midnight};
+use crate::external::youtube_time::{self, now_unix, pacific_day, seconds_until_pacific_midnight};
 
 const YT_API_KEY_SETTING: &str = "youtube_api_key";
 const YT_QUOTA_SETTING: &str = "youtube_quota";
@@ -42,8 +42,12 @@ pub struct QuotaStatus {
 
 /// Runs `f` with the database, then releases the lock. Nothing awaits inside,
 /// which is deliberate: a lock must never be held across a network call.
+///
+/// It takes `&AppState` rather than `&State<AppState>` so the automatic check,
+/// which has an `AppHandle` and no command state, can use the same path.
+/// Command call sites are unchanged — `State` derefs to it.
 fn with_db<T>(
-    state: &State<'_, AppState>,
+    state: &AppState,
     f: impl FnOnce(&Database) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
     let guard = state
@@ -56,7 +60,7 @@ fn with_db<T>(
     f(db)
 }
 
-fn read_key(state: &State<'_, AppState>) -> Result<String, AppError> {
+fn read_key(state: &AppState) -> Result<String, AppError> {
     let key = with_db(state, |db| {
         db.get_setting(YT_API_KEY_SETTING)
             .map_err(|e| AppError::Database(format!("Failed to read YouTube API key: {e}")))
@@ -111,7 +115,7 @@ fn spend_units(db: &Database, units: u32, now: i64) -> Result<QuotaStatus, AppEr
 }
 
 /// Add what a call cost. Called after the network work, never during it.
-fn record_spend(state: &State<'_, AppState>, units: u32) -> Result<QuotaStatus, AppError> {
+fn record_spend(state: &AppState, units: u32) -> Result<QuotaStatus, AppError> {
     let now = now_unix();
     with_db(state, |db| spend_units(db, units, now))
 }
@@ -153,12 +157,17 @@ pub async fn delete_youtube_api_key(state: State<'_, AppState>) -> Result<(), Ap
     })
 }
 
-#[tauri::command]
-pub async fn get_youtube_quota(state: State<'_, AppState>) -> Result<QuotaStatus, AppError> {
+/// What is left of today, without spending anything to find out.
+fn get_quota(state: &AppState) -> Result<QuotaStatus, AppError> {
     let now = now_unix();
     let today = pacific_day(now);
-    let quota = with_db(&state, |db| Ok(load_quota(db, &today)))?;
+    let quota = with_db(state, |db| Ok(load_quota(db, &today)))?;
     Ok(to_status(quota, now))
+}
+
+#[tauri::command]
+pub async fn get_youtube_quota(state: State<'_, AppState>) -> Result<QuotaStatus, AppError> {
+    get_quota(&state)
 }
 
 /// Cheapest call there is (1 unit), so a key can be checked the moment it is
@@ -646,6 +655,7 @@ pub struct FollowedChannelDTO {
     pub uploads_id: Option<String>,
     pub last_checked: Option<String>,
     pub last_seen_video: Option<String>,
+    pub check_interval_hours: i64,
 }
 
 #[tauri::command]
@@ -724,6 +734,8 @@ pub async fn follow_youtube_channel(
         uploads_id: Some(channel.uploads_id),
         last_checked: None,
         last_seen_video: None,
+        // Nothing starts spending quota because it was followed.
+        check_interval_hours: 0,
     };
 
     with_db(&state, |db| {
@@ -748,6 +760,7 @@ pub async fn list_youtube_channels(
                         uploads_id: c.uploads_id,
                         last_checked: c.last_checked,
                         last_seen_video: c.last_seen_video,
+                        check_interval_hours: c.check_interval_hours,
                     })
                     .collect()
             })
@@ -768,26 +781,72 @@ pub async fn unfollow_youtube_channel(
 
 #[derive(Debug, Serialize)]
 pub struct ChannelNewsDTO {
+    /// A channel's UC id, or `dj:<name>` for a watched DJ.
     pub channel_id: String,
     pub title: Option<String>,
+    /// "channel" or "dj" — they cost two orders of magnitude apart, and only a
+    /// channel has a last-seen marker to move.
+    pub source: String,
+    /// The user asked for these to be fetched and stored without being asked
+    /// again. Only ever true for a watched DJ who has it switched on.
+    pub auto_import: bool,
     /// Long uploads newer than the last one seen.
     pub new_sets: Vec<ChannelUploadDTO>,
 }
 
-/// Checks every followed channel for sets that were not there last time.
-/// One to two units per channel.
-#[tauri::command]
-pub async fn check_youtube_channels(
-    state: State<'_, AppState>,
-) -> Result<Vec<ChannelNewsDTO>, AppError> {
-    let key = read_key(&state)?;
+/// Whether a channel is due for an automatic check.
+///
+/// A pure function of (interval, last_checked, now) so the rule can be tested
+/// without a clock, a database or a network — which is the whole of what makes
+/// automatic checking safe to leave running.
+///
+/// An interval of 0 means never. A channel that has never been checked is due
+/// at once. An unreadable `last_checked` counts as never checked: doing the
+/// work is the recoverable mistake, skipping a channel forever is not.
+pub fn is_due(interval_hours: i64, last_checked: Option<&str>, now: i64) -> bool {
+    if interval_hours <= 0 {
+        return false;
+    }
+    match last_checked.and_then(youtube_time::unix_from_iso) {
+        Some(then) => now.saturating_sub(then) >= interval_hours * 3_600,
+        None => true,
+    }
+}
 
-    let channels = with_db(&state, |db| {
+/// The body of a check, shared by the button and by the automatic run.
+///
+/// `due_only` is what separates them: the button checks everything the user is
+/// following, the timer only what its own interval says is due.
+///
+/// `last_checked` is written per channel, and only when the channel was
+/// actually reached. A channel that is temporarily unreachable stays due, or a
+/// network blip would silently skip it for a whole day.
+async fn run_channel_check(
+    state: &AppState,
+    due_only: bool,
+    now: i64,
+) -> Result<Vec<ChannelNewsDTO>, AppError> {
+    let key = read_key(state)?;
+
+    let channels = with_db(state, |db| {
         db.list_yt_channels()
             .map_err(|e| AppError::Database(format!("Failed to list channels: {e}")))
     })?;
 
-    let stored: Vec<String> = with_db(&state, |db| {
+    let channels: Vec<YtChannel> = if due_only {
+        channels
+            .into_iter()
+            .filter(|c| is_due(c.check_interval_hours, c.last_checked.as_deref(), now))
+            .collect()
+    } else {
+        channels
+    };
+
+    if channels.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let stored: Vec<String> = with_db(state, |db| {
         db.list_yt_sets()
             .map(|sets| sets.into_iter().map(|s| s.video_id).collect())
             .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
@@ -795,6 +854,7 @@ pub async fn check_youtube_channels(
 
     let mut news = Vec::new();
     let mut spent = 0u32;
+    let mut checked: Vec<String> = Vec::new();
 
     for channel in channels {
         let Some(uploads_id) = channel.uploads_id.clone() else {
@@ -806,6 +866,10 @@ pub async fn check_youtube_channels(
             // One unreachable channel must not sink the whole check.
             Err(_) => continue,
         };
+
+        // Reached, so the interval starts again from here — whether or not
+        // anything new turned up.
+        checked.push(channel.channel_id.clone());
 
         // Everything up to the last one seen is old news.
         if let Some(last_seen) = channel.last_seen_video.as_ref() {
@@ -839,13 +903,456 @@ pub async fn check_youtube_channels(
             news.push(ChannelNewsDTO {
                 channel_id: channel.channel_id,
                 title: channel.title,
+                source: "channel".to_string(),
+                auto_import: false,
                 new_sets,
             });
         }
     }
 
-    let _ = record_spend(&state, spent);
+    let _ = record_spend(state, spent);
+
+    if !checked.is_empty() {
+        let stamp = youtube_time::iso_now();
+        let _ = with_db(state, |db| {
+            for channel_id in &checked {
+                let _ = db.touch_yt_channel_checked(channel_id, &stamp);
+            }
+            Ok(())
+        });
+    }
+
     Ok(news)
+}
+
+/// Checks every followed channel for sets that were not there last time.
+/// One to two units per channel.
+#[tauri::command]
+pub async fn check_youtube_channels(
+    state: State<'_, AppState>,
+) -> Result<Vec<ChannelNewsDTO>, AppError> {
+    run_channel_check(&state, false, now_unix()).await
+}
+
+/// How often a channel is checked on its own. 0 never, 24 daily, 168 weekly.
+#[tauri::command]
+pub async fn set_youtube_channel_interval(
+    state: State<'_, AppState>,
+    channel_id: String,
+    hours: i64,
+) -> Result<(), AppError> {
+    with_db(&state, |db| {
+        db.set_yt_channel_interval(&channel_id, hours)
+            .map_err(|e| AppError::Database(format!("Failed to set the interval: {e}")))
+    })
+}
+
+// --- watched DJs -------------------------------------------------------
+//
+// A DJ is not a channel, and the difference is not cosmetic. A channel's new
+// uploads are a listing, at a unit or two. A DJ's new set may appear on a
+// channel nobody follows, and the only call that finds it is `search`, at 100
+// units — a hundred times more, out of the same ten thousand a day.
+//
+// So this half is built around that number: Never is the default, the interval
+// is per DJ, and the automatic run stops before it can eat the day.
+
+/// What the automatic run refuses to spend below.
+///
+/// One DJ search is 100 units. Left alone, a handful of daily watches on a day
+/// when something also went wrong could work through the whole allowance while
+/// the user was not looking, and the first they would know of it is a set they
+/// could not open. The reserve is what the app will not touch on its own; the
+/// buttons remain free to spend it, because a button was asked for.
+const AUTOMATIC_QUOTA_RESERVE: u32 = 2_000;
+
+/// How far back a DJ watched for the first time looks.
+///
+/// Without a floor the first check would ask for everything ever published and
+/// report a decade of sets as new. A month is enough to be useful and short
+/// enough to be read.
+const FIRST_DJ_LOOKBACK_SECS: i64 = 30 * 86_400;
+
+/// How far back before the last check a search still reaches.
+///
+/// YouTube's publish time and the moment a set becomes findable are not the
+/// same instant, so a window that starts exactly where the last one ended can
+/// step over a set. Overlapping is free — the search costs 100 units either
+/// way — and `yt_dj_finds` makes the repeats harmless.
+const DJ_OVERLAP_SECS: i64 = 2 * 86_400;
+
+#[derive(Debug, Serialize)]
+pub struct WatchedDjDTO {
+    pub name_key: String,
+    pub display_name: String,
+    pub check_interval_hours: i64,
+    pub last_checked: Option<String>,
+    pub auto_import: bool,
+}
+
+/// "Solomun" and "solomun" are the same DJ.
+fn dj_key(name: &str) -> String {
+    name.trim().to_lowercase()
+}
+
+#[tauri::command]
+pub async fn watch_youtube_dj(state: State<'_, AppState>, name: String) -> Result<(), AppError> {
+    let display_name = name.trim().to_string();
+    if display_name.len() < 2 {
+        return Err(AppError::Validation("Type a DJ's name to watch".to_string()));
+    }
+
+    let dj = YtWatchedDj {
+        name_key: dj_key(&display_name),
+        display_name,
+        // Watching alone must never start spending 100 units a day.
+        check_interval_hours: 0,
+        last_checked: None,
+        auto_import: false,
+    };
+
+    with_db(&state, |db| {
+        db.save_yt_watched_dj(&dj)
+            .map_err(|e| AppError::Database(format!("Failed to watch that DJ: {e}")))
+    })
+}
+
+#[tauri::command]
+pub async fn list_youtube_djs(state: State<'_, AppState>) -> Result<Vec<WatchedDjDTO>, AppError> {
+    with_db(&state, |db| {
+        db.list_yt_watched_djs()
+            .map(|djs| {
+                djs.into_iter()
+                    .map(|d| WatchedDjDTO {
+                        name_key: d.name_key,
+                        display_name: d.display_name,
+                        check_interval_hours: d.check_interval_hours,
+                        last_checked: d.last_checked,
+                        auto_import: d.auto_import,
+                    })
+                    .collect()
+            })
+            .map_err(|e| AppError::Database(format!("Failed to list watched DJs: {e}")))
+    })
+}
+
+#[tauri::command]
+pub async fn unwatch_youtube_dj(
+    state: State<'_, AppState>,
+    name_key: String,
+) -> Result<(), AppError> {
+    with_db(&state, |db| {
+        db.delete_yt_watched_dj(&name_key)
+            .map_err(|e| AppError::Database(format!("Failed to stop watching: {e}")))?;
+        // Their history goes with them, so watching again starts clean rather
+        // than silently suppressing everything found the last time.
+        db.delete_yt_dj_finds(&name_key)
+            .map_err(|e| AppError::Database(format!("Failed to clear the history: {e}")))
+    })
+}
+
+/// Everything a DJ's searches have turned up, at no quota cost.
+#[tauri::command]
+pub async fn list_youtube_dj_finds(
+    state: State<'_, AppState>,
+    name_key: String,
+) -> Result<Vec<ChannelUploadDTO>, AppError> {
+    let stored: Vec<String> = with_db(&state, |db| {
+        db.list_yt_sets()
+            .map(|sets| sets.into_iter().map(|s| s.video_id).collect())
+            .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
+    })?;
+
+    with_db(&state, |db| {
+        db.list_yt_dj_finds(&name_key)
+            .map(|finds| {
+                finds
+                    .into_iter()
+                    .map(|f| ChannelUploadDTO {
+                        already_stored: stored.contains(&f.video_id),
+                        video_id: f.video_id,
+                        title: f.title,
+                        published_at: f.published_at.unwrap_or_default(),
+                        duration_ms: None,
+                    })
+                    .collect()
+            })
+            .map_err(|e| AppError::Database(format!("Failed to read what was found: {e}")))
+    })
+}
+
+/// How often a DJ is searched for on their own. 0 never, 24 daily, 168 weekly.
+#[tauri::command]
+pub async fn set_youtube_dj_interval(
+    state: State<'_, AppState>,
+    name_key: String,
+    hours: i64,
+) -> Result<(), AppError> {
+    with_db(&state, |db| {
+        db.set_yt_dj_interval(&name_key, hours)
+            .map_err(|e| AppError::Database(format!("Failed to set the interval: {e}")))
+    })
+}
+
+/// Does this title actually name the DJ, or merely mention them?
+///
+/// Searching a name matches descriptions and tags too, so the title has to be
+/// checked. The obvious check — does the title contain the name as typed — is
+/// too brittle to ship: "Josep Capriati" is not a substring of "JOSEPH
+/// CAPRIATI closing set", so a single missing letter silently discards every
+/// real result while the app reports, truthfully and uselessly, that it found
+/// nothing.
+///
+/// Requiring every word instead survives a typo, a reordering, and anything
+/// inserted between the words. It is looser, and deliberately so: the cost of
+/// being strict here is invisible, and the cost of being loose is one extra row
+/// the user can see and ignore.
+fn title_mentions(name: &str, title: &str) -> bool {
+    let haystack = title.to_lowercase();
+    let words: Vec<String> = name
+        .split_whitespace()
+        // Single characters match almost anything and carry no information.
+        .filter(|word| word.chars().count() >= 2)
+        .map(|word| word.to_lowercase())
+        .collect();
+
+    if words.is_empty() {
+        return haystack.contains(&name.to_lowercase());
+    }
+    words.iter().all(|word| haystack.contains(word.as_str()))
+}
+
+/// Whether a DJ's new sets are fetched and stored without being asked.
+#[tauri::command]
+pub async fn set_youtube_dj_auto_import(
+    state: State<'_, AppState>,
+    name_key: String,
+    enabled: bool,
+) -> Result<(), AppError> {
+    with_db(&state, |db| {
+        db.set_yt_dj_auto_import(&name_key, enabled)
+            .map_err(|e| AppError::Database(format!("Failed to set automatic import: {e}")))
+    })
+}
+
+/// Which watched DJs an automatic run may search for, in order, given what is
+/// left of today's quota.
+///
+/// Pure, because this is where 100 units a call meets a 10,000-unit day and the
+/// arithmetic has to be right whether or not anyone is watching. The reserve is
+/// never crossed, so a long list of daily watches spends what it can and leaves
+/// the rest of the day intact rather than failing halfway through.
+fn djs_within_budget(
+    due: Vec<YtWatchedDj>,
+    remaining_quota: u32,
+    reserve: u32,
+) -> Vec<YtWatchedDj> {
+    let spendable = remaining_quota.saturating_sub(reserve);
+    let affordable = (spendable / youtube::unit_cost("search")) as usize;
+    due.into_iter().take(affordable).collect()
+}
+
+/// The body of a DJ check, shared by the button and by the automatic run.
+///
+/// `budget` caps how much the run may spend. The button passes `None` — a
+/// person asking is allowed to spend what they have.
+async fn run_dj_check(
+    state: &AppState,
+    due_only: bool,
+    now: i64,
+    budget: Option<u32>,
+) -> Result<Vec<ChannelNewsDTO>, AppError> {
+    let key = read_key(state)?;
+
+    let djs = with_db(state, |db| {
+        db.list_yt_watched_djs()
+            .map_err(|e| AppError::Database(format!("Failed to list watched DJs: {e}")))
+    })?;
+
+    let mut djs: Vec<YtWatchedDj> = if due_only {
+        djs.into_iter()
+            .filter(|d| is_due(d.check_interval_hours, d.last_checked.as_deref(), now))
+            .collect()
+    } else {
+        djs
+    };
+
+    if let Some(remaining) = budget {
+        djs = djs_within_budget(djs, remaining, AUTOMATIC_QUOTA_RESERVE);
+    }
+
+    if djs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let stored: Vec<String> = with_db(state, |db| {
+        db.list_yt_sets()
+            .map(|sets| sets.into_iter().map(|s| s.video_id).collect())
+            .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
+    })?;
+
+    let mut news = Vec::new();
+    let mut spent = 0u32;
+    let mut checked: Vec<String> = Vec::new();
+
+    for dj in djs {
+        // A DJ watched for the first time looks back a month, not forever; after
+        // that the window reaches a little behind the last check.
+        let since = dj
+            .last_checked
+            .as_deref()
+            .and_then(youtube_time::unix_from_iso)
+            .map(|then| then - DJ_OVERLAP_SECS)
+            .unwrap_or(now - FIRST_DJ_LOOKBACK_SECS);
+
+        let hits = match youtube::search_sets_since(
+            &key,
+            &dj.display_name,
+            &youtube_time::iso_seconds(since),
+            10,
+            &mut spent,
+        )
+        .await
+        {
+            Ok(hits) => hits,
+            // One failed search must not sink the rest, and must not count as
+            // a check — 100 units is too much to silently waste a day over.
+            Err(_) => continue,
+        };
+
+        checked.push(dj.name_key.clone());
+
+        // A set that does not name them in its title is somebody talking about
+        // them, not a set of theirs.
+        let relevant: Vec<_> = hits
+            .into_iter()
+            .filter(|hit| title_mentions(&dj.name_key, &hit.title))
+            .collect();
+
+        // Everything the search returned is remembered against this DJ, and the
+        // insert itself says which of them had never been seen before. A set
+        // found last week and not imported is therefore not announced twice,
+        // and is still there to go back to.
+        let first_sightings = with_db(state, |db| {
+            let mut fresh = Vec::new();
+            for hit in &relevant {
+                let is_new = db
+                    .record_yt_dj_find(&YtDjFind {
+                        name_key: dj.name_key.clone(),
+                        video_id: hit.video_id.clone(),
+                        title: hit.title.clone(),
+                        channel: Some(hit.channel.clone()),
+                        published_at: Some(hit.published_at.clone()),
+                    })
+                    .unwrap_or(false);
+                if is_new {
+                    fresh.push(hit.video_id.clone());
+                }
+            }
+            Ok(fresh)
+        })
+        .unwrap_or_default();
+
+        let new_sets: Vec<ChannelUploadDTO> = relevant
+            .into_iter()
+            .filter(|hit| first_sightings.contains(&hit.video_id))
+            .filter(|hit| !stored.contains(&hit.video_id))
+            .map(|hit| ChannelUploadDTO {
+                video_id: hit.video_id,
+                title: hit.title,
+                published_at: hit.published_at,
+                // Search does not report duration, and asking would cost more.
+                // `videoDuration=long` has already excluded anything short.
+                duration_ms: None,
+                already_stored: false,
+            })
+            .collect();
+
+        if !new_sets.is_empty() {
+            news.push(ChannelNewsDTO {
+                channel_id: format!("dj:{}", dj.name_key),
+                title: Some(dj.display_name),
+                source: "dj".to_string(),
+                auto_import: dj.auto_import,
+                new_sets,
+            });
+        }
+    }
+
+    let _ = record_spend(state, spent);
+
+    if !checked.is_empty() {
+        let stamp = youtube_time::iso_now();
+        let _ = with_db(state, |db| {
+            for name_key in &checked {
+                let _ = db.touch_yt_dj_checked(name_key, &stamp);
+            }
+            Ok(())
+        });
+    }
+
+    Ok(news)
+}
+
+/// Searches for every watched DJ. 100 units each, and the button says so.
+#[tauri::command]
+pub async fn check_youtube_djs(
+    state: State<'_, AppState>,
+) -> Result<Vec<ChannelNewsDTO>, AppError> {
+    run_dj_check(&state, false, now_unix(), None).await
+}
+
+// --- automatic checking ------------------------------------------------
+//
+// The timer is deliberately dumb: it wakes on a fixed tick and asks the pure
+// `is_due` rule which channels have waited long enough. Nothing is scheduled
+// per channel, so following, unfollowing or changing an interval needs no
+// bookkeeping — the next tick simply reads the new answer.
+
+/// How often the app looks for channels that are due.
+///
+/// Well below the shortest interval on offer (daily), so a check lands within
+/// a quarter of an hour of when it is due, and rare enough that the tick itself
+/// costs nothing: a wake with nothing due does not touch the network at all.
+const WATCH_TICK_SECS: u64 = 15 * 60;
+
+/// The database is opened by the frontend, not at startup, so the first tick
+/// waits for it rather than racing it.
+const WATCH_FIRST_TICK_SECS: u64 = 90;
+
+/// What the frontend is told when the automatic check finds something.
+pub const NEW_SETS_EVENT: &str = "yt-new-sets";
+
+/// Starts the background check. Called once, from the app's setup.
+///
+/// Every failure here is silent on purpose: no API key, no database yet, quota
+/// gone, no network. None of them is something to interrupt someone's evening
+/// over, and all of them fix themselves by the next tick.
+pub fn spawn_channel_watcher(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(WATCH_FIRST_TICK_SECS)).await;
+
+        loop {
+            let state = app.state::<AppState>();
+            let now = now_unix();
+
+            let mut news = run_channel_check(&state, true, now).await.unwrap_or_default();
+
+            // Only what is left after the channel checks may go on searches,
+            // and only down to the reserve.
+            let remaining = get_quota(&state).map(|q| q.remaining).unwrap_or(0);
+            if let Ok(dj_news) = run_dj_check(&state, true, now, Some(remaining)).await {
+                news.extend(dj_news);
+            }
+
+            if !news.is_empty() {
+                let _ = app.emit(NEW_SETS_EVENT, &news);
+            }
+            drop(state);
+
+            tokio::time::sleep(std::time::Duration::from_secs(WATCH_TICK_SECS)).await;
+        }
+    });
 }
 
 /// Remembers what the user has already been shown, so "new" stays meaningful.
@@ -880,6 +1387,273 @@ mod tests {
     /// 2026-01-15 12:00 UTC and the same instant a day later, both in PST.
     const DAY_ONE: i64 = 1_768_478_400;
     const DAY_TWO: i64 = DAY_ONE + 86_400;
+
+    /// 2026-01-15 12:00:00 UTC, the same instant DAY_ONE names.
+    const DAY_ONE_ISO: &str = "2026-01-15T12:00:00.000Z";
+
+    #[test]
+    fn never_means_never_however_long_it_has_been() {
+        assert!(!is_due(0, None, DAY_ONE));
+        assert!(!is_due(0, Some(DAY_ONE_ISO), DAY_ONE + 365 * 86_400));
+        // A negative interval is not a shorter one.
+        assert!(!is_due(-24, None, DAY_ONE));
+    }
+
+    #[test]
+    fn a_channel_never_checked_is_due_at_once() {
+        assert!(is_due(24, None, DAY_ONE));
+        assert!(is_due(168, None, DAY_ONE));
+    }
+
+    #[test]
+    fn the_interval_is_honoured_to_the_hour() {
+        // Daily: not at 23 hours, yes at exactly 24.
+        assert!(!is_due(24, Some(DAY_ONE_ISO), DAY_ONE + 23 * 3_600));
+        assert!(is_due(24, Some(DAY_ONE_ISO), DAY_ONE + 24 * 3_600));
+        // Weekly.
+        assert!(!is_due(168, Some(DAY_ONE_ISO), DAY_ONE + 6 * 86_400));
+        assert!(is_due(168, Some(DAY_ONE_ISO), DAY_ONE + 7 * 86_400));
+    }
+
+    #[test]
+    fn a_manual_check_a_minute_ago_counts() {
+        // The button writes last_checked too, so the timer must not repeat it.
+        assert!(!is_due(24, Some(DAY_ONE_ISO), DAY_ONE + 60));
+    }
+
+    #[test]
+    fn an_unreadable_timestamp_is_treated_as_never_checked() {
+        // Doing the work again costs a unit. Skipping a channel forever does not
+        // announce itself, so the cheap mistake is the one to make.
+        assert!(is_due(24, Some("whenever"), DAY_ONE));
+        assert!(is_due(24, Some(""), DAY_ONE));
+    }
+
+    #[test]
+    fn a_clock_that_went_backwards_does_not_make_everything_due() {
+        // saturating_sub, not a negative that would compare as "not yet".
+        assert!(!is_due(24, Some(DAY_ONE_ISO), DAY_ONE - 3_600));
+    }
+
+    #[test]
+    fn the_interval_survives_a_round_trip_through_the_database() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_channel(&YtChannel {
+            channel_id: "UC1".to_string(),
+            handle: Some("cercle".to_string()),
+            title: Some("Cercle".to_string()),
+            uploads_id: Some("UU1".to_string()),
+            last_checked: None,
+            last_seen_video: None,
+            check_interval_hours: 0,
+        })
+        .expect("follow");
+
+        // Following alone must never start spending quota.
+        let stored = db.list_yt_channels().expect("list");
+        assert_eq!(stored[0].check_interval_hours, 0);
+        assert!(!is_due(stored[0].check_interval_hours, None, DAY_ONE));
+
+        db.set_yt_channel_interval("UC1", 24).expect("set interval");
+        let stored = db.list_yt_channels().expect("list");
+        assert_eq!(stored[0].check_interval_hours, 24);
+        assert!(is_due(stored[0].check_interval_hours, stored[0].last_checked.as_deref(), DAY_ONE));
+
+        db.touch_yt_channel_checked("UC1", DAY_ONE_ISO).expect("touch");
+        let stored = db.list_yt_channels().expect("list");
+        assert_eq!(stored[0].last_checked.as_deref(), Some(DAY_ONE_ISO));
+        // Touching records the check without disturbing anything else.
+        assert_eq!(stored[0].check_interval_hours, 24);
+        assert_eq!(stored[0].last_seen_video, None);
+        assert!(!is_due(24, stored[0].last_checked.as_deref(), DAY_ONE + 3_600));
+        assert!(is_due(24, stored[0].last_checked.as_deref(), DAY_TWO));
+    }
+
+    fn watched(name: &str, hours: i64) -> YtWatchedDj {
+        YtWatchedDj {
+            name_key: dj_key(name),
+            display_name: name.to_string(),
+            check_interval_hours: hours,
+            last_checked: None,
+            auto_import: false,
+        }
+    }
+
+    #[test]
+    fn a_dj_search_costs_a_hundred_times_a_channel_check() {
+        // The number the whole DJ half is designed around.
+        assert_eq!(youtube::unit_cost("search"), 100);
+        assert_eq!(youtube::unit_cost("playlistItems"), 1);
+    }
+
+    #[test]
+    fn the_automatic_run_never_spends_into_the_reserve() {
+        let due: Vec<YtWatchedDj> = (0..10).map(|i| watched(&format!("dj{i}"), 24)).collect();
+
+        // A full day: 10,000 less the 2,000 reserve is 8,000, which buys 80 —
+        // more than are due, so all ten run.
+        assert_eq!(djs_within_budget(due.clone(), 10_000, 2_000).len(), 10);
+
+        // Down to the reserve exactly: nothing may run.
+        assert_eq!(djs_within_budget(due.clone(), 2_000, 2_000).len(), 0);
+        // Below it, after the buttons have spent the day: still nothing, and no
+        // underflow panic on the subtraction.
+        assert_eq!(djs_within_budget(due.clone(), 0, 2_000).len(), 0);
+        assert_eq!(djs_within_budget(due.clone(), 500, 2_000).len(), 0);
+
+        // 2,350 leaves 350 spendable, which buys three searches, not four.
+        assert_eq!(djs_within_budget(due, 2_350, 2_000).len(), 3);
+    }
+
+    #[test]
+    fn watching_a_dj_does_not_start_searching_for_them() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_watched_dj(&watched("Solomun", 0)).expect("watch");
+
+        let stored = db.list_yt_watched_djs().expect("list");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].display_name, "Solomun");
+        assert_eq!(stored[0].check_interval_hours, 0);
+        // Never, whatever the budget says.
+        assert!(!is_due(stored[0].check_interval_hours, None, DAY_ONE));
+        assert_eq!(djs_within_budget(stored, 10_000, 2_000).len(), 1);
+    }
+
+    #[test]
+    fn automatic_import_is_off_until_it_is_asked_for() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_watched_dj(&watched("Solomun", 24)).expect("watch");
+        assert!(!db.list_yt_watched_djs().unwrap()[0].auto_import);
+
+        db.set_yt_dj_auto_import("solomun", true).expect("enable");
+        assert!(db.list_yt_watched_djs().unwrap()[0].auto_import);
+        // And switching it off again really switches it off.
+        db.set_yt_dj_auto_import("solomun", false).expect("disable");
+        assert!(!db.list_yt_watched_djs().unwrap()[0].auto_import);
+    }
+
+    #[test]
+    fn the_same_dj_is_not_watched_twice_under_a_different_case() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_watched_dj(&watched("Solomun", 0)).expect("watch");
+        db.save_yt_watched_dj(&watched("solomun", 168)).expect("watch again");
+
+        let stored = db.list_yt_watched_djs().expect("list");
+        assert_eq!(stored.len(), 1, "one DJ, however it was typed");
+        assert_eq!(stored[0].check_interval_hours, 168);
+    }
+
+    #[test]
+    fn a_dj_interval_and_check_round_trip_through_the_database() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_watched_dj(&watched("Hot Since 82", 0)).expect("watch");
+        db.set_yt_dj_interval("hot since 82", 168).expect("interval");
+
+        let stored = db.list_yt_watched_djs().expect("list");
+        assert_eq!(stored[0].check_interval_hours, 168);
+        // Never checked, so a weekly watch is due at once.
+        assert!(is_due(168, stored[0].last_checked.as_deref(), DAY_ONE));
+
+        db.touch_yt_dj_checked("hot since 82", DAY_ONE_ISO).expect("touch");
+        let stored = db.list_yt_watched_djs().expect("list");
+        assert!(!is_due(168, stored[0].last_checked.as_deref(), DAY_TWO));
+        assert!(is_due(168, stored[0].last_checked.as_deref(), DAY_ONE + 7 * 86_400));
+
+        db.delete_yt_watched_dj("hot since 82").expect("unwatch");
+        assert!(db.list_yt_watched_djs().expect("list").is_empty());
+    }
+
+    fn find(name_key: &str, video_id: &str) -> YtDjFind {
+        YtDjFind {
+            name_key: name_key.to_string(),
+            video_id: video_id.to_string(),
+            title: format!("A set {video_id}"),
+            channel: Some("cosmobeat".to_string()),
+            published_at: Some(DAY_ONE_ISO.to_string()),
+        }
+    }
+
+    /// The point of remembering: a set is news exactly once, whether or not the
+    /// user did anything about it, and whether or not a later search returns it
+    /// again from the overlapping window.
+    #[test]
+    fn a_set_a_search_already_turned_up_is_not_news_twice() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        assert!(db.record_yt_dj_find(&find("solomun", "abc")).unwrap(), "first sighting is news");
+        assert!(!db.record_yt_dj_find(&find("solomun", "abc")).unwrap(), "the same set is not");
+        assert!(db.record_yt_dj_find(&find("solomun", "def")).unwrap(), "a different set is");
+
+        // Another DJ's search finding the same video is news for that DJ.
+        assert!(db.record_yt_dj_find(&find("hot since 82", "abc")).unwrap());
+
+        let solomun = db.list_yt_dj_finds("solomun").unwrap();
+        assert_eq!(solomun.len(), 2);
+        assert!(solomun.iter().all(|f| f.name_key == "solomun"));
+    }
+
+    /// Watching again must start clean, or everything found the first time
+    /// would be silently suppressed forever.
+    #[test]
+    fn unwatching_a_dj_forgets_what_was_found_for_them() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.record_yt_dj_find(&find("solomun", "abc")).unwrap();
+        db.record_yt_dj_find(&find("hot since 82", "xyz")).unwrap();
+
+        db.delete_yt_dj_finds("solomun").unwrap();
+
+        assert!(db.list_yt_dj_finds("solomun").unwrap().is_empty());
+        // And only theirs.
+        assert_eq!(db.list_yt_dj_finds("hot since 82").unwrap().len(), 1);
+        assert!(db.record_yt_dj_find(&find("solomun", "abc")).unwrap(), "news again after a reset");
+    }
+
+    /// The case that exposed this: the name was typed "Josep Capriati", and a
+    /// plain substring test threw away every genuine result for a missing "h".
+    #[test]
+    fn a_misspelled_name_still_finds_the_dj() {
+        let title = "JOSEPH CAPRIATI closing set @ AMNESIA IBIZA opening party 2024 by LUCA DEA";
+        assert!(title_mentions("josep capriati", title));
+        assert!(title_mentions("joseph capriati", title));
+        // What the old rule did, kept here so the regression is unmistakable.
+        assert!(!title.to_lowercase().contains("josep capriati"));
+    }
+
+    #[test]
+    fn the_words_may_be_reordered_or_interrupted() {
+        assert!(title_mentions(
+            "hot since 82",
+            "Hot Since 82 (UK) @ BBC Radio 1 Essential Mix 05.09.2026"
+        ));
+        assert!(title_mentions(
+            "solomun",
+            "Solomun @ Théâtre Antique d'Orange in France for Cercle"
+        ));
+        // Every word has to be there, not just one of them.
+        assert!(!title_mentions("hot since 82", "Hot Since 91 live in Berlin"));
+        assert!(!title_mentions("joseph capriati", "Adam Beyer b2b Joseph"));
+    }
+
+    #[test]
+    fn somebody_talking_about_a_dj_is_not_a_set_by_them() {
+        assert!(!title_mentions(
+            "solomun",
+            "My top 10 tracks of 2026 — deep house selection"
+        ));
+    }
 
     #[test]
     fn spending_accumulates_within_a_pacific_day() {

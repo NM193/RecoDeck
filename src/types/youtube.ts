@@ -114,7 +114,16 @@ export interface FollowedChannel {
   uploads_id?: string
   last_checked?: string
   last_seen_video?: string
+  /** How often the app checks on its own: 0 never, 24 daily, 168 weekly. */
+  check_interval_hours: number
 }
+
+/** The intervals offered per channel, and what each costs to run. */
+export const CHECK_INTERVALS = [
+  { hours: 0, label: 'Never' },
+  { hours: 24, label: 'Daily' },
+  { hours: 168, label: 'Weekly' },
+] as const
 
 /** One long upload of a channel, before anything is fetched about it. */
 export interface ChannelUpload {
@@ -126,7 +135,28 @@ export interface ChannelUpload {
 }
 
 export interface ChannelNews {
+  /** A channel's UC id, or `dj:<name>` for a watched DJ. */
   channel_id: string
   title?: string
+  /** Where the news came from — only a channel has a last-seen marker to move. */
+  source: 'channel' | 'dj'
+  /** The user asked for these to be fetched and stored without being asked. */
+  auto_import: boolean
   new_sets: ChannelUpload[]
+}
+
+/**
+ * A DJ watched for new sets, wherever they turn up.
+ *
+ * Separate from a followed channel because the mechanism differs, not just the
+ * name: a channel's uploads are a listing at a unit or two, while a DJ has to
+ * be searched for at a hundred.
+ */
+export interface WatchedDj {
+  name_key: string
+  display_name: string
+  check_interval_hours: number
+  last_checked?: string
+  /** Fetch and store what a search turns up. Off unless switched on. */
+  auto_import: boolean
 }

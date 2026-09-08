@@ -8,7 +8,7 @@
  * fact, while a name only one person wrote is a guess.
  */
 
-import { extractTracklist } from './extract'
+import { extractNumberedList, extractTracklist } from './extract'
 import type {
   Candidate,
   Disagreement,
@@ -49,6 +49,42 @@ export function collectCandidates(
     })
   }
 
+  if (candidates.length) {
+    return candidates.sort(
+      (a, b) => b.confidence - a.confidence || b.tracks.length - a.tracks.length,
+    )
+  }
+
+  // Nothing anywhere carried a timestamp. Only now is a bare numbered list
+  // worth trusting — running it alongside the timestamped pass would let a
+  // numbering inside a real list compete with the list itself, and the cue is
+  // always the better evidence where there is one.
+  const numberedDescription = extractNumberedList(video.description)
+  if (numberedDescription.tracks.length) {
+    return [
+      {
+        source: 'description',
+        sourceMeta: null,
+        weight: 1.2,
+        untimed: true,
+        ...numberedDescription,
+      },
+    ]
+  }
+
+  for (const comment of comments) {
+    const numbered = extractNumberedList(comment.text)
+    if (!numbered.tracks.length) continue
+    candidates.push({
+      source: 'comment',
+      sourceMeta: { author: comment.author, likeCount: comment.likeCount },
+      weight: 1,
+      untimed: true,
+      ...numbered,
+      confidence: Number((numbered.confidence * 0.95).toFixed(3)),
+    })
+  }
+
   return candidates.sort(
     (a, b) => b.confidence - a.confidence || b.tracks.length - a.tracks.length,
   )
@@ -84,6 +120,8 @@ export function mergeCandidates(
   interface Cluster {
     cueMs: number
     cues: number[]
+    /** Row number, used instead of the cue when there are no timestamps. */
+    position: number
     titles: Set<string>
     entries: Array<{
       track: Candidate['tracks'][number]
@@ -93,20 +131,30 @@ export function mergeCandidates(
   }
   const clusters: Cluster[] = []
 
+  /**
+   * A numbered list has every cue at zero, so the cue window would fold all
+   * twenty-four rows into one slot. Where nobody wrote a timestamp, the row
+   * number is the only ordering there is, and it is what identifies a slot.
+   */
+  const untimed = candidates.length > 0 && candidates.every((c) => c.untimed)
+
   for (const candidate of candidates) {
     for (const track of candidate.tracks) {
-      let cluster = clusters.find(
-        (c) =>
-          Math.abs(c.cueMs - track.cueMs) <= cueWindow ||
-          (!!track.titleNorm &&
-            [...c.titles].some((t) => sameTitle(t, track.titleNorm)) &&
-            Math.abs(c.cueMs - track.cueMs) <= nameWindow),
-      )
+      let cluster = untimed
+        ? clusters.find((c) => c.position === track.index)
+        : clusters.find(
+            (c) =>
+              Math.abs(c.cueMs - track.cueMs) <= cueWindow ||
+              (!!track.titleNorm &&
+                [...c.titles].some((t) => sameTitle(t, track.titleNorm)) &&
+                Math.abs(c.cueMs - track.cueMs) <= nameWindow),
+          )
 
       if (!cluster) {
         cluster = {
           cueMs: track.cueMs,
           cues: [],
+          position: track.index,
           titles: new Set<string>(),
           entries: [],
         }
@@ -124,7 +172,7 @@ export function mergeCandidates(
     }
   }
 
-  clusters.sort((a, b) => a.cueMs - b.cueMs)
+  clusters.sort((a, b) => (untimed ? a.position - b.position : a.cueMs - b.cueMs))
   const sourceCount = candidates.length
 
   const tracks = clusters.map<Track>((cluster, i) => {
@@ -187,8 +235,10 @@ export function mergeCandidates(
 
     return {
       index: i + 1,
-      cue: msToCue(cluster.cueMs),
-      cueMs: cluster.cueMs,
+      // Nothing to seek to, so nothing is claimed. A "0:00" on every row would
+      // read as a timestamp somebody wrote down.
+      cue: untimed ? '' : msToCue(cluster.cueMs),
+      cueMs: untimed ? 0 : cluster.cueMs,
       artist: winner?.artist ?? null,
       title: winner?.title ?? 'ID',
       mix: winner?.mix ?? null,

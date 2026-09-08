@@ -38,12 +38,20 @@ const expectedById = new Map(expected.map((r) => [r.video.id, r]))
 /** Sets where we deliberately differ from the tool — see the block below. */
 const DIVERGENT = new Set(['bk6Xst6euQk'])
 
+/**
+ * Sets collected after the port, which the standalone tool never saw and so has
+ * no output for. They are regression fixtures for RecoDeck's own behaviour.
+ */
+const AFTER_THE_TOOL = new Set(['_wfwSaA5GeE'])
+
+const EXCLUDED = new Set([...DIVERGENT, ...AFTER_THE_TOOL])
+
 describe('parity with the standalone tool', () => {
   it('has a fixture for every expected result', () => {
-    expect(setFiles.length - DIVERGENT.size).toBe(expected.length)
+    expect(setFiles.length - EXCLUDED.size).toBe(expected.length)
   })
 
-  for (const file of setFiles.filter((f) => !DIVERGENT.has(f.replace('.json', '')))) {
+  for (const file of setFiles.filter((f) => !EXCLUDED.has(f.replace('.json', '')))) {
     const { video, comments } = readJson<RawSet>(file)
 
     it(`reproduces ${video.title.slice(0, 48)}`, () => {
@@ -108,6 +116,58 @@ describe('Boiler Room Tulum — where we deliberately beat the original', () => 
     const oursTitles = ours.tracks.map((t) => t.title)
     for (const line of NARRATION) expect(oursTitles).not.toContain(line)
     expect(ours.trackCount).toBe(toolOutput.trackCount - NARRATION.length)
+  })
+})
+
+/**
+ * HOT SINCE 82 @ BBC Radio 1 Essential Mix — a tracklist with no timestamps.
+ *
+ * The uploader wrote all 24 tracks into the description as a numbered list and
+ * gave not one cue. Every structural test the parser had was built around
+ * timestamps, so the description yielded nothing and the set fell through to
+ * being assembled from comments — one track, from somebody shouting
+ * "OH MY F*K, CHANTE!".
+ *
+ * The standalone tool has the same blind spot. A numbered list is a tracklist
+ * even with nowhere to seek to, and it is what makes library matching possible.
+ */
+describe('BBC Essential Mix — a numbered list with no timestamps', () => {
+  const { video, comments } = readJson<RawSet>('_wfwSaA5GeE.json')
+
+  it('reads all 24 tracks out of the description', () => {
+    const result = analyse(video, comments)
+    expect(result.trackCount).toBe(24)
+    expect(result.source).toBe('description')
+    expect(result.status).toBe('ok')
+  })
+
+  it('says plainly that there are no timestamps', () => {
+    const result = analyse(video, comments)
+    // The player cannot seek to any of these, and the UI has to know that
+    // rather than send everyone to 0:00.
+    expect(result.untimed).toBe(true)
+    expect(result.tracks.every((t) => t.cueMs === 0 && t.cue === '')).toBe(true)
+  })
+
+  it('keeps the artist, the remix and the label off each row', () => {
+    const { tracks } = analyse(video, comments)
+
+    expect(tracks[0].artist).toBe('Hot Since 82 & Shades Of Rhythm')
+    expect(tracks[0].title).toBe('Shaded')
+    expect(tracks[0].label).toBe('KNEE DEEP IN SOUND')
+
+    const burning = tracks.find((t) => t.title === 'Burning')
+    expect(burning?.artist).toBe('MK ft. Alana')
+    expect(burning?.mix).toBe('Hot Since 82 Remix')
+    expect(burning?.label).toBe('DEFECTED')
+
+    // Numbering is stripped, not carried into the artist.
+    expect(tracks.every((t) => !/^\d+[.)]/.test(t.artist ?? ''))).toBe(true)
+  })
+
+  it('no longer falls back to a shout in the comments', () => {
+    const { tracks } = analyse(video, comments)
+    expect(tracks.map((t) => t.title)).not.toContain('OH MY F*K, CHANTE!')
   })
 })
 
