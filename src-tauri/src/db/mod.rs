@@ -67,6 +67,25 @@ pub struct YtSavedTrack {
     pub set_title: Option<String>,
 }
 
+/// One parsed row of a stored set, flattened for querying.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtTrack {
+    pub video_id: String,
+    pub position: i64,
+    pub cue_ms: i64,
+    pub cue: Option<String>,
+    pub artist: Option<String>,
+    pub title: String,
+    pub mix: Option<String>,
+    pub is_unknown: bool,
+    pub votes: Option<i64>,
+    pub source_count: Option<i64>,
+    pub artist_norm: Option<String>,
+    pub title_norm: Option<String>,
+    /// Filled in when searching across sets.
+    pub set_title: Option<String>,
+}
+
 /// A channel watched for new sets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct YtChannel {
@@ -215,6 +234,11 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/009_yt_sets.sql"))?;
+
+        // Migration 010: parsed tracks of stored sets, for search and statistics
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/010_yt_tracks.sql"))?;
 
         Ok(())
     }
@@ -2689,6 +2713,140 @@ impl Database {
         self.conn
             .execute("DELETE FROM yt_channels WHERE channel_id = ?", [channel_id])?;
         Ok(())
+    }
+
+    // --- parsed tracks of stored sets ---------------------------------
+
+    /// Replaces a set's tracks wholesale — reprocessing a set must not leave
+    /// rows from the previous parse behind.
+    pub fn replace_yt_tracks(&self, video_id: &str, tracks: &[YtTrack]) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM yt_tracks WHERE video_id = ?", [video_id])?;
+
+        for track in tracks {
+            self.conn.execute(
+                "INSERT INTO yt_tracks (
+                    video_id, position, cue_ms, cue, artist, title, mix,
+                    is_unknown, votes, source_count, artist_norm, title_norm
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    track.video_id,
+                    track.position,
+                    track.cue_ms,
+                    track.cue,
+                    track.artist,
+                    track.title,
+                    track.mix,
+                    track.is_unknown as i64,
+                    track.votes,
+                    track.source_count,
+                    track.artist_norm,
+                    track.title_norm,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// "Where did I hear this?" — across every set that was ever processed.
+    pub fn search_yt_tracks(&self, query: &str, limit: i64) -> Result<Vec<YtTrack>> {
+        let pattern = format!("%{}%", query.trim().to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT t.video_id, t.position, t.cue_ms, t.cue, t.artist, t.title, t.mix,
+                    t.is_unknown, t.votes, t.source_count, t.artist_norm, t.title_norm,
+                    s.title AS set_title
+             FROM yt_tracks t
+             LEFT JOIN yt_sets s ON s.video_id = t.video_id
+             WHERE t.is_unknown = 0
+               AND (LOWER(t.title) LIKE ?1 OR LOWER(COALESCE(t.artist, '')) LIKE ?1)
+             ORDER BY s.added_at DESC, t.position
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, limit], |row| {
+            Ok(YtTrack {
+                video_id: row.get(0)?,
+                position: row.get(1)?,
+                cue_ms: row.get(2)?,
+                cue: row.get(3)?,
+                artist: row.get(4)?,
+                title: row.get(5)?,
+                mix: row.get(6)?,
+                is_unknown: row.get::<_, i64>(7)? != 0,
+                votes: row.get(8)?,
+                source_count: row.get(9)?,
+                artist_norm: row.get(10)?,
+                title_norm: row.get(11)?,
+                set_title: row.get(12)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn count_yt_sets_and_tracks(&self) -> Result<(i64, i64, i64)> {
+        let sets: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM yt_sets", [], |row| row.get(0))?;
+        let tracks: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM yt_tracks WHERE is_unknown = 0", [], |row| {
+                row.get(0)
+            })?;
+        let unknowns: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM yt_tracks WHERE is_unknown = 1", [], |row| {
+                row.get(0)
+            })?;
+        Ok((sets, tracks, unknowns))
+    }
+
+    /// Who turns up most across everything processed.
+    pub fn top_yt_artists(&self, limit: i64) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT artist, COUNT(*) AS plays
+             FROM yt_tracks
+             WHERE is_unknown = 0 AND artist IS NOT NULL AND TRIM(artist) <> ''
+             GROUP BY LOWER(artist)
+             ORDER BY plays DESC, artist COLLATE NOCASE
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// Records that turn up in more than one set — the ones doing the rounds.
+    pub fn shared_yt_tracks(&self, limit: i64) -> Result<Vec<(String, Option<String>, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT title, artist, COUNT(DISTINCT video_id) AS sets
+             FROM yt_tracks
+             WHERE is_unknown = 0 AND title_norm IS NOT NULL AND title_norm <> ''
+             GROUP BY title_norm
+             HAVING sets > 1
+             ORDER BY sets DESC, title COLLATE NOCASE
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect()
+    }
+
+    /// Sets with the most unnamed slots — where digging would pay off.
+    pub fn yt_sets_with_most_unknowns(&self, limit: i64) -> Result<Vec<(String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.video_id, s.title, COUNT(*) AS unknowns
+             FROM yt_tracks t
+             LEFT JOIN yt_sets s ON s.video_id = t.video_id
+             WHERE t.is_unknown = 1
+             GROUP BY t.video_id
+             ORDER BY unknowns DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| {
+            Ok((
+                row.get(0)?,
+                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                row.get(2)?,
+            ))
+        })?;
+        rows.collect()
     }
 }
 
