@@ -25,15 +25,37 @@ import type { RawSet, TracklistResult } from './types'
 
 const FIXTURES = join(__dirname, '__fixtures__')
 
+/**
+ * The fixtures are real captured API responses for real sets, so they live
+ * outside the repository. Everything that depends on them skips when they are
+ * not there; the rules that can be stated without a real set still run.
+ *
+ * To restore them, drop the saved JSON responses back into `__fixtures__/`.
+ */
+const havePresentFixtures = (() => {
+  try {
+    return readdirSync(FIXTURES).some((f) => f.endsWith('.json'))
+  } catch {
+    return false
+  }
+})()
+
+// A skipped `describe` still evaluates its body so the runner can list what it
+// skipped, so this has to be safe to call with nothing on disk.
 const readJson = <T>(name: string): T =>
-  JSON.parse(readFileSync(join(FIXTURES, name), 'utf8')) as T
+  havePresentFixtures ? (JSON.parse(readFileSync(join(FIXTURES, name), 'utf8')) as T) : ({} as T)
 
-const setFiles = readdirSync(FIXTURES)
-  .filter((f) => f.endsWith('.json') && f !== 'expected.json' && !f.includes('tool-output'))
-  .sort()
+const setFiles = havePresentFixtures
+  ? readdirSync(FIXTURES)
+      .filter((f) => f.endsWith('.json') && f !== 'expected.json' && !f.includes('tool-output'))
+      .sort()
+  : []
 
-const expected = readJson<TracklistResult[]>('expected.json')
+const expected = havePresentFixtures ? readJson<TracklistResult[]>('expected.json') : []
 const expectedById = new Map(expected.map((r) => [r.video.id, r]))
+
+/** Skips the whole block rather than failing it when there is nothing to read. */
+const withFixtures = havePresentFixtures ? describe : describe.skip
 
 /** Sets where we deliberately differ from the tool — see the block below. */
 const DIVERGENT = new Set(['bk6Xst6euQk'])
@@ -46,7 +68,7 @@ const AFTER_THE_TOOL = new Set(['_wfwSaA5GeE'])
 
 const EXCLUDED = new Set([...DIVERGENT, ...AFTER_THE_TOOL])
 
-describe('parity with the standalone tool', () => {
+withFixtures('parity with the standalone tool', () => {
   it('has a fixture for every expected result', () => {
     expect(setFiles.length - EXCLUDED.size).toBe(expected.length)
   })
@@ -83,7 +105,7 @@ describe('parity with the standalone tool', () => {
  * kept here as `bk6Xst6euQk.tool-output.json` to make the difference explicit:
  * this is the one set where reproducing the tool exactly would be wrong.
  */
-describe('Boiler Room Tulum — where we deliberately beat the original', () => {
+withFixtures('Boiler Room Tulum — where we deliberately beat the original', () => {
   const { video, comments } = readJson<RawSet>('bk6Xst6euQk.json')
   const toolOutput = readJson<TracklistResult[]>('bk6Xst6euQk.tool-output.json')[0]
 
@@ -131,7 +153,7 @@ describe('Boiler Room Tulum — where we deliberately beat the original', () => 
  * The standalone tool has the same blind spot. A numbered list is a tracklist
  * even with nowhere to seek to, and it is what makes library matching possible.
  */
-describe('BBC Essential Mix — a numbered list with no timestamps', () => {
+withFixtures('BBC Essential Mix — a numbered list with no timestamps', () => {
   const { video, comments } = readJson<RawSet>('_wfwSaA5GeE.json')
 
   it('reads all 24 tracks out of the description', () => {

@@ -44,3 +44,8 @@ src-tauri/.env.local
 certificate.p12
 private.key
 latest.json
+
+# Saved YouTube sets used as parser fixtures. Real captured API responses,
+# so they stay out of the repository — see src/lib/tracklist/__fixtures__/*
+!src/lib/tracklist/__fixtures__/README.mdREADME.md
+src/lib/tracklist/__fixtures__/
