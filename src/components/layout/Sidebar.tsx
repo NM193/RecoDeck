@@ -254,7 +254,10 @@ export function Sidebar({
               onClick={onNavigateSets}
               type="button"
             >
-              <Icon name="ListMusic" size={16} />
+              {/* Not ListMusic (playlists) and not Disc3 (folders) — both are
+                  already in this sidebar. A set is a broadcast of a performance,
+                  which is the one thing nothing else here is. */}
+              <Icon name="Radio" size={16} />
               <span>Sets</span>
             </button>
           )}

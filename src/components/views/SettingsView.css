@@ -92,7 +92,7 @@
 }
 
 .sv-collapsible__header:hover .sv-collapsible__title {
-  color: var(--color-primary);
+  color: var(--accent);
 }
 
 .sv-collapsible__chevron {

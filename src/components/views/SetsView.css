@@ -373,6 +373,163 @@
   font-size: var(--text-xs);
 }
 
+/* What a result promises before anything is paid to open it. */
+.sets-found__promise {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* A description that actually holds a list is the thing worth spotting. */
+.sets-found__promise--found {
+  color: var(--color-success);
+}
+
+/* Held back before spending: says what it would cost and offers the cheap
+   right thing first, with the expensive one still available. */
+.sets-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.sets-notice strong {
+  color: var(--text-primary);
+}
+
+.sets-notice__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* A row with no timestamp of its own, pointing at a set that has one. */
+.sets-track__echo {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sets-track__echo:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The row the video is inside right now. */
+.sets-track--playing {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.sets-track--playing .sets-track__name,
+.sets-track--playing .sets-track__cue {
+  color: var(--text-primary);
+}
+
+.sets-track--playing .sets-track__index {
+  color: var(--accent);
+}
+
+/* The same track, lit up in the strip. */
+.sets-timeline__block--playing {
+  background: var(--accent);
+}
+
+/* Where the video actually is — the blocks say which track, not how far in. */
+.sets-timeline__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-primary);
+  pointer-events: none;
+}
+
+/* The track that is playing, as one strip you can wind through. The timeline
+   above covers the whole set; five minutes of two hours is four percent of it. */
+.sets-scrub {
+  padding: 8px 12px 10px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+}
+
+.sets-scrub__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.sets-scrub__name {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sets-scrub__time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sets-scrub__bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  cursor: pointer;
+}
+
+/* A generous hit area without a bar thick enough to shout. */
+.sets-scrub__bar::before {
+  content: '';
+  position: absolute;
+  inset: -8px 0;
+}
+
+.sets-scrub__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.sets-scrub__knob {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 /* Watching a DJ is a different mechanism at a hundred times the cost, so it
    sits in its own block rather than beside the channels. */
 .sets-djs {
@@ -476,6 +633,32 @@
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+/* With tempo, the blocks stand on the floor and rise — so the strip reads as
+   the shape of the set rather than a row of equal boxes. */
+.sets-timeline__strip--tempo {
+  height: 64px;
+}
+
+.sets-timeline__strip--tempo .sets-timeline__block {
+  top: auto;
+  bottom: 0;
+  border-radius: 2px 2px 0 0;
+}
+
+/* A record not in the library has no tempo. It stays present and clickable,
+   and does not pretend to be slow. */
+.sets-timeline__strip--tempo .sets-timeline__block--unmeasured {
+  height: 5px;
+  opacity: 0.5;
+}
+
+.sets-timeline__legend {
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
 .sets-timeline__block {
@@ -730,24 +913,46 @@
 /* --- the library, filed by DJ --- */
 
 .sets-dj {
-  margin-bottom: 18px;
+  margin-bottom: 26px;
 }
 
+/*
+ * The DJ, not another set.
+ *
+ * It used to be the same size and weight as the titles underneath it, so a
+ * group read as one more row in the list. A heading has to be a different kind
+ * of thing, not a slightly bolder one: smaller, spaced out, and ruled off.
+ */
 .sets-dj__name {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-  padding: 0 8px;
+  margin: 0 0 8px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sets-dj__who {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .sets-dj__count {
   color: var(--text-muted);
   font-size: var(--text-xs);
   font-weight: 400;
+  /* Pushed away from the name so the two are not read as one phrase. */
+  margin-left: auto;
+}
+
+/* A rail down the side, so where a group ends is never in question. */
+.sets-dj__sets {
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  margin-left: 2px;
 }
 
 .sets-dj__chip {

@@ -408,6 +408,75 @@ pub struct SetSearchHit {
     pub channel: String,
     pub published_at: String,
     pub thumbnail: Option<String>,
+    /// The full description, filled in by `fill_details`. Search itself returns
+    /// only a truncated snippet, which is never enough to hold a tracklist.
+    pub description: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub comment_count: Option<i64>,
+}
+
+/// Fills in the full description, runtime and comment count for a page of hits.
+///
+/// **One unit for up to fifty videos.** That is the whole reason this exists:
+/// a search returns a list of titles and nothing that says whether any of them
+/// carries a tracklist, so the only way to find out used to be to open one at
+/// 5-7 units and see. A single `videos` call turns a blind list into an
+/// informed one for a hundredth of the price of the search that produced it.
+pub async fn fill_details(
+    api_key: &str,
+    hits: &mut [SetSearchHit],
+    spent: &mut u32,
+) -> Result<(), AppError> {
+    if hits.is_empty() {
+        return Ok(());
+    }
+
+    let ids: Vec<String> = hits.iter().take(50).map(|h| h.video_id.clone()).collect();
+    let data = call_api(
+        api_key,
+        "videos",
+        &[
+            ("part", "snippet,contentDetails,statistics".into()),
+            ("id", ids.join(",")),
+        ],
+        spent,
+    )
+    .await?;
+
+    let details: std::collections::HashMap<String, (String, Option<i64>, Option<i64>)> = data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id")?.as_str()?.to_string();
+            let description = item
+                .pointer("/snippet/description")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let duration = item
+                .pointer("/contentDetails/duration")
+                .and_then(|v| v.as_str())
+                .map(parse_iso_duration);
+            // Reported as a string, and absent entirely where comments are off.
+            let comments = item
+                .pointer("/statistics/commentCount")
+                .and_then(|v| v.as_str())
+                .and_then(|v| v.parse::<i64>().ok());
+            Some((id, (description, duration, comments)))
+        })
+        .collect();
+
+    for hit in hits.iter_mut() {
+        if let Some((description, duration, comments)) = details.get(&hit.video_id) {
+            hit.description = Some(description.clone());
+            hit.duration_ms = *duration;
+            hit.comment_count = *comments;
+        }
+    }
+    Ok(())
 }
 
 /// Searching by name, for when the user knows the DJ but not the link.
@@ -469,6 +538,9 @@ fn parse_search_items(data: &serde_json::Value) -> Vec<SetSearchHit> {
                     .pointer("/thumbnails/medium/url")
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
+                description: None,
+                duration_ms: None,
+                comment_count: None,
             })
         })
         .collect()

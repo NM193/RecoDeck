@@ -962,6 +962,62 @@ and the name filter returned to a substring test. Each one fails tests.
 **Released as 0.3.0** — the first release containing any of the Sets work. The last public
 release, v0.2.15, has none of it.
 
+### 2026-09-08 (later) — what demonstrating it found
+
+Everything below came out of using the feature rather than reading the code, which is the
+argument for demonstrating each piece before moving to the next.
+
+**The automatic check had never run.** Both watched DJs were on Weekly and had just been
+checked, so nothing would have fired for seven days — including auto-import, which was switched
+on. Staging `last_checked` back and restarting made the whole chain run for the first time, and
+it worked. It also **filed a set with nought tracks into the library**, and a duplicate
+re-upload with two. A library nobody chose to fill has to earn every row: automatic import now
+withholds a set that parses to nothing. The units are spent before that can be judged and no
+amount of care avoids it, but the row is not written.
+
+**`var(--color-primary)` does not exist in this project.** The scrubber worked perfectly and was
+invisible: an undefined custom property throws nothing, logs nothing, and simply drops the
+declaration. Found only because the bar looked wrong. The whole app was then checked — every
+variable used against every variable defined — which turned up one more: `--space-10` in
+`SearchView.css`, on a scale that goes 6, 8, 12. Every icon name was checked the same way; all
+57 resolve.
+
+**A missing letter cost a hundred units and said nothing.** "Josep Capriati" is not a substring
+of "JOSEPH CAPRIATI closing set", so the title filter discarded every genuine hit while the app
+reported, truthfully, that it found nothing. Matching now requires every *word* of the name.
+Deliberately looser: strict fails invisibly, loose costs one row you can ignore.
+
+**One DJ, several headings.** `extractDjName` cuts at the earliest separator, which fails three
+ways at once: "Hot Since 82 House Set" and "JOSEPH CAPRIATI closing set" carry the description
+*before* the separator, and "Fabric 80 - Joseph Capriati" carries the name *after* it. Trailing
+role words now come off, and a compilation series in front is read past. Over the eleven real
+titles in the library, eight groups became five.
+
+**Two players, one pair of ears.** The video and the app's own player know nothing about each
+other, so whichever starts hands the other a pause. The first version had a race: panel state
+is read through a poll and instructions reach it through another, so for the best part of a
+second the video still reports itself as playing. Clicking "have it" stopped the video, started
+the file, and paused the file a moment later. A latch now makes the rule deaf to reports issued
+before the video was asked to stop.
+
+**Things that were built because the parser could already do it.**
+
+- `fill_details`: one `videos` call returns full descriptions for up to fifty hits, so a search
+  result can say whether it holds a tracklist before 5-7 units are spent opening it. One unit
+  against the hundred the search cost.
+- "Look again": reopening a stored set reparses the copy taken on the day, which is right when
+  the parser improved and wrong when the set did. Comments keep arriving.
+- Cross-set echoes: a row with no timestamp points at the same record in a set that does know
+  where it sits. Verified against the real library and **it fires nowhere yet** — both untimed
+  sets are the same Essential Mix, and their twin has no timestamps either. Correct, tested, and
+  invisible until a set is stored that shares a record with them.
+- The strip carries tempo: 8,202 of 8,421 library tracks are analysed, so the blocks can have
+  height. Checked before building it — only 95 tracks have a key, so nothing leans on key.
+
+**Tests:** 171 Rust, 139 frontend. One test written during this stretch was thrown away and
+rewritten: it exercised a fake function declared inside the test file rather than the code, which
+is worse than no test at all.
+
 ## Next Steps
 
 1. **NOW**: Continue Phase 2 — Next milestone: 2.1 Mel spectrogram or 2.4 Waveform peaks

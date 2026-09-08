@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::library::AppState;
-use crate::db::{Database, YtChannel, YtDjFind, YtSavedTrack, YtSet, YtTrack, YtWatchedDj};
+use crate::db::{
+    Database, YtChannel, YtDjFind, YtSavedTrack, YtSet, YtTrack, YtTrackEcho, YtWatchedDj,
+};
 use crate::error::AppError;
 use crate::external::youtube::{self, ChannelInfo, RawSet, SetSearchHit, DAILY_QUOTA};
 use crate::external::youtube_time::{self, now_unix, pacific_day, seconds_until_pacific_midnight};
@@ -201,10 +203,24 @@ pub async fn search_youtube_sets(
     let key = read_key(&state)?;
 
     let mut spent = 0u32;
-    let result = youtube::search_sets(&key, query.trim(), max.unwrap_or(12), &mut spent).await;
+    let mut hits = match youtube::search_sets(&key, query.trim(), max.unwrap_or(12), &mut spent).await
+    {
+        Ok(hits) => hits,
+        Err(e) => {
+            let _ = record_spend(&state, spent);
+            return Err(e);
+        }
+    };
+
+    // One more unit, for up to fifty videos, buys the full description of every
+    // hit — enough to say which of them actually carries a tracklist before the
+    // user spends 5-7 opening one. Against the hundred just spent on the
+    // search, refusing to spend it would be an odd economy. A failure here
+    // costs nothing but the extra information.
+    let _ = youtube::fill_details(&key, &mut hits, &mut spent).await;
 
     let _ = record_spend(&state, spent);
-    result
+    Ok(hits)
 }
 
 /// Fetch one set: description plus up to five pages of comments, 5-7 units.
@@ -298,11 +314,47 @@ pub async fn seek_youtube_panel(seconds: u64) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Hands playback to the app's own player. Two audible at once is not something
+/// anyone wants.
+#[tauri::command]
+pub async fn pause_youtube_panel() -> Result<(), AppError> {
+    crate::server::routes::request_pause();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn play_youtube_panel() -> Result<(), AppError> {
+    crate::server::routes::request_play();
+    Ok(())
+}
+
+/// Where the video is, as the panel last reported it.
+#[derive(Debug, Serialize)]
+pub struct PanelStateDTO {
+    pub position_ms: u64,
+    pub duration_ms: u64,
+    /// YouTube's numbering: -1 unstarted, 0 ended, 1 playing, 2 paused,
+    /// 3 buffering, 5 cued.
+    pub player_state: i32,
+}
+
+#[tauri::command]
+pub async fn youtube_panel_state() -> Result<PanelStateDTO, AppError> {
+    let (position_ms, duration_ms, player_state) = crate::server::routes::read_panel_state();
+    Ok(PanelStateDTO {
+        position_ms,
+        duration_ms,
+        player_state,
+    })
+}
+
 #[tauri::command]
 pub async fn close_youtube_panel(app: tauri::AppHandle) -> Result<(), AppError> {
     if let Some(panel) = app.get_webview(PANEL_LABEL) {
         let _ = panel.close();
     }
+    // A closed panel must not leave a stale position for the next set to draw.
+    crate::server::routes::clear_panel_state();
     Ok(())
 }
 
@@ -635,6 +687,41 @@ pub async fn delete_saved_youtube_track(
     with_db(&state, |db| {
         db.delete_saved_yt_track(&video_id, cue_ms, &title)
             .map_err(|e| AppError::Database(format!("Failed to remove saved track: {e}")))
+    })
+}
+
+/// The same record, found in another set that knows where it sits.
+#[derive(Debug, Serialize)]
+pub struct TrackEchoDTO {
+    pub position: i64,
+    pub video_id: String,
+    pub set_title: Option<String>,
+    pub cue_ms: i64,
+    pub cue: Option<String>,
+}
+
+/// Where else the records of this set turn up, with a timestamp. Costs nothing:
+/// it is a question about what is already stored.
+#[tauri::command]
+pub async fn youtube_track_echoes(
+    state: State<'_, AppState>,
+    video_id: String,
+) -> Result<Vec<TrackEchoDTO>, AppError> {
+    with_db(&state, |db| {
+        db.find_yt_track_echoes(&video_id)
+            .map(|echoes| {
+                echoes
+                    .into_iter()
+                    .map(|e: YtTrackEcho| TrackEchoDTO {
+                        position: e.position,
+                        video_id: e.video_id,
+                        set_title: e.set_title,
+                        cue_ms: e.cue_ms,
+                        cue: e.cue,
+                    })
+                    .collect()
+            })
+            .map_err(|e| AppError::Database(format!("Failed to look across sets: {e}")))
     })
 }
 
@@ -1653,6 +1740,127 @@ mod tests {
             "solomun",
             "My top 10 tracks of 2026 — deep house selection"
         ));
+    }
+
+    fn stored_track(video_id: &str, position: i64, cue_ms: i64, artist: &str, title: &str) -> YtTrack {
+        YtTrack {
+            video_id: video_id.to_string(),
+            position,
+            cue_ms,
+            cue: if cue_ms > 0 { Some("1:00".to_string()) } else { None },
+            artist: Some(artist.to_string()),
+            title: title.to_string(),
+            mix: None,
+            is_unknown: false,
+            votes: Some(1),
+            source_count: Some(1),
+            artist_norm: Some(artist.to_lowercase()),
+            title_norm: Some(title.to_lowercase()),
+            set_title: None,
+        }
+    }
+
+    fn stored_set(video_id: &str, title: &str) -> YtSet {
+        YtSet {
+            video_id: video_id.to_string(),
+            url: format!("https://youtu.be/{video_id}"),
+            title: title.to_string(),
+            channel: Some("A Channel".to_string()),
+            published_at: None,
+            duration_ms: Some(7_200_000),
+            fetched_at: None,
+            status: Some("ok".to_string()),
+            confidence: Some(0.9),
+            source_count: Some(1),
+            track_count: Some(2),
+            added_at: None,
+        }
+    }
+
+    /// A tracklist with no timestamps says what was played and not when. The
+    /// same record in a set that was written out properly does know, and a row
+    /// with nowhere to go can point there instead.
+    #[test]
+    fn a_row_with_no_timestamp_finds_one_in_another_set() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_set(&stored_set("untimed", "The numbered one"), "{}").unwrap();
+        db.save_yt_set(&stored_set("timed", "Hot Since 82 | Mixmag Lab London"), "{}").unwrap();
+
+        db.replace_yt_tracks(
+            "untimed",
+            &[
+                stored_track("untimed", 1, 0, "Blaze", "Lovelee Dae"),
+                stored_track("untimed", 2, 0, "Nobody Else", "Never Heard Of It"),
+            ],
+        )
+        .unwrap();
+        db.replace_yt_tracks(
+            "timed",
+            &[stored_track("timed", 7, 4_500_000, "Blaze", "Lovelee Dae")],
+        )
+        .unwrap();
+
+        let echoes = db.find_yt_track_echoes("untimed").unwrap();
+
+        assert_eq!(echoes.len(), 1, "only the record that turns up elsewhere");
+        assert_eq!(echoes[0].position, 1);
+        assert_eq!(echoes[0].video_id, "timed");
+        assert_eq!(echoes[0].cue_ms, 4_500_000);
+        assert_eq!(echoes[0].set_title.as_deref(), Some("Hot Since 82 | Mixmag Lab London"));
+    }
+
+    #[test]
+    fn a_set_never_points_at_itself_or_at_a_row_with_no_timestamp() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_set(&stored_set("a", "One"), "{}").unwrap();
+        db.save_yt_set(&stored_set("b", "Two"), "{}").unwrap();
+
+        // The same record twice inside one set, and once in another that also
+        // has no timestamp: neither is somewhere to send anybody.
+        db.replace_yt_tracks(
+            "a",
+            &[
+                stored_track("a", 1, 0, "Blaze", "Lovelee Dae"),
+                stored_track("a", 9, 3_000_000, "Blaze", "Lovelee Dae"),
+            ],
+        )
+        .unwrap();
+        db.replace_yt_tracks("b", &[stored_track("b", 1, 0, "Blaze", "Lovelee Dae")]).unwrap();
+
+        let echoes = db.find_yt_track_echoes("a").unwrap();
+        assert!(
+            echoes.iter().all(|e| e.video_id != "a"),
+            "a set pointing at itself tells nobody anything"
+        );
+        assert!(echoes.iter().all(|e| e.cue_ms > 0), "a row with no cue is not a destination");
+        assert!(echoes.is_empty());
+    }
+
+    /// Dozens of records are called "Lost" or "Jolene". Pointing at the wrong
+    /// one is worse than pointing nowhere.
+    #[test]
+    fn a_record_with_no_artist_is_not_matched_on_its_title() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+
+        db.save_yt_set(&stored_set("a", "One"), "{}").unwrap();
+        db.save_yt_set(&stored_set("b", "Two"), "{}").unwrap();
+
+        let mut nameless = stored_track("a", 1, 0, "", "Lost");
+        nameless.artist = None;
+        nameless.artist_norm = None;
+        db.replace_yt_tracks("a", &[nameless]).unwrap();
+
+        let mut other = stored_track("b", 3, 2_000_000, "", "Lost");
+        other.artist = None;
+        other.artist_norm = None;
+        db.replace_yt_tracks("b", &[other]).unwrap();
+
+        assert!(db.find_yt_track_echoes("a").unwrap().is_empty());
     }
 
     #[test]

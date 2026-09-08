@@ -241,8 +241,20 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
         ' volume=' + data.info.volume
       );
     }}
+    // Where the video actually is. The app needs this to draw a position and
+    // to notice playback started from inside the panel, which is the only
+    // place a user gesture can land.
+    if (data.event === 'infoDelivery' && data.info) {{
+      if (typeof data.info.currentTime === 'number') lastTime = data.info.currentTime;
+      if (typeof data.info.duration === 'number' && data.info.duration > 0) {{
+        lastDuration = data.info.duration;
+      }}
+      if (typeof data.info.playerState === 'number') lastState = data.info.playerState;
+    }}
     if (data.event === 'onStateChange') {{
       report('STATE ' + data.info);
+      lastState = data.info;
+      pushState();
       // Muted playback is not what the prompt is about, so it stays up until
       // the sound is actually on.
       if (data.info === 1 && unmuted) hideStart();
@@ -261,8 +273,28 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
   setTimeout(function () {{ clearInterval(handshake); }}, 15000);
 
   // Re-register periodically: without it the player stops reporting state, and
-  // state is the only view into what is happening inside that webview.
-  setInterval(function () {{ send('listening'); }}, 5000);
+  // state is the only view into what is happening inside that webview. It has
+  // to be the listening handshake itself — a 'listening' command is not one.
+  setInterval(function () {{
+    try {{
+      frame.contentWindow.postMessage(
+        JSON.stringify({{ event: 'listening', id: 1, channel: 'widget' }}),
+        '*'
+      );
+    }} catch (e) {{}}
+  }}, 5000);
+
+  // The app polls for this, so it is pushed on a timer rather than on every
+  // infoDelivery — the player sends those several times a second.
+  var lastTime = 0;
+  var lastDuration = 0;
+  var lastState = -1;
+  var pushState = function () {{
+    try {{
+      fetch('/yt-state?t=' + lastTime + '&d=' + lastDuration + '&s=' + lastState);
+    }} catch (e) {{}}
+  }};
+  setInterval(pushState, 400);
 
   // Jumping between tracks: the app records where to go, the page picks it up
   // and seeks in place, so the video never reloads.
@@ -293,6 +325,12 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
         if (lastSeq === null) {{ lastSeq = data.seq; return; }}
         if (data.seq === lastSeq) return;
         lastSeq = data.seq;
+
+        // Two players audible at once is not something anyone wants, so the
+        // app can hand playback back and forth.
+        if (data.action === 'pause') {{ send('pauseVideo'); return; }}
+        if (data.action === 'play') {{ send('playVideo'); send('unMute'); return; }}
+
         pendingSeek = data.t;
         send('seekTo', [data.t, true]);
         send('playVideo');
@@ -317,28 +355,116 @@ pub struct ReportQuery {
 }
 
 // The panel is a webview of its own, so the app cannot talk to it directly.
-// Instead the player page asks here whether it should jump, which turns a seek
-// into a smooth in-place move rather than a page reload and a rebuffer.
-static SEEK: std::sync::OnceLock<std::sync::Mutex<(u64, u64)>> = std::sync::OnceLock::new();
+// Instead the player page asks here what it should do, which turns a seek into
+// a smooth in-place move rather than a page reload and a rebuffer.
+//
+// One instruction at a time is enough: each supersedes the last, and the page
+// picks up whatever is current within 400ms.
+#[derive(Debug, Clone, Default)]
+struct PanelCommand {
+    /// Watched by the page — the same instruction twice still has to register.
+    seq: u64,
+    /// "seek", "pause" or "play".
+    action: String,
+    seconds: u64,
+}
 
-fn seek_state() -> &'static std::sync::Mutex<(u64, u64)> {
-    SEEK.get_or_init(|| std::sync::Mutex::new((0, 0)))
+static COMMAND: std::sync::OnceLock<std::sync::Mutex<PanelCommand>> = std::sync::OnceLock::new();
+
+fn command_state() -> &'static std::sync::Mutex<PanelCommand> {
+    COMMAND.get_or_init(|| std::sync::Mutex::new(PanelCommand::default()))
+}
+
+fn issue(action: &str, seconds: u64) {
+    if let Ok(mut state) = command_state().lock() {
+        state.seq += 1;
+        state.action = action.to_string();
+        state.seconds = seconds;
+    }
 }
 
 /// Called from the Tauri command when the user clicks a cue.
 pub fn request_seek(seconds: u64) {
-    if let Ok(mut state) = seek_state().lock() {
-        // The counter is what the page watches; the same second twice still
-        // has to register as a new instruction.
-        state.0 += 1;
-        state.1 = seconds;
-    }
+    issue("seek", seconds);
+}
+
+/// Two players in one window, both audible, is not something anyone wants.
+pub fn request_pause() {
+    issue("pause", 0);
+}
+
+pub fn request_play() {
+    issue("play", 0);
 }
 
 /// Polled by the player page a few times a second.
 async fn yt_seek() -> Json<serde_json::Value> {
-    let (seq, seconds) = seek_state().lock().map(|s| *s).unwrap_or((0, 0));
-    Json(serde_json::json!({ "seq": seq, "t": seconds }))
+    let command = command_state().lock().map(|s| s.clone()).unwrap_or_default();
+    Json(serde_json::json!({
+        "seq": command.seq,
+        "t": command.seconds,
+        "action": command.action,
+    }))
+}
+
+// The other direction: where the video actually is.
+//
+// Without this the app can only ever tell the panel what to do and never learn
+// what happened — which is enough to jump between cues and not enough to draw a
+// position, or to notice that the user pressed play inside the panel itself.
+#[derive(Debug, Clone, Copy, Default)]
+struct PanelState {
+    /// Where the video is, in milliseconds.
+    position_ms: u64,
+    duration_ms: u64,
+    /// YouTube's own numbering: -1 unstarted, 0 ended, 1 playing, 2 paused,
+    /// 3 buffering, 5 cued. Kept raw rather than reduced to a boolean, because
+    /// buffering and paused need telling apart.
+    player_state: i32,
+}
+
+static PANEL: std::sync::OnceLock<std::sync::Mutex<PanelState>> = std::sync::OnceLock::new();
+
+fn panel_state() -> &'static std::sync::Mutex<PanelState> {
+    PANEL.get_or_init(|| std::sync::Mutex::new(PanelState::default()))
+}
+
+/// Read by the Tauri command the Sets view polls.
+pub fn read_panel_state() -> (u64, u64, i32) {
+    let state = panel_state().lock().map(|s| *s).unwrap_or_default();
+    (state.position_ms, state.duration_ms, state.player_state)
+}
+
+/// Forgets where the video was, so a closed panel does not leave a stale
+/// position behind for the next set to draw.
+pub fn clear_panel_state() {
+    if let Ok(mut state) = panel_state().lock() {
+        *state = PanelState::default();
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StateQuery {
+    /// Position in seconds, as the player reports it.
+    pub t: Option<f64>,
+    pub d: Option<f64>,
+    pub s: Option<i32>,
+}
+
+/// Posted by the player page whenever the video moves or changes state.
+async fn yt_state(Query(query): Query<StateQuery>) -> StatusCode {
+    if let Ok(mut state) = panel_state().lock() {
+        if let Some(t) = query.t {
+            state.position_ms = (t.max(0.0) * 1000.0) as u64;
+        }
+        if let Some(d) = query.d {
+            state.duration_ms = (d.max(0.0) * 1000.0) as u64;
+        }
+        if let Some(s) = query.s {
+            state.player_state = s;
+        }
+    }
+    StatusCode::NO_CONTENT
 }
 
 /// The player panel has no console anyone can read, so it reports here and the
@@ -355,6 +481,7 @@ pub fn player_routes() -> Router<Arc<CompanionServerState>> {
         .route("/yt-player", get(yt_player))
         .route("/yt-report", get(yt_report))
         .route("/yt-seek", get(yt_seek))
+        .route("/yt-state", get(yt_state))
 }
 
 // ---- Handlers ----

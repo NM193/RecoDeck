@@ -535,21 +535,28 @@ function AppContent() {
       if (toImport.length === 0) return
 
       let imported = 0
+      let empty = 0
       for (const videoId of toImport) {
         try {
-          await importSet(videoId)
-          imported += 1
+          // A set that parses to nothing is not filed. Nobody chose to add it,
+          // so it has to earn its row.
+          const { stored } = await importSet(videoId, { onlyIfTracks: true })
+          if (stored) imported += 1
+          else empty += 1
         } catch {
           // One set that will not fetch must not stop the rest.
         }
       }
 
-      if (imported > 0) {
+      if (imported > 0 || empty > 0) {
+        const parts: string[] = []
+        if (imported > 0) {
+          parts.push(`${imported} ${imported === 1 ? 'set' : 'sets'} imported automatically`)
+        }
+        if (empty > 0) parts.push(`${empty} had no tracklist and were skipped`)
         setNotification({
-          message: `${imported} ${imported === 1 ? 'set' : 'sets'} imported automatically${
-            imported < wanted.length ? ` · ${wanted.length - imported} left to fetch by hand` : ''
-          }`,
-          type: 'success',
+          message: parts.join(' · '),
+          type: imported > 0 ? 'success' : 'info',
         })
       }
     })

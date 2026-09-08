@@ -24,10 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optionally have a watched DJ's new sets fetched and stored for you, without being asked
 - Your library of sets is filed under the DJ who played, not the channel that hosted it
 - Bring your own YouTube API key in Settings, with a quota bar and a countdown to the daily reset
+- The set strip carries the tempo of every record you own, so two hours of a set show their shape rather than a row of equal blocks
+- The track that is playing is marked in the list and in the strip, with a bar underneath for winding through that one record
+- Search results say whether a set actually holds a tracklist before you spend anything opening it
+- "Look again" refetches a set — a tracklist somebody posted since is only in a fresh copy
+- A track with no timestamp of its own points at another set that does know where it sits, at no cost
+- Settings is a contents list: eight sections collapsed behind their headings, each saying what is inside
 
 ### Changed
 - Every action that spends YouTube quota says what it costs before you click, and refuses when there is not enough left
 - Nothing checks or fetches anything on its own until you switch it on — new channels and DJs start at "Never"
+- Typing a DJ's name into the Follow box no longer spends 100 units resolving the wrong thing — it offers to watch them as a DJ instead
 
 ### Fixed
 - A tracklist written as a numbered list with no timestamps is now read properly, instead of being ignored in favour of a stray comment
@@ -35,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A track is no longer matched on its title alone — dozens of records are called "Lost" or "Jolene"
 - Someone narrating a set in the comments with timestamps is no longer mistaken for a tracklist
 - Library matching now looks at your whole library rather than only the folder on screen
+- Every set by one DJ is filed under one heading — "Hot Since 82 House Set" and "Hot Since 82" were two acts, and a compilation's title was read as the artist
+- Automatic import no longer files a set that turned out to have no tracklist at all
+- A misspelled DJ name no longer silently discards every genuine result
+- The What's New window scrolls, instead of pushing its own button off the screen
+- The Sets icon in the sidebar is no longer the playlists icon
 
 ## [0.2.14] - 2026-03-15
 

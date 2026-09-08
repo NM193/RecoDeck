@@ -4,13 +4,17 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { SetTimeline } from './SetTimeline'
 import { tauriApi } from '../../lib/tauri-api'
-import { analyse, type Track, type TracklistResult } from '../../lib/tracklist'
+import { analyse, msToCue, type Track, type TracklistResult } from '../../lib/tracklist'
 import { storeParsedSet } from '../../lib/tracklist/importSet'
 import { matchTracklist, type LibraryMatch, type MatchSummary } from '../../lib/tracklist/match'
 import { extractDjName, groupByDj } from '../../lib/tracklist/djName'
+import { describePreview, previewSet } from '../../lib/tracklist/preview'
 import { playerPageUrl, watchUrl } from '../../lib/youtubeWindow'
+import { looksLikeAChannel } from '../../lib/channelInput'
 import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage } from '../../types/ai'
+import { usePlayerStore } from '../../store/playerStore'
+import { audioPlayer } from '../../lib/audioPlayer'
 import type {
   RawSet,
   SavedTrack,
@@ -19,12 +23,14 @@ import type {
   YtStats,
   YtTrackHit,
   SetSearchHit,
+  YouTubePanelState,
   ChannelNews,
   ChannelUpload,
+  TrackEcho,
   FollowedChannel,
   WatchedDj,
 } from '../../types/youtube'
-import { CHECK_INTERVALS } from '../../types/youtube'
+import { CHECK_INTERVALS, YT_PLAYING } from '../../types/youtube'
 import './SetsView.css'
 
 type Tab = 'set' | 'library' | 'saved' | 'channels' | 'stats'
@@ -105,6 +111,85 @@ function StoreLinks({
   )
 }
 
+/**
+ * The track that is playing, as one strip you can wind through.
+ *
+ * The timeline above covers the whole set, which is right for jumping between
+ * tracks and useless for moving thirty seconds inside one: five minutes of a
+ * two-hour set is four percent of the bar. This gives that one track the full
+ * width.
+ */
+function TrackScrubber({
+  track,
+  startMs,
+  endMs,
+  positionMs,
+  onSeek,
+}: {
+  track: Track
+  startMs: number
+  endMs: number
+  positionMs: number
+  onSeek: (ms: number) => void
+}) {
+  const length = Math.max(1, endMs - startMs)
+  const elapsed = Math.min(Math.max(0, positionMs - startMs), length)
+  const fraction = elapsed / length
+
+  /** Where in the track a click on the bar landed. */
+  function seekFromEvent(e: React.MouseEvent<HTMLDivElement>) {
+    const box = e.currentTarget.getBoundingClientRect()
+    if (box.width <= 0) return
+    const ratio = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width))
+    onSeek(startMs + ratio * length)
+  }
+
+  return (
+    <div className="sets-scrub">
+      <div className="sets-scrub__head">
+        <span className="sets-scrub__name">
+          {track.artist ? (
+            <>
+              <span className="sets-track__artist">{track.artist}</span> — {track.title}
+            </>
+          ) : (
+            track.title
+          )}
+        </span>
+        {/* Timed from the start of the track, not of the set — the question
+            being answered here is how far into this record we are. */}
+        <span className="sets-scrub__time">
+          {msToCue(elapsed)} / {msToCue(length)}
+        </span>
+      </div>
+
+      <div
+        className="sets-scrub__bar"
+        onClick={seekFromEvent}
+        onMouseDown={(e) => {
+          // Dragging is the same question asked repeatedly.
+          const bar = e.currentTarget
+          const move = (event: MouseEvent) => {
+            const box = bar.getBoundingClientRect()
+            if (box.width <= 0) return
+            const ratio = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width))
+            onSeek(startMs + ratio * length)
+          }
+          const up = () => {
+            window.removeEventListener('mousemove', move)
+            window.removeEventListener('mouseup', up)
+          }
+          window.addEventListener('mousemove', move)
+          window.addEventListener('mouseup', up)
+        }}
+      >
+        <div className="sets-scrub__fill" style={{ width: `${fraction * 100}%` }} />
+        <div className="sets-scrub__knob" style={{ left: `${fraction * 100}%` }} />
+      </div>
+    </div>
+  )
+}
+
 function TrackRow({
   track,
   onSeek,
@@ -113,6 +198,9 @@ function TrackRow({
   saved,
   onToggleSave,
   untimed,
+  nowPlaying,
+  echo,
+  onFollowEcho,
 }: {
   track: Track
   onSeek: (cueMs: number) => void
@@ -122,6 +210,11 @@ function TrackRow({
   onToggleSave: (track: Track) => void
   /** The list carries no timestamps, so there is nowhere to send the player. */
   untimed?: boolean
+  /** The video is inside this track right now. */
+  nowPlaying?: boolean
+  /** The same record in another set, which does know where it sits. */
+  echo?: TrackEcho
+  onFollowEcho?: (echo: TrackEcho) => void
 }) {
   const name = track.artist ? (
     <>
@@ -134,8 +227,16 @@ function TrackRow({
   const suggestion = track.suggestions?.[0]
 
   return (
-    <div className={`sets-track ${track.isUnknown ? 'sets-track--unknown' : ''}`}>
-      <span className="sets-track__index">{track.index}</span>
+    <div
+      className={`sets-track ${track.isUnknown ? 'sets-track--unknown' : ''} ${
+        nowPlaying ? 'sets-track--playing' : ''
+      }`}
+    >
+      {/* The number is replaced while it plays: a row that is running should
+          say so where the eye already is, not in a corner. */}
+      <span className="sets-track__index">
+        {nowPlaying ? <Icon name="Volume2" size={13} /> : track.index}
+      </span>
       <span className="sets-track__cue">{track.cue}</span>
 
       <span className="sets-track__name">
@@ -219,6 +320,19 @@ function TrackRow({
         <span className="sets-track__votes">from comments</span>
       )}
 
+      {/* This list has no timestamps, so there is nowhere to send the player —
+          but the same record in another set does know where it sits. */}
+      {untimed && echo && onFollowEcho && (
+        <button
+          type="button"
+          className="sets-track__echo"
+          onClick={() => onFollowEcho(echo)}
+          title={`Heard at ${echo.cue ?? ''} in "${echo.set_title ?? 'another set'}"`}
+        >
+          <Icon name="CornerDownRight" size={11} /> {echo.cue}
+        </button>
+      )}
+
       {!untimed && (
         <button
           type="button"
@@ -254,6 +368,17 @@ export function SetsView({
   const [found, setFound] = useState<SetSearchHit[] | null>(null)
   const [channels, setChannels] = useState<FollowedChannel[]>([])
   const [channelInput, setChannelInput] = useState('')
+  /**
+   * Where else this set's records turn up, by row.
+   *
+   * Read from what is already stored, so it costs nothing and gets better every
+   * time another set is saved.
+   */
+  const [echoes, setEchoes] = useState<Map<number, TrackEcho>>(new Map())
+  /** What the last re-fetch changed, said plainly because it cost something. */
+  const [reanalysed, setReanalysed] = useState<string | null>(null)
+  /** A bare name typed into the Follow box, held back before it costs 100. */
+  const [bareName, setBareName] = useState<string | null>(null)
   const [djs, setDjs] = useState<WatchedDj[]>([])
   const [djInput, setDjInput] = useState('')
   const [news, setNews] = useState<ChannelNews[] | null>(null)
@@ -281,6 +406,84 @@ export function SetsView({
   /** Which row the player was last sent to, for the bar and for prev/next. */
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  /**
+   * Where the video is. The panel is a webview of its own and reports back
+   * through the companion server, so this is polled rather than observed.
+   */
+  const [panel, setPanel] = useState<YouTubePanelState | null>(null)
+
+  // --- two players, one pair of ears -----------------------------------
+  //
+  // The video and the app's own player are separate engines that know nothing
+  // about each other, so whichever starts hands the other a pause.
+
+  const isPlayingOwnFile = usePlayerStore((state) => state.isPlaying)
+  const setOwnIsPlaying = usePlayerStore((state) => state.setIsPlaying)
+
+  /** Poll the panel while it is open, and only while it is open. */
+  useEffect(() => {
+    if (!playing) {
+      setPanel(null)
+      return
+    }
+    let live = true
+    const read = () => {
+      tauriApi
+        .youtubePanelState()
+        .then((state) => {
+          if (live) setPanel(state)
+        })
+        .catch(() => {})
+    }
+    read()
+    const timer = window.setInterval(read, 400)
+    return () => {
+      live = false
+      window.clearInterval(timer)
+    }
+  }, [playing])
+
+  /**
+   * True from the moment the video is asked to stand down until it says it has.
+   *
+   * The panel's state is read through a poll, and the instruction reaches it
+   * through another — so for the best part of a second after "have it" is
+   * clicked, the video still reports itself as playing. Without this latch the
+   * two rules below fight: the file starts, the stale report says the video is
+   * still going, and the file is paused a moment after it began. Which is
+   * exactly what happened — the video stopped, the track did not start, and it
+   * took a second click.
+   */
+  const waitingForVideoToStop = useRef(false)
+
+  const videoPlaying = panel?.player_state === YT_PLAYING
+
+  // The pause landed. Whatever the video reports from here is current again.
+  useEffect(() => {
+    if (!videoPlaying) waitingForVideoToStop.current = false
+  }, [videoPlaying])
+
+  // The video started — including from the click inside the panel, which is
+  // the one gesture the app cannot make on its own.
+  useEffect(() => {
+    if (videoPlaying && isPlayingOwnFile && !waitingForVideoToStop.current) {
+      audioPlayer.pause()
+      setOwnIsPlaying(false)
+    }
+  }, [videoPlaying, isPlayingOwnFile, setOwnIsPlaying])
+
+  // The other direction: a file of your own started, so the video steps back.
+  const wasPlayingOwnFile = useRef(false)
+  useEffect(() => {
+    const started = isPlayingOwnFile && !wasPlayingOwnFile.current
+    wasPlayingOwnFile.current = isPlayingOwnFile
+    if (started && playing) {
+      // Said before the request goes out, so the rule above is already deaf to
+      // the reports still in flight.
+      waitingForVideoToStop.current = true
+      void tauriApi.pauseYouTubePanel().catch(() => {})
+    }
+  }, [isPlayingOwnFile, playing])
 
   const refreshQuota = useCallback(() => {
     tauriApi.getYouTubeQuota().then(setQuota).catch(() => {})
@@ -297,6 +500,26 @@ export function SetsView({
     refreshQuota()
     refreshLibrary()
   }, [refreshQuota, refreshLibrary])
+
+  // Reloaded whenever the set changes, and whenever the library of sets grows —
+  // a record with nowhere to go today may have somewhere tomorrow.
+  useEffect(() => {
+    const videoId = result?.video.id
+    if (!videoId) {
+      setEchoes(new Map())
+      return
+    }
+    let live = true
+    tauriApi
+      .youtubeTrackEchoes(videoId)
+      .then((rows) => {
+        if (live) setEchoes(new Map(rows.map((echo) => [echo.position, echo])))
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [result?.video.id, sets.length])
 
   // Scanning or adding files changes what counts as owned, so the match has to
   // be recomputed — otherwise a track added a minute ago still reads "missing".
@@ -449,6 +672,7 @@ export function SetsView({
 
   function show(raw: RawSet): TracklistResult {
     const parsed = analyse(raw.video, raw.comments)
+    setReanalysed(null)
     setCurrentSet(raw)
     setResult(parsed)
     setTab('set')
@@ -489,9 +713,11 @@ export function SetsView({
   /** Finds a DJ's sets by name. The expensive call, hence the confirmation. */
   async function handleSearchSets() {
     const quotaLeft = quota?.remaining ?? 0
-    if (quotaLeft < 100) {
+    // 100 for the search, and 1 more for the descriptions of everything it
+    // returns — which is what lets the results say whether they hold a list.
+    if (quotaLeft < 101) {
       setError(
-        `Searching by name costs 100 units and only ${quotaLeft.toLocaleString()} are left today.`,
+        `Searching by name costs 101 units and only ${quotaLeft.toLocaleString()} are left today.`,
       )
       return
     }
@@ -532,8 +758,18 @@ export function SetsView({
       falls through to search, which costs 100 — so paste a link where you can. */
   async function addChannel() {
     if (!channelInput.trim() || loading) return
+
+    // Resolving a bare name ends in a search — 100 units — and returns the
+    // DJ's own channel, where releases live rather than the sets they play.
+    // Better to ask than to spend a hundred units on the wrong thing.
+    if (!looksLikeAChannel(channelInput)) {
+      setBareName(channelInput.trim())
+      return
+    }
+
     setLoading(true)
     setError(null)
+    setBareName(null)
     try {
       const channel = await tauriApi.resolveYouTubeChannel(channelInput.trim())
       await tauriApi.followYouTubeChannel(channel)
@@ -715,6 +951,67 @@ export function SetsView({
   }
 
   /** Reopening a stored set never touches the network. */
+  /**
+   * Fetches the set again and parses what comes back.
+   *
+   * Reopening a stored set costs nothing and reparses the copy taken on the
+   * day — which is the right thing when the parser has improved and the wrong
+   * thing when the set itself has. Comments keep arriving: a set with nothing
+   * on Monday can have somebody's full tracklist under it by Friday, and no
+   * amount of reparsing the old copy will find it.
+   *
+   * So this is the one that spends: 5-7 units for a fresh fetch, and it says so
+   * on the button.
+   */
+  async function reanalyse() {
+    if (!result || loading) return
+    const before = result.trackCount
+
+    const quotaLeft = quota?.remaining ?? 0
+    if (quotaLeft < 7) {
+      setError(`Fetching a set again costs 5–7 units and only ${quotaLeft} are left today.`)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    setReanalysed(null)
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(result.video.id)
+      const parsed = show(raw)
+      await storeParsed(raw, parsed)
+      refreshLibrary()
+      // What it was worth saying plainly, since it just cost something.
+      setReanalysed(
+        parsed.trackCount === before
+          ? `Nothing new — still ${before} ${before === 1 ? 'track' : 'tracks'}.`
+          : `${before} → ${parsed.trackCount} tracks.`,
+      )
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+      refreshQuota()
+    }
+  }
+
+  /**
+   * Opens the set the record was found in, at the moment it was played there.
+   *
+   * The stored copy is reused, so this costs nothing — which is the whole point
+   * of keeping the raw fetch.
+   */
+  async function followEcho(echo: TrackEcho) {
+    try {
+      setError(null)
+      const raw = await tauriApi.getYouTubeSet(echo.video_id)
+      show(raw)
+      seekTo(raw.video.id, raw.video.url, echo.cue_ms, null)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    }
+  }
+
   async function openStored(videoId: string) {
     try {
       setError(null)
@@ -794,6 +1091,24 @@ export function SetsView({
     void navigator.clipboard.writeText(text)
   }
 
+  /**
+   * The tempo of each record the user owns, so the strip can carry the shape of
+   * the set rather than a row of equal blocks.
+   *
+   * Read off the matched library file: 97% of the library is analysed, and the
+   * record's own tempo is the only figure that exists without decoding the
+   * video. A DJ pitches, so this is the record's tempo, not the night's.
+   */
+  const bpmByIndex = useMemo(() => {
+    const byIndex = new Map<number, number>()
+    if (!matches) return byIndex
+    for (const [index, match] of matches.byIndex) {
+      const bpm = match.track.bpm
+      if (typeof bpm === 'number' && bpm > 0) byIndex.set(index, bpm)
+    }
+    return byIndex
+  }, [matches])
+
   /** The library, filed under whoever played each set. */
   const byDj = useMemo(() => groupByDj(sets), [sets])
 
@@ -802,6 +1117,34 @@ export function SetsView({
 
   const nowPlaying =
     playingIndex != null ? (result?.tracks.find((t) => t.index === playingIndex) ?? null) : null
+
+  /**
+   * The track the playhead is inside, and where that track begins and ends.
+   *
+   * Taken from the position rather than from what was last clicked: the video
+   * runs on into the next track, and a strip that still says the previous one
+   * is worse than none.
+   */
+  const currentTrack = useMemo(() => {
+    if (!result || result.untimed || !panel) return null
+    const timed = result.tracks.filter((t) => t.cueMs > 0 || t.index === 1)
+    if (timed.length === 0) return null
+
+    let index = -1
+    for (let i = 0; i < timed.length; i += 1) {
+      if (timed[i].cueMs <= panel.position_ms) index = i
+      else break
+    }
+    if (index < 0) return null
+
+    const track = timed[index]
+    const next = timed[index + 1]
+    // The last track runs to the end of the video; the runtime is the better
+    // figure where the panel has reported one.
+    const endMs =
+      next?.cueMs ?? (panel.duration_ms > 0 ? panel.duration_ms : result.video.durationMs)
+    return { track, startMs: track.cueMs, endMs: Math.max(endMs, track.cueMs + 1) }
+  }, [result, panel])
 
   /** Walks to the neighbouring track in the set, in the order it was played. */
   function step(direction: 1 | -1) {
@@ -923,6 +1266,18 @@ export function SetsView({
 
           {/* Deliberately empty: the webview covers exactly this box. */}
           {!mini && <div className="sets-player__surface" ref={panelRef} />}
+
+          {!mini && currentTrack && (
+            <TrackScrubber
+              track={currentTrack.track}
+              startMs={currentTrack.startMs}
+              endMs={currentTrack.endMs}
+              positionMs={panel?.position_ms ?? 0}
+              onSeek={(ms) =>
+                void tauriApi.seekYouTubePanel(Math.floor(ms / 1000)).catch(() => {})
+              }
+            />
+          )}
         </div>
       )}
 
@@ -974,7 +1329,7 @@ export function SetsView({
                     ? 'Reading...'
                     : looksLikeLink(input)
                       ? 'Process'
-                      : 'Search · 100 units'}
+                      : 'Search · 101 units'}
                 </button>
               </div>
 
@@ -994,24 +1349,40 @@ export function SetsView({
                       ? 'No long videos found for that name.'
                       : `${found.length} sets found — opening one costs 5–7 units`}
                   </p>
-                  {found.map((hit) => (
-                    <button
-                      type="button"
-                      className="sets-found"
-                      key={hit.videoId}
-                      onClick={() => processFound(hit)}
-                    >
-                      {hit.thumbnail && (
-                        <img className="sets-found__thumb" src={hit.thumbnail} alt="" />
-                      )}
-                      <span className="sets-found__text">
-                        <span className="sets-stored__title">{hit.title}</span>
-                        <span className="sets-stored__meta">
-                          {hit.channel} · {hit.publishedAt.slice(0, 10)}
+                  {found.map((hit) => {
+                    // Read from the description that came back with the search,
+                    // by the same rules that parse a stored set.
+                    const preview = previewSet(hit)
+                    const stored = sets.some((s) => s.video_id === hit.videoId)
+                    return (
+                      <button
+                        type="button"
+                        className="sets-found"
+                        key={hit.videoId}
+                        onClick={() => processFound(hit)}
+                      >
+                        {hit.thumbnail && (
+                          <img className="sets-found__thumb" src={hit.thumbnail} alt="" />
+                        )}
+                        <span className="sets-found__text">
+                          <span className="sets-stored__title">{hit.title}</span>
+                          <span className="sets-stored__meta">
+                            {hit.channel} · {hit.publishedAt.slice(0, 10)}
+                            {preview.durationMs
+                              ? ` · ${Math.round(preview.durationMs / 60000)} min`
+                              : ''}
+                          </span>
+                          <span
+                            className={`sets-found__promise ${
+                              preview.trackCount > 0 ? 'sets-found__promise--found' : ''
+                            }`}
+                          >
+                            {stored ? 'already in your library' : describePreview(preview)}
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                  ))}
+                      </button>
+                    )
+                  })}
                 </>
               )}
 
@@ -1045,8 +1416,20 @@ export function SetsView({
                       >
                         <Icon name="ExternalLink" size={12} /> open in browser
                       </button>
+                      <button
+                        type="button"
+                        className="sets-track__cue-btn"
+                        onClick={() => reanalyse()}
+                        disabled={loading}
+                        title="Fetch the video and its comments again. A tracklist somebody posted since is only in the new copy — the stored one is frozen at the moment it was taken."
+                      >
+                        <Icon name="RefreshCw" size={12} />{' '}
+                        {loading ? 'reading again...' : 'look again · 5–7 units'}
+                      </button>
                     </div>
                   </div>
+
+                  {reanalysed && <div className="sets-notice">{reanalysed}</div>}
 
                   <p className="sets-summary">
                     {result.trackCount} tracks from {result.sourceCount}{' '}
@@ -1072,6 +1455,9 @@ export function SetsView({
                       tracks={result.tracks}
                       durationMs={result.video.durationMs}
                       onSeek={(cueMs) => seekTo(result.video.id, result.video.url, cueMs, null)}
+                      positionMs={panel?.position_ms}
+                      playingIndex={currentTrack?.track.index ?? null}
+                      bpmByIndex={bpmByIndex}
                     />
                   )}
 
@@ -1109,6 +1495,9 @@ export function SetsView({
                         match={matches?.byIndex.get(track.index)}
                         onPlay={playFromSet}
                         untimed={result.untimed}
+                        nowPlaying={currentTrack?.track.index === track.index}
+                        echo={echoes.get(track.index)}
+                        onFollowEcho={followEcho}
                         saved={savedKeys.has(
                           trackKey({
                             video_id: currentSet?.video.id,
@@ -1221,14 +1610,18 @@ export function SetsView({
                 byDj.map((group) => (
                   <div className="sets-dj" key={group.dj}>
                     <h3 className="sets-dj__name">
-                      {group.dj}
+                      <span className="sets-dj__who">{group.dj}</span>
                       <span className="sets-dj__count">
                         {group.sets.length} {group.sets.length === 1 ? 'set' : 'sets'}
                       </span>
                     </h3>
-                    {group.sets.map((s) => (
-                      <StoredSet key={s.video_id} set={s} />
-                    ))}
+                    {/* Bracketed on the left as well as headed, because a title
+                        and a heading at the same size read as one list. */}
+                    <div className="sets-dj__sets">
+                      {group.sets.map((s) => (
+                        <StoredSet key={s.video_id} set={s} />
+                      ))}
+                    </div>
                   </div>
                 ))}
             </>
@@ -1269,6 +1662,52 @@ export function SetsView({
                 a set turns up. A check is a unit or two, so ten channels daily is about twenty
                 units of the ten thousand a day. New channels start at Never.
               </p>
+
+              {bareName && (
+                <div className="sets-notice">
+                  <span>
+                    “{bareName}” looks like a name, not a channel. Following it would search for a
+                    channel — <strong>100 units</strong> — and find their own channel, where
+                    releases live rather than the sets they play.
+                  </span>
+                  <div className="sets-notice__actions">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        setDjInput(bareName)
+                        setChannelInput('')
+                        setBareName(null)
+                      }}
+                    >
+                      Watch {bareName} as a DJ
+                    </button>
+                    <button
+                      type="button"
+                      className="sets-filter__btn"
+                      onClick={() => {
+                        setBareName(null)
+                        setLoading(true)
+                        setError(null)
+                        void tauriApi
+                          .resolveYouTubeChannel(channelInput.trim())
+                          .then((channel) => tauriApi.followYouTubeChannel(channel))
+                          .then(() => {
+                            setChannelInput('')
+                            refreshLibrary()
+                          })
+                          .catch((err) => setError(getErrorMessage(err)))
+                          .finally(() => {
+                            setLoading(false)
+                            refreshQuota()
+                          })
+                      }}
+                    >
+                      Search for a channel anyway · 100 units
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {error && <div className="sets-error">{error}</div>}
 

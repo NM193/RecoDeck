@@ -75,10 +75,26 @@ export async function storeParsedSet(raw: RawSet, parsed: TracklistResult) {
     .catch(() => {})
 }
 
-/** Fetches one set, parses it and stores it. Costs 5-7 units. */
-export async function importSet(videoId: string): Promise<TracklistResult> {
+/**
+ * Fetches one set, parses it and stores it. Costs 5-7 units.
+ *
+ * `onlyIfTracks` withholds the storing, not the fetching — by the time anything
+ * can be judged the units are already spent. It exists because the automatic
+ * import filed a set with **nought** tracks into the library on its own, and a
+ * library nobody chose to fill has to earn every row in it. Somebody importing
+ * a set by hand asked for it and can see for themselves.
+ */
+export async function importSet(
+  videoId: string,
+  { onlyIfTracks = false }: { onlyIfTracks?: boolean } = {},
+): Promise<{ parsed: TracklistResult; stored: boolean }> {
   const raw = await tauriApi.fetchYouTubeSet(videoId)
   const parsed = analyse(raw.video, raw.comments)
+
+  if (onlyIfTracks && parsed.trackCount === 0) {
+    return { parsed, stored: false }
+  }
+
   await storeParsedSet(raw, parsed)
-  return parsed
+  return { parsed, stored: true }
 }

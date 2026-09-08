@@ -81,7 +81,8 @@
   flex: 1;
   gap: var(--space-4);
   color: var(--text-secondary);
-  padding: var(--space-10) 0;
+  /* The scale has no 10 (…6, 8, 12), so this silently dropped. */
+  padding: var(--space-8) 0;
 }
 
 .search-view__empty-icon {

@@ -23,6 +23,12 @@ export interface LibraryTrack {
   title?: string
   artist?: string
   file_path: string
+  /**
+   * Not used for matching, carried through it. The timeline draws the set's
+   * tempo from the records the user owns, and the match is what says which
+   * file a row turned out to be.
+   */
+  bpm?: number
 }
 
 export interface LibraryMatch {

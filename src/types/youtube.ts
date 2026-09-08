@@ -97,6 +97,13 @@ export interface SetSearchHit {
   channel: string
   publishedAt: string
   thumbnail?: string
+  /**
+   * The full description, fetched for one unit across the whole page of hits.
+   * Enough to say which of them carries a tracklist before spending 5-7 on one.
+   */
+  description?: string
+  durationMs?: number
+  commentCount?: number
 }
 
 /** A channel resolved to something the API can work with. */
@@ -159,4 +166,36 @@ export interface WatchedDj {
   last_checked?: string
   /** Fetch and store what a search turns up. Off unless switched on. */
   auto_import: boolean
+}
+
+/**
+ * Where the in-window video is, as the panel last reported it.
+ *
+ * The panel is a webview of its own, so this is the only view into it: the app
+ * can tell it what to do, and this is what comes back.
+ */
+export interface YouTubePanelState {
+  position_ms: number
+  duration_ms: number
+  /** YouTube's numbering: -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued. */
+  player_state: number
+}
+
+/** The panel is playing, as opposed to paused, buffering or not started. */
+export const YT_PLAYING = 1
+
+/**
+ * The same record, found in another set that knows where it sits.
+ *
+ * A tracklist with no timestamps says what was played and not when — but the
+ * same record often appears in a set that was written out properly, and that
+ * one does know. A row with nowhere to go can point there instead.
+ */
+export interface TrackEcho {
+  /** Position in the set being looked at. */
+  position: number
+  video_id: string
+  set_title?: string
+  cue_ms: number
+  cue?: string
 }

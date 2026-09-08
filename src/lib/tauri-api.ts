@@ -5,6 +5,8 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
   YouTubeQuotaStatus,
   WatchedDj,
+  YouTubePanelState,
+  TrackEcho,
   RawSet,
   YtSetSummary,
   SavedTrack,
@@ -548,6 +550,20 @@ export const tauriApi = {
     return await invoke('close_youtube_panel')
   },
 
+  /** Hands playback to the app's own player. */
+  async pauseYouTubePanel(): Promise<void> {
+    return await invoke('pause_youtube_panel')
+  },
+
+  async playYouTubePanel(): Promise<void> {
+    return await invoke('play_youtube_panel')
+  },
+
+  /** Where the video is, as the panel last reported it. */
+  async youtubePanelState(): Promise<YouTubePanelState> {
+    return await invoke('youtube_panel_state')
+  },
+
   // The set library: a processed set is kept whole, so reopening it later
   // costs nothing and a better parser can be re-run over it.
   async saveYouTubeSet(input: {
@@ -592,6 +608,11 @@ export const tauriApi = {
   /** "Where did I hear this?" across every stored set. Costs no quota. */
   async searchYouTubeTracks(query: string): Promise<YtTrackHit[]> {
     return await invoke('search_youtube_tracks', { query })
+  },
+
+  /** Where else this set's records turn up, with a timestamp. Costs nothing. */
+  async youtubeTrackEchoes(videoId: string): Promise<TrackEcho[]> {
+    return await invoke('youtube_track_echoes', { videoId })
   },
 
   async youtubeStats(): Promise<YtStats> {

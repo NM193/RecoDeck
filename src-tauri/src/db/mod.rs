@@ -86,6 +86,22 @@ pub struct YtTrack {
     pub set_title: Option<String>,
 }
 
+/// The same record, found in another set that does know where it sits.
+///
+/// A tracklist with no timestamps says what was played and not when. But the
+/// same record often appears in another set that was written out properly, and
+/// that set does know — so a row with nowhere to go can still point somewhere.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtTrackEcho {
+    /// Position in the set being looked at.
+    pub position: i64,
+    /// The set it was found in.
+    pub video_id: String,
+    pub set_title: Option<String>,
+    pub cue_ms: i64,
+    pub cue: Option<String>,
+}
+
 /// A DJ watched for new sets, wherever they turn up.
 ///
 /// Separate from `YtChannel` because the mechanism is different, not just the
@@ -2952,6 +2968,53 @@ impl Database {
     }
 
     /// "Where did I hear this?" — across every set that was ever processed.
+    /// For every track of a set, the earliest place the same record turns up in
+    /// another stored set that carries a timestamp.
+    ///
+    /// One query rather than one per row: a set is up to forty rows, and asking
+    /// forty times over would be forty round trips to answer one screen.
+    ///
+    /// Matched on the normalised artist and title — the same pair the parser
+    /// writes for exactly this kind of cross-set question. A record with no
+    /// artist is skipped: "Lost" and "Jolene" are the names of dozens of
+    /// records, and pointing at the wrong one is worse than pointing nowhere.
+    pub fn find_yt_track_echoes(&self, video_id: &str) -> Result<Vec<YtTrackEcho>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT mine.position, other.video_id, s.title, other.cue_ms, other.cue
+             FROM yt_tracks mine
+             JOIN yt_tracks other
+               ON other.title_norm = mine.title_norm
+              AND other.artist_norm = mine.artist_norm
+              AND other.video_id <> mine.video_id
+             LEFT JOIN yt_sets s ON s.video_id = other.video_id
+             WHERE mine.video_id = ?1
+               AND mine.is_unknown = 0
+               AND other.is_unknown = 0
+               AND mine.title_norm IS NOT NULL
+               AND mine.artist_norm IS NOT NULL
+               AND other.cue_ms > 0
+             ORDER BY mine.position, other.cue_ms",
+        )?;
+        let rows = stmt.query_map([video_id], |row| {
+            Ok(YtTrackEcho {
+                position: row.get(0)?,
+                video_id: row.get(1)?,
+                set_title: row.get(2)?,
+                cue_ms: row.get(3)?,
+                cue: row.get(4)?,
+            })
+        })?;
+
+        // One per row: the first is the earliest cue, and a row has space to
+        // point at one place, not five.
+        let mut seen = std::collections::HashSet::new();
+        Ok(rows
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|echo| seen.insert(echo.position))
+            .collect())
+    }
+
     pub fn search_yt_tracks(&self, query: &str, limit: i64) -> Result<Vec<YtTrack>> {
         let pattern = format!("%{}%", query.trim().to_lowercase());
         let mut stmt = self.conn.prepare(
