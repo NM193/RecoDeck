@@ -319,12 +319,17 @@ pub async fn start_server(
         };
         index_routes
             .merge(assets_service)
+            // Public: the YouTube player wrapper, which carries no library data.
+            .merge(routes::player_routes().with_state(state.clone()))
             .merge(api_routes)
             .fallback_service(ServeDir::new(&dist_path).fallback(ServeFile::new(dist_path.join("index.html"))))
             .layer(cors)
     } else {
         eprintln!("[companion] No mobile PWA dist found, API-only mode");
-        api_routes.layer(cors)
+        routes::player_routes()
+            .with_state(state.clone())
+            .merge(api_routes)
+            .layer(cors)
     };
 
     // Try to bind to the requested port, with fallback

@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
 };
 use axum::extract::Request;
@@ -130,6 +131,168 @@ pub fn api_routes() -> Router<Arc<CompanionServerState>> {
         .route("/api/tracks/search", get(search_tracks))
         .route("/api/playlists/{id}/tracks", get(get_playlist_tracks))
         .route("/api/stream-ticket", post(create_stream_ticket))
+}
+
+
+// ---- YouTube player page ----
+//
+// The player has to be reached through a page served over http, not loaded
+// straight into the webview: a top-level navigation to youtube.com/embed sends
+// no Referer, and the player refuses with error 153. Wrapping it in an iframe
+// on a page served from here gives it the Referer it wants — which is exactly
+// why the same embed works in an ordinary browser.
+//
+// Public on purpose: it carries no library data, only a video id the user just
+// typed in themselves.
+
+#[derive(Debug, Deserialize)]
+pub struct PlayerQuery {
+    /// YouTube video id.
+    pub v: String,
+    /// Start offset in seconds.
+    pub t: Option<u64>,
+}
+
+async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
+    // Rebuilt from allowed characters rather than escaped, so nothing the user
+    // pasted can reach the page as markup.
+    let video_id: String = query
+        .v
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(11)
+        .collect();
+    let start = query.t.unwrap_or(0);
+
+    // The player is asked to report back: a webview has no console anyone can
+    // read, and "unavailable" on screen does not say which of several causes it
+    // is. The handshake below is YouTube's own postMessage protocol.
+    let html = format!(
+        r#"<!doctype html>
+<html><head><meta charset="utf-8"><title>Player</title>
+<style>
+  html,body{{margin:0;height:100%;background:#000;overflow:hidden}}
+  iframe{{border:0;width:100%;height:100%;display:block}}
+</style></head>
+<body>
+<iframe id="p"
+  src="https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1&rel=0&start={start}&enablejsapi=1"
+  allow="autoplay; encrypted-media; fullscreen"
+  allowfullscreen></iframe>
+<script>
+  var report = function (what) {{
+    try {{ fetch('/yt-report?m=' + encodeURIComponent(what)); }} catch (e) {{}}
+  }};
+  report('page loaded, referrer=' + document.referrer + ' origin=' + location.origin);
+
+  var frame = document.getElementById('p');
+  var send = function (func, args) {{
+    try {{
+      frame.contentWindow.postMessage(
+        JSON.stringify({{ event: 'command', func: func, args: args || [] }}),
+        '*'
+      );
+    }} catch (e) {{}}
+  }};
+  // Registering as a listener is what makes the player send events back.
+  var handshake = setInterval(function () {{
+    try {{
+      frame.contentWindow.postMessage(
+        JSON.stringify({{ event: 'listening', id: 1, channel: 'widget' }}),
+        '*'
+      );
+    }} catch (e) {{}}
+  }}, 500);
+
+  window.addEventListener('message', function (e) {{
+    if (typeof e.data !== 'string' || e.origin.indexOf('youtube.com') === -1) return;
+    var data;
+    try {{ data = JSON.parse(e.data); }} catch (err) {{ return; }}
+    if (data.event === 'onReady' || data.event === 'initialDelivery') clearInterval(handshake);
+    if (data.event === 'onError') report('PLAYER ERROR ' + data.info);
+    else if (data.event === 'onReady') {{
+      report('PLAYER READY');
+      // Autoplay with sound needs a gesture, and the user's click landed in a
+      // different webview entirely. Muted autoplay is allowed, so it starts
+      // muted and the sound is turned on a moment later.
+      send('playVideo');
+      setTimeout(function () {{ send('unMute'); send('setVolume', [100]); }}, 800);
+    }} else if (data.event === 'onStateChange' && data.info === 1) report('PLAYING');
+  }});
+
+  setTimeout(function () {{ clearInterval(handshake); }}, 15000);
+
+  // Jumping between tracks: the app records where to go, the page picks it up
+  // and seeks in place, so the video never reloads.
+  var lastSeq = null;
+  setInterval(function () {{
+    fetch('/yt-seek')
+      .then(function (r) {{ return r.json(); }})
+      .then(function (data) {{
+        if (lastSeq === null) {{ lastSeq = data.seq; return; }}
+        if (data.seq === lastSeq) return;
+        lastSeq = data.seq;
+        send('seekTo', [data.t, true]);
+        send('playVideo');
+        // A seek is also the moment to make sure it is audible.
+        send('unMute');
+      }})
+      .catch(function () {{}});
+  }}, 400);
+</script>
+</body></html>"#
+    );
+
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        html,
+    )
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportQuery {
+    pub m: String,
+}
+
+// The panel is a webview of its own, so the app cannot talk to it directly.
+// Instead the player page asks here whether it should jump, which turns a seek
+// into a smooth in-place move rather than a page reload and a rebuffer.
+static SEEK: std::sync::OnceLock<std::sync::Mutex<(u64, u64)>> = std::sync::OnceLock::new();
+
+fn seek_state() -> &'static std::sync::Mutex<(u64, u64)> {
+    SEEK.get_or_init(|| std::sync::Mutex::new((0, 0)))
+}
+
+/// Called from the Tauri command when the user clicks a cue.
+pub fn request_seek(seconds: u64) {
+    if let Ok(mut state) = seek_state().lock() {
+        // The counter is what the page watches; the same second twice still
+        // has to register as a new instruction.
+        state.0 += 1;
+        state.1 = seconds;
+    }
+}
+
+/// Polled by the player page a few times a second.
+async fn yt_seek() -> Json<serde_json::Value> {
+    let (seq, seconds) = seek_state().lock().map(|s| *s).unwrap_or((0, 0));
+    Json(serde_json::json!({ "seq": seq, "t": seconds }))
+}
+
+/// The player panel has no console anyone can read, so it reports here and the
+/// message lands in the app's own log.
+async fn yt_report(Query(query): Query<ReportQuery>) -> StatusCode {
+    let message: String = query.m.chars().take(300).collect();
+    eprintln!("[yt-player] {message}");
+    StatusCode::NO_CONTENT
+}
+
+/// Unauthenticated routes: a local HTML wrapper, no library data.
+pub fn player_routes() -> Router<Arc<CompanionServerState>> {
+    Router::new()
+        .route("/yt-player", get(yt_player))
+        .route("/yt-report", get(yt_report))
+        .route("/yt-seek", get(yt_seek))
 }
 
 // ---- Handlers ----
