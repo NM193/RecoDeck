@@ -9,16 +9,30 @@
  */
 
 import { extractTracklist } from './extract'
-import type { Candidate, Disagreement, SetComment, SetVideo, Track } from './types'
+import type {
+  Candidate,
+  Disagreement,
+  SetComment,
+  SetVideo,
+  Track,
+} from './types'
 import { median, msToCue, sameArtist, sameTitle, tokenSet } from './text'
 
 /** Every block of text that parses as a tracklist, strongest first. */
-export function collectCandidates(video: SetVideo, comments: SetComment[]): Candidate[] {
+export function collectCandidates(
+  video: SetVideo,
+  comments: SetComment[],
+): Candidate[] {
   const candidates: Candidate[] = []
 
   const fromDescription = extractTracklist(video.description, video.durationMs)
   if (fromDescription.tracks.length) {
-    candidates.push({ source: 'description', sourceMeta: null, weight: 1.2, ...fromDescription })
+    candidates.push({
+      source: 'description',
+      sourceMeta: null,
+      weight: 1.2,
+      ...fromDescription,
+    })
   }
 
   for (const comment of comments) {
@@ -62,13 +76,20 @@ interface Variant {
  */
 export function mergeCandidates(
   candidates: Candidate[],
-  { cueWindow = 20_000, nameWindow = 150_000 }: { cueWindow?: number; nameWindow?: number } = {},
+  {
+    cueWindow = 20_000,
+    nameWindow = 150_000,
+  }: { cueWindow?: number; nameWindow?: number } = {},
 ): { tracks: Track[]; sourceCount: number } {
   interface Cluster {
     cueMs: number
     cues: number[]
     titles: Set<string>
-    entries: Array<{ track: Candidate['tracks'][number]; weight: number; sourceMeta: Candidate['sourceMeta'] }>
+    entries: Array<{
+      track: Candidate['tracks'][number]
+      weight: number
+      sourceMeta: Candidate['sourceMeta']
+    }>
   }
   const clusters: Cluster[] = []
 
@@ -83,11 +104,20 @@ export function mergeCandidates(
       )
 
       if (!cluster) {
-        cluster = { cueMs: track.cueMs, cues: [], titles: new Set<string>(), entries: [] }
+        cluster = {
+          cueMs: track.cueMs,
+          cues: [],
+          titles: new Set<string>(),
+          entries: [],
+        }
         clusters.push(cluster)
       }
 
-      cluster.entries.push({ track, weight: candidate.weight, sourceMeta: candidate.sourceMeta })
+      cluster.entries.push({
+        track,
+        weight: candidate.weight,
+        sourceMeta: candidate.sourceMeta,
+      })
       cluster.cues.push(track.cueMs)
       cluster.cueMs = median(cluster.cues)
       if (track.titleNorm) cluster.titles.add(track.titleNorm)
@@ -105,7 +135,9 @@ export function mergeCandidates(
       if (t.isUnknown) continue
 
       let variant = variants.find(
-        (v) => sameTitle(v.titleNorm, t.titleNorm) && sameArtist(v.artistNorm, t.artistNorm),
+        (v) =>
+          sameTitle(v.titleNorm, t.titleNorm) &&
+          sameArtist(v.artistNorm, t.artistNorm),
       )
 
       if (!variant) {
@@ -127,7 +159,10 @@ export function mergeCandidates(
 
       variant.votes += 1
       variant.weight += entry.weight
-      variant.likeCount = Math.max(variant.likeCount, entry.sourceMeta?.likeCount ?? 0)
+      variant.likeCount = Math.max(
+        variant.likeCount,
+        entry.sourceMeta?.likeCount ?? 0,
+      )
       // Keep the fullest credit: "Crusy, Karretero" beats a bare "Crusy".
       if (tokenSet(t.artistNorm).size > tokenSet(variant.artistNorm).size) {
         variant.artist = t.artist

@@ -132,7 +132,11 @@ export interface Candidate {
   confidence: number
 }
 
-export type TracklistStatus = 'ok' | 'assembled' | 'low_confidence' | 'no_tracklist'
+export type TracklistStatus =
+  | 'ok'
+  | 'assembled'
+  | 'low_confidence'
+  | 'no_tracklist'
 
 export interface TracklistResult {
   video: Omit<SetVideo, 'description'>
