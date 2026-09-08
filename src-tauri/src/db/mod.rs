@@ -34,6 +34,50 @@ pub struct TrackAnalysis {
     pub analyzed_at: Option<String>,
 }
 
+
+/// A processed YouTube set, as listed in the Sets library.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtSet {
+    pub video_id: String,
+    pub url: String,
+    pub title: String,
+    pub channel: Option<String>,
+    pub published_at: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub fetched_at: Option<String>,
+    pub status: Option<String>,
+    pub confidence: Option<f64>,
+    pub source_count: Option<i64>,
+    pub track_count: Option<i64>,
+    pub added_at: Option<String>,
+}
+
+/// A track hearted out of a set.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtSavedTrack {
+    pub id: Option<i64>,
+    pub video_id: String,
+    pub cue_ms: i64,
+    pub cue: Option<String>,
+    pub artist: Option<String>,
+    pub title: String,
+    pub mix: Option<String>,
+    pub saved_at: Option<String>,
+    /// Filled in when listing, so the UI can say which set it came from.
+    pub set_title: Option<String>,
+}
+
+/// A channel watched for new sets.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtChannel {
+    pub channel_id: String,
+    pub handle: Option<String>,
+    pub title: Option<String>,
+    pub uploads_id: Option<String>,
+    pub last_checked: Option<String>,
+    pub last_seen_video: Option<String>,
+}
+
 /// Represents a track in the database
 #[derive(Debug, Clone, PartialEq)]
 pub struct Track {
@@ -166,6 +210,11 @@ impl Database {
         // Uses CREATE INDEX IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/008_duplicate_index.sql"))?;
+
+        // Migration 009: YouTube set tracklists, saved tracks, followed channels
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/009_yt_sets.sql"))?;
 
         Ok(())
     }
@@ -2454,6 +2503,192 @@ impl Database {
         }
 
         Ok(id)
+    }
+
+    // --- YouTube sets -------------------------------------------------
+    //
+    // The raw fetch is stored next to the parsed summary so a set can be
+    // reopened without spending quota, and so an improved parser can be re-run
+    // over everything already collected.
+
+    pub fn save_yt_set(&self, set: &YtSet, raw_json: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO yt_sets (
+                video_id, url, title, channel, published_at, duration_ms,
+                fetched_at, status, confidence, source_count, track_count, raw_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(video_id) DO UPDATE SET
+                title = excluded.title,
+                channel = excluded.channel,
+                published_at = excluded.published_at,
+                duration_ms = excluded.duration_ms,
+                fetched_at = excluded.fetched_at,
+                status = excluded.status,
+                confidence = excluded.confidence,
+                source_count = excluded.source_count,
+                track_count = excluded.track_count,
+                raw_json = excluded.raw_json",
+            params![
+                set.video_id,
+                set.url,
+                set.title,
+                set.channel,
+                set.published_at,
+                set.duration_ms,
+                set.fetched_at,
+                set.status,
+                set.confidence,
+                set.source_count,
+                set.track_count,
+                raw_json,
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn map_yt_set(row: &rusqlite::Row) -> Result<YtSet> {
+        Ok(YtSet {
+            video_id: row.get(0)?,
+            url: row.get(1)?,
+            title: row.get(2)?,
+            channel: row.get(3)?,
+            published_at: row.get(4)?,
+            duration_ms: row.get(5)?,
+            fetched_at: row.get(6)?,
+            status: row.get(7)?,
+            confidence: row.get(8)?,
+            source_count: row.get(9)?,
+            track_count: row.get(10)?,
+            added_at: row.get(11)?,
+        })
+    }
+
+    pub fn list_yt_sets(&self) -> Result<Vec<YtSet>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT video_id, url, title, channel, published_at, duration_ms,
+                    fetched_at, status, confidence, source_count, track_count, added_at
+             FROM yt_sets ORDER BY added_at DESC",
+        )?;
+        let rows = stmt.query_map([], Self::map_yt_set)?;
+        rows.collect()
+    }
+
+    /// The untouched fetch, for reparsing without touching the network.
+    pub fn get_yt_set_raw(&self, video_id: &str) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT raw_json FROM yt_sets WHERE video_id = ?",
+                [video_id],
+                |row| row.get(0),
+            )
+            .optional()
+    }
+
+    pub fn delete_yt_set(&self, video_id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM yt_sets WHERE video_id = ?", [video_id])?;
+        Ok(())
+    }
+
+    // --- saved tracks -------------------------------------------------
+
+    pub fn save_yt_track(&self, track: &YtSavedTrack) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO yt_saved_tracks (video_id, cue_ms, cue, artist, title, mix)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(video_id, cue_ms, title) DO UPDATE SET
+                artist = excluded.artist,
+                mix = excluded.mix",
+            params![
+                track.video_id,
+                track.cue_ms,
+                track.cue,
+                track.artist,
+                track.title,
+                track.mix,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn list_saved_yt_tracks(&self) -> Result<Vec<YtSavedTrack>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.id, s.video_id, s.cue_ms, s.cue, s.artist, s.title, s.mix, s.saved_at,
+                    y.title AS set_title
+             FROM yt_saved_tracks s
+             LEFT JOIN yt_sets y ON y.video_id = s.video_id
+             ORDER BY s.saved_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(YtSavedTrack {
+                id: row.get(0)?,
+                video_id: row.get(1)?,
+                cue_ms: row.get(2)?,
+                cue: row.get(3)?,
+                artist: row.get(4)?,
+                title: row.get(5)?,
+                mix: row.get(6)?,
+                saved_at: row.get(7)?,
+                set_title: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn delete_saved_yt_track(&self, video_id: &str, cue_ms: i64, title: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM yt_saved_tracks WHERE video_id = ? AND cue_ms = ? AND title = ?",
+            params![video_id, cue_ms, title],
+        )?;
+        Ok(())
+    }
+
+    // --- followed channels --------------------------------------------
+
+    pub fn save_yt_channel(&self, channel: &YtChannel) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO yt_channels (channel_id, handle, title, uploads_id, last_checked, last_seen_video)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(channel_id) DO UPDATE SET
+                handle = excluded.handle,
+                title = excluded.title,
+                uploads_id = excluded.uploads_id,
+                last_checked = excluded.last_checked,
+                last_seen_video = excluded.last_seen_video",
+            params![
+                channel.channel_id,
+                channel.handle,
+                channel.title,
+                channel.uploads_id,
+                channel.last_checked,
+                channel.last_seen_video,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_yt_channels(&self) -> Result<Vec<YtChannel>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT channel_id, handle, title, uploads_id, last_checked, last_seen_video
+             FROM yt_channels ORDER BY title COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(YtChannel {
+                channel_id: row.get(0)?,
+                handle: row.get(1)?,
+                title: row.get(2)?,
+                uploads_id: row.get(3)?,
+                last_checked: row.get(4)?,
+                last_seen_video: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn delete_yt_channel(&self, channel_id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM yt_channels WHERE channel_id = ?", [channel_id])?;
+        Ok(())
     }
 }
 
