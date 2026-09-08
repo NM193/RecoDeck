@@ -8,8 +8,7 @@ export function AudioSection() {
   } = useSettingsContext()
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">Audio</h2>
+    <>
 
       <div className="sv-setting-row">
         <div className="sv-setting-row__info">
@@ -43,6 +42,6 @@ export function AudioSection() {
           </div>
         </div>
       )}
-    </section>
+    </>
   )
 }

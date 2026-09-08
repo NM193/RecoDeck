@@ -9,8 +9,7 @@ export function AISection() {
   } = useSettingsContext()
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">AI Assistant</h2>
+    <>
       <p className="settings-description">
         Configure your Claude API key to enable AI-powered playlist generation.
       </p>
@@ -71,6 +70,6 @@ export function AISection() {
           </a>
         </p>
       </div>
-    </section>
+    </>
   )
 }

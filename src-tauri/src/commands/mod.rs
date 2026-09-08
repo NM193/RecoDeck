@@ -11,6 +11,7 @@ pub mod playlists;
 pub mod server;
 pub mod settings;
 pub mod watcher;
+pub mod youtube;
 
 // Re-export commonly used items
 pub use library::{AppState, TrackDTO};

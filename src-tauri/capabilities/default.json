@@ -2,7 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window and mini player",
-  "windows": ["main", "mini-player"],
+  "windows": [
+    "main",
+    "mini-player",
+    "youtube"
+  ],
   "permissions": [
     "core:default",
     "core:path:default",
@@ -13,6 +17,8 @@
     "dialog:allow-open",
     "updater:default",
     "updater:allow-check",
-    "process:allow-restart"
+    "process:allow-restart",
+    "core:webview:allow-webview-close",
+    "core:window:allow-close"
   ]
 }

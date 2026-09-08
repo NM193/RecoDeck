@@ -34,8 +34,7 @@ export function LibrarySection() {
   }, [scanProgress])
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">Library Folders</h2>
+    <>
 
       <div className="sv-section__actions">
         {folders.length > 0 && (
@@ -137,6 +136,6 @@ export function LibrarySection() {
           })}
         </div>
       )}
-    </section>
+    </>
   )
 }

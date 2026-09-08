@@ -1,0 +1,872 @@
+//! YouTube Data API v3 client.
+//!
+//! Networking lives on the Rust side for two reasons: the API key never reaches
+//! the webview, and every call passes through one place that can count quota.
+//!
+//! YouTube does not report how much quota is left — the Cloud Console lags by
+//! hours — so counting each call against the published price list is the only
+//! way to know. Google charges for the attempt, so a call is counted before its
+//! response is inspected, exactly like the original tool did.
+
+use crate::error::AppError;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+const API_BASE: &str = "https://www.googleapis.com/youtube/v3";
+
+/// Free daily allowance, in units, per key.
+pub const DAILY_QUOTA: u32 = 10_000;
+
+/// Published unit costs. `search` is 100x everything else — it is the one call
+/// that can drain a day in a few clicks, so callers should prefer channel
+/// listing over search wherever possible.
+pub fn unit_cost(endpoint: &str) -> u32 {
+    match endpoint {
+        "search" => 100,
+        // videos, commentThreads, channels, playlistItems
+        _ => 1,
+    }
+}
+
+/// A comment flattened out of a comment thread.
+///
+/// Order matters and must not be sorted later: a reply follows its parent
+/// directly, which is what lets the parser give an answer the timestamp from
+/// the question it hangs under ("39:30 anyone id?" -> "Rockers Hi-Fi - ...").
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Comment {
+    pub author: String,
+    pub text: String,
+    pub like_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoMeta {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub channel: String,
+    pub published_at: String,
+    pub description: String,
+    pub duration_ms: i64,
+}
+
+/// Exactly the shape the standalone tool writes into `fixtures/`, so the parser
+/// cannot tell a live fetch from a replayed one.
+///
+/// These three structs are camelCase over IPC, unlike the rest of the app: the
+/// ported parser reads this shape verbatim, and `fixtures/` are its tests. A
+/// snake_case boundary here would mean reshaping data on the way in and losing
+/// that equivalence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawSet {
+    pub video: VideoMeta,
+    pub comments: Vec<Comment>,
+    pub fetched_at: String,
+}
+
+/// "PT1H23M45S" -> milliseconds. Returns 0 for anything unparseable; duration is
+/// only used to sanity-check cue points, so a miss must not fail the fetch.
+pub fn parse_iso_duration(iso: &str) -> i64 {
+    let body = match iso.strip_prefix("PT") {
+        Some(b) => b,
+        None => return 0,
+    };
+    let mut total: i64 = 0;
+    let mut digits = String::new();
+    for ch in body.chars() {
+        if ch.is_ascii_digit() {
+            digits.push(ch);
+            continue;
+        }
+        let value: i64 = digits.parse().unwrap_or(0);
+        digits.clear();
+        match ch {
+            'H' => total += value * 3_600_000,
+            'M' => total += value * 60_000,
+            'S' => total += value * 1_000,
+            _ => return 0,
+        }
+    }
+    total
+}
+
+/// Turn a Google API failure into something a person can act on.
+///
+/// Pure so it can be tested without the network — the three reasons below are
+/// the ones a user actually hits, and a raw 403 tells them nothing.
+pub fn map_api_error(status: u16, body: &str) -> AppError {
+    let reason = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("error")?
+                .get("errors")?
+                .get(0)?
+                .get("reason")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
+
+    let message = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("error")?
+                .get("message")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| body.chars().take(200).collect());
+
+    match reason.as_str() {
+        "quotaExceeded" | "dailyLimitExceeded" | "rateLimitExceeded" => AppError::YtQuotaExceeded,
+        "keyInvalid" | "badRequest" => AppError::YtInvalidKey,
+        "accessNotConfigured" => AppError::YtApiNotEnabled,
+        _ => {
+            // Some responses carry the reason only in prose.
+            if message.contains("API key not valid") {
+                AppError::YtInvalidKey
+            } else if message.contains("has not been used") || message.contains("is disabled") {
+                AppError::YtApiNotEnabled
+            } else {
+                AppError::YtNetwork(format!("YouTube API error {status}: {message}"))
+            }
+        }
+    }
+}
+
+/// One API call. `spent` is incremented before the response is judged, because
+/// Google bills the attempt.
+async fn call_api(
+    api_key: &str,
+    endpoint: &str,
+    params: &[(&str, String)],
+    spent: &mut u32,
+) -> Result<serde_json::Value, AppError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::YtNetwork(format!("Could not build HTTP client: {e}")))?;
+
+    let mut query: Vec<(&str, String)> = params.to_vec();
+    query.push(("key", api_key.to_string()));
+
+    let response = client
+        .get(format!("{API_BASE}/{endpoint}"))
+        .query(&query)
+        .send()
+        .await;
+
+    *spent += unit_cost(endpoint);
+
+    let response = response.map_err(|e| {
+        if e.is_timeout() {
+            AppError::YtNetwork("YouTube did not answer in 30 seconds".to_string())
+        } else {
+            AppError::YtNetwork(format!("Could not reach YouTube: {e}"))
+        }
+    })?;
+
+    let status = response.status().as_u16();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| AppError::YtNetwork(format!("Could not read YouTube response: {e}")))?;
+
+    if !(200..300).contains(&status) {
+        return Err(map_api_error(status, &body));
+    }
+
+    serde_json::from_str(&body)
+        .map_err(|e| AppError::YtNetwork(format!("YouTube sent unreadable JSON: {e}")))
+}
+
+/// The cheapest possible call (1 unit), used to tell a working key apart from a
+/// missing one, a wrong one, and a project without the API switched on.
+pub async fn verify_key(api_key: &str, spent: &mut u32) -> Result<(), AppError> {
+    call_api(
+        api_key,
+        "videos",
+        &[("part", "id".into()), ("id", "dQw4w9WgXcQ".into())],
+        spent,
+    )
+    .await
+    .map(|_| ())
+}
+
+pub async fn fetch_video(
+    api_key: &str,
+    video_id: &str,
+    spent: &mut u32,
+) -> Result<VideoMeta, AppError> {
+    let data = call_api(
+        api_key,
+        "videos",
+        &[
+            ("part", "snippet,contentDetails,statistics".into()),
+            ("id", video_id.to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    let item = data
+        .get("items")
+        .and_then(|i| i.get(0))
+        .ok_or_else(|| AppError::NotFound(format!("No YouTube video with id {video_id}")))?;
+
+    let snippet = item.get("snippet").cloned().unwrap_or_default();
+    let text = |key: &str| {
+        snippet
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    Ok(VideoMeta {
+        id: video_id.to_string(),
+        url: format!("https://www.youtube.com/watch?v={video_id}"),
+        title: text("title"),
+        channel: text("channelTitle"),
+        published_at: text("publishedAt"),
+        description: text("description"),
+        duration_ms: parse_iso_duration(
+            item.get("contentDetails")
+                .and_then(|c| c.get("duration"))
+                .and_then(|d| d.as_str())
+                .unwrap_or_default(),
+        ),
+    })
+}
+
+/// Comments ordered by relevance, because YouTube surfaces the pinned comment
+/// first and the pinned comment is where uploaders park the tracklist.
+///
+/// Replies come back attached to their thread and cost no extra unit, so they
+/// are flattened in place. Comments can be disabled on a video (403) — that is
+/// a normal state for a set, not a failure, so whatever was collected so far is
+/// returned instead of an error.
+pub async fn fetch_comments(
+    api_key: &str,
+    video_id: &str,
+    pages: u8,
+    spent: &mut u32,
+) -> Result<Vec<Comment>, AppError> {
+    let mut comments = Vec::new();
+    let mut page_token: Option<String> = None;
+
+    for _ in 0..pages {
+        let mut params = vec![
+            ("part", "snippet,replies".to_string()),
+            ("videoId", video_id.to_string()),
+            ("order", "relevance".to_string()),
+            ("maxResults", "100".to_string()),
+            ("textFormat", "plainText".to_string()),
+        ];
+        if let Some(token) = &page_token {
+            params.push(("pageToken", token.clone()));
+        }
+
+        let data = match call_api(api_key, "commentThreads", &params, spent).await {
+            Ok(data) => data,
+            // Comments disabled, or the thread list is closed: keep what we have.
+            Err(AppError::YtNetwork(msg)) if msg.contains("403") => return Ok(comments),
+            Err(e) => return Err(e),
+        };
+
+        let items = data
+            .get("items")
+            .and_then(|i| i.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        for item in items {
+            let top = item
+                .pointer("/snippet/topLevelComment/snippet")
+                .cloned()
+                .unwrap_or_default();
+            let parent_author = top
+                .get("authorDisplayName")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+
+            comments.push(Comment {
+                author: parent_author.clone(),
+                text: top
+                    .get("textDisplay")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                like_count: top.get("likeCount").and_then(|v| v.as_i64()).unwrap_or(0),
+                reply_to: None,
+            });
+
+            let replies = item
+                .pointer("/replies/comments")
+                .and_then(|r| r.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            for reply in replies {
+                let r = reply.get("snippet").cloned().unwrap_or_default();
+                comments.push(Comment {
+                    author: r
+                        .get("authorDisplayName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    text: r
+                        .get("textDisplay")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    like_count: r.get("likeCount").and_then(|v| v.as_i64()).unwrap_or(0),
+                    reply_to: Some(parent_author.clone()),
+                });
+            }
+        }
+
+        page_token = data
+            .get("nextPageToken")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    Ok(comments)
+}
+
+/// One set: description plus up to five pages of comments. 5-7 units in total.
+pub async fn fetch_set(
+    api_key: &str,
+    video_id: &str,
+    spent: &mut u32,
+) -> Result<RawSet, AppError> {
+    let video = fetch_video(api_key, video_id, spent).await?;
+    let comments = fetch_comments(api_key, video_id, 5, spent).await?;
+
+    Ok(RawSet {
+        video,
+        comments,
+        fetched_at: crate::external::youtube_time::iso_now(),
+    })
+}
+
+
+/// Searches for sets published since a given instant, newest first.
+///
+/// Deliberately not `search_sets`. That one orders by relevance, which is right
+/// for "find me a Solomun set" and useless for "has one appeared since
+/// Tuesday" — relevance returns the same famous sets every week and the new one
+/// never surfaces. Here `order=date` plus `publishedAfter` means an empty
+/// result is the honest common answer.
+///
+/// Still 100 units, which is why the caller decides when this is worth running.
+pub async fn search_sets_since(
+    api_key: &str,
+    query: &str,
+    published_after: &str,
+    max: u8,
+    spent: &mut u32,
+) -> Result<Vec<SetSearchHit>, AppError> {
+    let data = call_api(
+        api_key,
+        "search",
+        &[
+            ("part", "snippet".into()),
+            ("q", query.to_string()),
+            ("type", "video".into()),
+            ("order", "date".into()),
+            // YouTube's own definition of long is over twenty minutes, which is
+            // the same floor the rest of this feature uses for what a set is.
+            ("videoDuration", "long".into()),
+            ("publishedAfter", published_after.to_string()),
+            ("maxResults", max.clamp(1, 50).to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    Ok(parse_search_items(&data))
+}
+
+/// A set found by searching, before anything has been fetched about it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSearchHit {
+    pub video_id: String,
+    pub title: String,
+    pub channel: String,
+    pub published_at: String,
+    pub thumbnail: Option<String>,
+    /// The full description, filled in by `fill_details`. Search itself returns
+    /// only a truncated snippet, which is never enough to hold a tracklist.
+    pub description: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub comment_count: Option<i64>,
+}
+
+/// Fills in the full description, runtime and comment count for a page of hits.
+///
+/// **One unit for up to fifty videos.** That is the whole reason this exists:
+/// a search returns a list of titles and nothing that says whether any of them
+/// carries a tracklist, so the only way to find out used to be to open one at
+/// 5-7 units and see. A single `videos` call turns a blind list into an
+/// informed one for a hundredth of the price of the search that produced it.
+pub async fn fill_details(
+    api_key: &str,
+    hits: &mut [SetSearchHit],
+    spent: &mut u32,
+) -> Result<(), AppError> {
+    if hits.is_empty() {
+        return Ok(());
+    }
+
+    let ids: Vec<String> = hits.iter().take(50).map(|h| h.video_id.clone()).collect();
+    let data = call_api(
+        api_key,
+        "videos",
+        &[
+            ("part", "snippet,contentDetails,statistics".into()),
+            ("id", ids.join(",")),
+        ],
+        spent,
+    )
+    .await?;
+
+    let details: std::collections::HashMap<String, (String, Option<i64>, Option<i64>)> = data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id")?.as_str()?.to_string();
+            let description = item
+                .pointer("/snippet/description")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let duration = item
+                .pointer("/contentDetails/duration")
+                .and_then(|v| v.as_str())
+                .map(parse_iso_duration);
+            // Reported as a string, and absent entirely where comments are off.
+            let comments = item
+                .pointer("/statistics/commentCount")
+                .and_then(|v| v.as_str())
+                .and_then(|v| v.parse::<i64>().ok());
+            Some((id, (description, duration, comments)))
+        })
+        .collect();
+
+    for hit in hits.iter_mut() {
+        if let Some((description, duration, comments)) = details.get(&hit.video_id) {
+            hit.description = Some(description.clone());
+            hit.duration_ms = *duration;
+            hit.comment_count = *comments;
+        }
+    }
+    Ok(())
+}
+
+/// Searching by name, for when the user knows the DJ but not the link.
+///
+/// The expensive call: 100 units, a hundred times everything else, so a handful
+/// of searches can end a day. Ordered by relevance rather than date on purpose —
+/// by date the results fill up with re-upload spam channels. Restricted to long
+/// videos because a set is never four minutes.
+pub async fn search_sets(
+    api_key: &str,
+    query: &str,
+    max: u8,
+    spent: &mut u32,
+) -> Result<Vec<SetSearchHit>, AppError> {
+    let data = call_api(
+        api_key,
+        "search",
+        &[
+            ("part", "snippet".into()),
+            ("q", query.to_string()),
+            ("type", "video".into()),
+            ("order", "relevance".into()),
+            ("videoDuration", "long".into()),
+            ("maxResults", max.clamp(1, 50).to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    Ok(parse_search_items(&data))
+}
+
+/// The search hits out of a `search` response, shared by both search callers.
+fn parse_search_items(data: &serde_json::Value) -> Vec<SetSearchHit> {
+    let items = data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    items
+        .iter()
+        .filter_map(|item| {
+            let video_id = item.pointer("/id/videoId")?.as_str()?.to_string();
+            let snippet = item.get("snippet")?;
+            let text = |key: &str| {
+                snippet
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            Some(SetSearchHit {
+                video_id,
+                title: text("title"),
+                channel: text("channelTitle"),
+                published_at: text("publishedAt"),
+                thumbnail: snippet
+                    .pointer("/thumbnails/medium/url")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                description: None,
+                duration_ms: None,
+                comment_count: None,
+            })
+        })
+        .collect()
+}
+
+
+/// A channel, once resolved to something the API can work with.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfo {
+    pub channel_id: String,
+    pub title: String,
+    /// The playlist of everything the channel has uploaded.
+    pub uploads_id: String,
+    pub handle: Option<String>,
+}
+
+/// One video in a channel's uploads, before anything is fetched about it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadItem {
+    pub video_id: String,
+    pub title: String,
+    pub published_at: String,
+    /// Only known once durations are looked up; promo clips are not sets.
+    pub duration_ms: Option<i64>,
+}
+
+/// Turns whatever the user pasted into a channel: a UC id, an @handle, a link
+/// to one of its videos, or a bare name.
+///
+/// The order matters for cost. A handle or a video link resolves for 1 unit; a
+/// bare name falls through to search, which is 100. Everything above the search
+/// is an attempt to avoid it.
+pub async fn resolve_channel(
+    api_key: &str,
+    input: &str,
+    spent: &mut u32,
+) -> Result<ChannelInfo, AppError> {
+    let raw = input.trim();
+
+    let mut channel_id: Option<String> = raw
+        .find("UC")
+        .map(|i| &raw[i..])
+        .and_then(|rest| {
+            let id: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            (id.len() == 24).then_some(id)
+        });
+
+    let handle = raw.find('@').map(|i| {
+        raw[i + 1..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || "_.-".contains(*c))
+            .collect::<String>()
+    });
+
+    if channel_id.is_none() {
+        if let Some(handle) = handle.as_ref().filter(|h| h.len() >= 3) {
+            let data = call_api(
+                api_key,
+                "channels",
+                &[
+                    ("part", "snippet,contentDetails".into()),
+                    ("forHandle", format!("@{handle}")),
+                ],
+                spent,
+            )
+            .await?;
+            channel_id = data
+                .pointer("/items/0/id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+    }
+
+    if channel_id.is_none() {
+        if let Some(video_id) = extract_video_id(raw) {
+            let data = call_api(
+                api_key,
+                "videos",
+                &[("part", "snippet".into()), ("id", video_id)],
+                spent,
+            )
+            .await?;
+            channel_id = data
+                .pointer("/items/0/snippet/channelId")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+    }
+
+    if channel_id.is_none() {
+        // The expensive fallback, and the reason the cheaper paths come first.
+        let data = call_api(
+            api_key,
+            "search",
+            &[
+                ("part", "snippet".into()),
+                ("q", raw.to_string()),
+                ("type", "channel".into()),
+                ("maxResults", "1".into()),
+            ],
+            spent,
+        )
+        .await?;
+        channel_id = data
+            .pointer("/items/0/id/channelId")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+    }
+
+    let channel_id =
+        channel_id.ok_or_else(|| AppError::NotFound(format!("No channel found for \"{raw}\"")))?;
+
+    let data = call_api(
+        api_key,
+        "channels",
+        &[
+            ("part", "snippet,contentDetails".into()),
+            ("id", channel_id.clone()),
+        ],
+        spent,
+    )
+    .await?;
+
+    let item = data
+        .pointer("/items/0")
+        .ok_or_else(|| AppError::NotFound(format!("No channel found for \"{raw}\"")))?;
+
+    Ok(ChannelInfo {
+        channel_id: channel_id.clone(),
+        title: item
+            .pointer("/snippet/title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        uploads_id: item
+            .pointer("/contentDetails/relatedPlaylists/uploads")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::NotFound("That channel has no uploads".to_string()))?
+            .to_string(),
+        handle: handle.filter(|h| h.len() >= 3),
+    })
+}
+
+/// Newest uploads of a channel. One unit per 50.
+pub async fn channel_uploads(
+    api_key: &str,
+    uploads_id: &str,
+    max: u8,
+    spent: &mut u32,
+) -> Result<Vec<UploadItem>, AppError> {
+    let data = call_api(
+        api_key,
+        "playlistItems",
+        &[
+            ("part", "contentDetails,snippet".into()),
+            ("playlistId", uploads_id.to_string()),
+            ("maxResults", max.clamp(1, 50).to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    Ok(data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            Some(UploadItem {
+                video_id: item
+                    .pointer("/contentDetails/videoId")?
+                    .as_str()?
+                    .to_string(),
+                title: item
+                    .pointer("/snippet/title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                published_at: item
+                    .pointer("/contentDetails/videoPublishedAt")
+                    .or_else(|| item.pointer("/snippet/publishedAt"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                duration_ms: None,
+            })
+        })
+        .collect())
+}
+
+/// Fills in durations for a batch of videos. One unit per 50 ids — which is how
+/// promo clips are told apart from sets without fetching either.
+pub async fn fill_durations(
+    api_key: &str,
+    items: &mut [UploadItem],
+    spent: &mut u32,
+) -> Result<(), AppError> {
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    let ids: Vec<String> = items.iter().take(50).map(|i| i.video_id.clone()).collect();
+    let data = call_api(
+        api_key,
+        "videos",
+        &[("part", "contentDetails".into()), ("id", ids.join(","))],
+        spent,
+    )
+    .await?;
+
+    let durations: std::collections::HashMap<String, i64> = data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id")?.as_str()?.to_string();
+            let iso = item.pointer("/contentDetails/duration")?.as_str()?;
+            Some((id, parse_iso_duration(iso)))
+        })
+        .collect();
+
+    for item in items.iter_mut() {
+        item.duration_ms = durations.get(&item.video_id).copied();
+    }
+    Ok(())
+}
+
+/// Accepts a full URL, a share link, an embed link or a bare id.
+pub fn extract_video_id(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    let is_id = |s: &str| {
+        s.len() == 11 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    };
+    if is_id(trimmed) {
+        return Some(trimmed.to_string());
+    }
+    for marker in ["v=", "youtu.be/", "/embed/", "/live/", "/shorts/"] {
+        if let Some(pos) = trimmed.find(marker) {
+            let rest: String = trimmed[pos + marker.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if is_id(&rest) {
+                return Some(rest);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_durations_convert_to_ms() {
+        assert_eq!(parse_iso_duration("PT1H23M45S"), 5_025_000);
+        assert_eq!(parse_iso_duration("PT52M"), 3_120_000);
+        assert_eq!(parse_iso_duration("PT30S"), 30_000);
+        assert_eq!(parse_iso_duration(""), 0);
+        assert_eq!(parse_iso_duration("garbage"), 0);
+    }
+
+    #[test]
+    fn search_is_the_expensive_one() {
+        assert_eq!(unit_cost("search"), 100);
+        assert_eq!(unit_cost("videos"), 1);
+        assert_eq!(unit_cost("commentThreads"), 1);
+    }
+
+    #[test]
+    fn quota_errors_are_named_not_raw() {
+        let body = r#"{"error":{"code":403,"message":"quota","errors":[{"reason":"quotaExceeded"}]}}"#;
+        assert!(matches!(map_api_error(403, body), AppError::YtQuotaExceeded));
+    }
+
+    #[test]
+    fn bad_key_is_told_apart_from_disabled_api() {
+        let bad = r#"{"error":{"code":400,"message":"API key not valid","errors":[{"reason":"badRequest"}]}}"#;
+        assert!(matches!(map_api_error(400, bad), AppError::YtInvalidKey));
+
+        let off = r#"{"error":{"code":403,"message":"YouTube Data API v3 has not been used","errors":[{"reason":"accessNotConfigured"}]}}"#;
+        assert!(matches!(map_api_error(403, off), AppError::YtApiNotEnabled));
+    }
+
+    #[test]
+    fn unknown_errors_keep_their_message() {
+        let body = r#"{"error":{"code":500,"message":"Backend error","errors":[{"reason":"backendError"}]}}"#;
+        match map_api_error(500, body) {
+            AppError::YtNetwork(msg) => assert!(msg.contains("Backend error")),
+            other => panic!("expected YtNetwork, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_json_bodies_do_not_panic() {
+        match map_api_error(502, "<html>bad gateway</html>") {
+            AppError::YtNetwork(msg) => assert!(msg.contains("502")),
+            other => panic!("expected YtNetwork, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn video_ids_come_out_of_every_link_shape() {
+        assert_eq!(extract_video_id("fjR4idz1-MA").unwrap(), "fjR4idz1-MA");
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/watch?v=fjR4idz1-MA&t=1260s").unwrap(),
+            "fjR4idz1-MA"
+        );
+        assert_eq!(
+            extract_video_id("https://youtu.be/QHDRRxKlimY?si=abc").unwrap(),
+            "QHDRRxKlimY"
+        );
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/embed/X6WpzQoI0mc").unwrap(),
+            "X6WpzQoI0mc"
+        );
+        assert!(extract_video_id("https://example.com/nope").is_none());
+        assert!(extract_video_id("").is_none());
+    }
+}

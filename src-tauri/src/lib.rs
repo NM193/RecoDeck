@@ -4,6 +4,7 @@ pub mod audio;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod external;
 pub mod scanner;
 pub mod server;
 
@@ -61,7 +62,11 @@ use audio::audio_mime_type;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_app| {
+        .setup(|app| {
+            // Checks followed channels for new sets on their own interval.
+            // Nothing is due until the user sets one, so this costs nothing
+            // until it is asked for.
+            commands::youtube::spawn_channel_watcher(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -395,6 +400,46 @@ pub fn run() {
         .manage(WatcherState::new())
         .manage(CompanionState::new())
         .invoke_handler(tauri::generate_handler![
+            // YouTube tracklist
+            commands::youtube::set_youtube_api_key,
+            commands::youtube::get_youtube_api_key_status,
+            commands::youtube::delete_youtube_api_key,
+            commands::youtube::get_youtube_quota,
+            commands::youtube::test_youtube_api_key,
+            commands::youtube::search_youtube_sets,
+            commands::youtube::fetch_youtube_set,
+            commands::youtube::open_youtube_panel,
+            commands::youtube::set_youtube_panel_bounds,
+            commands::youtube::seek_youtube_panel,
+            commands::youtube::close_youtube_panel,
+            commands::youtube::pause_youtube_panel,
+            commands::youtube::play_youtube_panel,
+            commands::youtube::youtube_panel_state,
+            commands::youtube::save_youtube_set,
+            commands::youtube::list_youtube_sets,
+            commands::youtube::get_youtube_set,
+            commands::youtube::delete_youtube_set,
+            commands::youtube::save_youtube_track,
+            commands::youtube::list_saved_youtube_tracks,
+            commands::youtube::delete_saved_youtube_track,
+            commands::youtube::search_youtube_tracks,
+            commands::youtube::youtube_track_echoes,
+            commands::youtube::youtube_stats,
+            commands::youtube::resolve_youtube_channel,
+            commands::youtube::list_youtube_channel_uploads,
+            commands::youtube::follow_youtube_channel,
+            commands::youtube::list_youtube_channels,
+            commands::youtube::unfollow_youtube_channel,
+            commands::youtube::check_youtube_channels,
+            commands::youtube::set_youtube_channel_interval,
+            commands::youtube::watch_youtube_dj,
+            commands::youtube::list_youtube_djs,
+            commands::youtube::unwatch_youtube_dj,
+            commands::youtube::set_youtube_dj_interval,
+            commands::youtube::set_youtube_dj_auto_import,
+            commands::youtube::check_youtube_djs,
+            commands::youtube::list_youtube_dj_finds,
+            commands::youtube::mark_youtube_channel_seen,
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,

@@ -1,6 +1,6 @@
 # RecoDeck Development Progress
 
-Last Updated: 2026-02-12
+Last Updated: 2026-09-08
 
 ---
 
@@ -587,6 +587,436 @@ The app previously used an in-memory database (`:memory:`) which lost all data o
   - Uses refs for callbacks to avoid stale closures in event listener
 
 ---
+
+---
+
+### 2026-09-07 — M0 spike: YouTube embedded playback is not viable (yt-tracklist port)
+
+**Context:** porting the `yt-tracklist` tool into RecoDeck. The original tool runs in a
+browser, where an embedded YouTube player is trivial. Before building anything, M0 asked
+one question: does that player work inside RecoDeck?
+
+**Answer: no, and for two independent reasons. Do not retry this.**
+
+**Wall 1 — the `tauri://localhost` origin.** A production build serves the frontend over a
+custom scheme, not http. YouTube's player then fails with error 153 ("no valid Referer"),
+because a custom-scheme page sends no Referer header. Measured against all six real DJ sets
+in the tool's `fixtures/`: 6 of 6 failed. All four known workarounds failed too —
+`host: youtube-nocookie`, `playerVars.origin`, `widget_referrer`, and a plain iframe with no
+JS API. This is invisible in `tauri dev`, where the origin is `http://localhost:1420` and
+everything appears to work.
+
+This wall *is* breakable: serving the player page from the Axum companion server the app
+already runs gives a real http origin, and one set then genuinely played inside RecoDeck.
+
+**Wall 2 — the sets themselves refuse embedding.** Surveyed the same six sets from a plain
+Chrome tab, outside the app entirely:
+
+| set | result |
+|---|---|
+| Solomun @ Cercle (`QHDRRxKlimY`) | embeddable |
+| Luciano @ Thuishaven (`X6WpzQoI0mc`) | error 150 |
+| Dr Banana / Mixmag (`fjR4idz1-MA`) | error 150 |
+| Priku B2B Traumer (`ucfEH7g9JWI`) | error 150 |
+| Boris Brejcha @ Cercle (`vqz8c4ZP3Wg`) | error 150 |
+| Hot Since 82 / Mixmag (`xJR7q0XN8oU`) | error 150 |
+
+Five of six refuse embedded playback anywhere — Chrome gives the same verdict as our webview,
+so this is not a Tauri problem and no origin change fixes it. Verified it is not an artifact
+of the test harness: re-ran with a fresh document per video, and again with a single player
+alone (no rapid-fire loads). Same result each time.
+
+**Trap for later:** the YouTube Data API reports `status.embeddable: true` for all six. That
+field does not predict playback and must not be used as a pre-check. The only reliable signal
+is attempting playback and catching error 150/101.
+
+**Decision:** listening happens by opening the set in the user's browser at the right
+timestamp (`&t=1260s`) via `tauri-plugin-opener`, which is already a dependency. Consequence
+for CSP: only `img-src` needs `https://i.ytimg.com` for thumbnails — no `frame-src`, no
+`script-src`, which is also the safer outcome.
+
+**Side finding:** thumbnails from `i.ytimg.com` load fine under CSP once `img-src` allows them.
+
+---
+
+### 2026-09-07 — M1: YouTube key, quota counter, and network layer (yt-tracklist port)
+
+**Rust**
+- `external/` finally declared in `lib.rs` — the directory had existed unused since the
+  original scaffold and was never part of the crate
+- `external/youtube.rs` — Data API v3 client. Fetching a set returns the exact shape the
+  standalone tool writes into `fixtures/`, which is why these three structs are camelCase
+  while the rest of the app's IPC is snake_case: the ported parser reads that shape verbatim
+  and the fixtures are its tests
+- `external/youtube_time.rs` — Pacific calendar helpers. Quota resets at midnight Pacific
+  (about 09:00 local), so the quota bucket cannot key off the local date. Written by hand
+  rather than adding a date crate (Rule 1), including the US daylight-saving rule
+- `commands/youtube.rs` — key save/status/delete, 1-unit connection test, quota reading,
+  and set fetching. Locks are never held across a network call (the Phase 28 rule)
+- Google bills the attempt, so quota is recorded even when a call is rejected
+- 20 new unit tests: quota day rollover against a real database, DST transitions, error
+  mapping for `quotaExceeded` / `keyInvalid` / `accessNotConfigured`, ISO durations, and
+  video-id extraction from every link shape. Suite is 135 passing, 0 clippy warnings from
+  the new code
+
+**Frontend**
+- `types/youtube.ts`, IPC wrappers in `tauri-api.ts`, YouTube state in `SettingsContext`
+- `YouTubeSection.tsx` in Settings: masked key field, Test Connection, a quota bar, and
+  step-by-step instructions for creating a personal key
+
+**Why each user brings their own key:** the 10,000 unit daily allowance is charged per key.
+One key shipped inside the app would be one budget shared by everyone — a single search costs
+100 units — and a key inside a binary is trivially extracted.
+
+**Measured, not assumed:** a live fetch of `fjR4idz1-MA` cost 2 units (1 video + 1 comment
+page) and produced 35 comments, 11 of them replies — identical to the fixture the standalone
+tool wrote for the same video. Note that the quota spent during this check went through a
+throwaway harness, not the app, so the in-app counter starts from zero.
+
+**Gate passed 2026-09-07** — verified in the running app: saving a key, Test Connection moving
+the quota by one unit, and a deliberately wrong key producing a readable sentence.
+
+Two things the gate caught, both fixed:
+
+- The failure was announced only by a toast in the corner while the section itself still said
+  "✓ API key configured", which is exactly the moment a user needs to be told to try another
+  key. The section now carries the result inline, and the saved-key line no longer claims the
+  key is good until it has actually been tested.
+- Underneath that: `getErrorMessage` in `types/ai.ts` maps backend errors to human sentences,
+  but the new YouTube variants were missing from it. For unit variants carrying no message —
+  `YtInvalidKey`, `YtQuotaExceeded`, `YtApiNotEnabled` — the raw object reached the UI instead
+  of a sentence. Any future `AppError` variant has to be added there too.
+
+---
+
+### 2026-09-07 — M2: tracklist parser ported to TypeScript (yt-tracklist port)
+
+The parsing half of the standalone tool now lives in `src/lib/tracklist/`, split into
+`text.ts` (names and timestamps), `extract.ts` (one block of text), `comments.ts` (everything
+mined out of the comment section), `merge.ts` (consensus across lists) and `index.ts`.
+
+**The port is literal on purpose.** Every threshold in it was measured against real sets, not
+chosen: a ±20s cue window, a 150s name window, containment of 0.8 for titles and 0.6 for
+artists, and a floor of 0.5 under `artistShape` — that last one exists because a DJ playing
+their own records is listed by title alone, and without the floor such a set scored zero and
+was discarded as a false positive. Rewriting any of it "more cleanly" would quietly undo
+measurements nobody would think to re-run.
+
+**Testing:** the tool's six saved fixtures are now the regression suite
+(`src/lib/tracklist/__fixtures__/`, 544K of raw API responses), together with `expected.json`
+— that tool's own output over them. The suite compares field by field and then whole:
+
+| set | tracks | status |
+|---|---|---|
+| Solomun @ Cercle | 25 | ok, 7 sources agreeing |
+| Luciano @ Thuishaven | 18 | ok |
+| Dr Banana / Mixmag | 7 | assembled from comments, no written list |
+| Priku B2B Traumer | 35 | ok |
+| Boris Brejcha @ Cercle | 20 | ok |
+| Hot Since 82 / Mixmag | 42 | ok, 4 sources |
+
+All six reproduce exactly. The suite was then mutation-checked to prove it can fail: dropping
+the title containment threshold from 0.8 to 0.5 breaks two of the six sets.
+
+90 frontend tests passing, tsc clean, no new lint findings.
+
+---
+
+### 2026-09-07/08 — M4 and M5a: library matching, the set library, and the in-window player
+
+**M4 — matching a set against the library**
+
+Every parsed row is compared to the user's own tracks using the parser's soft name
+matching, not string equality: tags and typed-out tracklists never agree exactly. No schema
+work and no SQL — the app already holds all 8,400 tracks in memory. Rows show `have it`
+(plays the user's file) or `missing`, the header counts both, and a filter narrows to either.
+Playing one row queues everything owned from that set, in the order the DJ played it.
+
+**Two bugs found by using it, both fixed with tests:**
+
+1. *Narration parsed as tracks.* Someone had narrated the crowd with timestamps ("1:10:13
+   tattoo girl checks on the lad..."). The block passes every structural check — ascending,
+   inside the runtime, enough rows — so it merged into the real list. The rule now judges the
+   whole block: an artist-less row of 7+ words is prose, and a block that is a quarter prose
+   is thrown out. The threshold is measured — across the reference sets the longest legitimate
+   artist-less title is six words, while narration runs 8 to 18. **The original tool has this
+   bug too**: running it over the same fixture reproduces all five narration rows, which is
+   why `bk6Xst6euQk` is the one set where we deliberately differ from it.
+2. *One-word titles claiming long files.* "Simion feat. Roland Clark — Lost" matched a file
+   called "Lee Burridge & Lost Desert - Elongi feat. Junior", because containment divides by
+   the shorter side and the single word "lost" scored 1.0. The shorter title must now be at
+   least half the longer one, "Unknown Artist" counts as no artist, and titles are compared
+   both with and without the remix suffix.
+
+**M5a — the set library (migration 009)**
+
+`yt_sets`, `yt_saved_tracks`, `yt_channels`. A processed set is stored whole, raw fetch
+included, so reopening costs no quota and a better parser can be re-run over everything
+already collected. Hearted tracks collect across sets with Beatport/Discogs/Bandcamp links
+and a copy-list button. Deleting a set cascades to its saved tracks.
+
+**The in-window player — what it took, and what it cost**
+
+The goal was the standalone tool's layout: video on top, tracklist below, in one window.
+Getting there required enabling Tauri's `unstable` feature for multi-webview support, so the
+player is a second webview positioned over the page in window coordinates. That is why it
+cannot scroll with the list and lives in a fixed band.
+
+Four measured findings, in the order they were learned:
+
+| attempt | result |
+|---|---|
+| iframe on the `tauri://` page | error 153 — a custom scheme sends no Referer |
+| panel navigated straight to `youtube.com/embed` | error 153 — a top-level navigation sends none either |
+| panel → page served by our own server at **127.0.0.1** | error **150** |
+| panel → same page, same port, at **localhost** | works |
+
+**YouTube accepts `localhost` as an embedding origin and rejects `127.0.0.1`.** This also
+retracts an earlier conclusion recorded on 2026-09-07: "five of six sets refuse embedding
+anywhere" was a measurement error, caused by testing from a `127.0.0.1` origin through
+`YT.Player`. The sets are fine. The standalone tool works because it is served from
+`localhost:4173`.
+
+So the chain is: panel webview → `http://localhost:<port>/yt-player` (served by the companion
+Axum server) → iframe to youtube.com, which now has the Referer it wants. Seeking goes through
+`/yt-seek`, which the player page polls four times a second, so jumping between tracks moves
+the player in place instead of reloading it. The player page reports its state to `/yt-report`,
+which lands in the app log — a webview has no console anyone can read.
+
+**Open problem for tomorrow: playback will not start on its own.**
+
+The panel reports `PLAYER READY` but never `PLAYING`. The user has to press play inside the
+panel once; after that, every seek works. The cause is that the click lands in the *main*
+webview while the player lives in a *second* one, so as far as the player's document is
+concerned no user gesture ever happened. In the standalone tool both live in the same
+document, which is why it does not have this problem.
+
+Tried and rejected: muted autoplay (`mute=1`) plus a programmatic `playVideo` and `unMute`
+after `onReady` — still never reaches `PLAYING`.
+
+Next things to try, cheapest first:
+
+1. wry defaults `autoplay: true` (wry 0.54 `WebViewAttributes`), but nothing in
+   tauri-runtime-wry appears to pass it through for a child webview added with
+   `Window::add_child`. Check whether Tauri exposes it, or whether the attribute is simply
+   lost for child webviews — that would explain the behaviour exactly.
+2. Failing that, give the served page its own one-time overlay: a large play button covering
+   the panel, so the first click happens *inside* that webview. One click per set, then
+   everything is programmatic.
+
+**State:** all of the above is on branch `feat/yt-tracklist` and **uncommitted** — M1 and M2
+are committed, everything after them is not. Tests: 108 frontend, 139 Rust, lint unchanged.
+
+**Still to build from the standalone tool:** search by DJ name (100 quota units a search),
+channel import, followed channels with a new-set badge, statistics, search across all stored
+sets, and the quota bar with a countdown to the Pacific reset.
+
+---
+
+### 2026-09-08 — M5 complete: the rest of the standalone tool, and two matching rules learned by using it
+
+**Everything from the tool is now in RecoDeck.** Search across every stored set, statistics,
+search by DJ name, channel import, followed channels with a new-set badge, and the library
+filed by DJ.
+
+**Storage (migration 010).** Parsed rows are flattened into `yt_tracks` beside the raw fetch.
+Without it, "where did I hear this?" and every statistic would mean reparsing every stored set
+on each keystroke. Rebuilt wholesale when a set is reprocessed, so an improved parser simply
+replaces what the old one produced — and reopening a set stored before this table existed
+fills it in quietly.
+
+**Costs are shown because they differ by a factor of a hundred.** A set is 5-7 units, checking
+a followed channel 1-2, resolving a channel from a handle or link 2 — and searching by name is
+100. The button says so before the click, and refuses when less than 100 is left. Channels
+resolve through the cheap paths first (UC id, @handle, a link to one of their videos) and only
+fall through to search when nothing else works. Promo clips are filtered by duration before
+anything is fetched about them: a set is never under twenty minutes.
+
+**Sets are filed under the DJ, not the channel.** Mixmag, Boiler Room and Cercle are hosts;
+the DJ is in the title, and across the reference sets the titles use five different
+conventions. The rule cuts at the earliest separator with two guards: a B2B billing stays
+whole, and a title that is just a description ("The best deep house mix of...") falls back to
+the host rather than inventing a DJ.
+
+**Two matching bugs, both found by using the feature, both now covered by tests:**
+
+1. *A different remix offered as the same record.* "Witch Doctor (Hot Since 82 Remix)" in the
+   set matched "Witch Doctor [Extended Mix]" on disk. The base-title fallback exists for a good
+   reason — a tracklist naming the remix where the tag says only "Horny" is the same record —
+   but when **both** sides name a version, they now have to be the same version. The library's
+   version is read from the raw tag title, before normalisation, which is precisely what
+   normalisation strips.
+2. *A title alone treated as evidence.* Matching now requires the artist to agree as well.
+   Dozens of records are called "Lost" or "Jolene". Where a file carries no artist tag, the
+   artist is read out of the title the same way a written tracklist is parsed — plenty of files
+   are tagged "Lee Burridge & Lost Desert - Elongi feat. Junior" with an empty artist field, and
+   demanding a tag without reading those would mark half a library as missing. The cost is
+   accepted deliberately: a file with neither an artist tag nor a dash in its title will never
+   match. Better to say "missing" for a record you own than to offer someone else's.
+
+**A third bug, and the most misleading one.** Library matching was reading `App.tsx`'s track
+list, which holds only what is on screen — one folder, or one playlist. So it answered "do I
+have this in the folder I happen to be looking at". It appeared to work because after a scan
+the app returns to All Tracks. The Sets view now loads the whole library itself and refreshes
+on `library-changed`, so a file added a minute ago stops reading as missing.
+
+Store links now include Spotify, and appear on the rows themselves on hover — four links
+across forty rows would drown out the tracklist if they were always visible.
+
+Tests: 116 frontend, 143 Rust.
+
+### 2026-09-08 — M6 and M7: checking on its own, watching a DJ, and a parser blind spot
+
+**M6 — automatic checking (migration 011).** `check_interval_hours` per followed channel:
+0 never, 24 daily, 168 weekly. A background task wakes every 15 minutes and asks a pure
+function which channels have waited long enough.
+
+The decision is `is_due(interval, last_checked, now)` and it is tested as one: never,
+never-checked, the hour boundary both ways, a manual check a minute ago, an unreadable
+timestamp, and a clock that went backwards. `last_checked` is written **per channel and only
+when the channel was actually reached** — a network blip must leave a channel due rather than
+skipping it for a day. The manual button now writes it too, so a manual check counts.
+
+Two things the plan did not anticipate:
+
+- `last_checked` is an ISO string, so reading it back needed `unix_from_iso` in the module that
+  writes it. It also accepts SQLite's `datetime('now')` shape, because rows written by the
+  column default came out that way.
+- **Migration 011 is an `ALTER TABLE`, and migrations run on every launch.** Without the
+  `pragma_table_info` guard the *second* launch after an update fails, not the first. Two tests
+  cover it, and removing the guard fails them.
+
+**M7 — watching a DJ (migrations 012-014).** Asked for during the M6 demo: "can I put a DJ name
+in the follow box?" The honest answer was no, and finding out why was worth the detour — a bare
+name in that box falls through to `search` with `type=channel`, so it costs 100 units and
+returns the DJ's *own* channel, where releases live rather than the sets they play. It appears
+to work and gives the wrong thing, which is the worst outcome available.
+
+So a DJ is a separate list with a separate mechanism, and the whole design is built around one
+number: a channel check is a listing at 1-2 units, a DJ has to be searched for at **100**.
+
+- Not `search_sets`. That orders by relevance, which is right for "find me a Solomun set" and
+  useless for "has one appeared since Tuesday" — relevance returns the same famous sets every
+  week and the new one never surfaces. `search_sets_since` uses `order=date` plus
+  `publishedAfter`, so an empty result is the honest common answer.
+- `AUTOMATIC_QUOTA_RESERVE` of 2,000: the automatic run will not spend below it. Buttons may,
+  because a button was asked for. `djs_within_budget` is a pure function and is tested.
+- A DJ watched for the first time looks back 30 days. Without a floor the first search reports
+  a decade of sets as new.
+
+**Two bugs found by using it, in the space of ten minutes, both worth recording.**
+
+1. *A missing letter silently discarded every result.* The name was typed "Josep Capriati", and
+   the title filter asked whether the title contained the name as one string. It does not —
+   after "josep" comes "h", not a space — so every genuine hit was thrown away while the app
+   reported, truthfully and uselessly, that it found nothing. **Cost: 100 units per attempt, and
+   no signal that anything was wrong.** The rule now requires every *word* of the name to appear,
+   which survives a typo, a reordering, and anything inserted between the words. Deliberately
+   looser: being strict here fails invisibly, being loose costs one row you can ignore. Proved
+   in the wild immediately — "Josep" then found seven real Joseph Capriati sets.
+2. *"Nothing found" and "never looked" were the same screen.* A DJ that had never been searched
+   showed "No long uploads found", which reads as an answer. It now says which it is.
+
+**The parser blind spot, found on a real set (`_wfwSaA5GeE`).** HOT SINCE 82 at the BBC Radio 1
+Essential Mix: all 24 tracks written into the description as a numbered list, and **not one
+timestamp**. Every structural test in `extract.ts` is built on cues — ascending order, coverage
+of the runtime — so the description yielded nothing and the set fell through to being assembled
+from comments, giving one track, from somebody shouting "OH MY F*K, CHANTE!". **The standalone
+tool has the same blind spot.**
+
+`extractNumberedList` replaces the cue with the numbering as evidence: prose does not carry four
+or more consecutively numbered lines, so the run of numbers is the structure, and it has to be
+*dense* (≥80% of steps counting up) rather than merely present. It runs **only when nothing
+anywhere carried a timestamp** — running it alongside would let a numbering inside a real list
+compete with the list itself, and the cue is always the better evidence where there is one.
+Checked before writing it: no reference fixture has a numbered list in its description, and the
+one assembled from comments has none anywhere, so parity was never at risk.
+
+Underneath it was a second bug: `mergeCandidates` clusters by cue with a 20-second window, and
+with every cue at zero all 24 rows collapsed into **one** slot. Where nobody wrote a timestamp
+the row number is the only ordering there is, so that is what identifies a slot.
+
+Rows with no cue get no seek button and no timeline — a "0:00" on every row would read as a
+time somebody wrote down. Reopening an affected set reparses it from the stored fetch at zero
+quota cost, which is exactly what keeping the raw JSON was for.
+
+**Remembering what a search found (migration 013).** Novelty used to rest entirely on
+`publishedAfter`, so a set found and not imported fell through the gap: the next window starts
+after it and it is never mentioned again. Every hit is now recorded per DJ, and the insert
+itself reports whether it was the first sighting. A set is news exactly once and stays on the
+list to go back to. That also made a 2-day overlap on the search window affordable — publish
+time and the moment a set becomes findable are not the same instant.
+
+**Automatic import (migration 014), off by default.** It runs in the *frontend*, on the
+`yt-new-sets` event, because the parser is TypeScript: the backend can fetch a set but has
+nothing to turn it into a tracklist. `setsToAutoImport` keeps a 1,000-unit reserve and a cap of
+five per run, and is a pure function with its own tests — it is the only place the app spends
+quota with nobody watching.
+
+**Tests:** 168 Rust (was 143 at the start of the day), 123 frontend (was 116). Every rule that
+governs spending or novelty was mutation-checked rather than trusted: hours into minutes,
+`<= 0` into `< 0`, the migration guard removed, the reserve removed, the numbered path run
+alongside the timestamped one, position-clustering broken, `INSERT OR IGNORE` into `OR REPLACE`,
+and the name filter returned to a substring test. Each one fails tests.
+
+**Released as 0.3.0** — the first release containing any of the Sets work. The last public
+release, v0.2.15, has none of it.
+
+### 2026-09-08 (later) — what demonstrating it found
+
+Everything below came out of using the feature rather than reading the code, which is the
+argument for demonstrating each piece before moving to the next.
+
+**The automatic check had never run.** Both watched DJs were on Weekly and had just been
+checked, so nothing would have fired for seven days — including auto-import, which was switched
+on. Staging `last_checked` back and restarting made the whole chain run for the first time, and
+it worked. It also **filed a set with nought tracks into the library**, and a duplicate
+re-upload with two. A library nobody chose to fill has to earn every row: automatic import now
+withholds a set that parses to nothing. The units are spent before that can be judged and no
+amount of care avoids it, but the row is not written.
+
+**`var(--color-primary)` does not exist in this project.** The scrubber worked perfectly and was
+invisible: an undefined custom property throws nothing, logs nothing, and simply drops the
+declaration. Found only because the bar looked wrong. The whole app was then checked — every
+variable used against every variable defined — which turned up one more: `--space-10` in
+`SearchView.css`, on a scale that goes 6, 8, 12. Every icon name was checked the same way; all
+57 resolve.
+
+**A missing letter cost a hundred units and said nothing.** "Josep Capriati" is not a substring
+of "JOSEPH CAPRIATI closing set", so the title filter discarded every genuine hit while the app
+reported, truthfully, that it found nothing. Matching now requires every *word* of the name.
+Deliberately looser: strict fails invisibly, loose costs one row you can ignore.
+
+**One DJ, several headings.** `extractDjName` cuts at the earliest separator, which fails three
+ways at once: "Hot Since 82 House Set" and "JOSEPH CAPRIATI closing set" carry the description
+*before* the separator, and "Fabric 80 - Joseph Capriati" carries the name *after* it. Trailing
+role words now come off, and a compilation series in front is read past. Over the eleven real
+titles in the library, eight groups became five.
+
+**Two players, one pair of ears.** The video and the app's own player know nothing about each
+other, so whichever starts hands the other a pause. The first version had a race: panel state
+is read through a poll and instructions reach it through another, so for the best part of a
+second the video still reports itself as playing. Clicking "have it" stopped the video, started
+the file, and paused the file a moment later. A latch now makes the rule deaf to reports issued
+before the video was asked to stop.
+
+**Things that were built because the parser could already do it.**
+
+- `fill_details`: one `videos` call returns full descriptions for up to fifty hits, so a search
+  result can say whether it holds a tracklist before 5-7 units are spent opening it. One unit
+  against the hundred the search cost.
+- "Look again": reopening a stored set reparses the copy taken on the day, which is right when
+  the parser improved and wrong when the set did. Comments keep arriving.
+- Cross-set echoes: a row with no timestamp points at the same record in a set that does know
+  where it sits. Verified against the real library and **it fires nowhere yet** — both untimed
+  sets are the same Essential Mix, and their twin has no timestamps either. Correct, tested, and
+  invisible until a set is stored that shares a record with them.
+- The strip carries tempo: 8,202 of 8,421 library tracks are analysed, so the blocks can have
+  height. Checked before building it — only 95 tracks have a key, so nothing leans on key.
+
+**Tests:** 171 Rust, 139 frontend. One test written during this stretch was thrown away and
+rewritten: it exercised a fake function declared inside the test file rather than the code, which
+is worse than no test at all.
 
 ## Next Steps
 

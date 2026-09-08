@@ -38,4 +38,19 @@ pub enum AppError {
 
     #[error("AI tool execution error: {0}")]
     AiToolExecution(String),
+
+    #[error("No YouTube API key configured -- add your own key in Settings")]
+    YtNoApiKey,
+
+    #[error("YouTube API key is invalid -- check your key in Settings")]
+    YtInvalidKey,
+
+    #[error("YouTube Data API v3 is not enabled for this key's Google Cloud project")]
+    YtApiNotEnabled,
+
+    #[error("Daily YouTube quota is spent -- it resets at midnight Pacific time")]
+    YtQuotaExceeded,
+
+    #[error("{0}")]
+    YtNetwork(String),
 }

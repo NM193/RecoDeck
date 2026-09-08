@@ -3,6 +3,22 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
+  YouTubeQuotaStatus,
+  WatchedDj,
+  YouTubePanelState,
+  TrackEcho,
+  RawSet,
+  YtSetSummary,
+  SavedTrack,
+  YtTrackHit,
+  YtStats,
+  SetSearchHit,
+  ChannelInfo,
+  FollowedChannel,
+  ChannelUpload,
+  ChannelNews,
+} from '../types/youtube'
+import type {
   Track,
   ScanResult,
   BpmResult,
@@ -397,6 +413,218 @@ export const tauriApi = {
     sample_rate: number
   }> {
     return await invoke('get_playback_status')
+  },
+
+  // YouTube tracklist commands
+  // The key stays in Rust: it never crosses into the webview, and every call
+  // goes through one quota counter.
+  async setYouTubeApiKey(apiKey: string): Promise<void> {
+    return await invoke('set_youtube_api_key', { apiKey })
+  },
+
+  async getYouTubeApiKeyStatus(): Promise<boolean> {
+    return await invoke('get_youtube_api_key_status')
+  },
+
+  async deleteYouTubeApiKey(): Promise<void> {
+    return await invoke('delete_youtube_api_key')
+  },
+
+  async getYouTubeQuota(): Promise<YouTubeQuotaStatus> {
+    return await invoke('get_youtube_quota')
+  },
+
+  /** Cheapest possible call (1 unit) -- verifies the key without a real fetch. */
+  async testYouTubeApiKey(): Promise<YouTubeQuotaStatus> {
+    return await invoke('test_youtube_api_key')
+  },
+
+  // Channels. Following one is the cheap way to keep up: a check costs a unit
+  // or two, where searching by name costs a hundred.
+  async resolveYouTubeChannel(input: string): Promise<ChannelInfo> {
+    return await invoke('resolve_youtube_channel', { input })
+  },
+
+  async listYouTubeChannelUploads(uploadsId: string, max?: number): Promise<ChannelUpload[]> {
+    return await invoke('list_youtube_channel_uploads', { uploadsId, max: max ?? null })
+  },
+
+  async followYouTubeChannel(channel: ChannelInfo): Promise<void> {
+    return await invoke('follow_youtube_channel', { channel })
+  },
+
+  async listYouTubeChannels(): Promise<FollowedChannel[]> {
+    return await invoke('list_youtube_channels')
+  },
+
+  async unfollowYouTubeChannel(channelId: string): Promise<void> {
+    return await invoke('unfollow_youtube_channel', { channelId })
+  },
+
+  async checkYouTubeChannels(): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_channels')
+  },
+
+  /** How often a channel is checked on its own. 0 never, 24 daily, 168 weekly. */
+  async setYouTubeChannelInterval(channelId: string, hours: number): Promise<void> {
+    return await invoke('set_youtube_channel_interval', { channelId, hours })
+  },
+
+  // Watched DJs. A DJ is searched for, not listed, so each check costs 100.
+
+  async watchYouTubeDj(name: string): Promise<void> {
+    return await invoke('watch_youtube_dj', { name })
+  },
+
+  async listYouTubeDjs(): Promise<WatchedDj[]> {
+    return await invoke('list_youtube_djs')
+  },
+
+  async unwatchYouTubeDj(nameKey: string): Promise<void> {
+    return await invoke('unwatch_youtube_dj', { nameKey })
+  },
+
+  async setYouTubeDjInterval(nameKey: string, hours: number): Promise<void> {
+    return await invoke('set_youtube_dj_interval', { nameKey, hours })
+  },
+
+  /** Whether a DJ's new sets are fetched and stored without being asked. */
+  async setYouTubeDjAutoImport(nameKey: string, enabled: boolean): Promise<void> {
+    return await invoke('set_youtube_dj_auto_import', { nameKey, enabled })
+  },
+
+  /** Searches for every watched DJ — 100 units each. */
+  async checkYouTubeDjs(): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_djs')
+  },
+
+  /** Everything a DJ's searches have turned up so far. Costs nothing. */
+  async listYouTubeDjFinds(nameKey: string): Promise<ChannelUpload[]> {
+    return await invoke('list_youtube_dj_finds', { nameKey })
+  },
+
+  async markYouTubeChannelSeen(channelId: string, videoId: string): Promise<void> {
+    return await invoke('mark_youtube_channel_seen', { channelId, videoId })
+  },
+
+  /** Finds a DJ's sets by name. **100 units** — the expensive call. */
+  async searchYouTubeSets(query: string, max?: number): Promise<SetSearchHit[]> {
+    return await invoke('search_youtube_sets', { query, max: max ?? null })
+  },
+
+  /** Accepts a full URL or a bare video id. Costs 5-7 units. */
+  async fetchYouTubeSet(input: string): Promise<RawSet> {
+    return await invoke('fetch_youtube_set', { input })
+  },
+
+  /**
+   * In-window YouTube panel. The bounds are in CSS pixels relative to the
+   * window content area, because the panel is a second webview laid over the
+   * page rather than an element inside it.
+   */
+  async openYouTubePanel(
+    url: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Promise<void> {
+    return await invoke('open_youtube_panel', { url, x, y, width, height })
+  },
+
+  async setYouTubePanelBounds(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Promise<void> {
+    return await invoke('set_youtube_panel_bounds', { x, y, width, height })
+  },
+
+  /** Moves the open panel without reloading it. */
+  async seekYouTubePanel(seconds: number): Promise<void> {
+    return await invoke('seek_youtube_panel', { seconds })
+  },
+
+  async closeYouTubePanel(): Promise<void> {
+    return await invoke('close_youtube_panel')
+  },
+
+  /** Hands playback to the app's own player. */
+  async pauseYouTubePanel(): Promise<void> {
+    return await invoke('pause_youtube_panel')
+  },
+
+  async playYouTubePanel(): Promise<void> {
+    return await invoke('play_youtube_panel')
+  },
+
+  /** Where the video is, as the panel last reported it. */
+  async youtubePanelState(): Promise<YouTubePanelState> {
+    return await invoke('youtube_panel_state')
+  },
+
+  // The set library: a processed set is kept whole, so reopening it later
+  // costs nothing and a better parser can be re-run over it.
+  async saveYouTubeSet(input: {
+    raw: RawSet
+    status: string
+    confidence: number
+    source_count: number
+    track_count: number
+    /** Flattened so search and statistics are queries, not a reparse. */
+    tracks: Array<{
+      cue_ms: number
+      cue?: string
+      artist?: string
+      title: string
+      mix?: string
+      is_unknown: boolean
+      votes?: number
+      source_count?: number
+      artist_norm?: string
+      title_norm?: string
+    }>
+  }): Promise<void> {
+    return await invoke('save_youtube_set', { input })
+  },
+
+  async listYouTubeSets(): Promise<YtSetSummary[]> {
+    return await invoke('list_youtube_sets')
+  },
+
+  async getYouTubeSet(videoId: string): Promise<RawSet> {
+    return await invoke('get_youtube_set', { videoId })
+  },
+
+  async deleteYouTubeSet(videoId: string): Promise<void> {
+    return await invoke('delete_youtube_set', { videoId })
+  },
+
+  async saveYouTubeTrack(track: SavedTrack): Promise<void> {
+    return await invoke('save_youtube_track', { track })
+  },
+
+  /** "Where did I hear this?" across every stored set. Costs no quota. */
+  async searchYouTubeTracks(query: string): Promise<YtTrackHit[]> {
+    return await invoke('search_youtube_tracks', { query })
+  },
+
+  /** Where else this set's records turn up, with a timestamp. Costs nothing. */
+  async youtubeTrackEchoes(videoId: string): Promise<TrackEcho[]> {
+    return await invoke('youtube_track_echoes', { videoId })
+  },
+
+  async youtubeStats(): Promise<YtStats> {
+    return await invoke('youtube_stats')
+  },
+
+  async listSavedYouTubeTracks(): Promise<SavedTrack[]> {
+    return await invoke('list_saved_youtube_tracks')
+  },
+
+  async deleteSavedYouTubeTrack(videoId: string, cueMs: number, title: string): Promise<void> {
+    return await invoke('delete_saved_youtube_track', { videoId, cueMs, title })
   },
 
   // AI commands
