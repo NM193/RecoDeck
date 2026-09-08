@@ -1,17 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { SetTimeline } from './SetTimeline'
 import { tauriApi } from '../../lib/tauri-api'
 import { analyse, type Track, type TracklistResult } from '../../lib/tracklist'
 import { matchTracklist, type LibraryMatch, type MatchSummary } from '../../lib/tracklist/match'
+import { extractDjName, groupByDj } from '../../lib/tracklist/djName'
 import { playerPageUrl, watchUrl } from '../../lib/youtubeWindow'
 import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage } from '../../types/ai'
-import type { RawSet, SavedTrack, YouTubeQuotaStatus, YtSetSummary } from '../../types/youtube'
+import type {
+  RawSet,
+  SavedTrack,
+  YouTubeQuotaStatus,
+  YtSetSummary,
+  YtStats,
+  YtTrackHit,
+  SetSearchHit,
+  ChannelNews,
+  ChannelUpload,
+  FollowedChannel,
+} from '../../types/youtube'
 import './SetsView.css'
 
-type Tab = 'set' | 'library' | 'saved'
+type Tab = 'set' | 'library' | 'saved' | 'channels' | 'stats'
 
 /** The escape hatch: the user's own browser, with their account and history. */
 function openInBrowser(url: string, cueMs = 0) {
@@ -34,17 +47,59 @@ function statusLabel(result: TracklistResult): { text: string; kind: string } {
   }
 }
 
+/**
+ * A link or a bare id can be fetched directly; anything else is a name, and
+ * finding sets by name is the one call that costs 100 units.
+ */
+function looksLikeLink(input: string): boolean {
+  const text = input.trim()
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return true
+  return /(?:v=|youtu\.be\/|\/embed\/|\/live\/|\/shorts\/)[A-Za-z0-9_-]{11}/.test(text)
+}
+
 const trackKey = (t: { video_id?: string; cue_ms?: number; title: string }) =>
   `${t.video_id ?? ''}|${t.cue_ms ?? 0}|${t.title}`
 
 /** Where a DJ would go looking for a record they do not own yet. */
-function storeLinks(artist: string | null | undefined, title: string) {
-  const query = encodeURIComponent([artist, title].filter(Boolean).join(' '))
+function storeLinks(artist: string | null | undefined, title: string, mix?: string | null) {
+  const query = encodeURIComponent([artist, title, mix].filter(Boolean).join(' '))
   return [
+    { name: 'Spotify', url: `https://open.spotify.com/search/${query}` },
     { name: 'Beatport', url: `https://www.beatport.com/search?q=${query}` },
     { name: 'Discogs', url: `https://www.discogs.com/search/?q=${query}&type=release` },
     { name: 'Bandcamp', url: `https://bandcamp.com/search?q=${query}` },
   ]
+}
+
+/** Kept out of the way until the row is hovered, so 42 rows stay readable. */
+function StoreLinks({
+  artist,
+  title,
+  mix,
+  className = '',
+}: {
+  artist: string | null | undefined
+  title: string
+  mix?: string | null
+  className?: string
+}) {
+  return (
+    <span className={`sets-stores ${className}`}>
+      {storeLinks(artist, title, mix).map((link) => (
+        <button
+          key={link.name}
+          type="button"
+          className="sets-store-link"
+          onClick={(e) => {
+            e.stopPropagation()
+            void openUrl(link.url)
+          }}
+        >
+          {link.name}
+        </button>
+      ))}
+    </span>
+  )
 }
 
 function TrackRow({
@@ -111,6 +166,15 @@ function TrackRow({
       </span>
 
       {!track.isUnknown && (
+        <StoreLinks
+          artist={track.artist}
+          title={track.title}
+          mix={track.mix}
+          className="sets-stores--hover"
+        />
+      )}
+
+      {!track.isUnknown && (
         <button
           type="button"
           className={`sets-track__heart ${saved ? 'sets-track__heart--on' : ''}`}
@@ -162,10 +226,8 @@ function TrackRow({
 }
 
 export function SetsView({
-  libraryTracks,
   onPlayTrack,
 }: {
-  libraryTracks: LibraryTrack[]
   onPlayTrack: (track: LibraryTrack, queue: LibraryTrack[], index: number) => void
 }) {
   const [tab, setTab] = useState<Tab>('set')
@@ -178,6 +240,26 @@ export function SetsView({
   const [filter, setFilter] = useState<'all' | 'have' | 'missing'>('all')
   const [sets, setSets] = useState<YtSetSummary[]>([])
   const [saved, setSaved] = useState<SavedTrack[]>([])
+  const [search, setSearch] = useState('')
+  const [hits, setHits] = useState<YtTrackHit[]>([])
+  const [stats, setStats] = useState<YtStats | null>(null)
+  const [found, setFound] = useState<SetSearchHit[] | null>(null)
+  const [channels, setChannels] = useState<FollowedChannel[]>([])
+  const [channelInput, setChannelInput] = useState('')
+  const [news, setNews] = useState<ChannelNews[] | null>(null)
+  const [uploads, setUploads] = useState<{ channel: FollowedChannel; items: ChannelUpload[] } | null>(
+    null,
+  )
+  const [busy, setBusy] = useState<string | null>(null)
+  /**
+   * The whole library, loaded here rather than taken from the main view.
+   *
+   * App's track list holds whatever is on screen — one folder, one playlist —
+   * so matching against it answered "do I have this in the folder I happen to
+   * be looking at", which is not the question.
+   */
+  const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([])
+  const [grouping, setGrouping] = useState<'dj' | 'recent'>('dj')
   const [playing, setPlaying] = useState<{ videoId: string; url: string; cueMs: number } | null>(
     null,
   )
@@ -194,12 +276,45 @@ export function SetsView({
   const refreshLibrary = useCallback(() => {
     tauriApi.listYouTubeSets().then(setSets).catch(() => {})
     tauriApi.listSavedYouTubeTracks().then(setSaved).catch(() => {})
+    tauriApi.listYouTubeChannels().then(setChannels).catch(() => {})
   }, [])
 
   useEffect(() => {
     refreshQuota()
     refreshLibrary()
   }, [refreshQuota, refreshLibrary])
+
+  // Scanning or adding files changes what counts as owned, so the match has to
+  // be recomputed — otherwise a track added a minute ago still reads "missing".
+  useEffect(() => {
+    const load = () => {
+      tauriApi.getAllTracks().then(setLibraryTracks).catch(() => {})
+    }
+    load()
+
+    const stop = listen('library-changed', load)
+    return () => {
+      void stop.then((unlisten) => unlisten())
+    }
+  }, [])
+
+  // Searching the stored sets never touches the network, so it can run as the
+  // user types; a short debounce is only to spare the database.
+  useEffect(() => {
+    if (search.trim().length < 2) {
+      setHits([])
+      return
+    }
+    const timer = setTimeout(() => {
+      tauriApi.searchYouTubeTracks(search).then(setHits).catch(() => {})
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    if (tab !== 'stats') return
+    tauriApi.youtubeStats().then(setStats).catch(() => {})
+  }, [tab, sets.length])
 
   // The library is already fully in memory, so this is a loop, not a query.
   const matches: MatchSummary | null = useMemo(
@@ -304,16 +419,25 @@ export function SetsView({
     setPlaying({ videoId, url, cueMs })
   }
 
-  function show(raw: RawSet) {
+  function show(raw: RawSet): TracklistResult {
+    const parsed = analyse(raw.video, raw.comments)
     setCurrentSet(raw)
-    setResult(analyse(raw.video, raw.comments))
+    setResult(parsed)
     setTab('set')
+    return parsed
   }
 
   async function handleProcess() {
     if (!input.trim() || loading) return
+
+    if (!looksLikeLink(input)) {
+      await handleSearchSets()
+      return
+    }
+
     setLoading(true)
     setError(null)
+    setFound(null)
     try {
       const raw = await tauriApi.fetchYouTubeSet(input.trim())
       const parsed = analyse(raw.video, raw.comments)
@@ -323,13 +447,7 @@ export function SetsView({
       setTab('set')
 
       // Kept for good: reopening it later costs nothing.
-      await tauriApi.saveYouTubeSet({
-        raw,
-        status: parsed.status,
-        confidence: parsed.confidence,
-        source_count: parsed.sourceCount,
-        track_count: parsed.trackCount,
-      })
+      await storeParsed(raw, parsed)
       refreshLibrary()
     } catch (err) {
       setError(getErrorMessage(err))
@@ -340,11 +458,169 @@ export function SetsView({
     }
   }
 
+  /** Finds a DJ's sets by name. The expensive call, hence the confirmation. */
+  async function handleSearchSets() {
+    const quotaLeft = quota?.remaining ?? 0
+    if (quotaLeft < 100) {
+      setError(
+        `Searching by name costs 100 units and only ${quotaLeft.toLocaleString()} are left today.`,
+      )
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    try {
+      setFound(await tauriApi.searchYouTubeSets(input.trim()))
+    } catch (err) {
+      setError(getErrorMessage(err))
+      setFound(null)
+    } finally {
+      setLoading(false)
+      refreshQuota()
+    }
+  }
+
+  /** Fetches one of the found sets: back to the ordinary 5-7 unit path. */
+  async function processFound(hit: SetSearchHit) {
+    setLoading(true)
+    setError(null)
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(hit.videoId)
+      const parsed = show(raw)
+      await storeParsed(raw, parsed)
+      setFound(null)
+      setInput('')
+      refreshLibrary()
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+      refreshQuota()
+    }
+  }
+
+  /** Adds a channel to follow. A handle or a link costs 2 units; a bare name
+      falls through to search, which costs 100 — so paste a link where you can. */
+  async function addChannel() {
+    if (!channelInput.trim() || loading) return
+    setLoading(true)
+    setError(null)
+    try {
+      const channel = await tauriApi.resolveYouTubeChannel(channelInput.trim())
+      await tauriApi.followYouTubeChannel(channel)
+      setChannelInput('')
+      refreshLibrary()
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+      refreshQuota()
+    }
+  }
+
+  /** What a channel has put out lately, long videos only. */
+  async function showUploads(channel: FollowedChannel) {
+    if (!channel.uploads_id) return
+    setBusy(channel.channel_id)
+    setError(null)
+    try {
+      const items = await tauriApi.listYouTubeChannelUploads(channel.uploads_id, 25)
+      setUploads({ channel, items })
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setBusy(null)
+      refreshQuota()
+    }
+  }
+
+  /** One or two units per channel — the cheap way to keep up. */
+  async function checkChannels() {
+    setLoading(true)
+    setError(null)
+    try {
+      setNews(await tauriApi.checkYouTubeChannels())
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+      refreshQuota()
+    }
+  }
+
+  /** Fetches one upload and, when it came from a check, marks it as seen. */
+  async function importUpload(videoId: string, channelId?: string) {
+    setBusy(videoId)
+    setError(null)
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(videoId)
+      const parsed = show(raw)
+      await storeParsed(raw, parsed)
+      if (channelId) await tauriApi.markYouTubeChannelSeen(channelId, videoId).catch(() => {})
+      setNews(null)
+      setUploads(null)
+      refreshLibrary()
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setBusy(null)
+      refreshQuota()
+    }
+  }
+
   /** Reopening a stored set never touches the network. */
   async function openStored(videoId: string) {
     try {
       setError(null)
-      show(await tauriApi.getYouTubeSet(videoId))
+      const raw = await tauriApi.getYouTubeSet(videoId)
+      const parsed = show(raw)
+
+      // Sets stored before the tracks table existed have no rows in it, and so
+      // would be invisible to search and statistics. Reopening one fills them
+      // in — and a set reparsed by an improved parser is refreshed the same way.
+      await storeParsed(raw, parsed)
+      refreshLibrary()
+    } catch (err) {
+      setError(getErrorMessage(err))
+    }
+  }
+
+  /** Writes the parsed result next to the stored fetch. Costs no quota. */
+  async function storeParsed(raw: RawSet, parsed: TracklistResult) {
+    await tauriApi
+      .saveYouTubeSet({
+        raw,
+        status: parsed.status,
+        confidence: parsed.confidence,
+        source_count: parsed.sourceCount,
+        track_count: parsed.trackCount,
+        // Flattened here so searching across sets and the statistics are plain
+        // queries rather than a reparse of everything on every keystroke.
+        tracks: parsed.tracks.map((t) => ({
+          cue_ms: t.cueMs,
+          cue: t.cue,
+          artist: t.artist ?? undefined,
+          title: t.title,
+          mix: t.mix ?? undefined,
+          is_unknown: t.isUnknown,
+          votes: t.votes,
+          source_count: t.sourceCount,
+          artist_norm: t.artistNorm ?? undefined,
+          title_norm: t.titleNorm ?? undefined,
+        })),
+      })
+      .catch(() => {})
+  }
+
+  /** Opens the set a search hit came from and jumps to the moment. */
+  async function openHit(hit: YtTrackHit) {
+    try {
+      setError(null)
+      const raw = await tauriApi.getYouTubeSet(hit.video_id)
+      const parsed = show(raw)
+      const row = parsed.tracks.find((t) => t.cueMs === hit.cue_ms)
+      seekTo(raw.video.id, raw.video.url, hit.cue_ms, row?.index ?? null)
     } catch (err) {
       setError(getErrorMessage(err))
     }
@@ -394,6 +670,12 @@ export function SetsView({
     void navigator.clipboard.writeText(text)
   }
 
+  /** The library, filed under whoever played each set. */
+  const byDj = useMemo(() => groupByDj(sets), [sets])
+
+  /** How many unseen sets the last check turned up, for the tab badge. */
+  const newCount = news?.reduce((total, item) => total + item.new_sets.length, 0) ?? 0
+
   const nowPlaying =
     playingIndex != null ? (result?.tracks.find((t) => t.index === playingIndex) ?? null) : null
 
@@ -410,6 +692,33 @@ export function SetsView({
     if (!result || playingIndex == null) return false
     const position = result.tracks.findIndex((t) => t.index === playingIndex)
     return Boolean(result.tracks[position + direction])
+  }
+
+  /** One stored set, whichever way the library is grouped. */
+  function StoredSet({ set }: { set: YtSetSummary }) {
+    return (
+      <div className="sets-stored">
+        <button
+          type="button"
+          className="sets-stored__main"
+          onClick={() => openStored(set.video_id)}
+        >
+          <span className="sets-stored__title">{set.title}</span>
+          <span className="sets-stored__meta">
+            {set.channel} · {set.track_count ?? 0} tracks
+            {set.status === 'assembled' ? ' · assembled from comments' : ''}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="sets-stored__remove"
+          onClick={() => removeStored(set.video_id)}
+          title="Remove from the library"
+        >
+          <Icon name="Trash2" size={14} />
+        </button>
+      </div>
+    )
   }
 
   const badge = result ? statusLabel(result) : null
@@ -496,14 +805,25 @@ export function SetsView({
       <div className="sets-view__scroll">
         <div className="sets-view__container">
           <div className="sets-tabs">
-            {(['set', 'library', 'saved'] as const).map((t) => (
+            {(['set', 'library', 'saved', 'channels', 'stats'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 className={`sets-tab ${tab === t ? 'sets-tab--active' : ''}`}
                 onClick={() => setTab(t)}
               >
-                {t === 'set' ? 'Set' : t === 'library' ? `Library (${sets.length})` : `Saved (${saved.length})`}
+                {t === 'set'
+                  ? 'Set'
+                  : t === 'library'
+                    ? `Library (${sets.length})`
+                    : t === 'saved'
+                      ? `Saved (${saved.length})`
+                      : t === 'channels'
+                        ? `Following (${channels.length})`
+                        : 'Stats'}
+                {t === 'channels' && newCount > 0 && (
+                  <span className="sets-tab__badge">{newCount}</span>
+                )}
               </button>
             ))}
           </div>
@@ -513,7 +833,7 @@ export function SetsView({
               <div className="sets-form">
                 <input
                   className="sets-form__input"
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder="Paste a set link, or type a DJ's name"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -526,7 +846,11 @@ export function SetsView({
                   onClick={handleProcess}
                   disabled={loading || !input.trim()}
                 >
-                  {loading ? 'Reading...' : 'Process'}
+                  {loading
+                    ? 'Reading...'
+                    : looksLikeLink(input)
+                      ? 'Process'
+                      : 'Search · 100 units'}
                 </button>
               </div>
 
@@ -539,11 +863,42 @@ export function SetsView({
 
               {error && <div className="sets-error">{error}</div>}
 
-              {result && (
+              {found && (
+                <>
+                  <p className="sets-summary">
+                    {found.length === 0
+                      ? 'No long videos found for that name.'
+                      : `${found.length} sets found — opening one costs 5–7 units`}
+                  </p>
+                  {found.map((hit) => (
+                    <button
+                      type="button"
+                      className="sets-found"
+                      key={hit.videoId}
+                      onClick={() => processFound(hit)}
+                    >
+                      {hit.thumbnail && (
+                        <img className="sets-found__thumb" src={hit.thumbnail} alt="" />
+                      )}
+                      <span className="sets-found__text">
+                        <span className="sets-stored__title">{hit.title}</span>
+                        <span className="sets-stored__meta">
+                          {hit.channel} · {hit.publishedAt.slice(0, 10)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {result && !found && (
                 <>
                   <div className="sets-result__header">
                     <h2 className="sets-result__title">{result.video.title}</h2>
                     <div className="sets-result__meta">
+                      <span className="sets-dj__chip">
+                        {extractDjName(result.video.title, result.video.channel)}
+                      </span>
                       <span>{result.video.channel}</span>
                       <span className={`sets-badge sets-badge--${badge!.kind}`}>{badge!.text}</span>
                       <span>{result.trackCount} tracks</span>
@@ -672,26 +1027,300 @@ export function SetsView({
               <p className="sets-view__subtitle">
                 Every set you have processed, kept whole. Opening one costs no quota.
               </p>
+
+              <div className="sets-form">
+                <input
+                  className="sets-form__input"
+                  placeholder="Where did I hear this? — search every stored set"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              {search.trim().length >= 2 && (
+                <>
+                  <p className="sets-summary">
+                    {hits.length === 0
+                      ? 'Nothing found in the stored sets.'
+                      : `${hits.length} ${hits.length === 1 ? 'hit' : 'hits'}`}
+                  </p>
+                  {hits.map((hit) => (
+                    <button
+                      type="button"
+                      className="sets-hit"
+                      key={`${hit.video_id}-${hit.cue_ms}-${hit.title}`}
+                      onClick={() => openHit(hit)}
+                    >
+                      <span className="sets-track__cue">{hit.cue}</span>
+                      <span className="sets-track__name">
+                        {hit.artist && <span className="sets-track__artist">{hit.artist} — </span>}
+                        {hit.title}
+                        <span className="sets-track__extra">{hit.set_title}</span>
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
               {sets.length === 0 && <p className="sets-empty">Nothing processed yet.</p>}
-              {sets.map((s) => (
-                <div className="sets-stored" key={s.video_id}>
-                  <button type="button" className="sets-stored__main" onClick={() => openStored(s.video_id)}>
-                    <span className="sets-stored__title">{s.title}</span>
+
+              {sets.length > 0 && (
+                <div className="sets-filter">
+                  <button
+                    type="button"
+                    className={`sets-filter__btn ${grouping === 'dj' ? 'sets-filter__btn--active' : ''}`}
+                    onClick={() => setGrouping('dj')}
+                  >
+                    By DJ ({byDj.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`sets-filter__btn ${grouping === 'recent' ? 'sets-filter__btn--active' : ''}`}
+                    onClick={() => setGrouping('recent')}
+                  >
+                    Newest first
+                  </button>
+                </div>
+              )}
+
+              {grouping === 'recent' && sets.map((s) => <StoredSet key={s.video_id} set={s} />)}
+
+              {grouping === 'dj' &&
+                byDj.map((group) => (
+                  <div className="sets-dj" key={group.dj}>
+                    <h3 className="sets-dj__name">
+                      {group.dj}
+                      <span className="sets-dj__count">
+                        {group.sets.length} {group.sets.length === 1 ? 'set' : 'sets'}
+                      </span>
+                    </h3>
+                    {group.sets.map((s) => (
+                      <StoredSet key={s.video_id} set={s} />
+                    ))}
+                  </div>
+                ))}
+            </>
+          )}
+
+          {tab === 'channels' && (
+            <>
+              <p className="sets-view__subtitle">
+                Following a channel is the cheap way to keep up — a check costs a unit or two,
+                where searching by name costs a hundred.
+              </p>
+
+              <div className="sets-form">
+                <input
+                  className="sets-form__input"
+                  placeholder="@cercle, a channel link, or a link to one of its videos"
+                  value={channelInput}
+                  onChange={(e) => setChannelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addChannel()
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={addChannel}
+                  disabled={loading || !channelInput.trim()}
+                >
+                  Follow
+                </button>
+              </div>
+              <p className="sets-quota">
+                A handle or a link resolves for 2 units. A bare name has to be searched for, which
+                costs 100 — paste a link where you can.
+              </p>
+
+              {error && <div className="sets-error">{error}</div>}
+
+              {channels.length > 0 && (
+                <div className="sets-filter">
+                  <button
+                    type="button"
+                    className="sets-filter__btn"
+                    onClick={checkChannels}
+                    disabled={loading}
+                  >
+                    {loading ? 'Checking...' : 'Check for new sets'}
+                  </button>
+                </div>
+              )}
+
+              {channels.length === 0 && <p className="sets-empty">Not following anyone yet.</p>}
+
+              {channels.map((channel) => (
+                <div className="sets-stored" key={channel.channel_id}>
+                  <button
+                    type="button"
+                    className="sets-stored__main"
+                    onClick={() => showUploads(channel)}
+                    disabled={busy === channel.channel_id}
+                  >
+                    <span className="sets-stored__title">{channel.title ?? channel.channel_id}</span>
                     <span className="sets-stored__meta">
-                      {s.channel} · {s.track_count ?? 0} tracks
-                      {s.status === 'assembled' ? ' · assembled from comments' : ''}
+                      {channel.handle ? `@${channel.handle} · ` : ''}
+                      {busy === channel.channel_id ? 'reading uploads...' : 'show recent sets'}
                     </span>
                   </button>
                   <button
                     type="button"
                     className="sets-stored__remove"
-                    onClick={() => removeStored(s.video_id)}
-                    title="Remove from the library"
+                    onClick={async () => {
+                      await tauriApi.unfollowYouTubeChannel(channel.channel_id).catch(() => {})
+                      refreshLibrary()
+                    }}
+                    title="Stop following"
                   >
-                    <Icon name="Trash2" size={14} />
+                    <Icon name="X" size={14} />
                   </button>
                 </div>
               ))}
+
+              {news && (
+                <div className="sets-loose">
+                  <h3 className="sets-loose__title">
+                    {newCount === 0 ? 'Nothing new' : `${newCount} new ${newCount === 1 ? 'set' : 'sets'}`}
+                  </h3>
+                  {news.map((item) => (
+                    <div key={item.channel_id}>
+                      <p className="sets-loose__hint">{item.title}</p>
+                      {item.new_sets.map((set) => (
+                        <button
+                          type="button"
+                          className="sets-hit"
+                          key={set.video_id}
+                          onClick={() => importUpload(set.video_id, item.channel_id)}
+                          disabled={busy === set.video_id}
+                        >
+                          <span className="sets-track__name">
+                            {set.title}
+                            <span className="sets-track__extra">
+                              {set.published_at.slice(0, 10)}
+                              {set.duration_ms
+                                ? ` · ${Math.round(set.duration_ms / 60000)} min`
+                                : ''}
+                            </span>
+                          </span>
+                          <span className="sets-track__votes">
+                            {busy === set.video_id ? 'reading...' : 'get it'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {uploads && (
+                <div className="sets-loose">
+                  <h3 className="sets-loose__title">{uploads.channel.title}</h3>
+                  <p className="sets-loose__hint">
+                    Long uploads only — promo clips under twenty minutes are not sets.
+                  </p>
+                  {uploads.items.length === 0 && <p className="sets-empty">No long uploads found.</p>}
+                  {uploads.items.map((item) => (
+                    <button
+                      type="button"
+                      className="sets-hit"
+                      key={item.video_id}
+                      onClick={() =>
+                        item.already_stored
+                          ? openStored(item.video_id)
+                          : importUpload(item.video_id, uploads.channel.channel_id)
+                      }
+                      disabled={busy === item.video_id}
+                    >
+                      <span className="sets-track__name">
+                        {item.title}
+                        <span className="sets-track__extra">
+                          {item.published_at.slice(0, 10)}
+                          {item.duration_ms ? ` · ${Math.round(item.duration_ms / 60000)} min` : ''}
+                        </span>
+                      </span>
+                      <span className="sets-track__votes">
+                        {busy === item.video_id
+                          ? 'reading...'
+                          : item.already_stored
+                            ? 'in library'
+                            : 'get it'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === 'stats' && (
+            <>
+              {!stats && <p className="sets-empty">Nothing processed yet.</p>}
+              {stats && (
+                <>
+                  <p className="sets-summary">
+                    {stats.sets} {stats.sets === 1 ? 'set' : 'sets'} · {stats.tracks} named tracks ·{' '}
+                    {stats.unknowns} still unidentified
+                  </p>
+
+                  <div className="sets-stats">
+                    <div className="sets-stats__block">
+                      <h3 className="sets-loose__title">Most played</h3>
+                      {stats.top_artists.length === 0 && <p className="sets-empty">—</p>}
+                      {stats.top_artists.map(([artist, count]) => (
+                        <div className="sets-track" key={artist}>
+                          <span className="sets-track__name">{artist}</span>
+                          <span className="sets-track__votes">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="sets-stats__block">
+                      <h3 className="sets-loose__title">Doing the rounds</h3>
+                      <p className="sets-loose__hint">Records that turn up in more than one set.</p>
+                      {stats.shared_tracks.length === 0 && <p className="sets-empty">—</p>}
+                      {stats.shared_tracks.map(([title, artist, count]) => (
+                        <div className="sets-track" key={`${artist}-${title}`}>
+                          <span className="sets-track__name">
+                            {artist && <span className="sets-track__artist">{artist} — </span>}
+                            {title}
+                          </span>
+                          <span className="sets-track__votes">{count} sets</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="sets-stats__block">
+                      <h3 className="sets-loose__title">Most gaps</h3>
+                      <p className="sets-loose__hint">
+                        Where digging through the comments would pay off most.
+                      </p>
+                      {stats.most_unknowns.length === 0 && <p className="sets-empty">—</p>}
+                      {stats.most_unknowns.map(([videoId, title, count]) => (
+                        <button
+                          type="button"
+                          className="sets-hit"
+                          key={videoId}
+                          onClick={() => openStored(videoId)}
+                        >
+                          <span className="sets-track__name">{title}</span>
+                          <span className="sets-track__votes">{count} IDs</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="sets-stats__block">
+                      <h3 className="sets-loose__title">Quota</h3>
+                      <p className="sets-loose__hint">
+                        {stats.quota.spent.toLocaleString()} of{' '}
+                        {stats.quota.daily_limit.toLocaleString()} units spent today ·{' '}
+                        {stats.quota.remaining.toLocaleString()} left · resets in{' '}
+                        {Math.floor(stats.quota.seconds_until_reset / 3600)}h{' '}
+                        {Math.floor((stats.quota.seconds_until_reset % 3600) / 60)}m
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -717,16 +1346,7 @@ export function SetsView({
                     {t.mix && <span className="sets-track__artist"> ({t.mix})</span>}
                     <span className="sets-track__extra">
                       {t.set_title}
-                      {storeLinks(t.artist, t.title).map((link) => (
-                        <button
-                          key={link.name}
-                          type="button"
-                          className="sets-store-link"
-                          onClick={() => void openUrl(link.url)}
-                        >
-                          {link.name}
-                        </button>
-                      ))}
+                      <StoreLinks artist={t.artist} title={t.title} mix={t.mix} />
                     </span>
                   </span>
                   <button

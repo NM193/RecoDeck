@@ -578,3 +578,141 @@
   opacity: 0.35;
   cursor: default;
 }
+
+/* --- search hits and statistics --- */
+
+.sets-hit {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sets-hit:hover {
+  background: var(--bg-secondary);
+}
+
+.sets-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.sets-stats__block .sets-track {
+  padding: 5px 0;
+}
+
+.sets-stats__block .sets-track:hover {
+  background: none;
+}
+
+/* --- results of searching YouTube by name --- */
+
+.sets-found {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sets-found:hover {
+  background: var(--bg-secondary);
+}
+
+.sets-found__thumb {
+  flex: 0 0 auto;
+  width: 120px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.sets-found__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sets-tab__badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- where to find a record --- */
+
+.sets-stores {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* On a row, the links stay out of the way until the row is hovered —
+   otherwise four links on forty rows drown out the tracklist itself. */
+.sets-stores--hover {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.sets-track:hover .sets-stores--hover,
+.sets-stores--hover:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Inside a group the links sit tighter than the single trailing link they
+   were originally written for. */
+.sets-stores .sets-store-link {
+  padding: 0 4px;
+}
+
+/* --- the library, filed by DJ --- */
+
+.sets-dj {
+  margin-bottom: 18px;
+}
+
+.sets-dj__name {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+  padding: 0 8px;
+}
+
+.sets-dj__count {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.sets-dj__chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-weight: 500;
+}

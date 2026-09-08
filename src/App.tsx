@@ -1354,7 +1354,7 @@ function AppContent() {
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
             {showSets ? (
-              <SetsView libraryTracks={tracks} onPlayTrack={handlePlayTrack} />
+              <SetsView onPlayTrack={handlePlayTrack} />
             ) : showSettings ? (
               <SettingsView
                 onFoldersChanged={handleFoldersChanged}
