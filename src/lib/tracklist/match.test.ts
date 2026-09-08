@@ -70,17 +70,14 @@ describe('matching a tracklist against the library', () => {
     expect(result.missing).toBe(1)
   })
 
-  it('does not claim a match on a bare one-word title', () => {
-    // No artist on either side and a title half the world shares: refusing is
-    // the whole point, otherwise every "Jolene" in the world is "yours".
+  it('needs an artist on both sides, never a title alone', () => {
+    // Dozens of records are called "Lost" or "Jolene". Matching on a title
+    // alone offered up strangers' records, so it is not evidence by itself.
     const bare: LibraryTrack[] = [lib(9, undefined, 'Jolene')]
-    const { owned } = matchTracklist([parsed(1, null, 'Jolene')], bare)
-    expect(owned).toBe(0)
-  })
+    expect(matchTracklist([parsed(1, null, 'Jolene')], bare).owned).toBe(0)
 
-  it('allows a distinctive title with no artist anywhere', () => {
-    const { byIndex } = matchTracklist([parsed(1, null, 'Sound Check One')], library)
-    expect(byIndex.get(1)!.track.id).toBe(4)
+    // Distinctive or not, a title with nobody attached to it stays unmatched.
+    expect(matchTracklist([parsed(1, null, 'Sound Check One')], library).owned).toBe(0)
   })
 
   it('leaves unnamed slots out of both counts', () => {
@@ -110,11 +107,26 @@ describe('matching a tracklist against the library', () => {
 
   it('treats an "Unknown Artist" tag as no artist at all', () => {
     const placeholder: LibraryTrack[] = [lib(11, 'Unknown Artist', 'Movement Of Whale')]
-    // Title agrees outright and is distinctive, so it still matches — but on
-    // the title alone, not on a pretend artist agreement.
-    const { byIndex, owned } = matchTracklist([parsed(1, 'SevenDoors', 'Movement Of Whale')], placeholder)
+    // The placeholder says nothing, so there is nobody to agree with.
+    expect(matchTracklist([parsed(1, 'SevenDoors', 'Movement Of Whale')], placeholder).owned).toBe(0)
+  })
+
+  it('reads the artist out of the title when the tag has none', () => {
+    // Plenty of files are tagged this way. Insisting on an artist tag without
+    // reading these would mark half a library as missing.
+    const untagged: LibraryTrack[] = [
+      { id: 30, artist: undefined, title: 'Lee Burridge & Lost Desert - Elongi feat. Junior', file_path: '/m/30.mp3' },
+    ]
+
+    const { byIndex, owned } = matchTracklist(
+      [parsed(1, 'Lee Burridge & Lost Desert', 'Elongi')],
+      untagged,
+    )
     expect(owned).toBe(1)
-    expect(byIndex.get(1)!.strong).toBe(false)
+    expect(byIndex.get(1)!.track.id).toBe(30)
+
+    // And the record that started all this still does not match.
+    expect(matchTracklist([parsed(1, 'Simion feat. Roland Clark', 'Lost')], untagged).owned).toBe(0)
   })
 
   it('matches a plain tag against a remix named in the tracklist', () => {
@@ -126,6 +138,51 @@ describe('matching a tracklist against the library', () => {
     }
     const plain: LibraryTrack[] = [lib(12, "Mousse T & Hot 'N' Juicy", 'Horny')]
     expect(matchTracklist([withMix], plain).owned).toBe(1)
+  })
+
+  it('does not offer a different remix as the same record', () => {
+    // Both reported from real sets. The DJ played one version; the file on disk
+    // is another one, and for a DJ that is a different record entirely.
+    const shelf: LibraryTrack[] = [
+      { id: 20, artist: 'John Summit', title: 'Witch Doctor (feat. Nic Fanciulli) [Extended Mix]', file_path: '/m/20.mp3' },
+      { id: 21, artist: undefined, title: 'At Night (Afterlife Mix)', file_path: '/m/21.mp3' },
+    ]
+
+    const witchDoctor: Track = {
+      ...parsed(1, 'John Summit & Nic Fanciulli', 'Witch Doctor'),
+      mix: 'Hot Since 82 Remix',
+      titleNorm: normalise('Witch Doctor Hot Since 82 Remix'),
+    }
+    const atNight: Track = {
+      ...parsed(2, 'Shakedown', 'At Night'),
+      mix: 'Kid Crème Club Mix',
+      titleNorm: normalise('At Night Kid Crème Club Mix'),
+    }
+
+    const result = matchTracklist([witchDoctor, atNight], shelf)
+    expect(result.owned).toBe(0)
+    expect(result.missing).toBe(2)
+  })
+
+  it('still matches when only one side names the version', () => {
+    // The tracklist writes the remix out, the tag does not — same record.
+    const shelf: LibraryTrack[] = [lib(22, "Mousse T", 'Horny')]
+    const withMix: Track = {
+      ...parsed(1, "Mousse T", 'Horny'),
+      mix: 'Radio Slave Just 17 Mix',
+      titleNorm: normalise('Horny Radio Slave Just 17 Mix'),
+    }
+    expect(matchTracklist([withMix], shelf).owned).toBe(1)
+  })
+
+  it('matches the same version written differently', () => {
+    const shelf: LibraryTrack[] = [lib(23, 'Crusy', 'Feels Much Better (Extended Mix)')]
+    const sameMix: Track = {
+      ...parsed(1, 'Crusy', 'Feels Much Better'),
+      mix: 'Extended Mix',
+      titleNorm: normalise('Feels Much Better Extended Mix'),
+    }
+    expect(matchTracklist([sameMix], shelf).owned).toBe(1)
   })
 
   it('handles an empty library without pretending', () => {

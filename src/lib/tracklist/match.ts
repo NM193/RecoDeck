@@ -14,7 +14,7 @@
  * so this is a loop over what is on screen.
  */
 
-import { containment, normalise, tokenSet } from './text'
+import { containment, normalise, splitArtistTitle, tokenSet } from './text'
 import type { Track } from './types'
 
 /** The minimum shape needed from a library track — matches src/types/track.ts. */
@@ -47,6 +47,35 @@ const ARTIST_THRESHOLD = 0.6
  */
 const MIN_SIZE_RATIO = 0.5
 
+/**
+ * How much two named versions have to agree to count as the same record.
+ *
+ * A remix is a different record, and treating it as the same one produced the
+ * worst kind of wrong answer: "Witch Doctor (Hot Since 82 Remix)" in the set was
+ * matched to "Witch Doctor [Extended Mix]" on disk, and offered for playing.
+ */
+const MIN_VERSION_MATCH = 0.6
+
+/** Bracketed segments that name a version rather than describe the track. */
+const VERSION_WORDS =
+  /\b(remix|mix|edit|version|bootleg|dub|rework|vip|remaster|instrumental|acapella|acappella)\b/i
+
+/**
+ * The version named inside a tag's title, if it names one.
+ *
+ * Read from the raw title on purpose: normalise() strips the common ones, which
+ * is exactly the information needed here.
+ */
+export function versionOf(rawTitle: string | null | undefined): string | null {
+  if (!rawTitle) return null
+
+  for (const match of rawTitle.matchAll(/[([]([^)\]]+)[)\]]/g)) {
+    const inside = match[1]
+    if (VERSION_WORDS.test(inside)) return normalise(inside)
+  }
+  return null
+}
+
 /** Placeholder tags that carry no information about who made the record. */
 const NO_ARTIST = /^(unknown artist|unknown|various artists|various|va)$/
 
@@ -54,6 +83,28 @@ interface Indexed {
   track: LibraryTrack
   titleNorm: string | null
   artistNorm: string | null
+  /** "extended mix", "afterlife mix" — whatever the tag calls this version. */
+  versionNorm: string | null
+}
+
+/**
+ * The artist and title of a library track, wherever the tags happen to keep
+ * them.
+ *
+ * Plenty of files carry no artist tag at all and put the whole thing in the
+ * title: "Lee Burridge & Lost Desert - Elongi feat. Junior". Requiring an
+ * artist without reading those would mark half a library as missing, so the
+ * title is split the same way a written tracklist is.
+ */
+function creditsOf(track: LibraryTrack): { artist: string | null; title: string } {
+  const tagged = normalise(track.artist)
+  const artist = tagged && !NO_ARTIST.test(tagged) ? track.artist ?? null : null
+  const title = track.title ?? ''
+
+  if (artist) return { artist, title }
+
+  const split = splitArtistTitle(title)
+  return split.artist ? { artist: split.artist, title: split.title } : { artist: null, title }
 }
 
 /** Title agreement, or null when the two are not the same record. */
@@ -77,12 +128,12 @@ function titleAgreement(a: string | null, b: string | null): number | null {
  */
 export function indexLibrary(library: LibraryTrack[]): Indexed[] {
   return library.map((track) => {
-    const artistNorm = normalise(track.artist)
+    const credits = creditsOf(track)
     return {
       track,
-      titleNorm: normalise(track.title),
-      // "Unknown Artist" in a tag is the same as no artist at all.
-      artistNorm: artistNorm && NO_ARTIST.test(artistNorm) ? null : artistNorm,
+      titleNorm: normalise(credits.title),
+      artistNorm: normalise(credits.artist),
+      versionNorm: versionOf(track.title),
     }
   })
 }
@@ -97,12 +148,13 @@ export function indexLibrary(library: LibraryTrack[]): Indexed[] {
 /**
  * The best library track for one parsed row, or null.
  *
- * Both spellings of the title are tried: with the mix suffix and without. A
+ * Both the artist and the title have to agree. A title alone is not evidence —
+ * dozens of records are called "Lost" or "Jolene" — and matching on it produced
+ * exactly the kind of wrong answer that offers to play a stranger's record.
+ *
+ * Both spellings of the title are tried, with the mix suffix and without: a
  * tracklist writes "Horny (Radio Slave Just 17 Mix)" where the file is tagged
  * plainly "Horny", and either side may be the fuller one.
- *
- * With no artist to compare on either side the title has to carry the whole
- * decision, so it must match outright rather than merely be contained.
  */
 export function matchOne(
   parsed: Pick<Track, 'title' | 'mix' | 'artist' | 'titleNorm' | 'artistNorm'>,
@@ -115,11 +167,23 @@ export function matchOne(
 
   const parsedArtist =
     parsed.artistNorm && !NO_ARTIST.test(parsed.artistNorm) ? parsed.artistNorm : null
+  // The tracklist keeps the version in its own field; a tag hides it in the title.
+  const parsedVersion = normalise(parsed.mix) ?? versionOf(parsed.title)
+
+  // Nothing to match against: the row itself does not say who played it.
+  if (!parsedArtist) return null
 
   let best: LibraryMatch | null = null
 
   for (const entry of indexed) {
-    if (!entry.titleNorm) continue
+    if (!entry.titleNorm || !entry.artistNorm) continue
+
+    // When both sides name a version, they have to be the same version. When
+    // only one does, the title still decides — a tracklist naming the remix
+    // while the tag says only "Horny" is the same record written two ways.
+    if (parsedVersion && entry.versionNorm) {
+      if (containment(parsedVersion, entry.versionNorm) < MIN_VERSION_MATCH) continue
+    }
 
     let titleScore: number | null = null
     for (const form of titleForms) {
@@ -128,19 +192,12 @@ export function matchOne(
     }
     if (titleScore === null) continue
 
-    const bothHaveArtist = Boolean(parsedArtist && entry.artistNorm)
-    const artistScore = bothHaveArtist ? containment(parsedArtist, entry.artistNorm) : 0
-
-    if (bothHaveArtist) {
-      if (artistScore < ARTIST_THRESHOLD) continue
-    } else if (titleScore < 1 || tokenSet(entry.titleNorm).size < 2) {
-      // Nothing but a title to go on, and it is neither exact nor distinctive.
-      continue
-    }
+    const artistScore = containment(parsedArtist, entry.artistNorm)
+    if (artistScore < ARTIST_THRESHOLD) continue
 
     const score = titleScore + artistScore
     if (!best || score > best.score) {
-      best = { track: entry.track, score, strong: bothHaveArtist && artistScore >= 0.8 }
+      best = { track: entry.track, score, strong: artistScore >= 0.8 }
     }
   }
 
