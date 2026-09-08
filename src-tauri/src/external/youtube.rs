@@ -361,6 +361,307 @@ pub async fn fetch_set(
     })
 }
 
+
+/// A set found by searching, before anything has been fetched about it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSearchHit {
+    pub video_id: String,
+    pub title: String,
+    pub channel: String,
+    pub published_at: String,
+    pub thumbnail: Option<String>,
+}
+
+/// Searching by name, for when the user knows the DJ but not the link.
+///
+/// The expensive call: 100 units, a hundred times everything else, so a handful
+/// of searches can end a day. Ordered by relevance rather than date on purpose —
+/// by date the results fill up with re-upload spam channels. Restricted to long
+/// videos because a set is never four minutes.
+pub async fn search_sets(
+    api_key: &str,
+    query: &str,
+    max: u8,
+    spent: &mut u32,
+) -> Result<Vec<SetSearchHit>, AppError> {
+    let data = call_api(
+        api_key,
+        "search",
+        &[
+            ("part", "snippet".into()),
+            ("q", query.to_string()),
+            ("type", "video".into()),
+            ("order", "relevance".into()),
+            ("videoDuration", "long".into()),
+            ("maxResults", max.clamp(1, 50).to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    let items = data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(items
+        .iter()
+        .filter_map(|item| {
+            let video_id = item.pointer("/id/videoId")?.as_str()?.to_string();
+            let snippet = item.get("snippet")?;
+            let text = |key: &str| {
+                snippet
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            Some(SetSearchHit {
+                video_id,
+                title: text("title"),
+                channel: text("channelTitle"),
+                published_at: text("publishedAt"),
+                thumbnail: snippet
+                    .pointer("/thumbnails/medium/url")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+            })
+        })
+        .collect())
+}
+
+
+/// A channel, once resolved to something the API can work with.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelInfo {
+    pub channel_id: String,
+    pub title: String,
+    /// The playlist of everything the channel has uploaded.
+    pub uploads_id: String,
+    pub handle: Option<String>,
+}
+
+/// One video in a channel's uploads, before anything is fetched about it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadItem {
+    pub video_id: String,
+    pub title: String,
+    pub published_at: String,
+    /// Only known once durations are looked up; promo clips are not sets.
+    pub duration_ms: Option<i64>,
+}
+
+/// Turns whatever the user pasted into a channel: a UC id, an @handle, a link
+/// to one of its videos, or a bare name.
+///
+/// The order matters for cost. A handle or a video link resolves for 1 unit; a
+/// bare name falls through to search, which is 100. Everything above the search
+/// is an attempt to avoid it.
+pub async fn resolve_channel(
+    api_key: &str,
+    input: &str,
+    spent: &mut u32,
+) -> Result<ChannelInfo, AppError> {
+    let raw = input.trim();
+
+    let mut channel_id: Option<String> = raw
+        .find("UC")
+        .map(|i| &raw[i..])
+        .and_then(|rest| {
+            let id: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            (id.len() == 24).then_some(id)
+        });
+
+    let handle = raw.find('@').map(|i| {
+        raw[i + 1..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || "_.-".contains(*c))
+            .collect::<String>()
+    });
+
+    if channel_id.is_none() {
+        if let Some(handle) = handle.as_ref().filter(|h| h.len() >= 3) {
+            let data = call_api(
+                api_key,
+                "channels",
+                &[
+                    ("part", "snippet,contentDetails".into()),
+                    ("forHandle", format!("@{handle}")),
+                ],
+                spent,
+            )
+            .await?;
+            channel_id = data
+                .pointer("/items/0/id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+    }
+
+    if channel_id.is_none() {
+        if let Some(video_id) = extract_video_id(raw) {
+            let data = call_api(
+                api_key,
+                "videos",
+                &[("part", "snippet".into()), ("id", video_id)],
+                spent,
+            )
+            .await?;
+            channel_id = data
+                .pointer("/items/0/snippet/channelId")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
+    }
+
+    if channel_id.is_none() {
+        // The expensive fallback, and the reason the cheaper paths come first.
+        let data = call_api(
+            api_key,
+            "search",
+            &[
+                ("part", "snippet".into()),
+                ("q", raw.to_string()),
+                ("type", "channel".into()),
+                ("maxResults", "1".into()),
+            ],
+            spent,
+        )
+        .await?;
+        channel_id = data
+            .pointer("/items/0/id/channelId")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+    }
+
+    let channel_id =
+        channel_id.ok_or_else(|| AppError::NotFound(format!("No channel found for \"{raw}\"")))?;
+
+    let data = call_api(
+        api_key,
+        "channels",
+        &[
+            ("part", "snippet,contentDetails".into()),
+            ("id", channel_id.clone()),
+        ],
+        spent,
+    )
+    .await?;
+
+    let item = data
+        .pointer("/items/0")
+        .ok_or_else(|| AppError::NotFound(format!("No channel found for \"{raw}\"")))?;
+
+    Ok(ChannelInfo {
+        channel_id: channel_id.clone(),
+        title: item
+            .pointer("/snippet/title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        uploads_id: item
+            .pointer("/contentDetails/relatedPlaylists/uploads")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::NotFound("That channel has no uploads".to_string()))?
+            .to_string(),
+        handle: handle.filter(|h| h.len() >= 3),
+    })
+}
+
+/// Newest uploads of a channel. One unit per 50.
+pub async fn channel_uploads(
+    api_key: &str,
+    uploads_id: &str,
+    max: u8,
+    spent: &mut u32,
+) -> Result<Vec<UploadItem>, AppError> {
+    let data = call_api(
+        api_key,
+        "playlistItems",
+        &[
+            ("part", "contentDetails,snippet".into()),
+            ("playlistId", uploads_id.to_string()),
+            ("maxResults", max.clamp(1, 50).to_string()),
+        ],
+        spent,
+    )
+    .await?;
+
+    Ok(data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            Some(UploadItem {
+                video_id: item
+                    .pointer("/contentDetails/videoId")?
+                    .as_str()?
+                    .to_string(),
+                title: item
+                    .pointer("/snippet/title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                published_at: item
+                    .pointer("/contentDetails/videoPublishedAt")
+                    .or_else(|| item.pointer("/snippet/publishedAt"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                duration_ms: None,
+            })
+        })
+        .collect())
+}
+
+/// Fills in durations for a batch of videos. One unit per 50 ids — which is how
+/// promo clips are told apart from sets without fetching either.
+pub async fn fill_durations(
+    api_key: &str,
+    items: &mut [UploadItem],
+    spent: &mut u32,
+) -> Result<(), AppError> {
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    let ids: Vec<String> = items.iter().take(50).map(|i| i.video_id.clone()).collect();
+    let data = call_api(
+        api_key,
+        "videos",
+        &[("part", "contentDetails".into()), ("id", ids.join(","))],
+        spent,
+    )
+    .await?;
+
+    let durations: std::collections::HashMap<String, i64> = data
+        .get("items")
+        .and_then(|i| i.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            let id = item.get("id")?.as_str()?.to_string();
+            let iso = item.pointer("/contentDetails/duration")?.as_str()?;
+            Some((id, parse_iso_duration(iso)))
+        })
+        .collect();
+
+    for item in items.iter_mut() {
+        item.duration_ms = durations.get(&item.video_id).copied();
+    }
+    Ok(())
+}
+
 /// Accepts a full URL, a share link, an embed link or a bare id.
 pub fn extract_video_id(input: &str) -> Option<String> {
     let trimmed = input.trim();
