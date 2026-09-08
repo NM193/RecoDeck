@@ -173,8 +173,21 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
 <style>
   html,body{{margin:0;height:100%;background:#000;overflow:hidden}}
   iframe{{border:0;width:100%;height:100%;display:block}}
+  /* Shown only if playback has not started on its own. One click here is a
+     gesture in this webview, which is the thing the app cannot provide from
+     outside it. */
+  #start{{position:fixed;inset:0;display:flex;flex-direction:column;gap:14px;
+    align-items:center;justify-content:center;background:rgba(0,0,0,.6);
+    cursor:pointer;border:0;width:100%;height:100%;
+    font:13px -apple-system,system-ui,sans-serif;color:#ddd}}
+  #start svg{{width:64px;height:64px;fill:#fff;opacity:.9}}
+  #start:hover svg{{opacity:1}}
 </style></head>
 <body>
+<button id="start" aria-label="Play">
+  <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+  <span>Click once to start with sound</span>
+</button>
 <iframe id="p"
   src="https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1&rel=0&start={start}&enablejsapi=1"
   allow="autoplay; encrypted-media; fullscreen"
@@ -184,6 +197,18 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
     try {{ fetch('/yt-report?m=' + encodeURIComponent(what)); }} catch (e) {{}}
   }};
   report('page loaded, referrer=' + document.referrer + ' origin=' + location.origin);
+
+  // Two things are being told apart here, because they need different fixes:
+  // whether this webview allows unattended playback at all, and whether YouTube
+  // itself refuses. The first is measured on a silent clip of our own.
+  var probe = new Audio('data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA');
+  probe.muted = true;
+  var attempt = probe.play();
+  if (attempt && attempt.then) {{
+    attempt
+      .then(function () {{ report('ENGINE allows unattended playback'); }})
+      .catch(function (e) {{ report('ENGINE refuses unattended playback: ' + e.name); }});
+  }}
 
   var frame = document.getElementById('p');
   var send = function (func, args) {{
@@ -209,6 +234,19 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
     var data;
     try {{ data = JSON.parse(e.data); }} catch (err) {{ return; }}
     if (data.event === 'onReady' || data.event === 'initialDelivery') clearInterval(handshake);
+    if (data.event === 'initialDelivery' && data.info) {{
+      report(
+        'INITIAL state=' + data.info.playerState +
+        ' muted=' + data.info.muted +
+        ' volume=' + data.info.volume
+      );
+    }}
+    if (data.event === 'onStateChange') {{
+      report('STATE ' + data.info);
+      // Muted playback is not what the prompt is about, so it stays up until
+      // the sound is actually on.
+      if (data.info === 1 && unmuted) hideStart();
+    }}
     if (data.event === 'onError') report('PLAYER ERROR ' + data.info);
     else if (data.event === 'onReady') {{
       report('PLAYER READY');
@@ -222,8 +260,31 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
 
   setTimeout(function () {{ clearInterval(handshake); }}, 15000);
 
+  // Re-register periodically: without it the player stops reporting state, and
+  // state is the only view into what is happening inside that webview.
+  setInterval(function () {{ send('listening'); }}, 5000);
+
   // Jumping between tracks: the app records where to go, the page picks it up
   // and seeks in place, so the video never reloads.
+  var unmuted = false;
+  /** The cue the user asked for while the video was still silent. */
+  var pendingSeek = null;
+  var start = document.getElementById('start');
+  var hideStart = function () {{ start.style.display = 'none'; }};
+
+  start.addEventListener('click', function () {{
+    // The click is the gesture. Muted playback starts on its own — the engine
+    // allows it and the player reports buffering — but turning the sound on
+    // does not, and nothing outside this webview can supply that gesture.
+    unmuted = true;
+    send('unMute');
+    send('setVolume', [100]);
+    send('playVideo');
+    // Whatever cue was clicked while the video was still silent applies now.
+    if (pendingSeek !== null) send('seekTo', [pendingSeek, true]);
+    hideStart();
+  }});
+
   var lastSeq = null;
   setInterval(function () {{
     fetch('/yt-seek')
@@ -232,6 +293,7 @@ async fn yt_player(Query(query): Query<PlayerQuery>) -> impl IntoResponse {
         if (lastSeq === null) {{ lastSeq = data.seq; return; }}
         if (data.seq === lastSeq) return;
         lastSeq = data.seq;
+        pendingSeek = data.t;
         send('seekTo', [data.t, true]);
         send('playVideo');
         // A seek is also the moment to make sure it is audible.
