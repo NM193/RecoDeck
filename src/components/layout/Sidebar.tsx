@@ -24,7 +24,14 @@ interface SectionProps {
   children: React.ReactNode
 }
 
-function Section({ title, iconName, expanded, onToggle, onContextMenu, children }: SectionProps) {
+function Section({
+  title,
+  iconName,
+  expanded,
+  onToggle,
+  onContextMenu,
+  children,
+}: SectionProps) {
   return (
     <div className="sidebar-section">
       <button
@@ -33,7 +40,9 @@ function Section({ title, iconName, expanded, onToggle, onContextMenu, children 
         onContextMenu={onContextMenu}
         type="button"
       >
-        <span className={`sidebar-section__chevron ${expanded ? '' : 'sidebar-section__chevron--collapsed'}`}>
+        <span
+          className={`sidebar-section__chevron ${expanded ? '' : 'sidebar-section__chevron--collapsed'}`}
+        >
           <Icon name="ChevronDown" size={14} />
         </span>
         <Icon name={iconName} size={14} />
@@ -66,7 +75,15 @@ interface SidebarProps {
   selectedFolder: string | null
   selectedPlaylistId: number | null
   totalTrackCount?: number
-  activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search' | 'ai-chat'
+  activeView:
+    | 'home'
+    | 'all-tracks'
+    | 'folder'
+    | 'playlist'
+    | 'settings'
+    | 'search'
+    | 'ai-chat'
+    | 'sets'
   toastMessage?: string | null
   onToastDismiss?: () => void
   onFolderSelect: (folderPath: string | null) => void
@@ -87,6 +104,7 @@ interface SidebarProps {
   onNavigateHome: () => void
   onShowAllTracks: () => void
   onSearch?: () => void
+  onNavigateSets?: () => void
   onNavigateAIChat?: () => void
 }
 
@@ -119,6 +137,7 @@ export function Sidebar({
   onNavigateHome,
   onShowAllTracks,
   onSearch,
+  onNavigateSets,
   onNavigateAIChat,
 }: SidebarProps) {
   // Section expand states — all start expanded
@@ -132,7 +151,8 @@ export function Sidebar({
   useEffect(() => {
     if (!ctxMenu) return
     const close = (e: MouseEvent) => {
-      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null)
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node))
+        setCtxMenu(null)
     }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
@@ -155,10 +175,16 @@ export function Sidebar({
     if (stored) {
       const width = parseInt(stored, 10)
       if (!isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH) {
-        document.documentElement.style.setProperty('--sidebar-width', `${width}px`)
+        document.documentElement.style.setProperty(
+          '--sidebar-width',
+          `${width}px`,
+        )
       }
     } else {
-      document.documentElement.style.setProperty('--sidebar-width', `${DEFAULT_WIDTH}px`)
+      document.documentElement.style.setProperty(
+        '--sidebar-width',
+        `${DEFAULT_WIDTH}px`,
+      )
     }
   }, [])
 
@@ -170,7 +196,10 @@ export function Sidebar({
     const onMouseMove = (ev: MouseEvent) => {
       if (!isDragging.current) return
       const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, ev.clientX))
-      document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`)
+      document.documentElement.style.setProperty(
+        '--sidebar-width',
+        `${newWidth}px`,
+      )
     }
 
     const onMouseUp = (ev: MouseEvent) => {
@@ -219,6 +248,16 @@ export function Sidebar({
             <Icon name="House" size={16} />
             <span>Home</span>
           </button>
+          {onNavigateSets && (
+            <button
+              className={`sidebar-nav-item ${activeView === 'sets' ? 'sidebar-nav-item--active' : ''}`}
+              onClick={onNavigateSets}
+              type="button"
+            >
+              <Icon name="ListMusic" size={16} />
+              <span>Sets</span>
+            </button>
+          )}
           <button
             className={`sidebar-nav-item ${activeView === 'all-tracks' ? 'sidebar-nav-item--active' : ''}`}
             onClick={onShowAllTracks}
@@ -227,7 +266,9 @@ export function Sidebar({
             <Icon name="Music" size={16} />
             <span>All Tracks</span>
             {totalTrackCount != null && totalTrackCount > 0 && (
-              <span className="sidebar-nav-item__count">({totalTrackCount})</span>
+              <span className="sidebar-nav-item__count">
+                ({totalTrackCount})
+              </span>
             )}
           </button>
           <button
@@ -328,7 +369,10 @@ export function Sidebar({
         >
           <button
             className="sidebar-ctx-menu__item"
-            onClick={() => { onCreatePlaylist(null); setCtxMenu(null) }}
+            onClick={() => {
+              onCreatePlaylist(null)
+              setCtxMenu(null)
+            }}
             type="button"
           >
             <Icon name="Plus" size={14} />
@@ -336,7 +380,10 @@ export function Sidebar({
           </button>
           <button
             className="sidebar-ctx-menu__item"
-            onClick={() => { onCreateFolder(null); setCtxMenu(null) }}
+            onClick={() => {
+              onCreateFolder(null)
+              setCtxMenu(null)
+            }}
             type="button"
           >
             <Icon name="FolderPlus" size={14} />

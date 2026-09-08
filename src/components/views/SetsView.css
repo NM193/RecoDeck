@@ -1,0 +1,580 @@
+/* YouTube set tracklists. Colours come from theme tokens only. */
+
+.sets-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The list scrolls; the player band above it must not, because the panel is an
+   overlay in window coordinates and cannot scroll with the content. */
+.sets-view__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px 48px;
+}
+
+.sets-player {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+  background: #000;
+}
+
+.sets-player__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sets-player__label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sets-player__close {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sets-player__close:hover {
+  color: var(--text-primary);
+}
+
+/* Left empty on purpose — the YouTube webview is laid exactly over this box. */
+.sets-player__surface {
+  height: 340px;
+  background: #000;
+}
+
+.sets-view__container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.sets-view__title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+}
+
+.sets-view__subtitle {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  margin: 0 0 20px;
+}
+
+.sets-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sets-form__input {
+  flex: 1;
+  height: var(--input-height);
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.sets-form__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sets-quota {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  margin: 0 0 20px;
+}
+
+.sets-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--color-danger-rgb), 0.1);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.35);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  margin-bottom: 16px;
+}
+
+.sets-result__header {
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 14px;
+  margin-bottom: 6px;
+}
+
+.sets-result__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.sets-result__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sets-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.sets-badge--ok {
+  background: rgba(var(--color-success-rgb), 0.12);
+  color: var(--color-success);
+}
+
+.sets-badge--assembled {
+  background: rgba(var(--color-warning-rgb), 0.12);
+  color: var(--color-warning);
+}
+
+.sets-badge--weak {
+  background: rgba(var(--color-danger-rgb), 0.12);
+  color: var(--color-danger);
+}
+
+/* --- track rows --- */
+
+.sets-track {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.sets-track:hover {
+  background: var(--bg-secondary);
+}
+
+.sets-track__cue {
+  flex: 0 0 68px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sets-track__cue-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+}
+
+.sets-track__cue-btn:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.sets-track__name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.sets-track__artist {
+  color: var(--text-secondary);
+}
+
+.sets-track--unknown .sets-track__name {
+  color: var(--color-danger);
+}
+
+.sets-track__extra {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  margin-top: 2px;
+}
+
+/* Agreement: how many of the found lists say this same name. */
+.sets-track__votes {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.sets-track__votes--lonely {
+  color: var(--color-danger);
+}
+
+.sets-loose {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sets-loose__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.sets-loose__hint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  margin: 0 0 10px;
+}
+
+.sets-empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+}
+
+/* --- library ownership --- */
+
+.sets-track__own {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sets-track__own--have {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(var(--color-success-rgb), 0.35);
+  background: rgba(var(--color-success-rgb), 0.1);
+  color: var(--color-success);
+  cursor: pointer;
+}
+
+.sets-track__own--have:hover {
+  background: rgba(var(--color-success-rgb), 0.2);
+}
+
+.sets-filter {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0 6px;
+}
+
+.sets-filter__btn {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.sets-filter__btn:hover {
+  color: var(--text-primary);
+}
+
+.sets-filter__btn--active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- tabs, library, saved --- */
+
+.sets-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sets-tab {
+  padding: 6px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sets-tab:hover {
+  color: var(--text-primary);
+}
+
+.sets-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.sets-stored {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.sets-stored:hover {
+  background: var(--bg-secondary);
+}
+
+.sets-stored__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sets-stored__title {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sets-stored__meta {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sets-stored__remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.sets-stored__remove:hover {
+  color: var(--color-danger);
+}
+
+.sets-track__heart {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--border);
+  cursor: pointer;
+}
+
+.sets-track__heart:hover {
+  color: var(--text-secondary);
+}
+
+.sets-track__heart--on,
+.sets-track__heart--on:hover {
+  color: var(--color-danger);
+}
+
+.sets-saved__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sets-store-link {
+  background: none;
+  border: none;
+  padding: 0 0 0 10px;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.sets-store-link:hover {
+  text-decoration: underline;
+}
+
+/* --- the set as a strip --- */
+
+.sets-timeline {
+  margin: 16px 0 6px;
+}
+
+.sets-timeline__strip {
+  position: relative;
+  height: 42px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.sets-timeline__block {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0;
+  border: none;
+  border-right: 1px solid var(--bg-primary);
+  background: var(--text-muted);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.sets-timeline__block:hover {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* Red is the point of the strip: it shows where the gaps are. */
+.sets-timeline__block--unknown {
+  background: var(--color-danger);
+  opacity: 0.75;
+}
+
+.sets-timeline__block--unknown:hover {
+  background: var(--color-danger);
+  opacity: 1;
+}
+
+.sets-timeline__scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sets-summary {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  margin: 12px 0 0;
+}
+
+.sets-track__index {
+  flex: 0 0 26px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sets-track__cue {
+  flex: 0 0 58px;
+}
+
+.sets-track__play {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.sets-track__play:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- collapsed player --- */
+
+/* Collapsed, the bar belongs at the bottom, under the list. */
+.sets-player--mini {
+  order: 2;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+}
+
+.sets-view__scroll {
+  order: 1;
+}
+
+.sets-player--mini .sets-player__bar {
+  gap: 14px;
+  padding: 8px 12px;
+  background: var(--bg-elevated, var(--bg-secondary));
+}
+
+/* The video itself, shrunk — the webview is laid exactly over this box. */
+.sets-player__surface--mini {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 72px;
+  background: #000;
+  border-radius: var(--radius-sm);
+}
+
+.sets-player__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sets-player__cue {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sets-player__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.sets-player__ctrl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.sets-player__ctrl:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sets-player__ctrl:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

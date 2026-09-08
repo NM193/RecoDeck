@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import type { YouTubeQuotaStatus, RawSet } from '../types/youtube'
+import type { YouTubeQuotaStatus, RawSet, YtSetSummary, SavedTrack } from '../types/youtube'
 import type {
   Track,
   ScanResult,
@@ -427,6 +427,75 @@ export const tauriApi = {
   /** Accepts a full URL or a bare video id. Costs 5-7 units. */
   async fetchYouTubeSet(input: string): Promise<RawSet> {
     return await invoke('fetch_youtube_set', { input })
+  },
+
+  /**
+   * In-window YouTube panel. The bounds are in CSS pixels relative to the
+   * window content area, because the panel is a second webview laid over the
+   * page rather than an element inside it.
+   */
+  async openYouTubePanel(
+    url: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Promise<void> {
+    return await invoke('open_youtube_panel', { url, x, y, width, height })
+  },
+
+  async setYouTubePanelBounds(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): Promise<void> {
+    return await invoke('set_youtube_panel_bounds', { x, y, width, height })
+  },
+
+  /** Moves the open panel without reloading it. */
+  async seekYouTubePanel(seconds: number): Promise<void> {
+    return await invoke('seek_youtube_panel', { seconds })
+  },
+
+  async closeYouTubePanel(): Promise<void> {
+    return await invoke('close_youtube_panel')
+  },
+
+  // The set library: a processed set is kept whole, so reopening it later
+  // costs nothing and a better parser can be re-run over it.
+  async saveYouTubeSet(input: {
+    raw: RawSet
+    status: string
+    confidence: number
+    source_count: number
+    track_count: number
+  }): Promise<void> {
+    return await invoke('save_youtube_set', { input })
+  },
+
+  async listYouTubeSets(): Promise<YtSetSummary[]> {
+    return await invoke('list_youtube_sets')
+  },
+
+  async getYouTubeSet(videoId: string): Promise<RawSet> {
+    return await invoke('get_youtube_set', { videoId })
+  },
+
+  async deleteYouTubeSet(videoId: string): Promise<void> {
+    return await invoke('delete_youtube_set', { videoId })
+  },
+
+  async saveYouTubeTrack(track: SavedTrack): Promise<void> {
+    return await invoke('save_youtube_track', { track })
+  },
+
+  async listSavedYouTubeTracks(): Promise<SavedTrack[]> {
+    return await invoke('list_saved_youtube_tracks')
+  },
+
+  async deleteSavedYouTubeTrack(videoId: string, cueMs: number, title: string): Promise<void> {
+    return await invoke('delete_saved_youtube_track', { videoId, cueMs, title })
   },
 
   // AI commands

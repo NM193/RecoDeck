@@ -12,6 +12,7 @@ import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
 import { SettingsView } from './components/views/SettingsView'
 import { SearchView } from './components/views/SearchView'
+import { SetsView } from './components/views/SetsView'
 import { ChatView } from './components/ai/ChatView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
@@ -35,7 +36,12 @@ import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
-import type { Track, Playlist, AnalysisProgressEvent, AnalysisCompleteEvent } from './types/track'
+import type {
+  Track,
+  Playlist,
+  AnalysisProgressEvent,
+  AnalysisCompleteEvent,
+} from './types/track'
 import './App.css'
 import './components/TrackTable.css'
 
@@ -78,6 +84,7 @@ function AppContent() {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [showAllTracks, setShowAllTracks] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [showSets, setShowSets] = useState(false)
   const [showAIChat, setShowAIChat] = useState(false)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
@@ -169,14 +176,20 @@ function AppContent() {
 
   // Scan progress state (global, survives Settings unmount)
   const [scanProgress, setScanProgress] = useState<{
-    current: number; total: number; currentFile: string; folder: string
+    current: number
+    total: number
+    currentFile: string
+    folder: string
   } | null>(null)
   const [scanStartTime, setScanStartTime] = useState<number | null>(null)
 
   // Listen for scan-progress events globally
   useEffect(() => {
     const unlisten = listen<{
-      folder: string; current: number; total: number; current_file: string
+      folder: string
+      current: number
+      total: number
+      current_file: string
     }>('scan-progress', (event) => {
       const p = event.payload
       if (p.current >= p.total && p.total > 0) {
@@ -184,11 +197,18 @@ function AppContent() {
         setScanStartTime(null)
         return
       } else {
-        setScanProgress({ current: p.current, total: p.total, currentFile: p.current_file, folder: p.folder })
+        setScanProgress({
+          current: p.current,
+          total: p.total,
+          currentFile: p.current_file,
+          folder: p.folder,
+        })
         setScanStartTime((prev) => prev ?? Date.now())
       }
     })
-    return () => { unlisten.then((fn) => fn()) }
+    return () => {
+      unlisten.then((fn) => fn())
+    }
   }, [])
 
   // Cancel analysis — tells backend to stop Rayon workers
@@ -198,58 +218,64 @@ function AppContent() {
 
   // Listen for batch analysis events from backend
   useEffect(() => {
-    const unlistenProgress = listen<AnalysisProgressEvent>('analysis-progress', (event) => {
-      const p = event.payload
-      setAnalysisProgress({
-        currentIndex: p.current,
-        totalTracks: p.total,
-        currentTrackName: p.track_name,
-        totalDurationMs: 0,
-        totalSizeBytes: 0,
-        startTime: analysisStartTimeRef.current,
-      })
-    })
+    const unlistenProgress = listen<AnalysisProgressEvent>(
+      'analysis-progress',
+      (event) => {
+        const p = event.payload
+        setAnalysisProgress({
+          currentIndex: p.current,
+          totalTracks: p.total,
+          currentTrackName: p.track_name,
+          totalDurationMs: 0,
+          totalSizeBytes: 0,
+          startTime: analysisStartTimeRef.current,
+        })
+      },
+    )
 
-    const unlistenComplete = listen<AnalysisCompleteEvent>('analysis-complete', (event) => {
-      const e = event.payload
+    const unlistenComplete = listen<AnalysisCompleteEvent>(
+      'analysis-complete',
+      (event) => {
+        const e = event.payload
 
-      // Ensure progress bar is visible for at least 600ms to avoid flashing
-      const elapsed = Date.now() - analysisStartTimeRef.current
-      const minDisplayMs = 600
-      const delay = Math.max(0, minDisplayMs - elapsed)
+        // Ensure progress bar is visible for at least 600ms to avoid flashing
+        const elapsed = Date.now() - analysisStartTimeRef.current
+        const minDisplayMs = 600
+        const delay = Math.max(0, minDisplayMs - elapsed)
 
-      setTimeout(() => {
-        setAnalysisProgress(null)
-        setAnalyzing(false)
+        setTimeout(() => {
+          setAnalysisProgress(null)
+          setAnalyzing(false)
 
-        if (e.cancelled) {
-          setNotification({
-            message: `Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`,
-            type: 'warning',
-          })
-        } else if (e.total_analyzed > 0) {
-          setNotification({
-            message: `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
-            type: 'success',
-          })
-        } else {
-          setNotification({
-            message: 'All tracks already have BPM and Key analysis',
-            type: 'info',
-          })
-        }
+          if (e.cancelled) {
+            setNotification({
+              message: `Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`,
+              type: 'warning',
+            })
+          } else if (e.total_analyzed > 0) {
+            setNotification({
+              message: `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
+              type: 'success',
+            })
+          } else {
+            setNotification({
+              message: 'All tracks already have BPM and Key analysis',
+              type: 'info',
+            })
+          }
 
-        // Reload tracks and rebuild AI context (use ref to avoid stale closure)
-        loadTracksRef.current()
-        tauriApi.rebuildAIContext().catch(() => {})
-      }, delay)
-    })
+          // Reload tracks and rebuild AI context (use ref to avoid stale closure)
+          loadTracksRef.current()
+          tauriApi.rebuildAIContext().catch(() => {})
+        }, delay)
+      },
+    )
 
     return () => {
       unlistenProgress.then((fn) => fn())
       unlistenComplete.then((fn) => fn())
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -335,14 +361,17 @@ function AppContent() {
           await tauriApi.setSetting('last_seen_version', currentVersion)
         } else if (lastSeen !== currentVersion) {
           const changes = getChangesForVersion(currentVersion)
-          const hasAny = changes.added.length > 0 || changes.changed.length > 0 || changes.fixed.length > 0
+          const hasAny =
+            changes.added.length > 0 ||
+            changes.changed.length > 0 ||
+            changes.fixed.length > 0
           if (hasAny) {
             setWhatsNew({ version: `v${currentVersion}`, changes })
           }
           await tauriApi.setSetting('last_seen_version', currentVersion)
         }
       } catch {
-        console.warn('Failed to check version for What\'s New dialog')
+        console.warn("Failed to check version for What's New dialog")
       }
 
       // PERFORMANCE: Don't load all tracks on startup - load only total count
@@ -589,6 +618,7 @@ function AppContent() {
     setShowAllTracks(false)
     setShowSettings(false)
     setShowSearch(false)
+    setShowSets(false)
     setShowAIChat(false)
 
     await loadTracks(folderPath, null)
@@ -601,6 +631,7 @@ function AppContent() {
     setShowAllTracks(false)
     setShowSettings(false)
     setShowSearch(false)
+    setShowSets(false)
     setShowAIChat(false)
     await loadTracks(null, playlistId)
   }
@@ -612,7 +643,10 @@ function AppContent() {
       const trackIds = folderTracks.filter((t) => t.id).map((t) => t.id)
 
       if (trackIds.length === 0) {
-        setNotification({ message: 'No audio tracks found in this folder', type: 'info' })
+        setNotification({
+          message: 'No audio tracks found in this folder',
+          type: 'info',
+        })
         return
       }
 
@@ -651,7 +685,8 @@ function AppContent() {
       setAnalysisProgress({
         currentIndex: 0,
         totalTracks: 1,
-        currentTrackName: track.title || track.file_path.split('/').pop() || 'Unknown',
+        currentTrackName:
+          track.title || track.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: 0,
         totalSizeBytes: 0,
         startTime: Date.now(),
@@ -668,7 +703,6 @@ function AppContent() {
       })
     }
   }
-
 
   // Create playlist — open name modal (prompt() doesn't work in Tauri)
   function handleCreatePlaylist(parentId: number | null) {
@@ -781,9 +815,7 @@ function AppContent() {
         await loadTracks()
       }
       setNotification({
-        message: deleteFiles
-          ? 'Folder and files deleted'
-          : 'Folder removed',
+        message: deleteFiles ? 'Folder and files deleted' : 'Folder removed',
         type: 'success',
       })
     } catch (err) {
@@ -846,7 +878,8 @@ function AppContent() {
     try {
       const added = await tauriApi.addTrackToPlaylist(playlistId, track.id)
       await loadPlaylists()
-      const playlistName = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+      const playlistName =
+        playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
       if (added) {
         setHeaderNotification(`Added to ${playlistName}`)
       } else {
@@ -923,9 +956,10 @@ function AppContent() {
     if (analyzing) return
     try {
       // Use already-loaded tracks if available, otherwise fetch
-      const trackIds = tracks.length > 0
-        ? tracks.filter((t) => t.id).map((t) => t.id)
-        : (await tauriApi.getAllTracks()).filter((t) => t.id).map((t) => t.id)
+      const trackIds =
+        tracks.length > 0
+          ? tracks.filter((t) => t.id).map((t) => t.id)
+          : (await tauriApi.getAllTracks()).filter((t) => t.id).map((t) => t.id)
 
       if (trackIds.length === 0) {
         setNotification({ message: 'No tracks in library', type: 'info' })
@@ -1056,7 +1090,9 @@ function AppContent() {
       // Record play event for dashboard
       const trackToPlay = sortedTracks[trackIndex]
       if (trackToPlay?.id) {
-        tauriApi.recordPlayEvent(trackToPlay.id, selectedPlaylistId ?? null).catch(console.error)
+        tauriApi
+          .recordPlayEvent(trackToPlay.id, selectedPlaylistId ?? null)
+          .catch(console.error)
       }
     } catch (err) {
       console.error('[App] Play error:', err)
@@ -1130,19 +1166,29 @@ function AppContent() {
               ? 'all-tracks'
               : 'home'
 
-  const activeView: 'home' | 'all-tracks' | 'folder' | 'playlist' | 'settings' | 'search' | 'ai-chat' = showSettings
+  const activeView:
+    | 'home'
+    | 'all-tracks'
+    | 'folder'
+    | 'playlist'
+    | 'settings'
+    | 'search'
+    | 'ai-chat'
+    | 'sets' = showSettings
     ? 'settings'
-    : showSearch
-      ? 'search'
-      : showAIChat
-        ? 'ai-chat'
-        : selectedPlaylistId
-          ? 'playlist'
-          : selectedFolder
-            ? 'folder'
-            : showAllTracks
-              ? 'all-tracks'
-              : 'home'
+    : showSets
+      ? 'sets'
+      : showSearch
+        ? 'search'
+        : showAIChat
+          ? 'ai-chat'
+          : selectedPlaylistId
+            ? 'playlist'
+            : selectedFolder
+              ? 'folder'
+              : showAllTracks
+                ? 'all-tracks'
+                : 'home'
 
   const sidebarEl = (
     <Sidebar
@@ -1176,6 +1222,7 @@ function AppContent() {
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
         setShowSearch(false)
+        setShowSets(false)
         setShowAIChat(false)
       }}
       onNavigateHome={() => {
@@ -1184,6 +1231,7 @@ function AppContent() {
         setShowAllTracks(false)
         setShowSettings(false)
         setShowSearch(false)
+        setShowSets(false)
         setShowAIChat(false)
       }}
       onShowAllTracks={() => {
@@ -1192,6 +1240,7 @@ function AppContent() {
         setShowAllTracks(true)
         setShowSettings(false)
         setShowSearch(false)
+        setShowSets(false)
         setShowAIChat(false)
         loadTracks(null, null)
       }}
@@ -1204,12 +1253,22 @@ function AppContent() {
         setShowAIChat(false)
         loadTracks(null, null)
       }}
+      onNavigateSets={() => {
+        setShowSets(true)
+        setShowSearch(false)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
+        setShowSettings(false)
+        setShowAIChat(false)
+      }}
       onNavigateAIChat={
         AI_ENABLED
           ? () => {
               setShowAIChat(true)
               setShowSettings(false)
               setShowSearch(false)
+              setShowSets(false)
               setSelectedFolder(null)
               setSelectedPlaylistId(null)
               setShowAllTracks(false)
@@ -1233,32 +1292,58 @@ function AppContent() {
           <div className="scan-progress__bar-wrapper">
             <div
               className="scan-progress__bar"
-              style={{ width: `${scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%` }}
+              style={{
+                width: `${scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%`,
+              }}
             />
           </div>
           <div className="scan-progress__info">
             <span className="scan-progress__count">
               Scanning: [{scanProgress.current}/{scanProgress.total}]{' '}
-              {scanProgress.total > 0 ? Math.round((scanProgress.current / scanProgress.total) * 100) : 0}%
+              {scanProgress.total > 0
+                ? Math.round((scanProgress.current / scanProgress.total) * 100)
+                : 0}
+              %
             </span>
-            {scanStartTime && scanProgress.current > 0 && (() => {
-              const elapsed = Date.now() - scanStartTime
-              const avg = elapsed / scanProgress.current
-              const remaining = avg * (scanProgress.total - scanProgress.current)
-              if (remaining < 60000) return <span className="scan-progress__eta">{Math.ceil(remaining / 1000)}s remaining</span>
-              const mins = Math.ceil(remaining / 60000)
-              return <span className="scan-progress__eta">{mins} min{mins === 1 ? '' : 's'} remaining</span>
-            })()}
+            {scanStartTime &&
+              scanProgress.current > 0 &&
+              (() => {
+                const elapsed = Date.now() - scanStartTime
+                const avg = elapsed / scanProgress.current
+                const remaining =
+                  avg * (scanProgress.total - scanProgress.current)
+                if (remaining < 60000)
+                  return (
+                    <span className="scan-progress__eta">
+                      {Math.ceil(remaining / 1000)}s remaining
+                    </span>
+                  )
+                const mins = Math.ceil(remaining / 60000)
+                return (
+                  <span className="scan-progress__eta">
+                    {mins} min{mins === 1 ? '' : 's'} remaining
+                  </span>
+                )
+              })()}
           </div>
           {scanProgress.currentFile && (
-            <div className="scan-progress__filename">{scanProgress.currentFile}</div>
+            <div className="scan-progress__filename">
+              {scanProgress.currentFile}
+            </div>
           )}
         </div>
       )}
 
       {/* Main content — Home view when nothing selected, TrackTable otherwise */}
       {/* AnimatePresence mode="wait" ensures old view fully exits before new view enters */}
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: 'hidden',
+          position: 'relative',
+          minWidth: 0,
+        }}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={viewKey}
@@ -1268,11 +1353,15 @@ function AppContent() {
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
-            {showSettings ? (
+            {showSets ? (
+              <SetsView libraryTracks={tracks} onPlayTrack={handlePlayTrack} />
+            ) : showSettings ? (
               <SettingsView
                 onFoldersChanged={handleFoldersChanged}
                 onThemeChanged={handleThemeChanged}
-                onNotification={(message, type) => setNotification({ message, type })}
+                onNotification={(message, type) =>
+                  setNotification({ message, type })
+                }
               />
             ) : showSearch ? (
               <SearchView
@@ -1282,6 +1371,7 @@ function AppContent() {
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
                   setShowSearch(false)
+                  setShowSets(false)
                 }}
               />
             ) : showAIChat ? (
@@ -1300,6 +1390,7 @@ function AppContent() {
                         setSelectedFolder(null)
                         setShowAllTracks(false)
                         setShowSearch(false)
+                        setShowSets(false)
                         setShowSettings(false)
                       }
                     : undefined
@@ -1311,6 +1402,7 @@ function AppContent() {
                   setSelectedFolder(null)
                   setShowAllTracks(false)
                   setShowSearch(false)
+                  setShowSets(false)
                 }}
               />
             ) : tracks.length === 0 ? (
@@ -1319,19 +1411,36 @@ function AppContent() {
                 <p>{emptySubtitle}</p>
               </div>
             ) : (
-              <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+              <div
+                style={{
+                  height: '100%',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
                 {/* Playlist detail header with scroll compression */}
-                {selectedPlaylistId != null && (() => {
-                  const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId)
-                  return selectedPlaylist ? (
-                    <PlaylistDetailHeader
-                      playlist={selectedPlaylist}
-                      tracks={tracks}
-                    />
-                  ) : null
-                })()}
+                {selectedPlaylistId != null &&
+                  (() => {
+                    const selectedPlaylist = playlists.find(
+                      (p) => p.id === selectedPlaylistId,
+                    )
+                    return selectedPlaylist ? (
+                      <PlaylistDetailHeader
+                        playlist={selectedPlaylist}
+                        tracks={tracks}
+                      />
+                    ) : null
+                  })()}
 
-                <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minWidth: 0 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    position: 'relative',
+                    minWidth: 0,
+                  }}
+                >
                   <TrackTable
                     ref={trackTableRef}
                     tracks={tracks}
@@ -1353,7 +1462,11 @@ function AppContent() {
                       AI_ENABLED ? handleGetPlaylistRecommendations : undefined
                     }
                     onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
-                    onSearch={!selectedFolder && !selectedPlaylistId ? handleSearch : undefined}
+                    onSearch={
+                      !selectedFolder && !selectedPlaylistId
+                        ? handleSearch
+                        : undefined
+                    }
                   />
                 </div>
               </div>
@@ -1372,7 +1485,8 @@ function AppContent() {
         try {
           const added = await tauriApi.addTrackToPlaylist(playlistId, trackId)
           await loadPlaylists()
-          const playlistName = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+          const playlistName =
+            playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
           if (added) {
             setHeaderNotification(`Added to ${playlistName}`)
           } else {
@@ -1423,7 +1537,10 @@ function AppContent() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Delete {deleteFolderModal.folderName}?</h3>
             <p className="modal-subtitle">{deleteFolderModal.folderPath}</p>
-            <div className="modal-actions" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+            <div
+              className="modal-actions"
+              style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}
+            >
               <button
                 type="button"
                 className="modal-button modal-button-secondary"
@@ -1492,19 +1609,32 @@ function AppContent() {
           onInstall={async () => {
             const update = pendingUpdate
             setPendingUpdate(null)
-            setNotification({ message: `Downloading update v${update.version}...`, type: 'info' })
+            setNotification({
+              message: `Downloading update v${update.version}...`,
+              type: 'info',
+            })
             try {
               await update.downloadAndInstall()
               const isWindows = navigator.platform.startsWith('Win')
               if (isWindows) {
-                setNotification({ message: 'Update installed. The app will restart automatically.', type: 'success' })
+                setNotification({
+                  message:
+                    'Update installed. The app will restart automatically.',
+                  type: 'success',
+                })
               } else {
-                setNotification({ message: 'Restarting app...', type: 'success' })
+                setNotification({
+                  message: 'Restarting app...',
+                  type: 'success',
+                })
                 await relaunch()
               }
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err)
-              setNotification({ message: `Update failed: ${msg}`, type: 'error' })
+              setNotification({
+                message: `Update failed: ${msg}`,
+                type: 'error',
+              })
             }
           }}
           onLater={() => setPendingUpdate(null)}
