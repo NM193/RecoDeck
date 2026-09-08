@@ -134,10 +134,15 @@ accepts `localhost`. The sets were never the problem. Full account in PROGRESS.m
 - [x] The set library, saved tracks with store links, and a copy-list button (migration 009)
 - [x] The set as a block strip, red where the IDs are, clickable
 
-### Open
+- [x] Playback starts with one click on an overlay inside the panel. The engine allows
+      unattended playback and the video does start — muted; what YouTube will not do without a
+      gesture is unmute, and the user's click lands in a different webview. Measured, not assumed
+- [x] Search across all stored sets, and statistics, off a flattened tracks table (migration 010)
+- [x] Search by DJ name (100 units, and the button says so), channel import, followed channels
+      with a new-set badge, promo clips filtered by duration before anything is fetched
+- [x] The library filed by DJ — the channel is the host, the DJ is in the title
+- [x] Quota with a countdown to the Pacific reset, in Settings and in Stats
 
-- [ ] **Playback does not start by itself** — the first click has to happen inside the panel's
-      own webview. Two candidate fixes are written up in PROGRESS.md 2026-09-08
-- [ ] Quota bar with a countdown to the Pacific reset
-- [ ] Search by DJ name (100 units), channel import, followed channels with a new-set badge
-- [ ] Search across all stored sets, and statistics
+**The port is complete**, and goes past the original in three places: matching against the
+user's own library, playing their files from a set, and refusing the narration comment the
+standalone tool still accepts.

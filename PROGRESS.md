@@ -811,6 +811,60 @@ are committed, everything after them is not. Tests: 108 frontend, 139 Rust, lint
 channel import, followed channels with a new-set badge, statistics, search across all stored
 sets, and the quota bar with a countdown to the Pacific reset.
 
+---
+
+### 2026-09-08 — M5 complete: the rest of the standalone tool, and two matching rules learned by using it
+
+**Everything from the tool is now in RecoDeck.** Search across every stored set, statistics,
+search by DJ name, channel import, followed channels with a new-set badge, and the library
+filed by DJ.
+
+**Storage (migration 010).** Parsed rows are flattened into `yt_tracks` beside the raw fetch.
+Without it, "where did I hear this?" and every statistic would mean reparsing every stored set
+on each keystroke. Rebuilt wholesale when a set is reprocessed, so an improved parser simply
+replaces what the old one produced — and reopening a set stored before this table existed
+fills it in quietly.
+
+**Costs are shown because they differ by a factor of a hundred.** A set is 5-7 units, checking
+a followed channel 1-2, resolving a channel from a handle or link 2 — and searching by name is
+100. The button says so before the click, and refuses when less than 100 is left. Channels
+resolve through the cheap paths first (UC id, @handle, a link to one of their videos) and only
+fall through to search when nothing else works. Promo clips are filtered by duration before
+anything is fetched about them: a set is never under twenty minutes.
+
+**Sets are filed under the DJ, not the channel.** Mixmag, Boiler Room and Cercle are hosts;
+the DJ is in the title, and across the reference sets the titles use five different
+conventions. The rule cuts at the earliest separator with two guards: a B2B billing stays
+whole, and a title that is just a description ("The best deep house mix of...") falls back to
+the host rather than inventing a DJ.
+
+**Two matching bugs, both found by using the feature, both now covered by tests:**
+
+1. *A different remix offered as the same record.* "Witch Doctor (Hot Since 82 Remix)" in the
+   set matched "Witch Doctor [Extended Mix]" on disk. The base-title fallback exists for a good
+   reason — a tracklist naming the remix where the tag says only "Horny" is the same record —
+   but when **both** sides name a version, they now have to be the same version. The library's
+   version is read from the raw tag title, before normalisation, which is precisely what
+   normalisation strips.
+2. *A title alone treated as evidence.* Matching now requires the artist to agree as well.
+   Dozens of records are called "Lost" or "Jolene". Where a file carries no artist tag, the
+   artist is read out of the title the same way a written tracklist is parsed — plenty of files
+   are tagged "Lee Burridge & Lost Desert - Elongi feat. Junior" with an empty artist field, and
+   demanding a tag without reading those would mark half a library as missing. The cost is
+   accepted deliberately: a file with neither an artist tag nor a dash in its title will never
+   match. Better to say "missing" for a record you own than to offer someone else's.
+
+**A third bug, and the most misleading one.** Library matching was reading `App.tsx`'s track
+list, which holds only what is on screen — one folder, or one playlist. So it answered "do I
+have this in the folder I happen to be looking at". It appeared to work because after a scan
+the app returns to All Tracks. The Sets view now loads the whole library itself and refreshes
+on `library-changed`, so a file added a minute ago stops reading as missing.
+
+Store links now include Spotify, and appear on the rows themselves on hover — four links
+across forty rows would drown out the tracklist if they were always visible.
+
+Tests: 116 frontend, 143 Rust.
+
 ## Next Steps
 
 1. **NOW**: Continue Phase 2 — Next milestone: 2.1 Mel spectrogram or 2.4 Waveform peaks
