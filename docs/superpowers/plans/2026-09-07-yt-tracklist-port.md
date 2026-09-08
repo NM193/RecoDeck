@@ -146,3 +146,34 @@ accepts `localhost`. The sets were never the problem. Full account in PROGRESS.m
 **The port is complete**, and goes past the original in three places: matching against the
 user's own library, playing their files from a set, and refusing the narration comment the
 standalone tool still accepts.
+
+
+---
+
+## M6 — Automatic checking for new sets (next session)
+
+Asked for on 2026-09-08: set an interval per followed channel — daily or weekly — and have the
+app check on its own and say when a new set turns up.
+
+Everything it builds on already exists: `check_youtube_channels` does the work, `yt_channels`
+holds `last_checked` and `last_seen_video`, and the Following tab already shows a badge.
+
+- [ ] Migration 011: `check_interval_hours` on `yt_channels`. 0 means never, 24 daily,
+      168 weekly. Default 0 — nothing starts spending quota because it was installed
+- [ ] A background task started with the app: wake periodically, check only channels whose
+      `last_checked` is older than their interval, and write `last_checked` whether or not
+      anything new turned up
+- [ ] Emit a Tauri event with what was found; the frontend shows it through the existing
+      `Notification` component and the badge already on the Following tab
+- [ ] Per-channel interval selector in the Following tab
+- [ ] Tests: the due-or-not decision is a pure function of (interval, last_checked, now) and
+      should be tested as one, including the case of a channel checked manually a minute ago
+
+**Costs**, since that is what governs every decision in this feature: a check is 1-2 units per
+channel. Ten channels daily is roughly 20 units against a 10,000 allowance. The interval must
+be honoured off `last_checked`, so a manual check counts and the automatic one does not repeat
+it.
+
+**Watch out for:** the quota day rolls over at midnight Pacific, not local (see
+`external/youtube_time.rs`), and a check that fails must not update `last_checked`, or a
+channel that is temporarily unreachable would be silently skipped for a day.
