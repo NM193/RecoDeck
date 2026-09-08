@@ -14,8 +14,18 @@ import type { SetComment, SetVideo, TracklistResult } from './types'
 export * from './types'
 export { extractTracklist } from './extract'
 export { collectCandidates, mergeCandidates } from './merge'
-export { assembleFromComments, collectCueMentions, resolveUnknowns } from './comments'
-export { msToCue, parseCue, normalise, splitArtistTitle, containment } from './text'
+export {
+  assembleFromComments,
+  collectCueMentions,
+  resolveUnknowns,
+} from './comments'
+export {
+  msToCue,
+  parseCue,
+  normalise,
+  splitArtistTitle,
+  containment,
+} from './text'
 
 /** Parses one already-fetched set. Works the same on a live fetch or a fixture. */
 export function analyse(
@@ -29,8 +39,12 @@ export function analyse(
   if (merged) resolveUnknowns(merged.tracks, comments)
 
   // No whole list anywhere — assemble one from what is scattered in the comments.
-  const assembled = merged?.tracks.length ? null : assembleFromComments(video, comments)
-  const tracks = merged?.tracks.length ? merged.tracks : (assembled?.tracks ?? [])
+  const assembled = merged?.tracks.length
+    ? null
+    : assembleFromComments(video, comments)
+  const tracks = merged?.tracks.length
+    ? merged.tracks
+    : (assembled?.tracks ?? [])
 
   return {
     video: {

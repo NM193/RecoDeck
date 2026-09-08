@@ -9,7 +9,13 @@
  * are invisible.
  */
 
-import type { LooseName, SetComment, SetVideo, Suggestion, Track } from './types'
+import type {
+  LooseName,
+  SetComment,
+  SetVideo,
+  Suggestion,
+  Track,
+} from './types'
 import {
   ANY_CUE,
   ARTIST_TITLE,
@@ -69,7 +75,8 @@ export function collectCueMentions(comments: SetComment[]): CueMention[] {
     // A reply with no timestamp inherits the one from the question it answers,
     // provided it actually looks like a track name.
     const body = comment.text.replace(/^@[\w.-]+\s*/, '').trim()
-    if (!parentCues.length || CHATTER.test(body) || !ARTIST_TITLE.test(body)) continue
+    if (!parentCues.length || CHATTER.test(body) || !ARTIST_TITLE.test(body))
+      continue
 
     for (const cueMs of parentCues) {
       mentions.push({
@@ -100,7 +107,8 @@ export function assembleFromComments(
   const asked: Array<{ cueMs: number }> = []
 
   for (const mention of mentions) {
-    if (video.durationMs > 0 && mention.cueMs > video.durationMs * 1.05) continue
+    if (video.durationMs > 0 && mention.cueMs > video.durationMs * 1.05)
+      continue
 
     const parsed = splitArtistTitle(mention.text)
     // The question is often asked before the timestamp ("anyone know the one at
@@ -131,7 +139,9 @@ export function assembleFromComments(
   }
   const slots: Slot[] = []
   for (const item of named) {
-    const key = normalise([item.artist, item.title, item.mix].filter(Boolean).join(' '))
+    const key = normalise(
+      [item.artist, item.title, item.mix].filter(Boolean).join(' '),
+    )
     let slot = slots.find(
       (s) => Math.abs(s.cueMs - item.cueMs) <= 20_000 && sameTitle(s.key, key),
     )
@@ -146,7 +156,8 @@ export function assembleFromComments(
   // A question about a slot that has since been named is not shown as open.
   const open: Array<{ cueMs: number; asks: number }> = []
   for (const question of asked) {
-    if (slots.some((s) => Math.abs(s.cueMs - question.cueMs) <= 30_000)) continue
+    if (slots.some((s) => Math.abs(s.cueMs - question.cueMs) <= 30_000))
+      continue
     const near = open.find((o) => Math.abs(o.cueMs - question.cueMs) <= 30_000)
     if (near) near.asks += 1
     else open.push({ cueMs: question.cueMs, asks: 1 })
@@ -204,7 +215,8 @@ export function assembleFromComments(
   for (const comment of comments) {
     if (ANY_CUE.test(comment.text)) continue
     const body = comment.text.replace(/^@[\w.-]+\s*/, '').trim()
-    if (CHATTER.test(body) || !ARTIST_TITLE.test(body) || body.length > 90) continue
+    if (CHATTER.test(body) || !ARTIST_TITLE.test(body) || body.length > 90)
+      continue
     if (ID_QUESTION.test(body) || ID_MARKER.test(body)) continue
 
     const parsed = splitArtistTitle(body)
@@ -233,7 +245,11 @@ export function assembleFromComments(
 function suggestIds(
   track: Track,
   mentions: CueMention[],
-  known: Array<{ key: string | null; titleKey: string | null; cueMs: number }> = [],
+  known: Array<{
+    key: string | null
+    titleKey: string | null
+    cueMs: number
+  }> = [],
   toleranceMs = 60_000,
 ): Suggestion[] {
   const byName = new Map<string, Omit<Suggestion, 'score'>>()
@@ -247,9 +263,15 @@ function suggestIds(
     if (!parsed.title || parsed.title.length < 4) continue
     // "anyone know the id?" is the question, not the answer — unless it carries
     // an "Artist - Title" shape, which means someone answered in the same line.
-    if (!parsed.artist && (ID_QUESTION.test(mention.text) || ID_MARKER.test(mention.text))) continue
+    if (
+      !parsed.artist &&
+      (ID_QUESTION.test(mention.text) || ID_MARKER.test(mention.text))
+    )
+      continue
 
-    const key = normalise([parsed.artist, parsed.title].filter(Boolean).join(' '))
+    const key = normalise(
+      [parsed.artist, parsed.title].filter(Boolean).join(' '),
+    )
     if (!key || key.length < 4) continue
     // A comment about the neighbouring track drifts into this slot's window.
     // If the name is already on the tracklist nearby, it is not this ID.
@@ -281,22 +303,31 @@ function suggestIds(
     byName.set(key, entry)
   }
 
-  return [...byName.values()]
-    .map((s) => ({
-      ...s,
-      // Agreement between commenters counts most; likes break ties.
-      score: Number(
-        ((s.artist ? 2 : 1) * (s.exact ? 1.5 : 1) * (s.votes + Math.log10(1 + s.likeCount))).toFixed(2),
-      ),
-    }))
-    // One lone comment with no likes is not an answer.
-    .filter((s) => s.score >= 1.8)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 2)
+  return (
+    [...byName.values()]
+      .map((s) => ({
+        ...s,
+        // Agreement between commenters counts most; likes break ties.
+        score: Number(
+          (
+            (s.artist ? 2 : 1) *
+            (s.exact ? 1.5 : 1) *
+            (s.votes + Math.log10(1 + s.likeCount))
+          ).toFixed(2),
+        ),
+      }))
+      // One lone comment with no likes is not an answer.
+      .filter((s) => s.score >= 1.8)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2)
+  )
 }
 
 /** Fills every unknown slot in place with whatever the comments know. */
-export function resolveUnknowns(tracks: Track[], comments: SetComment[]): Track[] {
+export function resolveUnknowns(
+  tracks: Track[],
+  comments: SetComment[],
+): Track[] {
   const unknowns = tracks.filter((t) => t.isUnknown)
   if (unknowns.length === 0) return tracks
 
@@ -309,6 +340,7 @@ export function resolveUnknowns(tracks: Track[], comments: SetComment[]): Track[
       cueMs: t.cueMs,
     }))
 
-  for (const track of unknowns) track.suggestions = suggestIds(track, mentions, known)
+  for (const track of unknowns)
+    track.suggestions = suggestIds(track, mentions, known)
   return tracks
 }
