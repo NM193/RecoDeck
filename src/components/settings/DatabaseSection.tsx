@@ -9,8 +9,7 @@ export function DatabaseSection() {
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">Database Maintenance</h2>
+    <>
       <p className="settings-description">
         Clean up duplicate tracks and optimize your library database.
       </p>
@@ -40,6 +39,6 @@ export function DatabaseSection() {
           }
         />
       )}
-    </section>
+    </>
   )
 }

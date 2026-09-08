@@ -13,8 +13,7 @@ export function CompanionSection() {
   } = useSettingsContext()
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">Mobile Companion</h2>
+    <>
       <p className="settings-description">
         Stream music from this computer to your phone over WiFi. Open the URL on your phone's browser.
       </p>
@@ -145,6 +144,6 @@ export function CompanionSection() {
         The server runs on your local network only. Your phone must be connected to the same WiFi network.
         Supported formats: MP3, AAC/M4A, WAV. FLAC and OGG may not work on all mobile browsers.
       </p>
-    </section>
+    </>
   )
 }

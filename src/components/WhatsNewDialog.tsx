@@ -1,4 +1,21 @@
 import type { VersionChanges } from '../lib/changelog'
+import './WhatsNewDialog.css'
+
+/**
+ * Renders the `**bold**` the changelog uses to lead a line with its subject.
+ *
+ * Not a markdown library for one construct — the changelog is ours, and this is
+ * the only formatting it carries. Anything else is shown as written.
+ */
+function withEmphasis(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') ? (
+      <strong key={i}>{part.slice(2, -2)}</strong>
+    ) : (
+      part
+    ),
+  )
+}
 
 interface WhatsNewDialogProps {
   version: string
@@ -13,42 +30,32 @@ export function WhatsNewDialog({ version, changes, onClose }: WhatsNewDialogProp
     { label: 'Changes', items: changes.changed },
   ].filter((section) => section.items.length > 0)
 
+  const total = sections.reduce((sum, section) => sum + section.items.length, 0)
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content"
-        style={{ maxWidth: 440, padding: '24px 28px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3>What's New in {version}</h3>
+      <div className="modal-content whats-new" onClick={(e) => e.stopPropagation()}>
+        <div className="whats-new__header">
+          <h3>What's New in {version}</h3>
+          <p className="whats-new__intro">
+            {total} {total === 1 ? 'change' : 'changes'} in this release.
+          </p>
+        </div>
 
-        <div style={{ margin: '12px 0 20px' }}>
+        <div className="whats-new__body">
           {sections.map((section) => (
-            <div key={section.label} style={{ marginBottom: 16 }}>
-              <div
-                style={{
-                  fontWeight: 600,
-                  fontSize: 13,
-                  color: 'var(--text-primary)',
-                  marginBottom: 6,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {section.label}
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
+            <div className="whats-new__section" key={section.label}>
+              <div className="whats-new__label">{section.label}</div>
+              <ul className="whats-new__list">
                 {section.items.map((item, i) => (
-                  <li key={i} style={{ marginBottom: 4, color: 'var(--text-secondary)' }}>
-                    {item}
-                  </li>
+                  <li key={i}>{withEmphasis(item)}</li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="whats-new__footer">
           <button className="btn btn-primary" onClick={onClose}>
             Got it
           </button>

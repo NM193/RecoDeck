@@ -18,8 +18,7 @@ export function YouTubeSection() {
   const usedRatio = ytQuota ? Math.min(1, ytQuota.spent / ytQuota.daily_limit) : 0
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">YouTube Tracklists</h2>
+    <>
       <p className="settings-description">
         Pull tracklists out of DJ set descriptions and comments. Needs your own YouTube
         Data API v3 key — the free daily allowance is granted per key, so everyone brings
@@ -164,6 +163,6 @@ export function YouTubeSection() {
           which API it may call.
         </p>
       </div>
-    </section>
+    </>
   )
 }

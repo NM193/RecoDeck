@@ -4,8 +4,7 @@ export function AboutSection() {
   const { appVersion, updateChecking, updateProgress, handleCheckForUpdates } = useSettingsContext()
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">About</h2>
+    <>
 
       <p className="settings-description">RecoDeck v{appVersion || '—'}</p>
 
@@ -54,7 +53,7 @@ export function AboutSection() {
           </div>
         </div>
       )}
-    </section>
+    </>
   )
 }
 

@@ -5,8 +5,7 @@ export function AppearanceSection() {
   const { currentTheme, handleThemeChange } = useSettingsContext()
 
   return (
-    <section className="sv-section">
-      <h2 className="sv-section__title">Appearance</h2>
+    <>
 
       {/* Theme */}
       <div className="sv-subsection">
@@ -31,6 +30,6 @@ export function AppearanceSection() {
           ))}
         </div>
       </div>
-    </section>
+    </>
   )
 }
