@@ -1,6 +1,6 @@
 # RecoDeck Development Progress
 
-Last Updated: 2026-09-07
+Last Updated: 2026-09-08
 
 ---
 
@@ -719,6 +719,97 @@ All six reproduce exactly. The suite was then mutation-checked to prove it can f
 the title containment threshold from 0.8 to 0.5 breaks two of the six sets.
 
 90 frontend tests passing, tsc clean, no new lint findings.
+
+---
+
+### 2026-09-07/08 — M4 and M5a: library matching, the set library, and the in-window player
+
+**M4 — matching a set against the library**
+
+Every parsed row is compared to the user's own tracks using the parser's soft name
+matching, not string equality: tags and typed-out tracklists never agree exactly. No schema
+work and no SQL — the app already holds all 8,400 tracks in memory. Rows show `have it`
+(plays the user's file) or `missing`, the header counts both, and a filter narrows to either.
+Playing one row queues everything owned from that set, in the order the DJ played it.
+
+**Two bugs found by using it, both fixed with tests:**
+
+1. *Narration parsed as tracks.* Someone had narrated the crowd with timestamps ("1:10:13
+   tattoo girl checks on the lad..."). The block passes every structural check — ascending,
+   inside the runtime, enough rows — so it merged into the real list. The rule now judges the
+   whole block: an artist-less row of 7+ words is prose, and a block that is a quarter prose
+   is thrown out. The threshold is measured — across the reference sets the longest legitimate
+   artist-less title is six words, while narration runs 8 to 18. **The original tool has this
+   bug too**: running it over the same fixture reproduces all five narration rows, which is
+   why `bk6Xst6euQk` is the one set where we deliberately differ from it.
+2. *One-word titles claiming long files.* "Simion feat. Roland Clark — Lost" matched a file
+   called "Lee Burridge & Lost Desert - Elongi feat. Junior", because containment divides by
+   the shorter side and the single word "lost" scored 1.0. The shorter title must now be at
+   least half the longer one, "Unknown Artist" counts as no artist, and titles are compared
+   both with and without the remix suffix.
+
+**M5a — the set library (migration 009)**
+
+`yt_sets`, `yt_saved_tracks`, `yt_channels`. A processed set is stored whole, raw fetch
+included, so reopening costs no quota and a better parser can be re-run over everything
+already collected. Hearted tracks collect across sets with Beatport/Discogs/Bandcamp links
+and a copy-list button. Deleting a set cascades to its saved tracks.
+
+**The in-window player — what it took, and what it cost**
+
+The goal was the standalone tool's layout: video on top, tracklist below, in one window.
+Getting there required enabling Tauri's `unstable` feature for multi-webview support, so the
+player is a second webview positioned over the page in window coordinates. That is why it
+cannot scroll with the list and lives in a fixed band.
+
+Four measured findings, in the order they were learned:
+
+| attempt | result |
+|---|---|
+| iframe on the `tauri://` page | error 153 — a custom scheme sends no Referer |
+| panel navigated straight to `youtube.com/embed` | error 153 — a top-level navigation sends none either |
+| panel → page served by our own server at **127.0.0.1** | error **150** |
+| panel → same page, same port, at **localhost** | works |
+
+**YouTube accepts `localhost` as an embedding origin and rejects `127.0.0.1`.** This also
+retracts an earlier conclusion recorded on 2026-09-07: "five of six sets refuse embedding
+anywhere" was a measurement error, caused by testing from a `127.0.0.1` origin through
+`YT.Player`. The sets are fine. The standalone tool works because it is served from
+`localhost:4173`.
+
+So the chain is: panel webview → `http://localhost:<port>/yt-player` (served by the companion
+Axum server) → iframe to youtube.com, which now has the Referer it wants. Seeking goes through
+`/yt-seek`, which the player page polls four times a second, so jumping between tracks moves
+the player in place instead of reloading it. The player page reports its state to `/yt-report`,
+which lands in the app log — a webview has no console anyone can read.
+
+**Open problem for tomorrow: playback will not start on its own.**
+
+The panel reports `PLAYER READY` but never `PLAYING`. The user has to press play inside the
+panel once; after that, every seek works. The cause is that the click lands in the *main*
+webview while the player lives in a *second* one, so as far as the player's document is
+concerned no user gesture ever happened. In the standalone tool both live in the same
+document, which is why it does not have this problem.
+
+Tried and rejected: muted autoplay (`mute=1`) plus a programmatic `playVideo` and `unMute`
+after `onReady` — still never reaches `PLAYING`.
+
+Next things to try, cheapest first:
+
+1. wry defaults `autoplay: true` (wry 0.54 `WebViewAttributes`), but nothing in
+   tauri-runtime-wry appears to pass it through for a child webview added with
+   `Window::add_child`. Check whether Tauri exposes it, or whether the attribute is simply
+   lost for child webviews — that would explain the behaviour exactly.
+2. Failing that, give the served page its own one-time overlay: a large play button covering
+   the panel, so the first click happens *inside* that webview. One click per set, then
+   everything is programmatic.
+
+**State:** all of the above is on branch `feat/yt-tracklist` and **uncommitted** — M1 and M2
+are committed, everything after them is not. Tests: 108 frontend, 139 Rust, lint unchanged.
+
+**Still to build from the standalone tool:** search by DJ name (100 quota units a search),
+channel import, followed channels with a new-set badge, statistics, search across all stored
+sets, and the quota bar with a countdown to the Pacific reset.
 
 ## Next Steps
 

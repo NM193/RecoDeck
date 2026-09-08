@@ -105,19 +105,39 @@ behaviour instead of passing vacuously.
 
 ---
 
-## M4 — Library matching (the part the original tool could not do)
+## M4 — Library matching (the part the original tool could not do) — DONE
 
-- [ ] Match every parsed track against the library using the parser's own soft comparison
-- [ ] No schema change and no SQL: the app already loads all tracks into memory
-- [ ] Mark each row as owned or missing
+- [x] Match every parsed track against the library using the parser's own soft comparison
+- [x] No schema change and no SQL: the app already loads all tracks into memory
+- [x] Mark each row as owned or missing
 
-**Gate:** demo on a set where the user knows what they own, and count the misses.
+**Gate passed**, and the demo found two real bugs, both fixed with tests: a narration comment
+parsed as tracks, and a one-word title claiming an unrelated file. See PROGRESS.md 2026-09-07/08.
 
 ---
 
-## M5 — Listening, and the rest of the tool
+## M5 — Listening, and the rest of the tool — IN PROGRESS
 
-- [ ] ▶ opens the set in the browser at that timestamp via `tauri-plugin-opener`
-      (**changed by M0** — an embedded player was measured and rejected)
-- [ ] `img-src https://i.ytimg.com` added to CSP for thumbnails
-- [ ] Saved tracks, followed channels, channel import, statistics
+**M0's conclusion was wrong and is superseded.** It rejected an embedded player after
+measuring from a `127.0.0.1` origin; YouTube rejects that origin specifically (error 150) and
+accepts `localhost`. The sets were never the problem. Full account in PROGRESS.md 2026-09-08.
+
+### Done
+
+- [x] In-window player: a second webview (Tauri `unstable` feature) over a fixed band at the
+      top, showing a page served by our own Axum server at `http://localhost:<port>/yt-player`,
+      which gives the iframe the Referer it needs
+- [x] Seeking without reloading: `/yt-seek` is polled by the player page, so a cue click moves
+      the player in place
+- [x] Collapse into a bar: the video shrinks to 128×72 and keeps playing, with prev/next
+      through the set and a button back to the big picture
+- [x] The set library, saved tracks with store links, and a copy-list button (migration 009)
+- [x] The set as a block strip, red where the IDs are, clickable
+
+### Open
+
+- [ ] **Playback does not start by itself** — the first click has to happen inside the panel's
+      own webview. Two candidate fixes are written up in PROGRESS.md 2026-09-08
+- [ ] Quota bar with a countdown to the Pacific reset
+- [ ] Search by DJ name (100 units), channel import, followed channels with a new-set badge
+- [ ] Search across all stored sets, and statistics
