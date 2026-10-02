@@ -32,6 +32,10 @@ export function msToCue(ms: number): string {
 export const TRACK_LINE =
   /^\s*(?:\d{1,3}[.)]\s*)?[[(]?((?:\d{1,3}:)?\d{1,2}:\d{2})[\])]?\s*[-–—:|.]?\s*(.+?)\s*$/
 
+// A timestamp with nothing after it: "1:00", "[1:00]", "3. 1:00 -".
+const CUE_ONLY =
+  /^\s*(?:\d{1,3}[.)]\s*)?[[(]?(?:\d{1,3}:)?\d{1,2}:\d{2}[\])]?\s*[-–—:|.]?\s*$/
+
 // The closing half of a "start - end" range, sitting in front of the name.
 const RANGE_END = /^[[(]?(?:\d{1,3}:)?\d{1,2}:\d{2}[\])]?\s*[-–—:|>]?\s*/
 
@@ -59,6 +63,10 @@ const CREDIT_SUFFIX =
   /\s*[-–—]?\s*\b(thanks?|thx|credits?)\b\s*(to\s*)?(@[\w.-]+[\s,]*)*$/i
 const HANDLE_SUFFIX = /(\s*@[\w.-]+)+\s*$/
 
+// The "@someone" a reply opens with. YouTube puts an invisible U+200B in front
+// of it, which a plain "^@" never matches, and the handle stayed in the name.
+export const HANDLE_PREFIX = /^[\s​]*@[\w.-]+\s*/
+
 // A person ASKING for the ID is not an answer. Filtered unless a name follows.
 export const ID_QUESTION =
   /\b(anyone|anybody|somebody|someone|know|knows|what.{0,3}s this|track ?id|help|pls|please|thanks?|thx)\b/i
@@ -71,6 +79,44 @@ export const CHATTER =
   /\b(thanks?|thank you|thx|nice|tune|banger|fire|goat|legend|please|pls|following|sick|love it|wow|same|lol)\b/i
 
 export const ANY_CUE = /(?:\d{1,3}:)?\d{1,2}:\d{2}/
+
+/**
+ * Splits a block into lines, putting a timestamp that stands alone back on the
+ * same line as the name under it.
+ *
+ * The YouTube app turns a timestamp into a link, and people typing a list there
+ * end up with the time on one line and the track on the next. Every reader in
+ * this parser goes line by line, so such a list — often the best one under the
+ * set — used to yield not a single row.
+ *
+ * The mirror shape, name first and its time underneath, is left alone: pairing
+ * each time with the line after it would put every track one slot late. It is
+ * recognised by its last timestamp, which has no name left to follow it.
+ */
+export function cueLines(text: string): string[] {
+  const lines = text.split(/\r?\n/)
+  const nextName = (from: number): number => {
+    let j = from
+    while (j < lines.length && !lines[j].trim()) j += 1
+    return j < lines.length && !ANY_CUE.test(lines[j]) ? j : -1
+  }
+
+  let lastCue = lines.length - 1
+  while (lastCue >= 0 && !CUE_ONLY.test(lines[lastCue])) lastCue -= 1
+  if (lastCue === -1 || nextName(lastCue + 1) === -1) return lines
+
+  const joined: string[] = []
+  for (let i = 0; i < lines.length; i += 1) {
+    const name = CUE_ONLY.test(lines[i]) ? nextName(i + 1) : -1
+    if (name === -1) {
+      joined.push(lines[i])
+      continue
+    }
+    joined.push(`${lines[i].trim()} ${lines[name].trim()}`)
+    i = name
+  }
+  return joined
+}
 
 /** Drops the closing half of a "00:01 - 01:00 Artist - Title" range. */
 export function stripRangeEnd(rest: string): string {
