@@ -1,0 +1,122 @@
+// src/components/layout/useSidebarPrefs.ts
+// Wires the sidebar's rules (lib/sidebarPrefs.ts) to localStorage, the window,
+// the keyboard and the settings table. Called once, from App.tsx.
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { tauriApi } from '../../lib/tauri-api'
+import {
+  COLLAPSED_KEY,
+  COLOURS_KEY,
+  collapseOnResize,
+  initialCollapsed,
+  parseColours,
+  type ColourOverrides,
+  type SidebarSection,
+} from '../../lib/sidebarPrefs'
+
+function readStored(): string | null {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeStored(collapsed: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, String(collapsed))
+  } catch {
+    // Storage can be unavailable; the state still works for this session.
+  }
+}
+
+export interface SidebarPrefs {
+  collapsed: boolean
+  toggleCollapsed: () => void
+  colours: ColourOverrides
+  setColour: (section: SidebarSection, hex: string) => void
+  resetColour: (section: SidebarSection) => void
+}
+
+export function useSidebarPrefs(): SidebarPrefs {
+  const [collapsed, setCollapsedState] = useState(() =>
+    initialCollapsed(readStored(), window.innerWidth),
+  )
+
+  const setCollapsed = useCallback((next: boolean) => {
+    setCollapsedState(next)
+    writeStored(next)
+  }, [])
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(!collapsed)
+  }, [collapsed, setCollapsed])
+
+  // Only crossing the breakpoint acts — and it is stored exactly like a toggle.
+  useEffect(() => {
+    let prev = window.innerWidth
+    const onResize = () => {
+      const next = window.innerWidth
+      const change = collapseOnResize(prev, next)
+      prev = next
+      if (change !== null) setCollapsed(change)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [setCollapsed])
+
+  // ⌘\ on macOS, Ctrl+\ elsewhere. Re-subscribes on each toggle; that is fine.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '\\' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      e.preventDefault()
+      toggleCollapsed()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggleCollapsed])
+
+  // Colours: defaults until the stored overrides arrive.
+  const [colours, setColours] = useState<ColourOverrides>({})
+
+  useEffect(() => {
+    let cancelled = false
+    tauriApi
+      .getSetting(COLOURS_KEY)
+      .then((raw) => {
+        // A colour picked before the stored ones arrived wins over them.
+        if (!cancelled) setColours((prev) => ({ ...parseColours(raw), ...prev }))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Saved only after the user changed something — never the initial load —
+  // and debounced, because the system colour picker reports every step of a
+  // drag. The ref is written in event handlers only, never during render.
+  const changedByUser = useRef(false)
+  useEffect(() => {
+    if (!changedByUser.current) return
+    const timer = setTimeout(() => {
+      tauriApi.setSetting(COLOURS_KEY, JSON.stringify(colours)).catch(() => {})
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [colours])
+
+  const setColour = useCallback((section: SidebarSection, hex: string) => {
+    changedByUser.current = true
+    setColours((prev) => ({ ...prev, [section]: hex.toLowerCase() }))
+  }, [])
+
+  const resetColour = useCallback((section: SidebarSection) => {
+    changedByUser.current = true
+    setColours((prev) => {
+      const next = { ...prev }
+      delete next[section]
+      return next
+    })
+  }, [])
+
+  return { collapsed, toggleCollapsed, colours, setColour, resetColour }
+}
