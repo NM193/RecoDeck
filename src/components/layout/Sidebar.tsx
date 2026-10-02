@@ -21,7 +21,13 @@ const DEFAULT_WIDTH = 240
 
 /** The width the user dragged the full sidebar to, or the default. */
 function readStoredWidth(): number {
-  const width = parseInt(localStorage.getItem(STORAGE_KEY) ?? '', 10)
+  let stored: string | null = null
+  try {
+    stored = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    // Storage can be unavailable; the default width will do.
+  }
+  const width = parseInt(stored ?? '', 10)
   return !isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH
     ? width
     : DEFAULT_WIDTH

@@ -67,7 +67,8 @@ export function useSidebarPrefs(): SidebarPrefs {
   // ⌘\ on macOS, Ctrl+\ elsewhere. Re-subscribes on each toggle; that is fine.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '\\' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      // Held down, the key repeats; one press is one toggle.
+      if (e.repeat || e.key !== '\\' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
       e.preventDefault()
       toggleCollapsed()
     }
@@ -77,14 +78,19 @@ export function useSidebarPrefs(): SidebarPrefs {
 
   // Colours: defaults until the stored overrides arrive.
   const [colours, setColours] = useState<ColourOverrides>({})
+  // Nothing is saved until the stored overrides have been read: saving earlier,
+  // or after a failed read, would overwrite the ones never seen.
+  const loaded = useRef(false)
 
   useEffect(() => {
     let cancelled = false
     tauriApi
       .getSetting(COLOURS_KEY)
       .then((raw) => {
+        if (cancelled) return
+        loaded.current = true
         // A colour picked before the stored ones arrived wins over them.
-        if (!cancelled) setColours((prev) => ({ ...parseColours(raw), ...prev }))
+        setColours((prev) => ({ ...parseColours(raw), ...prev }))
       })
       .catch(() => {})
     return () => {
@@ -97,7 +103,7 @@ export function useSidebarPrefs(): SidebarPrefs {
   // drag. The ref is written in event handlers only, never during render.
   const changedByUser = useRef(false)
   useEffect(() => {
-    if (!changedByUser.current) return
+    if (!changedByUser.current || !loaded.current) return
     const timer = setTimeout(() => {
       tauriApi.setSetting(COLOURS_KEY, JSON.stringify(colours)).catch(() => {})
     }, 300)
