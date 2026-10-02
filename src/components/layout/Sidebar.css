@@ -315,3 +315,102 @@
   overflow-y: auto;
   min-height: 0;
 }
+
+/* ===== Icon rail (collapsed) ===== */
+
+.sidebar--rail {
+  align-items: center;
+}
+
+.sidebar-rail__top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 10px;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* There is no small logo asset; the wordmark is text. */
+.sidebar-rail__wordmark {
+  font-weight: 900;
+  font-size: 11px;
+  line-height: 0.92;
+  letter-spacing: -0.4px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.sidebar-rail__nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.sidebar-rail__item {
+  position: relative;
+  width: 40px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-rail__item:hover,
+.sidebar-rail__item--active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sidebar-rail__divider {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+.sidebar-rail__avatar {
+  margin: 10px 0 12px;
+}
+
+/* In the rail the toast would be 60px wide; float it beside the rail instead. */
+.sidebar-toast--rail {
+  position: fixed;
+  left: calc(var(--sidebar-width) + 12px);
+  right: auto;
+  bottom: 96px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+/* ===== Tooltip (rail) — fixed, so the sidebar's overflow cannot clip it ===== */
+
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 260;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: var(--text-xs, 11px);
+  white-space: nowrap;
+  pointer-events: none;
+}

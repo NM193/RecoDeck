@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Icon, type IconName } from '../Icon'
 import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
+import { SidebarRail } from './SidebarRail'
 import {
   COLLAPSED_WIDTH,
   type ActiveView,
@@ -292,6 +293,77 @@ export function Sidebar({
       : []),
   ]
 
+  const treeProps = {
+    libraryFolders,
+    playlists,
+    selectedFolder,
+    selectedPlaylistId,
+    totalTrackCount,
+    onFolderSelect,
+    onPlaylistSelect,
+    onAnalyzeFolder,
+    onAnalyzeAll,
+    onCreatePlaylist,
+    onCreateFolder,
+    onRenamePlaylist,
+    onDeletePlaylist,
+    onSharePlaylist,
+    onExportPlaylist,
+    onCreateSubfolder,
+    onRenameFolder,
+    onDeleteFolder,
+  }
+
+  const toastEl = (
+    <AnimatePresence>
+      {toastMessage && (
+        <motion.div
+          className={`sidebar-toast ${collapsed ? 'sidebar-toast--rail' : ''}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.2 }}
+        >
+          {toastMessage}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+
+  if (collapsed) {
+    return (
+      <>
+        <SidebarRail
+          navItems={navItems}
+          activeSection={activeSection}
+          iconStyle={iconStyle}
+          onColourMenu={() => () => {}}
+          onToggleCollapsed={onToggleCollapsed}
+          onOpenSettings={onOpenSettings}
+          settingsActive={activeView === 'settings'}
+          renderSection={(section, close) => (
+            // Navigating closes the flyout; expanding a playlist folder does
+            // not, because FolderTree handles that without calling these.
+            <FolderTree
+              ref={section === 'folders' ? folderTreeRef : undefined}
+              {...treeProps}
+              section={section}
+              onFolderSelect={(path) => {
+                onFolderSelect(path)
+                close()
+              }}
+              onPlaylistSelect={(id) => {
+                onPlaylistSelect(id)
+                close()
+              }}
+            />
+          )}
+        />
+        {toastEl}
+      </>
+    )
+  }
+
   return (
     <div className="sidebar">
       {/* Top area — logo + avatar settings */}
@@ -350,28 +422,7 @@ export function Sidebar({
           onToggle={() => setFoldersExpanded((v) => !v)}
           iconStyle={iconStyle('folders')}
         >
-          <FolderTree
-            ref={folderTreeRef}
-            libraryFolders={libraryFolders}
-            playlists={playlists}
-            selectedFolder={selectedFolder}
-            selectedPlaylistId={selectedPlaylistId}
-            totalTrackCount={totalTrackCount}
-            onFolderSelect={onFolderSelect}
-            onPlaylistSelect={onPlaylistSelect}
-            onAnalyzeFolder={onAnalyzeFolder}
-            onAnalyzeAll={onAnalyzeAll}
-            onCreatePlaylist={onCreatePlaylist}
-            onCreateFolder={onCreateFolder}
-            onRenamePlaylist={onRenamePlaylist}
-            onDeletePlaylist={onDeletePlaylist}
-            onSharePlaylist={onSharePlaylist}
-            onExportPlaylist={onExportPlaylist}
-            onCreateSubfolder={onCreateSubfolder}
-            onRenameFolder={onRenameFolder}
-            onDeleteFolder={onDeleteFolder}
-            section="folders"
-          />
+          <FolderTree ref={folderTreeRef} {...treeProps} section="folders" />
         </Section>
 
         {/* Divider */}
@@ -389,27 +440,7 @@ export function Sidebar({
             setCtxMenu({ x: e.clientX, y: e.clientY })
           }}
         >
-          <FolderTree
-            libraryFolders={libraryFolders}
-            playlists={playlists}
-            selectedFolder={selectedFolder}
-            selectedPlaylistId={selectedPlaylistId}
-            totalTrackCount={totalTrackCount}
-            onFolderSelect={onFolderSelect}
-            onPlaylistSelect={onPlaylistSelect}
-            onAnalyzeFolder={onAnalyzeFolder}
-            onAnalyzeAll={onAnalyzeAll}
-            onCreatePlaylist={onCreatePlaylist}
-            onCreateFolder={onCreateFolder}
-            onRenamePlaylist={onRenamePlaylist}
-            onDeletePlaylist={onDeletePlaylist}
-            onSharePlaylist={onSharePlaylist}
-            onExportPlaylist={onExportPlaylist}
-            onCreateSubfolder={onCreateSubfolder}
-            onRenameFolder={onRenameFolder}
-            onDeleteFolder={onDeleteFolder}
-            section="playlists"
-          />
+          <FolderTree {...treeProps} section="playlists" />
         </Section>
       </div>
 
@@ -445,20 +476,7 @@ export function Sidebar({
         </div>
       )}
 
-      {/* Toast notification */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            className="sidebar-toast"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.2 }}
-          >
-            {toastMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toastEl}
 
       {/* Drag resize handle */}
       <div
