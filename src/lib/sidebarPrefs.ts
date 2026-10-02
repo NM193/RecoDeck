@@ -34,3 +34,93 @@ export function collapseOnResize(prevWidth: number, nextWidth: number): boolean 
   const isNarrow = nextWidth < COLLAPSE_BELOW
   return wasNarrow === isNarrow ? null : isNarrow
 }
+
+/** settings-table key holding the colour overrides, as JSON: section → hex. */
+export const COLOURS_KEY = 'sidebar_colours'
+
+export type SidebarSection =
+  | 'home'
+  | 'sets'
+  | 'all-tracks'
+  | 'search'
+  | 'ai-chat'
+  | 'folders'
+  | 'playlists'
+  | 'spotify'
+
+/** The views App.tsx can be showing. */
+export type ActiveView =
+  | 'home'
+  | 'all-tracks'
+  | 'folder'
+  | 'playlist'
+  | 'settings'
+  | 'search'
+  | 'ai-chat'
+  | 'sets'
+
+export type ColourOverrides = Partial<Record<SidebarSection, string>>
+
+export const DEFAULT_COLOURS: Record<SidebarSection, string> = {
+  home: '#60a5fa',
+  sets: '#fb923c',
+  'all-tracks': '#818cf8',
+  search: '#2dd4bf',
+  'ai-chat': '#818cf8',
+  folders: '#a78bfa',
+  playlists: '#f472b6',
+  spotify: '#1ed760',
+}
+
+/** The right-click menu's swatches: every default, plus yellow. */
+export const PALETTE = [
+  '#60a5fa',
+  '#fb923c',
+  '#818cf8',
+  '#2dd4bf',
+  '#a78bfa',
+  '#f472b6',
+  '#1ed760',
+  '#facc15',
+] as const
+
+const HEX = /^#[0-9a-f]{6}$/i
+
+/** Stored overrides. Unknown sections and invalid colours are dropped, never thrown. */
+export function parseColours(raw: string | null): ColourOverrides {
+  if (!raw) return {}
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return {}
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+
+  const overrides: ColourOverrides = {}
+  for (const [key, value] of Object.entries(data)) {
+    const known = Object.prototype.hasOwnProperty.call(DEFAULT_COLOURS, key)
+    if (known && typeof value === 'string' && HEX.test(value)) {
+      overrides[key as SidebarSection] = value.toLowerCase()
+    }
+  }
+  return overrides
+}
+
+export function colourFor(section: SidebarSection, overrides: ColourOverrides): string {
+  return overrides[section] ?? DEFAULT_COLOURS[section]
+}
+
+/** The section whose icon is lit while a view is showing. Settings lights nothing. */
+export function sectionForView(view: ActiveView): SidebarSection | null {
+  switch (view) {
+    case 'folder':
+      return 'folders'
+    case 'playlist':
+      return 'playlists'
+    case 'settings':
+      return null
+    default:
+      return view
+  }
+}

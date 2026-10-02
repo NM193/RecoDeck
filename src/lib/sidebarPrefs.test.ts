@@ -1,6 +1,15 @@
 // src/lib/sidebarPrefs.test.ts
 import { describe, expect, it } from 'vitest'
-import { COLLAPSE_BELOW, collapseOnResize, initialCollapsed } from './sidebarPrefs'
+import {
+  COLLAPSE_BELOW,
+  DEFAULT_COLOURS,
+  PALETTE,
+  colourFor,
+  collapseOnResize,
+  initialCollapsed,
+  parseColours,
+  sectionForView,
+} from './sidebarPrefs'
 
 describe('collapsing the sidebar', () => {
   describe('at start-up', () => {
@@ -41,5 +50,50 @@ describe('collapsing the sidebar', () => {
       expect(collapseOnResize(1400, 1200)).toBeNull()
       expect(collapseOnResize(900, 1000)).toBeNull()
     })
+  })
+})
+
+describe('section colours', () => {
+  it('offers eight swatches that include every default', () => {
+    expect(PALETTE).toHaveLength(8)
+    for (const hex of new Set(Object.values(DEFAULT_COLOURS))) {
+      expect(PALETTE).toContain(hex)
+    }
+  })
+
+  it('reads stored overrides', () => {
+    expect(parseColours('{"sets":"#FACC15"}')).toEqual({ sets: '#facc15' })
+  })
+
+  it('ignores unknown sections and invalid colours', () => {
+    expect(
+      parseColours(
+        '{"sets":"orange","nope":"#ffffff","home":"#12345","search":"#2dd4bf","toString":"#ffffff"}',
+      ),
+    ).toEqual({ search: '#2dd4bf' })
+  })
+
+  it('treats nothing, garbage and non-objects as no overrides', () => {
+    expect(parseColours(null)).toEqual({})
+    expect(parseColours('not json')).toEqual({})
+    expect(parseColours('["#ffffff"]')).toEqual({})
+    expect(parseColours('null')).toEqual({})
+  })
+
+  it('falls back to the default when a section has no override', () => {
+    expect(colourFor('sets', {})).toBe(DEFAULT_COLOURS.sets)
+    expect(colourFor('sets', { sets: '#facc15' })).toBe('#facc15')
+  })
+
+  it('lights the section the active view belongs to', () => {
+    expect(sectionForView('home')).toBe('home')
+    expect(sectionForView('all-tracks')).toBe('all-tracks')
+    expect(sectionForView('folder')).toBe('folders')
+    expect(sectionForView('playlist')).toBe('playlists')
+    expect(sectionForView('sets')).toBe('sets')
+  })
+
+  it('lights nothing for Settings', () => {
+    expect(sectionForView('settings')).toBeNull()
   })
 })
