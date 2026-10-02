@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spotify Section Mockup</title>
+<style>body{margin:0;padding:24px 32px;background:#1d1d1f;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}h2{margin:0 0 6px}.subtitle,.note{color:#86868b}code{font-family:ui-monospace,monospace}</style></head><body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+    <symbol id="i-radio" viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/><path d="M6 12c0-1.7.7-3.2 1.8-4.2"/><path d="M18 12c0 1.7-.7 3.2-1.8 4.2"/></symbol>
+    <symbol id="i-listmusic" viewBox="0 0 24 24"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
+    <symbol id="i-spotify" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 9.5c3.5-1 7.5-.7 10.5 1"/><path d="M7.5 12.7c3-.8 6.2-.5 8.7.9"/><path d="M8 15.7c2.3-.6 4.7-.4 6.6.6"/></symbol>
+    <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/><path d="M2 18h1.97a4 4 0 0 0 3.3-1.7l5.45-8.6a4 4 0 0 1 3.3-1.7H22"/><path d="M2 6h1.97a4 4 0 0 1 3.3 1.7l5.45 8.6a4 4 0 0 0 3.3 1.7H22"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></symbol>
+  </defs>
+</svg>
+
+<style>
+  .rd { --bg:#121212; --bg2:#181818; --bg3:#282828; --el:#2a2a2a; --surface:#1e1e1e; --t1:#fff; --t2:#b3b3b3; --tm:#6a6a6a; --acc:#6366f1; --acch:#818cf8; --ok:#1ed760; --warn:#f6ad55; --bd:#333; --bds:#2a2a2a;
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Inter',sans-serif; background:var(--bg); color:var(--t1); border-radius:12px; overflow:hidden; border:1px solid #000; box-shadow:0 20px 50px rgba(0,0,0,.35); font-size:13px; -webkit-font-smoothing:antialiased; }
+  .rd * { box-sizing:border-box; }
+  .rd svg.ic { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+  .rd-title { height:30px; display:flex; align-items:center; gap:8px; padding:0 12px; background:#1a1a1a; border-bottom:1px solid #000; }
+  .rd-dot { width:12px; height:12px; border-radius:50%; background:#3a3a3a; }
+  .rd-title span { color:#6a6a6a; font-weight:600; margin-left:10px; }
+  .rd-shell { display:grid; grid-template-columns:240px 1fr; height:620px; }
+  /* sidebar */
+  .sb { background:var(--bg); border-right:1px solid var(--bds); display:flex; flex-direction:column; min-height:0; }
+  .sb-top { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--bds); }
+  .sb-logo { font-weight:900; font-size:17px; line-height:.92; letter-spacing:-.6px; }
+  .sb-avatar { width:32px; height:32px; border-radius:50%; background:var(--el); display:grid; place-items:center; color:var(--t2); }
+  .sb-scroll { flex:1; overflow:hidden; padding:8px 8px 0; position:relative; }
+  .sb-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:6px; color:var(--t2); font-size:12px; }
+  .sb-item.on { background:var(--el); color:var(--t1); }
+  .sb-item .n { margin-left:auto; color:var(--tm); font-size:11px; font-variant-numeric:tabular-nums; }
+  .sb-sec { display:flex; align-items:center; gap:6px; padding:8px 6px; color:var(--t2); font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; margin-top:2px; }
+  .sb-sec.open { color:var(--t1); }
+  .sb-sec svg.ic { width:14px; height:14px; }
+  .sb-new { margin-left:auto; color:var(--acch); font-size:11px; font-weight:600; letter-spacing:0; text-transform:none; }
+  .sb-sub { padding-left:14px; }
+  .sb-sub .sb-item { padding:6px 10px; }
+  .sb-sub .sb-item svg.ic { width:14px; height:14px; }
+  .sb-div { height:1px; background:var(--bds); margin:4px 6px; }
+  .sb-fade { position:absolute; left:0; right:0; bottom:0; height:40px; background:linear-gradient(transparent,var(--bg)); }
+  /* main */
+  .mn { display:flex; flex-direction:column; min-width:0; min-height:0; }
+  .hd { padding:22px 24px 14px; display:flex; align-items:flex-end; gap:16px; }
+  .hd-cover { width:84px; height:84px; border-radius:6px; background:linear-gradient(135deg,#4f46e5,#9333ea); display:grid; place-items:center; flex-shrink:0; box-shadow:0 6px 20px rgba(0,0,0,.4); }
+  .hd-cover svg.ic { width:36px; height:36px; color:#fff; stroke-width:1.75; }
+  .hd-kicker { font-size:11px; color:var(--t2); text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+  .hd-h1 { font-size:28px; font-weight:800; margin:2px 0 6px; letter-spacing:-.4px; }
+  .hd-meta { color:var(--t2); font-size:12px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .hd-meta b { color:var(--t1); font-weight:600; }
+  .hd-meta .ok { color:var(--ok); } .hd-meta .warn { color:var(--warn); }
+  .hd-refresh { display:inline-flex; align-items:center; gap:4px; color:var(--tm); margin-left:6px; }
+  .hd-refresh svg.ic { width:12px; height:12px; }
+  .tb { display:flex; align-items:center; gap:8px; padding:0 24px 12px; }
+  .srch { flex:1; max-width:320px; height:32px; display:flex; align-items:center; gap:8px; padding:0 10px; background:var(--surface); border:1px solid var(--bd); border-radius:6px; color:var(--tm); font-size:13px; }
+  .chip { height:28px; display:inline-flex; align-items:center; gap:6px; padding:0 12px; border-radius:14px; background:var(--bg3); color:var(--t1); font-size:12px; font-weight:500; white-space:nowrap; }
+  .chip.on { background:#fff; color:#121212; font-weight:600; }
+  .chip small { color:inherit; opacity:.6; font-size:11px; }
+  .tb-sp { flex:1; }
+  .btn { height:32px; display:inline-flex; align-items:center; gap:6px; padding:0 12px; border-radius:6px; font-size:12px; font-weight:600; white-space:nowrap; border:1px solid var(--bd); background:var(--surface); color:var(--t1); }
+  .btn svg.ic { width:14px; height:14px; }
+  /* table */
+  .tbl { flex:1; min-height:0; overflow:hidden; border-top:1px solid var(--bds); }
+  .tr { display:grid; grid-template-columns:44px minmax(0,1.7fr) minmax(0,1.3fr) 72px 220px; align-items:center; height:32px; padding:0 16px 0 8px; font-size:13px; }
+  .th { height:36px; font-size:12px; color:var(--tm); text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--bds); position:sticky; top:0; background:var(--bg); }
+  .tr .num { color:var(--tm); text-align:right; padding-right:14px; font-variant-numeric:tabular-nums; font-size:12px; }
+  .tr .ti { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--t1); padding-right:12px; }
+  .tr .ti .nd { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--acch); margin-right:7px; vertical-align:2px; }
+  .tr .ar, .tr .ls { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--t2); padding-right:12px; }
+  .tr .ls { color:var(--tm); font-size:12px; }
+  .tr .dt { color:var(--tm); font-size:12px; font-variant-numeric:tabular-nums; }
+  .tr.data:hover, .tr.hov { background:var(--bg3); }
+  .st { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+  .st-have { display:inline-flex; align-items:center; gap:4px; color:var(--ok); font-size:12px; font-weight:600; }
+  .st-have svg.ic { width:14px; height:14px; stroke-width:2.2; }
+  .st-miss { color:var(--tm); font-size:12px; margin-right:auto; }
+  .st-maybe { color:var(--warn); font-size:12px; font-weight:600; margin-right:auto; }
+  .mini { height:24px; display:inline-flex; align-items:center; gap:5px; padding:0 9px; border-radius:5px; font-size:11px; font-weight:600; border:1px solid var(--bd); background:var(--surface); color:var(--t1); }
+  .mini.pri { background:var(--acc); border-color:var(--acc); }
+  .mini svg.ic { width:12px; height:12px; }
+  .mini.icon { padding:0 6px; color:var(--t2); }
+  .mini.sp { color:#1ed760; }
+  .hint { grid-column:2 / -1; display:flex; align-items:center; gap:8px; height:30px; color:var(--t2); font-size:12px; }
+  .hint code { font-family:'SF Mono',ui-monospace,monospace; font-size:11px; color:var(--t1); background:var(--surface); border:1px solid var(--bd); border-radius:4px; padding:2px 6px; }
+  .tr.sub { height:34px; background:rgba(246,173,85,.06); }
+  .ft { height:28px; border-top:1px solid var(--bds); display:flex; align-items:center; padding:0 16px; color:var(--tm); font-size:12px; }
+  /* player */
+  .pl { height:64px; border-top:1px solid var(--bds); background:var(--bg2); display:grid; grid-template-columns:240px 1fr 240px; align-items:center; padding:0 14px; }
+  .pl-art { width:44px; height:44px; background:var(--bg3); border-radius:4px; }
+  .pl-c { display:flex; align-items:center; justify-content:center; gap:18px; color:var(--t2); }
+  .pl-play { width:32px; height:32px; border-radius:50%; background:#fff; color:#121212; display:grid; place-items:center; }
+  .pl-play svg.ic { width:14px; height:14px; fill:#121212; }
+  .side-by-side { display:grid; grid-template-columns:1fr 240px; gap:20px; align-items:start; }
+  .note { font-size:13px; color:var(--text-secondary,#86868b); margin-top:8px; line-height:1.5; }
+</style>
+
+<h2>Spotify: playlists in the main sidebar, in the app's own style</h2>
+<p class="subtitle">Left: the full RecoDeck window, Spotify → Liked Songs open and filtered to "Missing". Right: the same sidebar with FOLDERS open — it scrolls, and Spotify stays below.</p>
+
+<div class="side-by-side">
+<div class="rd">
+  <div class="rd-title"><div class="rd-dot"></div><div class="rd-dot"></div><div class="rd-dot"></div><span>recodeck</span></div>
+  <div class="rd-shell">
+    <aside class="sb">
+      <div class="sb-top"><div class="sb-logo">RECO<br>DECK</div><div class="sb-avatar"><svg class="ic"><use href="#i-user"/></svg></div></div>
+      <div class="sb-scroll">
+        <div class="sb-item"><svg class="ic"><use href="#i-home"/></svg>Home</div>
+        <div class="sb-item"><svg class="ic"><use href="#i-radio"/></svg>Sets</div>
+        <div class="sb-item"><svg class="ic"><use href="#i-music"/></svg>All Tracks<span class="n">(8530)</span></div>
+        <div class="sb-item"><svg class="ic"><use href="#i-search"/></svg>Search</div>
+        <div class="sb-sec"><svg class="ic"><use href="#i-right"/></svg><svg class="ic"><use href="#i-disc"/></svg>Folders</div>
+        <div class="sb-div"></div>
+        <div class="sb-sec"><svg class="ic"><use href="#i-right"/></svg><svg class="ic"><use href="#i-listmusic"/></svg>Playlists</div>
+        <div class="sb-div"></div>
+        <div class="sb-sec open"><svg class="ic"><use href="#i-down"/></svg><svg class="ic" style="color:#1ed760"><use href="#i-spotify"/></svg>Spotify<span class="sb-new">7</span></div>
+        <div class="sb-sub">
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>All playlists<span class="n">(1021)</span></div>
+          <div class="sb-item on"><svg class="ic"><use href="#i-heart"/></svg>Liked Songs<span class="n">(731)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>Tech House<span class="n">(281)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>Blue Marlin Ibiza<span class="n">(121)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>Organic House 2<span class="n">(111)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>Deep House<span class="n">(56)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>House<span class="n">(43)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>All Time Hits<span class="n">(31)</span></div>
+          <div class="sb-item"><svg class="ic"><use href="#i-listmusic"/></svg>Minimal Deep Tech<span class="n">(28)</span></div>
+        </div>
+        <div class="sb-fade"></div>
+      </div>
+    </aside>
+
+    <main class="mn">
+      <div class="hd">
+        <div class="hd-cover"><svg class="ic"><use href="#i-heart"/></svg></div>
+        <div>
+          <div class="hd-kicker">Spotify playlist</div>
+          <div class="hd-h1">Liked Songs</div>
+          <div class="hd-meta"><b>731 tracks</b> · <span class="ok">452 owned</span> · 263 missing · <span class="warn">16 maybe</span><span class="hd-refresh"><svg class="ic"><use href="#i-refresh"/></svg>synced 2 min ago</span></div>
+        </div>
+      </div>
+      <div class="tb">
+        <div class="srch"><svg class="ic"><use href="#i-search"/></svg>Search Liked Songs…</div>
+        <span class="chip">All <small>731</small></span>
+        <span class="chip on">Missing <small>263</small></span>
+        <span class="chip">Maybe <small>16</small></span>
+        <span class="chip">Owned <small>452</small></span>
+      </div>
+      <div class="tbl">
+        <div class="tr th"><span class="num">#</span><span>Title</span><span>Artist</span><span>Added</span><span style="text-align:right">Status</span></div>
+        <div class="tr data"><span class="num">1</span><span class="ti"><i class="nd"></i>300 Cash</span><span class="ar">Moreno &amp; Prieto, Sortech</span><span class="dt">today</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon" title="Search on SelectedRecs"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+        <div class="tr data hov"><span class="num">2</span><span class="ti"><i class="nd"></i>Reverse Things</span><span class="ar">Makèz, Toman</span><span class="dt">today</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini" style="color:#1ed760;border-color:#1ed760"><svg class="ic"><use href="#i-check"/></svg>Copied</span></span></div>
+        <div class="tr data"><span class="num">3</span><span class="ti"><i class="nd"></i>Control</span><span class="ar">Joseph Capriati, GENNARO</span><span class="dt">yesterday</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+        <div class="tr data"><span class="num">4</span><span class="ti">I Need A Rush (feat. Sheree Hicks) – Extended Mix</span><span class="ar">Discoplex, Izaac Moses, Sheree Hicks</span><span class="dt">Sep 28</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+        <div class="tr data"><span class="num">5</span><span class="ti">Come Get Up</span><span class="ar">Butch, Santos</span><span class="dt">Sep 27</span><span class="st"><span class="st-maybe">Maybe</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini">Yes</span><span class="mini">No</span></span></div>
+        <div class="tr sub"><span></span><span class="hint">In library: <code>Butch &amp; Santos - Come Get Up (Extended Mix).mp3</code><span style="color:#6a6a6a">· same title, artist partly matches</span></span></div>
+        <div class="tr data"><span class="num">6</span><span class="ti">Tell You</span><span class="ar">Prunk, Retrouve</span><span class="dt">Sep 25</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+        <div class="tr data"><span class="num">7</span><span class="ti">Little Girl – Original Mix</span><span class="ar">Clive, Deepower</span><span class="dt">Sep 22</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+        <div class="tr data"><span class="num">8</span><span class="ti">Watch Wut You Say (feat. Amalia Leandro) – Dub</span><span class="ar">Demuir, Amalia Leandro</span><span class="dt">Sep 20</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+        <div class="tr data"><span class="num">9</span><span class="ti">African Soul</span><span class="ar">Deeft</span><span class="dt">Sep 18</span><span class="st"><span class="st-miss">Missing</span><span class="mini icon sp" title="Play on Spotify"><svg class="ic"><use href="#i-spotify"/></svg></span><span class="mini icon"><svg class="ic"><use href="#i-ext"/></svg></span><span class="mini pri"><svg class="ic"><use href="#i-copy"/></svg>Copy</span></span></div>
+      </div>
+      <div class="ft">263 of 731 · sorted by date added, newest first</div>
+    </main>
+  </div>
+  <div class="pl">
+    <div style="display:flex;gap:10px;align-items:center"><div class="pl-art"></div><div><div style="font-size:13px">No track loaded</div><div style="font-size:12px;color:#6a6a6a">Double-click a track…</div></div></div>
+    <div class="pl-c"><svg class="ic"><use href="#i-shuffle"/></svg><svg class="ic"><use href="#i-prev"/></svg><span class="pl-play"><svg class="ic"><use href="#i-play"/></svg></span><svg class="ic"><use href="#i-next"/></svg><svg class="ic"><use href="#i-refresh"/></svg></div>
+    <div></div>
+  </div>
+</div>
+
+<div>
+  <div class="rd">
+    <aside class="sb" style="height:560px">
+      <div class="sb-top"><div class="sb-logo">RECO<br>DECK</div><div class="sb-avatar"><svg class="ic"><use href="#i-user"/></svg></div></div>
+      <div class="sb-scroll">
+        <div class="sb-item"><svg class="ic"><use href="#i-home"/></svg>Home</div>
+        <div class="sb-item"><svg class="ic"><use href="#i-radio"/></svg>Sets</div>
+        <div class="sb-item"><svg class="ic"><use href="#i-music"/></svg>All Tracks<span class="n">(8530)</span></div>
+        <div class="sb-item"><svg class="ic"><use href="#i-search"/></svg>Search</div>
+        <div class="sb-sec open"><svg class="ic"><use href="#i-down"/></svg><svg class="ic"><use href="#i-disc"/></svg>Folders</div>
+        <div class="sb-sub">
+          <div class="sb-item"><svg class="ic"><use href="#i-right"/></svg>Music<span class="n">(8530)</span></div>
+          <div class="sb-item" style="padding-left:30px">Afro House<span class="n">(212)</span></div>
+          <div class="sb-item" style="padding-left:30px">Deep Tech<span class="n">(1140)</span></div>
+          <div class="sb-item" style="padding-left:30px">Tech House<span class="n">(2310)</span></div>
+        </div>
+        <div class="sb-div"></div>
+        <div class="sb-sec"><svg class="ic"><use href="#i-right"/></svg><svg class="ic"><use href="#i-listmusic"/></svg>Playlists</div>
+        <div class="sb-div"></div>
+        <div class="sb-sec"><svg class="ic"><use href="#i-right"/></svg><svg class="ic" style="color:#1ed760"><use href="#i-spotify"/></svg>Spotify<span class="sb-new">7</span></div>
+        <div class="sb-fade"></div>
+      </div>
+    </aside>
+  </div>
+  <p class="note">With SPOTIFY collapsed, the new-likes count still shows in the sidebar — you know something is waiting without opening anything.</p>
+</div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <h3>What each part does</h3>
+  <p class="note">
+    <b>Indigo dot</b> next to a title: new since you last opened this list. It clears once you have seen the list.<br>
+    <b>Copy</b> copies <code>Moreno &amp; Prieto, Sortech - 300 Cash</code> and flips to "Copied" for a second.<br>
+    <b>Spotify icon</b> plays the track on Spotify — right away with Premium and Spotify open somewhere, otherwise it opens the track in the Spotify app.<br>
+    <b>↗</b> opens the track's search on SelectedRecs.<br>
+    <b>Maybe</b>: the name match is not certain. The row below says which file it thinks it is; "Yes" / "No" is remembered.<br>
+    <b>All playlists</b> adds a "Playlist" column, so you can see where each track came from.<br>
+    Double-clicking a track you <b>own</b> plays it from the library, like everywhere else in the app.
+  </p>
+</div>
+
+</body></html>
