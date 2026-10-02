@@ -34,6 +34,8 @@ import { RecommendationsPanel } from './components/ai/RecommendationsPanel'
 import { MixPrepPanel } from './components/ai/MixPrepPanel'
 import { AppShell } from './components/layout/AppShell'
 import { Sidebar } from './components/layout/Sidebar'
+import { useSidebarPrefs } from './components/layout/useSidebarPrefs'
+import type { ActiveView } from './lib/sidebarPrefs'
 import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
@@ -117,6 +119,7 @@ function AppContent() {
 
   // Ref into FolderTree to refresh a root after folder mutations
   const folderTreeRef = useRef<FolderTreeRef>(null)
+  const sidebarPrefs = useSidebarPrefs()
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
@@ -1229,15 +1232,7 @@ function AppContent() {
               ? 'all-tracks'
               : 'home'
 
-  const activeView:
-    | 'home'
-    | 'all-tracks'
-    | 'folder'
-    | 'playlist'
-    | 'settings'
-    | 'search'
-    | 'ai-chat'
-    | 'sets' = showSettings
+  const activeView: ActiveView = showSettings
     ? 'settings'
     : showSets
       ? 'sets'
@@ -1261,6 +1256,11 @@ function AppContent() {
       selectedPlaylistId={selectedPlaylistId}
       totalTrackCount={totalTrackCount}
       activeView={activeView}
+      collapsed={sidebarPrefs.collapsed}
+      onToggleCollapsed={sidebarPrefs.toggleCollapsed}
+      colours={sidebarPrefs.colours}
+      onSetColour={sidebarPrefs.setColour}
+      onResetColour={sidebarPrefs.resetColour}
       toastMessage={headerNotification}
       onToastDismiss={() => setHeaderNotification(null)}
       onFolderSelect={handleFolderSelect}

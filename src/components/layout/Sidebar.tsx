@@ -1,9 +1,15 @@
 // Sidebar — resizable, 2 collapsible sections: Folders, Playlists
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Icon, type IconName } from '../Icon'
 import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
+import {
+  COLLAPSED_WIDTH,
+  type ActiveView,
+  type ColourOverrides,
+  type SidebarSection,
+} from '../../lib/sidebarPrefs'
 import './Sidebar.css'
 
 // --- Constants ---
@@ -12,6 +18,14 @@ const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const STORAGE_KEY = 'sidebar_width'
 const DEFAULT_WIDTH = 240
+
+/** The width the user dragged the full sidebar to, or the default. */
+function readStoredWidth(): number {
+  const width = parseInt(localStorage.getItem(STORAGE_KEY) ?? '', 10)
+  return !isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH
+    ? width
+    : DEFAULT_WIDTH
+}
 
 // --- Section component ---
 
@@ -75,15 +89,12 @@ interface SidebarProps {
   selectedFolder: string | null
   selectedPlaylistId: number | null
   totalTrackCount?: number
-  activeView:
-    | 'home'
-    | 'all-tracks'
-    | 'folder'
-    | 'playlist'
-    | 'settings'
-    | 'search'
-    | 'ai-chat'
-    | 'sets'
+  activeView: ActiveView
+  collapsed: boolean
+  onToggleCollapsed: () => void
+  colours: ColourOverrides
+  onSetColour: (section: SidebarSection, hex: string) => void
+  onResetColour: (section: SidebarSection) => void
   toastMessage?: string | null
   onToastDismiss?: () => void
   onFolderSelect: (folderPath: string | null) => void
@@ -117,6 +128,7 @@ export function Sidebar({
   selectedPlaylistId,
   totalTrackCount,
   activeView,
+  collapsed,
   toastMessage,
   onToastDismiss,
   onFolderSelect,
@@ -169,24 +181,30 @@ export function Sidebar({
   const isDragging = useRef(false)
   const [dragging, setDragging] = useState(false)
 
-  // On mount: restore sidebar width from localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      const width = parseInt(stored, 10)
-      if (!isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH) {
-        document.documentElement.style.setProperty(
-          '--sidebar-width',
-          `${width}px`,
-        )
-      }
-    } else {
-      document.documentElement.style.setProperty(
-        '--sidebar-width',
-        `${DEFAULT_WIDTH}px`,
-      )
+  // Sidebar.tsx is the only writer of --sidebar-width: the dragged width when
+  // full, the rail when collapsed. Only a toggle animates — never a drag.
+  // A layout effect, so the first paint already has the right width.
+  const firstWidthRun = useRef(true)
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty(
+      '--sidebar-width',
+      `${collapsed ? COLLAPSED_WIDTH : readStoredWidth()}px`,
+    )
+    if (firstWidthRun.current) {
+      firstWidthRun.current = false
+      return
     }
-  }, [])
+    root.classList.add('sidebar-width-animating')
+    const timer = setTimeout(
+      () => root.classList.remove('sidebar-width-animating'),
+      200,
+    )
+    return () => {
+      clearTimeout(timer)
+      root.classList.remove('sidebar-width-animating')
+    }
+  }, [collapsed])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
