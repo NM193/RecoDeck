@@ -1,11 +1,19 @@
 // Sidebar — resizable, 2 collapsible sections: Folders, Playlists; collapses to an icon rail (SidebarRail.tsx); section icon colours are set by right-click
-import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Icon, type IconName } from '../Icon'
 import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import { SidebarRail } from './SidebarRail'
 import { SidebarColourMenu } from './SidebarColourMenu'
+import { useFolderTreeStore } from '../../store/folderTreeStore'
 import {
   COLLAPSED_WIDTH,
   SECTION_LABELS,
@@ -177,6 +185,21 @@ export function Sidebar({
   onNavigateSets,
   onNavigateAIChat,
 }: SidebarProps) {
+  // The folder tree's expansion and loaded children live in a store that
+  // outlives the trees (collapsing unmounts them; each flyout mounts a new
+  // one), so the refresh handle lives here, where it is always mounted —
+  // otherwise a refresh while no tree is showing would leave the cache stale.
+  useImperativeHandle(
+    folderTreeRef,
+    () => ({
+      refreshLibraryRoot: (affectedPath: string) =>
+        useFolderTreeStore
+          .getState()
+          .refreshRoot(libraryFolders, affectedPath),
+    }),
+    [libraryFolders],
+  )
+
   // Section expand states — all start expanded
   const [foldersExpanded, setFoldersExpanded] = useState(true)
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true)
@@ -422,7 +445,6 @@ export function Sidebar({
             // Navigating closes the flyout; expanding a playlist folder does
             // not, because FolderTree handles that without calling these.
             <FolderTree
-              ref={section === 'folders' ? folderTreeRef : undefined}
               {...treeProps}
               section={section}
               onFolderSelect={(path) => {
@@ -502,7 +524,7 @@ export function Sidebar({
           iconStyle={iconStyle('folders')}
           onContextMenu={openColourMenu('folders')}
         >
-          <FolderTree ref={folderTreeRef} {...treeProps} section="folders" />
+          <FolderTree {...treeProps} section="folders" />
         </Section>
 
         {/* Divider */}
