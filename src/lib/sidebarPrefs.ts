@@ -1,4 +1,3 @@
-// src/lib/sidebarPrefs.ts
 /**
  * The sidebar's two preferences — whether it is collapsed to icons, and which
  * colour each section's icon takes while it is active — and the rules for both.
@@ -7,7 +6,7 @@
  * storage, the window and the keyboard.
  */
 
-/** Below this window width the sidebar collapses; at it or above, it expands. */
+/** Below this window width the sidebar is forced collapsed; crossing back above it expands. */
 export const COLLAPSE_BELOW = 1100
 
 /** Width of the icons-only rail. */

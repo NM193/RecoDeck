@@ -1,4 +1,3 @@
-// src/lib/sidebarPrefs.test.ts
 import { describe, expect, it } from 'vitest'
 import {
   COLLAPSE_BELOW,
@@ -73,6 +72,10 @@ describe('section colours', () => {
     ).toEqual({ search: '#2dd4bf' })
   })
 
+  it('wants the six-digit form the colour input needs', () => {
+    expect(parseColours('{"sets":"#fff"}')).toEqual({})
+  })
+
   it('treats nothing, garbage and non-objects as no overrides', () => {
     expect(parseColours(null)).toEqual({})
     expect(parseColours('not json')).toEqual({})
@@ -91,6 +94,8 @@ describe('section colours', () => {
     expect(sectionForView('folder')).toBe('folders')
     expect(sectionForView('playlist')).toBe('playlists')
     expect(sectionForView('sets')).toBe('sets')
+    expect(sectionForView('search')).toBe('search')
+    expect(sectionForView('ai-chat')).toBe('ai-chat')
   })
 
   it('lights nothing for Settings', () => {
