@@ -20,6 +20,8 @@ import {
   ANY_CUE,
   ARTIST_TITLE,
   CHATTER,
+  cueLines,
+  HANDLE_PREFIX,
   ID_MARKER,
   ID_QUESTION,
   msToCue,
@@ -47,7 +49,7 @@ export function collectCueMentions(comments: SetComment[]): CueMention[] {
 
   for (const comment of comments) {
     const own: CueMention[] = []
-    for (const line of comment.text.split(/\r?\n/)) {
+    for (const line of cueLines(comment.text)) {
       CUE_THEN_TEXT.lastIndex = 0
       let match: RegExpExecArray | null
       while ((match = CUE_THEN_TEXT.exec(line))) {
@@ -73,9 +75,12 @@ export function collectCueMentions(comments: SetComment[]): CueMention[] {
     }
 
     // A reply with no timestamp inherits the one from the question it answers,
-    // provided it actually looks like a track name.
-    const body = comment.text.replace(/^@[\w.-]+\s*/, '').trim()
-    if (!parentCues.length || CHATTER.test(body) || !ARTIST_TITLE.test(body))
+    // provided it actually looks like a track name. Only from a question about
+    // one place, though: under "40:30 ID / 1:39:00 ID / 2:19:00 ID", or under a
+    // whole tracklist, nothing says which of them the reply is answering, and
+    // it used to be offered at every one.
+    const body = comment.text.replace(HANDLE_PREFIX, '').trim()
+    if (parentCues.length !== 1 || CHATTER.test(body) || !ARTIST_TITLE.test(body))
       continue
 
     for (const cueMs of parentCues) {
@@ -214,7 +219,7 @@ export function assembleFromComments(
   const loose: LooseName[] = []
   for (const comment of comments) {
     if (ANY_CUE.test(comment.text)) continue
-    const body = comment.text.replace(/^@[\w.-]+\s*/, '').trim()
+    const body = comment.text.replace(HANDLE_PREFIX, '').trim()
     if (CHATTER.test(body) || !ARTIST_TITLE.test(body) || body.length > 90)
       continue
     if (ID_QUESTION.test(body) || ID_MARKER.test(body)) continue
@@ -241,6 +246,17 @@ export function assembleFromComments(
   return { tracks, loose: loose.slice(0, 12) }
 }
 
+/**
+ * An "artist" this long is a sentence, not a credit. Measured on the reference
+ * sets: the longest real credit is ten words ("Mousse T & Hot 'N' Juicy feat.
+ * Inaya Day"), while sentences split at a dash run from fifteen up.
+ */
+const PROSE_ARTIST_WORDS = 12
+
+function wordCount(value: string): number {
+  return value.trim().split(/\s+/).filter(Boolean).length
+}
+
 /** Best guesses for one unknown slot, strongest first. */
 function suggestIds(
   track: Track,
@@ -261,13 +277,12 @@ function suggestIds(
     const parsed = splitArtistTitle(mention.text)
     if (parsed.isUnknown) continue
     if (!parsed.title || parsed.title.length < 4) continue
-    // "anyone know the id?" is the question, not the answer — unless it carries
-    // an "Artist - Title" shape, which means someone answered in the same line.
-    if (
-      !parsed.artist &&
-      (ID_QUESTION.test(mention.text) || ID_MARKER.test(mention.text))
-    )
-      continue
+    // An answer is written "Artist - Title". Without the artist, what follows a
+    // timestamp is whatever the commenter said about it — "the build up at
+    // 1:56:00 is amazing", "2:29:00 track?" — and was offered as the name.
+    if (!parsed.artist) continue
+    // A sentence that happens to contain a dash splits as if it were a credit.
+    if (wordCount(parsed.artist) >= PROSE_ARTIST_WORDS) continue
 
     const key = normalise(
       [parsed.artist, parsed.title].filter(Boolean).join(' '),
@@ -316,8 +331,6 @@ function suggestIds(
           ).toFixed(2),
         ),
       }))
-      // One lone comment with no likes is not an answer.
-      .filter((s) => s.score >= 1.8)
       .sort((a, b) => b.score - a.score)
       .slice(0, 2)
   )

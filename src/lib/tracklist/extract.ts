@@ -7,6 +7,7 @@ import type { ExtractedTrack } from './types'
 import {
   TRACK_LINE,
   UNKNOWN_TOKEN,
+  cueLines,
   normalise,
   parseCue,
   splitArtistTitle,
@@ -136,7 +137,7 @@ export function extractTracklist(
 ): ExtractResult {
   const tracks: ExtractedTrack[] = []
 
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of cueLines(text)) {
     const match = TRACK_LINE.exec(line)
     if (!match) continue
 

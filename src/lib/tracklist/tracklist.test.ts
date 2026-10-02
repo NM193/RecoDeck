@@ -68,6 +68,33 @@ const AFTER_THE_TOOL = new Set(['_wfwSaA5GeE'])
 
 const EXCLUDED = new Set([...DIVERGENT, ...AFTER_THE_TOOL])
 
+/**
+ * Suggestions the tool offers and we deliberately do not. The rest of these
+ * sets still has to match it exactly, the remaining suggestions included.
+ */
+const DROPPED_SUGGESTIONS: Record<string, string[]> = {
+  // A reply under ZacharySound's whole tracklist, which the tool offers at every
+  // gap in that list. See "does not place a reply under a comment that names
+  // several places".
+  ucfEH7g9JWI: ['\u200b@juliansen90Lee Burton - ICLife'],
+}
+
+function withoutDropped(golden: TracklistResult): TracklistResult {
+  const dropped = DROPPED_SUGGESTIONS[golden.video.id]
+  if (!dropped) return golden
+  return {
+    ...golden,
+    tracks: golden.tracks.map((t) =>
+      t.suggestions
+        ? {
+            ...t,
+            suggestions: t.suggestions.filter((s) => !dropped.includes(`${s.artist} - ${s.title}`)),
+          }
+        : t,
+    ),
+  }
+}
+
 withFixtures('parity with the standalone tool', () => {
   it('has a fixture for every expected result', () => {
     expect(setFiles.length - EXCLUDED.size).toBe(expected.length)
@@ -77,8 +104,9 @@ withFixtures('parity with the standalone tool', () => {
     const { video, comments } = readJson<RawSet>(file)
 
     it(`reproduces ${video.title.slice(0, 48)}`, () => {
-      const golden = expectedById.get(video.id)
-      expect(golden, `no expected result for ${video.id}`).toBeDefined()
+      const found = expectedById.get(video.id)
+      expect(found, `no expected result for ${video.id}`).toBeDefined()
+      const golden = found && withoutDropped(found)
 
       const result = analyse(video, comments)
 
@@ -310,6 +338,58 @@ describe('the pieces that carry the measured tuning', () => {
     expect(result.tracks.map((t) => t.index)).toEqual([1, 2, 3, 4])
   })
 
+  it('reads a list that puts each timestamp on a line of its own', () => {
+    // Reported from a real set (Marco Carola b2b Luciano, KEEZY 2022): the most
+    // liked comment is the whole list, typed the way the YouTube app leaves it
+    // — the timestamp becomes a link, the name goes on the next line. Read line
+    // by line, not one row survived, and a comment holding nothing but five
+    // "ID"s became the tracklist instead.
+    const stacked = [
+      'TRACKLIST',
+      '',
+      '1:00',
+      'Alexis Cabrera & Ignacio Morales - Zehn (Traumer Remix) ',
+      '7:00',
+      'Tuccillo - Imagination Engine',
+      '12:00',
+      "Charlie Banks - Dweck's Dungeon ",
+      '17:00',
+      'Raw Instinct - De La Bass (Mousse T House Mix) ',
+      '41:00',
+      'ID - ID',
+    ].join('\n')
+
+    const result = extractTracklist(stacked, 3_000_000)
+    expect(result.tracks.map((t) => [t.cue, t.artist, t.title])).toEqual([
+      ['1:00', 'Alexis Cabrera & Ignacio Morales', 'Zehn'],
+      ['7:00', 'Tuccillo', 'Imagination Engine'],
+      ['12:00', 'Charlie Banks', "Dweck's Dungeon"],
+      ['17:00', 'Raw Instinct', 'De La Bass'],
+      ['41:00', 'ID', 'ID'],
+    ])
+    expect(result.tracks[4].isUnknown).toBe(true)
+    expect(result.confidence).toBeGreaterThan(0.5)
+  })
+
+  it('does not pair a timestamp written under its name with the next track', () => {
+    // The mirror shape — name first, its time underneath. Pairing each time
+    // with the line after it would put every track one slot late, which is
+    // worse than finding nothing. The last timestamp, left with no name after
+    // it, is what gives the shape away.
+    const nameFirst = [
+      'Velvet Season - Love Generation',
+      '0:00',
+      'Jordano Roosevelt - Scars',
+      '6:00',
+      'Alan Nieves - Apologize',
+      '11:00',
+      'Avision - This Time',
+      '15:30',
+    ].join('\n')
+
+    expect(extractTracklist(nameFirst, 1_800_000).tracks).toHaveLength(0)
+  })
+
   it('gives a reply the timestamp of the question it answers', () => {
     // The discovery the whole tool rests on: the answer carries no time of its
     // own, and without inheritance the track is invisible.
@@ -326,6 +406,90 @@ describe('the pieces that carry the measured tuning', () => {
     const answer = mentions.find((m) => m.text.includes('Rockers Hi-Fi'))
     expect(answer).toBeDefined()
     expect(answer!.cueMs).toBe(2_370_000) // 39:30
+  })
+
+  describe('what is offered for an unnamed slot', () => {
+    // A described set with one open slot at 10:00, so whatever the comments
+    // say about 10:00 lands in its suggestions.
+    const video = {
+      id: 'v',
+      url: '',
+      title: '',
+      channel: '',
+      publishedAt: '',
+      durationMs: 1_200_000,
+      description: [
+        '0:00 Velvet Season - Love Generation',
+        '5:00 Jordano Roosevelt - Scars',
+        '10:00 ID - ID',
+        '15:00 Avision - This Time',
+      ].join('\n'),
+    }
+    const suggestionsFor = (comments: Parameters<typeof analyse>[1]) =>
+      analyse(video, comments).tracks[2].suggestions ?? []
+
+    it('names the track somebody answered with', () => {
+      const suggestions = suggestionsFor([
+        { author: '@asker', text: 'anyone know the ID at 10:00 ??', likeCount: 6 },
+        {
+          author: '@answerer',
+          text: 'Murphy’s Law - crusty feet (still unreleased)',
+          likeCount: 0,
+          replyTo: '@asker',
+        },
+        { author: '@other', text: '10:00 - Murphy’s Law - crusty feet (unreleased)', likeCount: 6 },
+      ])
+      expect(suggestions.map((s) => [s.artist, s.title, s.votes])).toEqual([
+        ['Murphy’s Law', 'crusty feet', 2],
+      ])
+    })
+
+    it('does not offer a remark that happens to follow the timestamp', () => {
+      // Reported from KEEZY 2022: "maybe: amazing" and "maybe: track" sat
+      // under the real answers, lifted from praise and from a question.
+      expect(
+        suggestionsFor([
+          { author: '@fan', text: 'The build up that begins at 10:00 is amazing', likeCount: 22 },
+          { author: '@asker', text: '10:00  track?', likeCount: 1 },
+        ]),
+      ).toEqual([])
+    })
+
+    it('does not offer a sentence that happens to contain a dash', () => {
+      const sentence =
+        'Theres another clip of Marco Carola playing this track and twice its named as ' +
+        'Murphys Law - Crusty feet, but I cant find the actual track or another real links'
+      expect(
+        suggestionsFor([
+          { author: '@asker', text: '10:00 id pls', likeCount: 4 },
+          { author: '@a', text: sentence, likeCount: 0, replyTo: '@asker' },
+          { author: '@b', text: sentence, likeCount: 0, replyTo: '@asker' },
+        ]),
+      ).toEqual([])
+    })
+
+    it('counts a reply as the same answer when YouTube hides a mark before the handle', () => {
+      // Replies arrive as "​@handle Name", and the invisible character kept
+      // the handle in the name, so the two answers below never agreed.
+      const suggestions = suggestionsFor([
+        { author: '@asker', text: '10:00 id?', likeCount: 0 },
+        { author: '@a', text: 'Santos - Hold Home', likeCount: 1, replyTo: '@asker' },
+        { author: '@b', text: '​@a Santos - Hold Home', likeCount: 0, replyTo: '@asker' },
+      ])
+      expect(suggestions.map((s) => [s.artist, s.votes])).toEqual([['Santos', 2]])
+    })
+
+    it('does not place a reply under a comment that names several places', () => {
+      // Reported from KEEZY 2022: a reply under five "ID" timestamps was offered
+      // at all five, and a reply under a whole tracklist at every gap in it.
+      // Which of them it answers is not written anywhere.
+      expect(
+        suggestionsFor([
+          { author: '@asker', text: '9:40 – ID\n10:00 – ID\n14:00 - id', likeCount: 7 },
+          { author: '@a', text: 'Krika - Mendo', likeCount: 1, replyTo: '@asker' },
+        ]),
+      ).toEqual([])
+    })
   })
 
   it('does not let ordinary chatter inherit a timestamp', () => {
