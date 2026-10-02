@@ -5,6 +5,7 @@ import { Icon, type IconName } from '../Icon'
 import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import { SidebarRail } from './SidebarRail'
+import { SidebarColourMenu } from './SidebarColourMenu'
 import {
   COLLAPSED_WIDTH,
   type ActiveView,
@@ -21,6 +22,17 @@ const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const STORAGE_KEY = 'sidebar_width'
 const DEFAULT_WIDTH = 240
+
+const SECTION_LABELS: Record<SidebarSection, string> = {
+  home: 'Home',
+  sets: 'Sets',
+  'all-tracks': 'All Tracks',
+  search: 'Search',
+  'ai-chat': 'AI Chat',
+  folders: 'Folders',
+  playlists: 'Playlists',
+  spotify: 'Spotify',
+}
 
 /** The width the user dragged the full sidebar to, or the default. */
 function readStoredWidth(): number {
@@ -150,6 +162,8 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
   colours,
+  onSetColour,
+  onResetColour,
   toastMessage,
   onToastDismiss,
   onFolderSelect,
@@ -177,8 +191,13 @@ export function Sidebar({
   const [foldersExpanded, setFoldersExpanded] = useState(true)
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true)
 
-  // Context menu for Playlists header
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  // Right-click menu: a section's colour, plus Create Playlist / Folder on Playlists.
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number
+    y: number
+    section: SidebarSection
+    withCreate: boolean
+  } | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -330,6 +349,62 @@ export function Sidebar({
     </AnimatePresence>
   )
 
+  const openColourMenu =
+    (section: SidebarSection, withCreate = false) =>
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      setCtxMenu({ x: e.clientX, y: e.clientY, section, withCreate })
+    }
+
+  const colourMenuEl = ctxMenu && (
+    <div
+      ref={ctxRef}
+      className="sidebar-ctx-menu"
+      style={{ top: ctxMenu.y, left: ctxMenu.x }}
+    >
+      <SidebarColourMenu
+        label={SECTION_LABELS[ctxMenu.section]}
+        current={colourFor(ctxMenu.section, colours)}
+        onPick={(hex) => {
+          onSetColour(ctxMenu.section, hex)
+          setCtxMenu(null)
+        }}
+        onCustom={(hex) => onSetColour(ctxMenu.section, hex)}
+        onReset={() => {
+          onResetColour(ctxMenu.section)
+          setCtxMenu(null)
+        }}
+      />
+      {ctxMenu.withCreate && (
+        <>
+          <div className="sidebar-ctx-menu__sep" />
+          <button
+            className="sidebar-ctx-menu__item"
+            onClick={() => {
+              onCreatePlaylist(null)
+              setCtxMenu(null)
+            }}
+            type="button"
+          >
+            <Icon name="Plus" size={14} />
+            Create Playlist
+          </button>
+          <button
+            className="sidebar-ctx-menu__item"
+            onClick={() => {
+              onCreateFolder(null)
+              setCtxMenu(null)
+            }}
+            type="button"
+          >
+            <Icon name="FolderPlus" size={14} />
+            Create Folder
+          </button>
+        </>
+      )}
+    </div>
+  )
+
   if (collapsed) {
     return (
       <>
@@ -337,7 +412,7 @@ export function Sidebar({
           navItems={navItems}
           activeSection={activeSection}
           iconStyle={iconStyle}
-          onColourMenu={() => () => {}}
+          onColourMenu={openColourMenu}
           onToggleCollapsed={onToggleCollapsed}
           onOpenSettings={onOpenSettings}
           settingsActive={activeView === 'settings'}
@@ -359,6 +434,7 @@ export function Sidebar({
             />
           )}
         />
+        {colourMenuEl}
         {toastEl}
       </>
     )
@@ -403,6 +479,7 @@ export function Sidebar({
               key={item.section}
               className={`sidebar-nav-item ${activeSection === item.section ? 'sidebar-nav-item--active' : ''}`}
               onClick={item.onClick}
+              onContextMenu={openColourMenu(item.section)}
               type="button"
             >
               <Icon name={item.icon} size={16} style={iconStyle(item.section)} />
@@ -421,6 +498,7 @@ export function Sidebar({
           expanded={foldersExpanded}
           onToggle={() => setFoldersExpanded((v) => !v)}
           iconStyle={iconStyle('folders')}
+          onContextMenu={openColourMenu('folders')}
         >
           <FolderTree ref={folderTreeRef} {...treeProps} section="folders" />
         </Section>
@@ -435,46 +513,13 @@ export function Sidebar({
           expanded={playlistsExpanded}
           onToggle={() => setPlaylistsExpanded((v) => !v)}
           iconStyle={iconStyle('playlists')}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setCtxMenu({ x: e.clientX, y: e.clientY })
-          }}
+          onContextMenu={openColourMenu('playlists', true)}
         >
           <FolderTree {...treeProps} section="playlists" />
         </Section>
       </div>
 
-      {/* Playlists header context menu */}
-      {ctxMenu && (
-        <div
-          ref={ctxRef}
-          className="sidebar-ctx-menu"
-          style={{ top: ctxMenu.y, left: ctxMenu.x }}
-        >
-          <button
-            className="sidebar-ctx-menu__item"
-            onClick={() => {
-              onCreatePlaylist(null)
-              setCtxMenu(null)
-            }}
-            type="button"
-          >
-            <Icon name="Plus" size={14} />
-            Create Playlist
-          </button>
-          <button
-            className="sidebar-ctx-menu__item"
-            onClick={() => {
-              onCreateFolder(null)
-              setCtxMenu(null)
-            }}
-            type="button"
-          >
-            <Icon name="FolderPlus" size={14} />
-            Create Folder
-          </button>
-        </div>
-      )}
+      {colourMenuEl}
 
       {toastEl}
 

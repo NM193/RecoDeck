@@ -192,7 +192,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 4px 0;
-  min-width: 160px;
+  min-width: 236px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -413,4 +413,51 @@
   font-size: var(--text-xs, 11px);
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* ===== Colour block in the right-click menu ===== */
+
+.sidebar-colour-menu__title {
+  padding: 6px 12px 8px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar-colour-menu__swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 20px);
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.sidebar-colour-menu__swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.sidebar-colour-menu__swatch--current {
+  border-color: var(--text-primary);
+  box-shadow: inset 0 0 0 2px var(--bg-tertiary);
+}
+
+/* Hidden but clickable through its label, which opens the system picker. */
+.sidebar-colour-menu__picker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-ctx-menu__sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
 }
