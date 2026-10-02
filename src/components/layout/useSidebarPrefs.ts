@@ -37,7 +37,12 @@ export interface SidebarPrefs {
   resetColour: (section: SidebarSection) => void
 }
 
-export function useSidebarPrefs(): SidebarPrefs {
+interface SidebarPrefsOptions {
+  /** True once the database is open; the colours live in its settings table. */
+  dbReady: boolean
+}
+
+export function useSidebarPrefs({ dbReady }: SidebarPrefsOptions): SidebarPrefs {
   const [collapsed, setCollapsedState] = useState(() =>
     initialCollapsed(readStored(), window.innerWidth),
   )
@@ -82,7 +87,10 @@ export function useSidebarPrefs(): SidebarPrefs {
   // or after a failed read, would overwrite the ones never seen.
   const loaded = useRef(false)
 
+  // The settings table only answers once the database is open (App.tsx opens
+  // it after the first render), so the read waits for that.
   useEffect(() => {
+    if (!dbReady) return
     let cancelled = false
     tauriApi
       .getSetting(COLOURS_KEY)
@@ -92,11 +100,13 @@ export function useSidebarPrefs(): SidebarPrefs {
         // A colour picked before the stored ones arrived wins over them.
         setColours((prev) => ({ ...parseColours(raw), ...prev }))
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn('Sidebar colours could not be read', err)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [dbReady])
 
   // Saved only after the user changed something — never the initial load —
   // and debounced, because the system colour picker reports every step of a

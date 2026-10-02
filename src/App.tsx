@@ -77,6 +77,9 @@ function App() {
 function AppContent() {
   const [tracks, setTracks] = useState<Track[]>([])
   const [loading, setLoading] = useState(true)
+  // True once initDatabase has succeeded. `loading` is not enough: it turns
+  // false after a failed init too.
+  const [dbReady, setDbReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -119,7 +122,7 @@ function AppContent() {
 
   // Ref into FolderTree to refresh a root after folder mutations
   const folderTreeRef = useRef<FolderTreeRef>(null)
-  const sidebarPrefs = useSidebarPrefs()
+  const sidebarPrefs = useSidebarPrefs({ dbReady })
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
@@ -319,6 +322,7 @@ function AppContent() {
       const dataDir = await appDataDir()
       const dbPath = await join(dataDir, 'recodeck.db')
       await tauriApi.initDatabase(dbPath)
+      setDbReady(true)
 
       // PERFORMANCE: Skip expensive path normalization on startup
       // This operation loads all tracks into memory - users can run it manually via settings if needed
