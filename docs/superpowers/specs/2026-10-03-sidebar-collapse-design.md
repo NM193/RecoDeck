@@ -54,6 +54,10 @@ the first render already has the right width — no flash).
 - **On start** the stored value is used, except that a window already narrower
   than 1100px starts collapsed.
 
+The main window opens at 1280×800, so the stored choice applies on a normal
+launch; remembering the window size between launches is a possible follow-up
+(tauri-plugin-window-state), not part of this work.
+
 There is no separate "override" or "follow the window" mode, and nothing to reset.
 
 ### In icons-only mode
