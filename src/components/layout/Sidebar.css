@@ -254,3 +254,24 @@
   background: var(--accent);
   opacity: 0.5;
 }
+
+/* ===== Collapse toggle — quiet until hovered ===== */
+
+.sidebar-top__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.sidebar-top__toggle:hover {
+  color: var(--text-primary);
+}

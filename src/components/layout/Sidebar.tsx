@@ -7,6 +7,8 @@ import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import {
   COLLAPSED_WIDTH,
   type ActiveView,
+  colourFor,
+  sectionForView,
   type ColourOverrides,
   type SidebarSection,
 } from '../../lib/sidebarPrefs'
@@ -40,6 +42,7 @@ interface SectionProps {
   iconName: IconName
   expanded: boolean
   onToggle: () => void
+  iconStyle?: React.CSSProperties
   onContextMenu?: (e: React.MouseEvent) => void
   children: React.ReactNode
 }
@@ -49,6 +52,7 @@ function Section({
   iconName,
   expanded,
   onToggle,
+  iconStyle,
   onContextMenu,
   children,
 }: SectionProps) {
@@ -65,7 +69,7 @@ function Section({
         >
           <Icon name="ChevronDown" size={14} />
         </span>
-        <Icon name={iconName} size={14} />
+        <Icon name={iconName} size={14} style={iconStyle} />
         <span className="sidebar-section__title">{title}</span>
       </button>
 
@@ -88,6 +92,14 @@ function Section({
 }
 
 // --- Sidebar props ---
+
+export interface NavItem {
+  section: SidebarSection
+  label: string
+  icon: IconName
+  onClick: () => void
+  count?: number
+}
 
 interface SidebarProps {
   libraryFolders: string[]
@@ -135,6 +147,8 @@ export function Sidebar({
   totalTrackCount,
   activeView,
   collapsed,
+  onToggleCollapsed,
+  colours,
   toastMessage,
   onToastDismiss,
   onFolderSelect,
@@ -239,6 +253,45 @@ export function Sidebar({
     document.addEventListener('mouseup', onMouseUp)
   }, [])
 
+  const activeSection = sectionForView(activeView)
+  const iconStyle = (section: SidebarSection): React.CSSProperties | undefined =>
+    activeSection === section ? { color: colourFor(section, colours) } : undefined
+
+  const navItems: NavItem[] = [
+    { section: 'home', label: 'Home', icon: 'House', onClick: onNavigateHome },
+    ...(onNavigateSets
+      ? [
+          {
+            section: 'sets' as const,
+            label: 'Sets',
+            // Not ListMusic (playlists) and not Disc3 (folders) — both are
+            // already in this sidebar. A set is a broadcast of a performance,
+            // which is the one thing nothing else here is.
+            icon: 'Radio' as const,
+            onClick: onNavigateSets,
+          },
+        ]
+      : []),
+    {
+      section: 'all-tracks',
+      label: 'All Tracks',
+      icon: 'Music',
+      onClick: onShowAllTracks,
+      count: totalTrackCount,
+    },
+    { section: 'search', label: 'Search', icon: 'Search', onClick: () => onSearch?.() },
+    ...(onNavigateAIChat
+      ? [
+          {
+            section: 'ai-chat' as const,
+            label: 'AI Chat',
+            icon: 'MessageSquare' as const,
+            onClick: onNavigateAIChat,
+          },
+        ]
+      : []),
+  ]
+
   return (
     <div className="sidebar">
       {/* Top area — logo + avatar settings */}
@@ -258,64 +311,35 @@ export function Sidebar({
         >
           <Icon name="User" size={16} />
         </button>
+        <button
+          className="sidebar-top__toggle"
+          onClick={onToggleCollapsed}
+          type="button"
+          title="Collapse sidebar (⌘\)"
+          aria-label="Collapse sidebar"
+        >
+          <Icon name="PanelLeft" size={14} />
+        </button>
       </div>
 
       {/* Scrollable content */}
       <div className="sidebar-scroll">
         {/* Top nav items */}
         <div className="sidebar-nav">
-          <button
-            className={`sidebar-nav-item ${activeView === 'home' ? 'sidebar-nav-item--active' : ''}`}
-            onClick={onNavigateHome}
-            type="button"
-          >
-            <Icon name="House" size={16} />
-            <span>Home</span>
-          </button>
-          {onNavigateSets && (
+          {navItems.map((item) => (
             <button
-              className={`sidebar-nav-item ${activeView === 'sets' ? 'sidebar-nav-item--active' : ''}`}
-              onClick={onNavigateSets}
+              key={item.section}
+              className={`sidebar-nav-item ${activeSection === item.section ? 'sidebar-nav-item--active' : ''}`}
+              onClick={item.onClick}
               type="button"
             >
-              {/* Not ListMusic (playlists) and not Disc3 (folders) — both are
-                  already in this sidebar. A set is a broadcast of a performance,
-                  which is the one thing nothing else here is. */}
-              <Icon name="Radio" size={16} />
-              <span>Sets</span>
+              <Icon name={item.icon} size={16} style={iconStyle(item.section)} />
+              <span>{item.label}</span>
+              {item.count != null && item.count > 0 && (
+                <span className="sidebar-nav-item__count">({item.count})</span>
+              )}
             </button>
-          )}
-          <button
-            className={`sidebar-nav-item ${activeView === 'all-tracks' ? 'sidebar-nav-item--active' : ''}`}
-            onClick={onShowAllTracks}
-            type="button"
-          >
-            <Icon name="Music" size={16} />
-            <span>All Tracks</span>
-            {totalTrackCount != null && totalTrackCount > 0 && (
-              <span className="sidebar-nav-item__count">
-                ({totalTrackCount})
-              </span>
-            )}
-          </button>
-          <button
-            className={`sidebar-nav-item ${activeView === 'search' ? 'sidebar-nav-item--active' : ''}`}
-            onClick={onSearch}
-            type="button"
-          >
-            <Icon name="Search" size={16} />
-            <span>Search</span>
-          </button>
-          {onNavigateAIChat && (
-            <button
-              className={`sidebar-nav-item ${activeView === 'ai-chat' ? 'sidebar-nav-item--active' : ''}`}
-              onClick={onNavigateAIChat}
-              type="button"
-            >
-              <Icon name="MessageSquare" size={16} />
-              <span>AI Chat</span>
-            </button>
-          )}
+          ))}
         </div>
 
         {/* Folders section */}
@@ -324,6 +348,7 @@ export function Sidebar({
           iconName="Disc3"
           expanded={foldersExpanded}
           onToggle={() => setFoldersExpanded((v) => !v)}
+          iconStyle={iconStyle('folders')}
         >
           <FolderTree
             ref={folderTreeRef}
@@ -358,6 +383,7 @@ export function Sidebar({
           iconName="ListMusic"
           expanded={playlistsExpanded}
           onToggle={() => setPlaylistsExpanded((v) => !v)}
+          iconStyle={iconStyle('playlists')}
           onContextMenu={(e) => {
             e.preventDefault()
             setCtxMenu({ x: e.clientX, y: e.clientY })
