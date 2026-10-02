@@ -39,6 +39,7 @@ export function SidebarColourMenu({
         Custom colour…
         <input
           type="color"
+          tabIndex={-1}
           className="sidebar-colour-menu__picker"
           value={current}
           onChange={(e) => onCustom(e.target.value)}

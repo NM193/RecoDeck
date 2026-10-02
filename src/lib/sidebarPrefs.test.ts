@@ -3,6 +3,7 @@ import {
   COLLAPSE_BELOW,
   DEFAULT_COLOURS,
   PALETTE,
+  SECTION_LABELS,
   colourFor,
   collapseOnResize,
   initialCollapsed,
@@ -100,5 +101,13 @@ describe('section colours', () => {
 
   it('lights nothing for Settings', () => {
     expect(sectionForView('settings')).toBeNull()
+  })
+})
+
+describe('section labels', () => {
+  it('has a non-empty label for every section', () => {
+    for (const section of Object.keys(DEFAULT_COLOURS) as (keyof typeof DEFAULT_COLOURS)[]) {
+      expect(SECTION_LABELS[section]).toBeTruthy()
+    }
   })
 })

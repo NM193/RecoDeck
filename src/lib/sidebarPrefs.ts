@@ -47,6 +47,17 @@ export type SidebarSection =
   | 'playlists'
   | 'spotify'
 
+export const SECTION_LABELS: Record<SidebarSection, string> = {
+  home: 'Home',
+  sets: 'Sets',
+  'all-tracks': 'All Tracks',
+  search: 'Search',
+  'ai-chat': 'AI Chat',
+  folders: 'Folders',
+  playlists: 'Playlists',
+  spotify: 'Spotify',
+}
+
 /** The views App.tsx can be showing. */
 export type ActiveView =
   | 'home'

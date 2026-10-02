@@ -1,4 +1,4 @@
-// Sidebar — resizable, 2 collapsible sections: Folders, Playlists
+// Sidebar — resizable, 2 collapsible sections: Folders, Playlists; collapses to an icon rail (SidebarRail.tsx); section icon colours are set by right-click
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Icon, type IconName } from '../Icon'
@@ -8,6 +8,7 @@ import { SidebarRail } from './SidebarRail'
 import { SidebarColourMenu } from './SidebarColourMenu'
 import {
   COLLAPSED_WIDTH,
+  SECTION_LABELS,
   type ActiveView,
   colourFor,
   sectionForView,
@@ -22,17 +23,6 @@ const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const STORAGE_KEY = 'sidebar_width'
 const DEFAULT_WIDTH = 240
-
-const SECTION_LABELS: Record<SidebarSection, string> = {
-  home: 'Home',
-  sets: 'Sets',
-  'all-tracks': 'All Tracks',
-  search: 'Search',
-  'ai-chat': 'AI Chat',
-  folders: 'Folders',
-  playlists: 'Playlists',
-  spotify: 'Spotify',
-}
 
 /** The width the user dragged the full sidebar to, or the default. */
 function readStoredWidth(): number {
@@ -206,8 +196,15 @@ export function Sidebar({
       if (ctxRef.current && !ctxRef.current.contains(e.target as Node))
         setCtxMenu(null)
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null)
+    }
     document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [ctxMenu])
 
   // Auto-dismiss toast after 2s
@@ -278,12 +275,12 @@ export function Sidebar({
     activeSection === section ? { color: colourFor(section, colours) } : undefined
 
   const navItems: NavItem[] = [
-    { section: 'home', label: 'Home', icon: 'House', onClick: onNavigateHome },
+    { section: 'home', label: SECTION_LABELS.home, icon: 'House', onClick: onNavigateHome },
     ...(onNavigateSets
       ? [
           {
             section: 'sets' as const,
-            label: 'Sets',
+            label: SECTION_LABELS.sets,
             // Not ListMusic (playlists) and not Disc3 (folders) — both are
             // already in this sidebar. A set is a broadcast of a performance,
             // which is the one thing nothing else here is.
@@ -294,17 +291,17 @@ export function Sidebar({
       : []),
     {
       section: 'all-tracks',
-      label: 'All Tracks',
+      label: SECTION_LABELS['all-tracks'],
       icon: 'Music',
       onClick: onShowAllTracks,
       count: totalTrackCount,
     },
-    { section: 'search', label: 'Search', icon: 'Search', onClick: () => onSearch?.() },
+    { section: 'search', label: SECTION_LABELS.search, icon: 'Search', onClick: () => onSearch?.() },
     ...(onNavigateAIChat
       ? [
           {
             section: 'ai-chat' as const,
-            label: 'AI Chat',
+            label: SECTION_LABELS['ai-chat'],
             icon: 'MessageSquare' as const,
             onClick: onNavigateAIChat,
           },
@@ -353,7 +350,12 @@ export function Sidebar({
     (section: SidebarSection, withCreate = false) =>
     (e: React.MouseEvent) => {
       e.preventDefault()
-      setCtxMenu({ x: e.clientX, y: e.clientY, section, withCreate })
+      setCtxMenu({
+        x: Math.min(e.clientX, window.innerWidth - 248),
+        y: Math.min(e.clientY, window.innerHeight - 240),
+        section,
+        withCreate,
+      })
     }
 
   const colourMenuEl = ctxMenu && (

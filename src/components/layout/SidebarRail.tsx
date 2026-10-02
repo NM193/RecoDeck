@@ -3,7 +3,7 @@
 // that open flyouts, tooltips after a short hover, the profile at the bottom.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '../Icon'
-import type { SidebarSection } from '../../lib/sidebarPrefs'
+import { SECTION_LABELS, type SidebarSection } from '../../lib/sidebarPrefs'
 import type { NavItem } from './Sidebar'
 import { SidebarFlyout } from './SidebarFlyout'
 
@@ -68,7 +68,9 @@ export function SidebarRail({
       return
     }
     const rect = e.currentTarget.getBoundingClientRect()
-    setFlyout({ section, top: rect.top, left: rect.right + 6, anchor: e.currentTarget })
+    setFlyout({
+      section,
+      top: Math.max(8, Math.min(rect.top, window.innerHeight - 320)), left: rect.right + 6, anchor: e.currentTarget })
   }
 
   const sectionButton = (section: FlyoutSection, label: string, icon: 'Disc3' | 'ListMusic') => (
@@ -79,6 +81,8 @@ export function SidebarRail({
       onMouseEnter={flyout ? undefined : showTip(label)}
       onMouseLeave={hideTip}
       aria-label={label}
+      aria-haspopup="dialog"
+      aria-expanded={flyout?.section === section}
       type="button"
     >
       <Icon name={icon} size={16} style={iconStyle(section)} />
@@ -88,7 +92,7 @@ export function SidebarRail({
   return (
     <div className="sidebar sidebar--rail">
       <div className="sidebar-rail__top">
-        <span className="sidebar-rail__wordmark" aria-label="RecoDeck">
+        <span className="sidebar-rail__wordmark" role="img" aria-label="RecoDeck">
           RECO
           <br />
           DECK
@@ -111,7 +115,7 @@ export function SidebarRail({
             className={`sidebar-rail__item ${activeSection === item.section ? 'sidebar-rail__item--active' : ''}`}
             onClick={item.onClick}
             onContextMenu={onColourMenu(item.section)}
-            onMouseEnter={showTip(item.label)}
+            onMouseEnter={flyout ? undefined : showTip(item.label)}
             onMouseLeave={hideTip}
             aria-label={item.label}
             type="button"
@@ -120,15 +124,17 @@ export function SidebarRail({
           </button>
         ))}
         <span className="sidebar-rail__divider" />
-        {sectionButton('folders', 'Folders', 'Disc3')}
-        {sectionButton('playlists', 'Playlists', 'ListMusic')}
+        {sectionButton('folders', SECTION_LABELS.folders, 'Disc3')}
+        {sectionButton('playlists', SECTION_LABELS.playlists, 'ListMusic')}
       </div>
 
       <button
         className={`sidebar-top__avatar sidebar-rail__avatar ${settingsActive ? 'sidebar-top__avatar--active' : ''}`}
         onClick={onOpenSettings}
+        onMouseEnter={showTip('Settings')}
+        onMouseLeave={hideTip}
+        aria-label="Settings"
         type="button"
-        title="Settings"
       >
         <Icon name="User" size={16} />
       </button>
@@ -141,7 +147,7 @@ export function SidebarRail({
 
       {flyout && (
         <SidebarFlyout
-          title={flyout.section === 'folders' ? 'Folders' : 'Playlists'}
+          title={SECTION_LABELS[flyout.section]}
           top={flyout.top}
           left={flyout.left}
           anchor={flyout.anchor}
