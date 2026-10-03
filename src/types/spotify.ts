@@ -66,6 +66,11 @@ export interface SpotifyStatus {
   accountName: string | null
   /** The refresh token was revoked or expired: show "Reconnect Spotify". */
   needsReconnect: boolean
+  /**
+   * Settings → Spotify → Show in sidebar. Off hides the section and pauses
+   * the sync; DJ pages and Search keep using the account.
+   */
+  showInSidebar: boolean
   /** Unix ms of the last successful sync. */
   lastSyncedAt: number | null
   /** Why the last sync failed, or null when it worked. */

@@ -663,6 +663,11 @@ export const tauriApi = {
     return await invoke('disconnect_spotify')
   },
 
+  /** Show in sidebar. The sidebar learns it from the `spotify-synced` event this sends. */
+  async setSpotifyShowInSidebar(show: boolean): Promise<SpotifyStatus> {
+    return await invoke('set_spotify_show_in_sidebar', { show })
+  },
+
   /** The result arrives as a `spotify-synced` event. */
   async syncSpotifyNow(): Promise<void> {
     return await invoke('sync_spotify_now')

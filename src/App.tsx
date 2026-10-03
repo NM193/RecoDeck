@@ -1342,8 +1342,12 @@ function AppContent() {
       : 'Click "Scan Folder" to add music to your library'
 
   // Derive a unique view key so AnimatePresence knows when to animate
-  // The Spotify view only exists while an account is connected.
-  const shownSpotifyList = spotify.connected ? spotifyListId : null
+  // The SPOTIFY section and its view exist while an account is connected and
+  // Show in sidebar is on. Off, an open list falls through to the default
+  // view; DJ pages and Search still use the account.
+  const spotifyShown =
+    spotify.connected && spotify.status?.showInSidebar !== false
+  const shownSpotifyList = spotifyShown ? spotifyListId : null
 
   // The DJ page comes first: it opens over Search or Sets, whose flags stay set.
   const viewKey =
@@ -1482,7 +1486,7 @@ function AppContent() {
         setShowAIChat(false)
       }}
       spotify={
-        spotify.connected
+        spotifyShown
           ? {
               lists: spotify.library.lists,
               counts: spotify.counts,

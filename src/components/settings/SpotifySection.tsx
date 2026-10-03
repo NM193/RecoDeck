@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { confirm } from '@tauri-apps/plugin-dialog'
 import { tauriApi } from '../../lib/tauri-api'
+import { ToggleSwitch } from './ToggleSwitch'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { SPOTIFY_SYNCED_EVENT, type SpotifyStatus } from '../../types/spotify'
 
@@ -253,6 +254,27 @@ export function SpotifySection() {
             {error}
           </p>
         )}
+      </div>
+
+      <div className="sv-setting-row" style={{ marginTop: '1.25rem' }}>
+        <div className="sv-setting-row__info">
+          <span className="sv-setting-row__label">Show in sidebar</span>
+          <span className="sv-setting-row__description">
+            Off hides the SPOTIFY section and pauses its sync. DJ pages and
+            Search keep using your account.
+          </span>
+        </div>
+        <ToggleSwitch
+          checked={status?.showInSidebar ?? true}
+          disabled={status === null}
+          onChange={(show) => {
+            setError(null)
+            tauriApi
+              .setSpotifyShowInSidebar(show)
+              .then(setStatus)
+              .catch((e: unknown) => setError(getErrorMessage(e)))
+          }}
+        />
       </div>
 
       {status?.connected && (
