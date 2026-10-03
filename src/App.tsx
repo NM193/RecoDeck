@@ -1594,6 +1594,7 @@ function AppContent() {
                   openDj(name, spotifyArtistId)
                 }
                 onOpenSettings={openSpotifySettings}
+                onPlayTrack={handlePlayTrack}
               />
             ) : shownSpotifyList !== null ? (
               <SpotifyView

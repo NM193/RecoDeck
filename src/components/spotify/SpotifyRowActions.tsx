@@ -19,25 +19,21 @@ interface SpotifyRowActionsProps {
 
 const COPIED_MS = 1500
 
-export function SpotifyRowActions({
-  row,
-  onVerdict,
-  checking = false,
-}: SpotifyRowActionsProps) {
+/**
+ * Copy, then "Copied" for 1.5 s; every click restarts that time. Also the
+ * DJ page's Plays rows' Copy (DjPlaysTab's PlayStatus).
+ */
+export function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   )
-  /** The answer being saved; the buttons wait for it. */
-  const [pending, setPending] = useState<Verdict | null>(null)
-  const [answerFailed, setAnswerFailed] = useState(false)
 
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
 
-  // Every click restarts the "Copied" time.
   const copy = () => {
     navigator.clipboard
-      .writeText(copyText(row.track))
+      .writeText(text)
       .then(() => {
         clearTimeout(copiedTimer.current)
         setCopied(true)
@@ -45,6 +41,28 @@ export function SpotifyRowActions({
       })
       .catch(() => {})
   }
+
+  return (
+    <button
+      type="button"
+      className={`spotify-mini ${copied ? 'spotify-mini--copied' : 'spotify-mini--primary'}`}
+      title={text}
+      onClick={copy}
+    >
+      <Icon name={copied ? 'Check' : 'Copy'} size={12} />
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
+}
+
+export function SpotifyRowActions({
+  row,
+  onVerdict,
+  checking = false,
+}: SpotifyRowActionsProps) {
+  /** The answer being saved; the buttons wait for it. */
+  const [pending, setPending] = useState<Verdict | null>(null)
+  const [answerFailed, setAnswerFailed] = useState(false)
 
   const answer = (verdict: Verdict) => {
     setPending(verdict)
@@ -148,15 +166,7 @@ export function SpotifyRowActions({
       >
         <Icon name="ExternalLink" size={12} />
       </button>
-      <button
-        type="button"
-        className={`spotify-mini ${copied ? 'spotify-mini--copied' : 'spotify-mini--primary'}`}
-        title={copyText(row.track)}
-        onClick={copy}
-      >
-        <Icon name={copied ? 'Check' : 'Copy'} size={12} />
-        {copied ? 'Copied' : 'Copy'}
-      </button>
+      <CopyButton text={copyText(row.track)} />
     </span>
   )
 }

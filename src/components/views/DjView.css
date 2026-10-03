@@ -509,3 +509,103 @@
 .dj-ra-link:hover:not(:disabled) {
   border-color: var(--border);
 }
+
+/* ---- Tracks and Plays: the Spotify view's table (SpotifyView.css), inside the page's scroll ---- */
+
+.dj-tracks,
+.dj-plays {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dj-tabhead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.dj-tabhead__busy {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dj-tabhead__failed {
+  color: var(--color-warning);
+}
+
+/* The Spotify view pads its toolbar for a full-width view; the page's body is padded already. */
+.dj-toolbar {
+  padding: 0;
+}
+
+/* The Spotify view's table scrolls on its own; here the whole page scrolls. */
+.dj-table {
+  flex: none;
+  overflow: visible;
+}
+
+.dj-skeleton i {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bg-tertiary);
+  animation: dj-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dj-skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.dj-older {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dj-connect {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* Plays: # · Track · in N of M sets (bar) · Status. */
+.spotify-row.dj-play {
+  grid-template-columns: 44px minmax(0, 1fr) 180px 220px;
+}
+
+.dj-play__sets {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-right: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dj-play__bar {
+  flex: 0 0 60px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+}
+
+.dj-play__bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent-hover);
+}

@@ -10,11 +10,19 @@ import { useDjPage } from '../dj/useDjPage'
 import { DjCandidatesMenu } from '../dj/DjCandidatesMenu'
 import { DjSetsTab } from '../dj/DjSetsTab'
 import { DjGigsTab } from '../dj/DjGigsTab'
-import { cachedOwned } from '../../lib/dj/search'
+import { DjTracksTab } from '../dj/DjTracksTab'
+import { DjPlaysTab } from '../dj/DjPlaysTab'
+import { classifyTracks } from '../../lib/spotify/ownership'
+import { asSpotifyTrack, djRows, ownedCount } from '../../lib/dj/tracks'
+import { playOwnership } from '../../lib/dj/plays'
 import { gigLabel, heroMetaParts, localDay, splitGigs } from '../../lib/dj/gigs'
 import { djTabs, gigsState, spotifyArtistUrl } from '../../lib/dj/page'
 import type { DjTab } from '../../lib/dj/overview'
+import type { SpotifyRow } from '../../lib/spotify/rows'
+import type { LibraryTrack } from '../../lib/tracklist/match'
 import type { SpotifyData } from '../spotify/useSpotify'
+import type { Track } from '../../types/track'
+import type { Verdict } from '../../types/spotify'
 import './DjView.css'
 
 interface DjViewProps {
@@ -35,6 +43,8 @@ interface DjViewProps {
   onOpenDj: (name: string, spotifyArtistId: string | null) => void
   /** Settings, with its Spotify section open ("Connect Spotify"). */
   onOpenSettings: () => void
+  /** App's player: double-clicking an Owned row plays its library file. */
+  onPlayTrack: (track: Track, queue: Track[], index: number) => void
 }
 
 export function DjView({
@@ -44,6 +54,7 @@ export function DjView({
   onBack,
   onOpenSets,
   onOpenSettings,
+  onPlayTrack,
 }: DjViewProps) {
   const dj = useDjPage(name, spotifyArtistId)
   const [tab, setTab] = useState<DjTab>('overview')
@@ -61,11 +72,57 @@ export function DjView({
       page && today ? splitGigs(page.gigs, today) : { upcoming: [], past: [] },
     [page, today],
   )
-  // "You own N", counted as Search's DJ card counts it: Owned only, Yes answers included.
-  const owned = useMemo(
-    () => cachedOwned(page?.tracks, spotify.index, spotify.library.verdicts),
-    [page, spotify.index, spotify.library.verdicts],
+  // One classification for the Tracks tab, the hero's "You own N" and (Task 17) the overview:
+  // the shared library index, Maybe's Yes / No answers included.
+  const trackRows = useMemo(() => {
+    const tracks = page?.tracks ?? []
+    return djRows(
+      tracks,
+      classifyTracks(
+        tracks.map(asSpotifyTrack),
+        spotify.index,
+        spotify.library.verdicts,
+      ),
+    )
+  }, [page, spotify.index, spotify.library.verdicts])
+  // Counted as Search's DJ card counts it (cachedOwned): Owned only, and no
+  // number while the library index is still empty (everything would read Missing).
+  const owned =
+    trackRows.length > 0 && spotify.index.entries.length > 0
+      ? ownedCount(trackRows)
+      : null
+  // Plays: the same matcher, no verdicts (they are keyed by Spotify track id).
+  const playsOwnership = useMemo(
+    () =>
+      new Map(
+        (dj.plays ?? []).map((play) => [
+          play.key,
+          playOwnership(play, spotify.index),
+        ]),
+      ),
+    [dj.plays, spotify.index],
   )
+  const answer = (row: SpotifyRow, verdict: Verdict) =>
+    row.ownership.file
+      ? spotify.setVerdict(row.track.spotifyId, row.ownership.file.id, verdict)
+      : Promise.resolve()
+
+  // The player wants full Tracks: look the matched files up in the loaded library.
+  const tracksById = useMemo(
+    () => new Map(spotify.libraryTracks.map((track) => [track.id, track])),
+    [spotify.libraryTracks],
+  )
+  const playFiles = (files: LibraryTrack[], index: number) => {
+    const queue = files.flatMap((file) => {
+      const track = tracksById.get(file.id)
+      return track ? [track] : []
+    })
+    const first = files[index] ? tracksById.get(files[index].id) : undefined
+    const at = first ? queue.indexOf(first) : -1
+    if (at >= 0) onPlayTrack(queue[at], queue, at)
+  }
+  const checking = !spotify.libraryLoaded
+
   const meta = heroMetaParts({
     owned,
     tracks: page && page.tracks.length > 0 ? page.tracks.length : null,
@@ -223,27 +280,30 @@ export function DjView({
           ) : (
             <p className="dj-note">The overview&apos;s cards come here.</p>
           ))}
-        {/* Tracks: Task 16 replaces this placeholder with <DjTracksTab>. */}
-        {tab === 'tracks' &&
-          (spotify.connected ? (
-            <p className="dj-note">
-              {page ? `${page.tracks.length} tracks` : 'Reading the tracks…'}
-            </p>
-          ) : (
-            <div className="dj-note">
-              Connect Spotify to see their tracks{' '}
-              <button type="button" className="dj-btn" onClick={onOpenSettings}>
-                Settings → Spotify
-              </button>
-            </div>
-          ))}
-        {/* Plays: Task 16 replaces this placeholder with <DjPlaysTab>. */}
+        {tab === 'tracks' && (
+          <DjTracksTab
+            connected={spotify.status === null ? null : spotify.connected}
+            page={page}
+            rows={trackRows}
+            spotify={dj.spotify}
+            progress={dj.progress}
+            loadingOlder={dj.loadingOlder}
+            onLoadOlder={dj.loadOlder}
+            checking={checking}
+            onVerdict={answer}
+            onPlayFiles={playFiles}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
         {tab === 'plays' && (
-          <p className="dj-note">
-            {dj.plays
-              ? `${dj.plays.length} tracks in their sets`
-              : 'Reading their sets…'}
-          </p>
+          <DjPlaysTab
+            name={profile?.displayName ?? name}
+            sets={dj.sets?.length ?? null}
+            plays={dj.plays}
+            ownership={playsOwnership}
+            checking={checking}
+            onPlayFiles={playFiles}
+          />
         )}
         {tab === 'sets' && (
           <DjSetsTab
