@@ -2,8 +2,9 @@
 // One YouTube Music list — or All playlists — against the library. The view is
 // StreamingListView; this gives it YouTube Music's rows, words and actions,
 // and the Sets group under the table.
-import { useId, useMemo } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { StreamingListView, type RowText } from './StreamingListView'
+import { Icon } from '../Icon'
 import { YouTubeMusicRowActions } from '../youtube-music/YouTubeMusicRowActions'
 import type { SpotifyData } from '../spotify/useSpotify'
 import type {
@@ -67,7 +68,10 @@ function syncLine(youtubeMusic: YouTubeMusicData, now: number | null): string {
   return ago ? `synced ${ago}` : 'synced'
 }
 
-/** The sets in the list: not tracks, each one click from Sets. */
+/**
+ * The sets in the list: not tracks, each one click from Sets. Closed until
+ * asked for, so the tracks keep the room.
+ */
 function SetsGroup({
   sets,
   onOpenSet,
@@ -75,33 +79,50 @@ function SetsGroup({
   sets: YtmSetRow[]
   onOpenSet: (videoId: string) => void
 }) {
-  const headingId = useId()
+  const [open, setOpen] = useState(false)
+  const rowsId = useId()
   return (
-    <section className="ytm-sets" aria-labelledby={headingId}>
-      <h2 className="ytm-sets__title" id={headingId}>
-        Sets ({sets.length})
+    <section className={`ytm-sets${open ? ' ytm-sets--open' : ''}`}>
+      <h2 className="ytm-sets__title">
+        <button
+          type="button"
+          className="ytm-sets__toggle"
+          aria-expanded={open}
+          aria-controls={rowsId}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Icon
+            name="ChevronRight"
+            size={12}
+            strokeWidth={2}
+            className="ytm-sets__chevron"
+          />
+          Sets ({sets.length})
+        </button>
       </h2>
-      {sets.map(({ track }) => (
-        <div className="ytm-sets__row" key={track.videoId}>
-          <span className="ytm-sets__name" title={track.title}>
-            {track.title}
-          </span>
-          <span className="ytm-sets__channel" title={track.channel}>
-            {track.channel}
-          </span>
-          <span className="ytm-sets__length">
-            {msToCue(track.durationMs ?? 0)}
-          </span>
-          <button
-            type="button"
-            className="spotify-mini"
-            aria-label={`Open ${track.title} in Sets`}
-            onClick={() => onOpenSet(track.videoId)}
-          >
-            Open in Sets
-          </button>
-        </div>
-      ))}
+      <div id={rowsId} hidden={!open}>
+        {sets.map(({ track }) => (
+          <div className="ytm-sets__row" key={track.videoId}>
+            <span className="ytm-sets__name" title={track.title}>
+              {track.title}
+            </span>
+            <span className="ytm-sets__channel" title={track.channel}>
+              {track.channel}
+            </span>
+            <span className="ytm-sets__length">
+              {msToCue(track.durationMs ?? 0)}
+            </span>
+            <button
+              type="button"
+              className="spotify-mini"
+              aria-label={`Open ${track.title} in Sets`}
+              onClick={() => onOpenSet(track.videoId)}
+            >
+              Open in Sets
+            </button>
+          </div>
+        ))}
+      </div>
     </section>
   )
 }
