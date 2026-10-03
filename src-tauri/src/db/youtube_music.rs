@@ -7,8 +7,9 @@
 //! scanned.
 
 use super::Database;
-use rusqlite::{params, Result, Transaction, TransactionBehavior};
+use rusqlite::{params, OptionalExtension, Result, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 /// Liked music's id — YouTube's own, so it reads like any playlist id.
 pub const LIKED_MUSIC_ID: &str = "LM";
@@ -230,6 +231,233 @@ impl Database {
     }
 }
 
+// --- what a sync found ------------------------------------------------
+
+/// One available video in one list, as YouTube returned it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YtmEntry {
+    pub track: YtmTrack,
+    /// `snippet.publishedAt`: when it was added to the playlist (ISO).
+    pub added_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListChange {
+    /// Its first page matched what is stored: nothing was read past it.
+    Unchanged,
+    /// Every page was read.
+    Full {
+        /// The available items, in YouTube's order. Deleted and private
+        /// videos are not here.
+        entries: Vec<YtmEntry>,
+        total_results: i64,
+        /// Every video id on page one, unavailable ones included.
+        first_page_ids: Vec<String>,
+    },
+    /// 404: the playlist was deleted or made private.
+    Gone,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SyncChanges {
+    /// One per list checked, Liked music first.
+    pub lists: Vec<(String, ListChange)>,
+    /// Durations of the videos that were not stored before this sync.
+    pub durations: HashMap<String, i64>,
+}
+
+/// What the last full read of a list left behind.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ListBaseline {
+    pub id: String,
+    pub total_results: Option<i64>,
+    pub first_page_ids: Option<Vec<String>>,
+    pub full_synced_at: Option<i64>,
+}
+
+impl ListBaseline {
+    /// A list never read in full: it gets a full read.
+    pub fn new(id: &str) -> Self {
+        Self { id: id.to_string(), ..Self::default() }
+    }
+}
+
+/// What the next sync compares against.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SyncBaseline {
+    /// Liked music first, then the added playlists in sidebar order.
+    pub lists: Vec<ListBaseline>,
+    /// Videos whose length is stored: not asked for again. A video stored
+    /// without one (a premiere or a live stream when it was first read) is
+    /// not here, so its next full read asks again.
+    pub known_ids: HashSet<String>,
+}
+
+/// A stored list as applying a change needs it: track_count, total_results,
+/// full_synced_at, unavailable_at.
+type StoredState = (i64, Option<i64>, Option<i64>, Option<i64>);
+
+impl Database {
+    pub fn ytm_baseline(&self) -> Result<SyncBaseline> {
+        let mut lists = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, total_results, first_page_ids, full_synced_at
+                 FROM ytm_lists ORDER BY position, id",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                let first_page: Option<String> = r.get(2)?;
+                Ok(ListBaseline {
+                    id: r.get(0)?,
+                    total_results: r.get(1)?,
+                    // Unreadable JSON is as good as none: the list is read in full.
+                    first_page_ids: first_page.and_then(|raw| serde_json::from_str(&raw).ok()),
+                    full_synced_at: r.get(3)?,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>>>()?
+        };
+        // Liked music is synced from the start; its row is made by its first sync.
+        if !lists.iter().any(|l| l.id == LIKED_MUSIC_ID) {
+            lists.insert(0, ListBaseline::new(LIKED_MUSIC_ID));
+        }
+        Ok(SyncBaseline { lists, known_ids: self.ytm_known_ids()? })
+    }
+
+    /// Videos whose length is stored. One stored without a length is left
+    /// out, so the next full read of its list asks YouTube again.
+    pub fn ytm_known_ids(&self) -> Result<HashSet<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT video_id FROM ytm_tracks WHERE duration_ms IS NOT NULL")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    /// Stores what a sync found, all of it or none of it. Returns whether
+    /// anything a person would see changed.
+    ///
+    /// Liked music's row is made by its first sync. A playlist's row is made
+    /// when it is added, so a result for one no longer stored (removed while
+    /// the sync ran) is dropped rather than brought back.
+    pub fn apply_ytm_sync(&self, changes: &SyncChanges, now_ms: i64) -> Result<bool> {
+        let tx = self.ytm_immediate_transaction()?;
+        let mut changed = self.conn.execute(
+            "INSERT OR IGNORE INTO ytm_lists (id, name, position, last_opened_at) VALUES (?1, ?2, 0, ?3)",
+            params![LIKED_MUSIC_ID, LIKED_MUSIC_NAME, now_ms],
+        )? > 0;
+
+        for (list_id, change) in &changes.lists {
+            let stored: Option<StoredState> = self
+                .conn
+                .query_row(
+                    "SELECT track_count, total_results, full_synced_at, unavailable_at
+                     FROM ytm_lists WHERE id = ?1",
+                    [list_id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()?;
+            let Some((track_count, total_before, full_synced_at, unavailable_at)) = stored else {
+                continue;
+            };
+
+            match change {
+                ListChange::Unchanged => {}
+                ListChange::Gone => {
+                    if unavailable_at.is_none() {
+                        self.conn.execute(
+                            "UPDATE ytm_lists SET unavailable_at = ?2 WHERE id = ?1",
+                            params![list_id, now_ms],
+                        )?;
+                        changed = true;
+                    }
+                }
+                ListChange::Full { entries, total_results, first_page_ids } => {
+                    for entry in entries {
+                        let duration = changes.durations.get(&entry.track.video_id).copied();
+                        changed |= self.upsert_ytm_track(&entry.track, duration)?;
+                    }
+                    changed |= self.replace_ytm_pairs(list_id, entries, now_ms)?;
+
+                    let first_read = full_synced_at.is_none();
+                    let ids = serde_json::to_string(first_page_ids).unwrap_or_else(|_| "[]".to_string());
+                    // A list's first full read is its baseline: what it already
+                    // held is not new.
+                    self.conn.execute(
+                        "UPDATE ytm_lists SET track_count = ?2, total_results = ?3, first_page_ids = ?4,
+                                full_synced_at = ?5, unavailable_at = NULL,
+                                last_opened_at = CASE WHEN ?6 THEN ?5 ELSE last_opened_at END
+                         WHERE id = ?1",
+                        params![list_id, entries.len() as i64, total_results, ids, now_ms, first_read],
+                    )?;
+                    changed |= track_count != entries.len() as i64
+                        || total_before != Some(*total_results)
+                        || unavailable_at.is_some();
+                }
+            }
+        }
+
+        self.delete_ytm_orphans()?;
+        tx.commit()?;
+        Ok(changed)
+    }
+
+    /// Returns true when the video is new or its title or channel changed. A
+    /// duration is only ever filled in, never cleared.
+    fn upsert_ytm_track(&self, track: &YtmTrack, duration_ms: Option<i64>) -> Result<bool> {
+        let written = self.conn.execute(
+            "INSERT INTO ytm_tracks (video_id, title, channel, duration_ms) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(video_id) DO UPDATE SET
+                title = excluded.title,
+                channel = excluded.channel,
+                duration_ms = COALESCE(excluded.duration_ms, ytm_tracks.duration_ms)
+             WHERE title IS NOT excluded.title
+                OR channel IS NOT excluded.channel
+                OR (excluded.duration_ms IS NOT NULL AND duration_ms IS NOT excluded.duration_ms)",
+            params![track.video_id, track.title, track.channel, duration_ms.or(track.duration_ms)],
+        )?;
+        Ok(written > 0)
+    }
+
+    /// A full read of a list: add what is new (first seen now), drop what
+    /// YouTube no longer lists, leave the rest with its `first_seen_at`.
+    /// Delete-then-insert would mark the whole list new.
+    fn replace_ytm_pairs(&self, list_id: &str, entries: &[YtmEntry], now_ms: i64) -> Result<bool> {
+        let before: HashSet<String> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT video_id FROM ytm_list_tracks WHERE list_id = ?1")?;
+            let rows = stmt.query_map([list_id], |r| r.get::<_, String>(0))?;
+            rows.collect::<Result<HashSet<_>>>()?
+        };
+
+        let mut written = false;
+        let mut wanted: HashSet<&str> = HashSet::new();
+        for entry in entries {
+            // A video listed twice is one row, dated by its first listing.
+            if !wanted.insert(entry.track.video_id.as_str()) {
+                continue;
+            }
+            written |= self.conn.execute(
+                "INSERT INTO ytm_list_tracks (list_id, video_id, added_at, first_seen_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(list_id, video_id) DO UPDATE SET added_at = excluded.added_at
+                 WHERE added_at IS NOT excluded.added_at",
+                params![list_id, entry.track.video_id, entry.added_at, now_ms],
+            )? > 0;
+        }
+
+        let mut removed = 0;
+        for gone in before.iter().filter(|id| !wanted.contains(id.as_str())) {
+            removed += self.conn.execute(
+                "DELETE FROM ytm_list_tracks WHERE list_id = ?1 AND video_id = ?2",
+                params![list_id, gone],
+            )?;
+        }
+        Ok(written || removed > 0)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,5 +665,232 @@ mod tests {
             "the playlists stay, named and in order"
         );
         assert_eq!(db.get_setting("youtube_api_key").unwrap().as_deref(), Some("kept"));
+    }
+
+    // --- applying a sync ----------------------------------------------
+
+    use std::collections::{HashMap, HashSet};
+
+    fn entry(id: &str) -> YtmEntry {
+        YtmEntry {
+            track: YtmTrack {
+                video_id: id.to_string(),
+                title: format!("Artist - Title {id}"),
+                channel: "Label".to_string(),
+                duration_ms: None,
+            },
+            added_at: Some("2026-10-01T09:00:00Z".to_string()),
+        }
+    }
+
+    fn full(ids: &[&str]) -> ListChange {
+        ListChange::Full {
+            entries: ids.iter().map(|id| entry(id)).collect(),
+            total_results: ids.len() as i64,
+            first_page_ids: ids.iter().map(|id| id.to_string()).collect(),
+        }
+    }
+
+    fn sync(lists: Vec<(&str, ListChange)>) -> SyncChanges {
+        SyncChanges {
+            lists: lists.into_iter().map(|(id, change)| (id.to_string(), change)).collect(),
+            durations: HashMap::new(),
+        }
+    }
+
+    /// The ids that would carry a dot: first seen later than the list's opening.
+    fn new_ids(db: &Database, list_id: &str) -> Vec<String> {
+        let dump = db.get_ytm_library().unwrap();
+        let opened = dump.lists.iter().find(|l| l.id == list_id).expect("list stored").last_opened_at;
+        let mut ids: Vec<String> = dump
+            .entries
+            .iter()
+            .filter(|e| e.list_id == list_id && e.first_seen_at > opened)
+            .map(|e| e.video_id.clone())
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    fn first_seen(db: &Database, list_id: &str, video_id: &str) -> i64 {
+        db.conn
+            .query_row(
+                "SELECT first_seen_at FROM ytm_list_tracks WHERE list_id = ?1 AND video_id = ?2",
+                params![list_id, video_id],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    fn list(db: &Database, id: &str) -> YtmListRow {
+        db.get_ytm_library().unwrap().lists.into_iter().find(|l| l.id == id).expect("list stored")
+    }
+
+    /// Liked music [a, b] and playlist PL1 [b, c], first synced at 1,000.
+    fn baseline_db() -> Database {
+        let db = fresh();
+        db.add_ytm_list("PL1", "Deep", 1_000).unwrap();
+        db.apply_ytm_sync(
+            &sync(vec![(LIKED_MUSIC_ID, full(&["a", "b"])), ("PL1", full(&["b", "c"]))]),
+            1_000,
+        )
+        .unwrap();
+        db
+    }
+
+    #[test]
+    fn a_lists_first_full_read_is_its_baseline() {
+        let db = baseline_db();
+        assert!(new_ids(&db, LIKED_MUSIC_ID).is_empty());
+        assert!(new_ids(&db, "PL1").is_empty());
+        let dump = db.get_ytm_library().unwrap();
+        assert_eq!(
+            dump.lists.iter().map(|l| (l.id.as_str(), l.name.as_str(), l.position)).collect::<Vec<_>>(),
+            [(LIKED_MUSIC_ID, LIKED_MUSIC_NAME, 0), ("PL1", "Deep", 1)]
+        );
+        assert!(dump.lists.iter().all(|l| l.last_opened_at == 1_000));
+        assert_eq!(list(&db, "PL1").total_results, Some(2));
+    }
+
+    #[test]
+    fn a_like_after_the_baseline_is_new_until_the_list_is_opened() {
+        let db = baseline_db();
+        let changed = db
+            .apply_ytm_sync(
+                &sync(vec![(LIKED_MUSIC_ID, full(&["d", "a", "b"])), ("PL1", ListChange::Unchanged)]),
+                2_000,
+            )
+            .unwrap();
+        assert!(changed);
+        assert_eq!(new_ids(&db, LIKED_MUSIC_ID), ["d"]);
+        assert!(new_ids(&db, "PL1").is_empty());
+
+        db.mark_ytm_list_opened(LIKED_MUSIC_ID, 2_500).unwrap();
+        assert!(new_ids(&db, LIKED_MUSIC_ID).is_empty());
+    }
+
+    #[test]
+    fn a_full_read_keeps_first_seen_at_and_drops_what_left() {
+        let db = baseline_db();
+        db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, full(&["c", "a"]))]), 2_000).unwrap();
+        assert_eq!(first_seen(&db, LIKED_MUSIC_ID, "a"), 1_000);
+        assert_eq!(first_seen(&db, LIKED_MUSIC_ID, "c"), 2_000);
+        let dump = db.get_ytm_library().unwrap();
+        let liked: Vec<&str> = dump
+            .entries
+            .iter()
+            .filter(|e| e.list_id == LIKED_MUSIC_ID)
+            .map(|e| e.video_id.as_str())
+            .collect();
+        assert!(!liked.contains(&"b"), "an unliked video leaves Liked music");
+        assert!(dump.tracks.iter().any(|t| t.video_id == "b"), "b is still in PL1");
+    }
+
+    #[test]
+    fn an_unchanged_sync_changes_nothing() {
+        let db = baseline_db();
+        let changed = db
+            .apply_ytm_sync(
+                &sync(vec![(LIKED_MUSIC_ID, ListChange::Unchanged), ("PL1", ListChange::Unchanged)]),
+                2_000,
+            )
+            .unwrap();
+        assert!(!changed);
+        assert!(!db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, full(&["a", "b"]))]), 3_000).unwrap());
+    }
+
+    #[test]
+    fn a_vanished_playlist_is_kept_and_marked_until_it_reads_again() {
+        let db = baseline_db();
+        assert!(db.apply_ytm_sync(&sync(vec![("PL1", ListChange::Gone)]), 2_000).unwrap());
+        assert_eq!(list(&db, "PL1").unavailable_at, Some(2_000));
+        let rows = db.get_ytm_library().unwrap().entries.iter().filter(|e| e.list_id == "PL1").count();
+        assert_eq!(rows, 2, "its rows stay");
+
+        assert!(!db.apply_ytm_sync(&sync(vec![("PL1", ListChange::Gone)]), 3_000).unwrap(), "already marked");
+        assert_eq!(list(&db, "PL1").unavailable_at, Some(2_000));
+
+        db.apply_ytm_sync(&sync(vec![("PL1", full(&["b", "c"]))]), 4_000).unwrap();
+        assert_eq!(list(&db, "PL1").unavailable_at, None);
+    }
+
+    #[test]
+    fn a_result_for_a_playlist_removed_meanwhile_is_dropped() {
+        let db = baseline_db();
+        db.remove_ytm_list("PL1").unwrap();
+        db.apply_ytm_sync(&sync(vec![("PL1", full(&["x"]))]), 2_000).unwrap();
+        let dump = db.get_ytm_library().unwrap();
+        assert!(dump.lists.iter().all(|l| l.id != "PL1"));
+        assert!(dump.tracks.iter().all(|t| t.video_id != "x"));
+    }
+
+    #[test]
+    fn durations_are_filled_in_for_new_videos_and_kept_for_known_ones() {
+        let db = fresh();
+        let mut first = sync(vec![(LIKED_MUSIC_ID, full(&["a", "b"]))]);
+        first.durations.insert("a".to_string(), 95 * 60_000);
+        db.apply_ytm_sync(&first, 1_000).unwrap();
+        // A read without lengths (YouTube had none for b) keeps a's.
+        db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, full(&["a", "b"]))]), 2_000).unwrap();
+        let length = |db: &Database, id: &str| {
+            db.get_ytm_library().unwrap().tracks.into_iter().find(|t| t.video_id == id).unwrap().duration_ms
+        };
+        assert_eq!(length(&db, "a"), Some(95 * 60_000));
+        assert_eq!(length(&db, "b"), None);
+        // b has no length yet, so the next full read asks for it again.
+        assert_eq!(db.ytm_known_ids().unwrap(), HashSet::from(["a".to_string()]));
+
+        // A premiere that became a video: its length arrives later.
+        let mut later = sync(vec![(LIKED_MUSIC_ID, full(&["a", "b"]))]);
+        later.durations.insert("b".to_string(), 6 * 60_000);
+        assert!(db.apply_ytm_sync(&later, 3_000).unwrap());
+        assert_eq!(length(&db, "b"), Some(6 * 60_000));
+        assert_eq!(db.ytm_known_ids().unwrap(), HashSet::from(["a".to_string(), "b".to_string()]));
+    }
+
+    #[test]
+    fn the_baseline_lists_liked_music_first_even_before_its_first_sync() {
+        let db = fresh();
+        db.add_ytm_list("PL1", "Deep", 100).unwrap();
+        assert_eq!(
+            db.ytm_baseline().unwrap().lists,
+            vec![ListBaseline::new(LIKED_MUSIC_ID), ListBaseline::new("PL1")]
+        );
+
+        db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, full(&["a", "b"]))]), 1_000).unwrap();
+        let liked = db.ytm_baseline().unwrap().lists.remove(0);
+        assert_eq!(
+            liked,
+            ListBaseline {
+                id: LIKED_MUSIC_ID.to_string(),
+                total_results: Some(2),
+                first_page_ids: Some(vec!["a".to_string(), "b".to_string()]),
+                full_synced_at: Some(1_000),
+            }
+        );
+    }
+
+    #[test]
+    fn after_a_disconnect_the_next_read_is_a_baseline_again() {
+        let db = baseline_db();
+        db.clear_ytm_account().unwrap();
+        assert_eq!(db.ytm_baseline().unwrap().lists[1], ListBaseline::new("PL1"));
+
+        db.apply_ytm_sync(
+            &sync(vec![(LIKED_MUSIC_ID, full(&["a", "z"])), ("PL1", full(&["b"]))]),
+            5_000,
+        )
+        .unwrap();
+        assert!(new_ids(&db, LIKED_MUSIC_ID).is_empty(), "connecting again is a first sync");
+        assert!(new_ids(&db, "PL1").is_empty());
+    }
+
+    #[test]
+    fn a_video_listed_twice_is_one_row() {
+        let db = fresh();
+        db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, full(&["a", "a", "b"]))]), 1_000).unwrap();
+        let dump = db.get_ytm_library().unwrap();
+        assert_eq!(dump.entries.len(), 2);
+        assert_eq!(dump.lists[0].track_count, 3, "YouTube's items, for the unavailable count");
     }
 }
