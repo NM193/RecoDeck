@@ -14,7 +14,7 @@
  * so this is a loop over what is on screen.
  */
 
-import { containment, containmentOf, normalise, splitArtistTitle, tokenSet } from './text'
+import { containmentOf, normalise, splitArtistTitle, tokenSet } from './text'
 import type { Track } from './types'
 
 /** The minimum shape needed from a library track — matches src/types/track.ts. */
@@ -98,6 +98,8 @@ export interface Indexed {
   /** The names split into words once, here, rather than on every comparison. */
   titleTokens: Set<string>
   artistTokens: Set<string>
+  /** `versionNorm` split into words; empty when the tag names no version. */
+  versionTokens: Set<string>
 }
 
 /**
@@ -142,13 +144,15 @@ export function indexLibrary(library: LibraryTrack[]): Indexed[] {
     const credits = creditsOf(track)
     const titleNorm = normalise(credits.title)
     const artistNorm = normalise(credits.artist)
+    const versionNorm = versionOf(track.title)
     return {
       track,
       titleNorm,
       artistNorm,
-      versionNorm: versionOf(track.title),
+      versionNorm,
       titleTokens: tokenSet(titleNorm),
       artistTokens: tokenSet(artistNorm),
+      versionTokens: tokenSet(versionNorm),
     }
   })
 }
@@ -190,6 +194,7 @@ export function matchOne(
 
   const formTokens = titleForms.map((form) => tokenSet(form))
   const artistTokens = tokenSet(parsedArtist)
+  const versionTokens = tokenSet(parsedVersion)
 
   let best: LibraryMatch | null = null
 
@@ -199,8 +204,8 @@ export function matchOne(
     // When both sides name a version, they have to be the same version. When
     // only one does, the title still decides — a tracklist naming the remix
     // while the tag says only "Horny" is the same record written two ways.
-    if (parsedVersion && entry.versionNorm) {
-      if (containment(parsedVersion, entry.versionNorm) < MIN_VERSION_MATCH) continue
+    if (versionTokens.size && entry.versionTokens.size) {
+      if (containmentOf(versionTokens, entry.versionTokens) < MIN_VERSION_MATCH) continue
     }
 
     let titleScore: number | null = null
