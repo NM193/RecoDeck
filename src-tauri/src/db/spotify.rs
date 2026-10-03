@@ -6,7 +6,7 @@
 //! every change, so a track turns Owned the moment its file is scanned.
 
 use super::Database;
-use rusqlite::{params, OptionalExtension, Result};
+use rusqlite::{params, OptionalExtension, Result, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -69,8 +69,8 @@ pub struct SpotifyLibraryDump {
 
 impl Database {
     pub fn get_spotify_library(&self) -> Result<SpotifyLibraryDump> {
-        // A verdict about a file that is gone says nothing any more — removed
-        // here, where it is noticed.
+        // A verdict about a file that is gone says nothing any more. The
+        // trigger on `tracks` removes them as files go; this is the safety net.
         self.conn.execute(
             "DELETE FROM spotify_match_verdicts
              WHERE library_track_id NOT IN (SELECT id FROM tracks)",
@@ -167,15 +167,25 @@ impl Database {
         Ok(())
     }
 
-    /// Disconnecting forgets everything Spotify-side. Nothing on Spotify is touched.
+    /// Disconnecting forgets everything Spotify-side, all at once or not at
+    /// all. Nothing on Spotify is touched.
     pub fn clear_spotify(&self) -> Result<()> {
+        let tx = self.immediate_transaction()?;
         self.conn.execute_batch(
             "DELETE FROM spotify_list_tracks;
              DELETE FROM spotify_lists;
              DELETE FROM spotify_tracks;
              DELETE FROM spotify_match_verdicts;",
         )?;
-        self.delete_setting(REFUSED_SETTING)
+        self.delete_setting(REFUSED_SETTING)?;
+        tx.commit()
+    }
+
+    /// Takes the write lock up front: the companion server opens a second
+    /// connection to the same file, and a deferred transaction that reads first
+    /// could fail to upgrade halfway through.
+    fn immediate_transaction(&self) -> Result<Transaction<'_>> {
+        Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)
     }
 }
 
@@ -243,6 +253,23 @@ pub struct SyncBaseline {
     pub refused: HashMap<String, String>,
 }
 
+/// A list as it was stored before this sync.
+struct StoredList {
+    name: String,
+    position: i64,
+    track_count: i64,
+    snapshot_id: Option<String>,
+}
+
+/// A sync whose change set no longer fits what is stored. Rolled back; the
+/// next sync starts from what is stored now.
+fn stale_changes(why: &str) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ABORT),
+        Some(format!("Spotify sync skipped: {why}. The next sync reads it again.")),
+    )
+}
+
 struct ListUpsert<'a> {
     id: &'a str,
     name: &'a str,
@@ -299,20 +326,43 @@ impl Database {
             .unwrap_or_default())
     }
 
-    /// Stores what a sync found. Returns whether anything a person would see
-    /// changed: a list added, removed, renamed or moved, or a track added to or
-    /// removed from a list.
+    /// Stores what a sync found, all of it or none of it. Returns whether
+    /// anything a person would see changed: a list added, removed, renamed,
+    /// moved or recounted, a track added to or removed from a list, or a
+    /// track's details.
+    ///
+    /// `changes` was worked out against a baseline read before the fetch, so it
+    /// is not trusted to still match what is stored: a playlist's snapshot only
+    /// advances with its contents, and an incremental Liked Songs change needs
+    /// a stored Liked Songs to apply to.
     pub fn apply_spotify_sync(&self, changes: &SyncChanges, now_ms: i64) -> Result<bool> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = self.immediate_transaction()?;
         let mut changed = false;
 
-        let existing: HashMap<String, (String, i64)> = {
-            let mut stmt = self.conn.prepare("SELECT id, name, position FROM spotify_lists")?;
+        let existing: HashMap<String, StoredList> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT id, name, position, track_count, snapshot_id FROM spotify_lists")?;
             let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, (r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    StoredList {
+                        name: r.get(1)?,
+                        position: r.get(2)?,
+                        track_count: r.get(3)?,
+                        snapshot_id: r.get(4)?,
+                    },
+                ))
             })?;
             rows.collect::<Result<HashMap<_, _>>>()?
         };
+
+        // Only a full read can start Liked Songs. The fetch side reads it in
+        // full whenever no Liked Songs row is stored, so this cannot repeat:
+        // the failed sync rolls back and the next one does a full read.
+        if !existing.contains_key(LIKED_LIST_ID) && !matches!(changes.liked, LikedChange::Full { .. }) {
+            return Err(stale_changes("Liked Songs is not stored yet, so new likes have nothing to go on"));
+        }
 
         // Liked Songs, always first.
         changed |= self.upsert_spotify_list(
@@ -329,7 +379,7 @@ impl Database {
         match &changes.liked {
             LikedChange::Unchanged { .. } => {}
             LikedChange::Prepend { entries, .. } => {
-                changed |= self.add_spotify_pairs(LIKED_LIST_ID, entries, now_ms)? > 0;
+                changed |= self.add_spotify_pairs(LIKED_LIST_ID, entries, now_ms)?;
             }
             LikedChange::Full { entries, .. } => {
                 changed |= self.replace_spotify_pairs(LIKED_LIST_ID, entries, now_ms)?;
@@ -340,18 +390,26 @@ impl Database {
         let mut kept: HashSet<&str> = HashSet::from([LIKED_LIST_ID]);
         for (index, playlist) in changes.playlists.iter().enumerate() {
             kept.insert(playlist.id.as_str());
+            let refetched = changes.refetched.get(&playlist.id);
+            // The snapshot stored is the one the stored contents came from. A
+            // playlist that was not read keeps its old one (NULL when it is
+            // new), so the next sync reads it.
+            let snapshot_id = match refetched {
+                Some(_) => Some(playlist.snapshot_id.as_str()),
+                None => existing.get(&playlist.id).and_then(|l| l.snapshot_id.as_deref()),
+            };
             changed |= self.upsert_spotify_list(
                 &existing,
                 ListUpsert {
                     id: &playlist.id,
                     name: &playlist.name,
-                    snapshot_id: Some(&playlist.snapshot_id),
+                    snapshot_id,
                     position: index as i64 + 1,
                     total: playlist.total,
                 },
                 now_ms,
             )?;
-            if let Some(entries) = changes.refetched.get(&playlist.id) {
+            if let Some(entries) = refetched {
                 changed |= self.replace_spotify_pairs(&playlist.id, entries, now_ms)?;
             }
         }
@@ -379,11 +437,13 @@ impl Database {
     }
 
     /// Inserts or updates a list. A list stored for the first time gets
-    /// `last_opened_at = now`: its first sync is the baseline. Returns true
-    /// when the list is new, renamed or moved.
+    /// `last_opened_at = now`: its first sync is the baseline. So does a
+    /// playlist whose contents are read for the first time (stored without a
+    /// snapshot until then), or all of it would read as new. Returns true when
+    /// the list is new, renamed, moved or recounted.
     fn upsert_spotify_list(
         &self,
-        existing: &HashMap<String, (String, i64)>,
+        existing: &HashMap<String, StoredList>,
         list: ListUpsert<'_>,
         now_ms: i64,
     ) -> Result<bool> {
@@ -392,44 +452,64 @@ impl Database {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
+                last_opened_at = CASE
+                    WHEN spotify_lists.id <> ?7
+                         AND spotify_lists.snapshot_id IS NULL
+                         AND excluded.snapshot_id IS NOT NULL
+                    THEN excluded.last_opened_at
+                    ELSE spotify_lists.last_opened_at
+                END,
                 snapshot_id = excluded.snapshot_id,
                 position = excluded.position,
                 track_count = excluded.track_count",
-            params![list.id, list.name, list.snapshot_id, list.position, list.total, now_ms],
+            params![list.id, list.name, list.snapshot_id, list.position, list.total, now_ms, LIKED_LIST_ID],
         )?;
         Ok(match existing.get(list.id) {
             None => true,
-            Some((name, position)) => name != list.name || *position != list.position,
+            Some(stored) => {
+                stored.name != list.name
+                    || stored.position != list.position
+                    || stored.track_count != list.total
+            }
         })
     }
 
-    fn upsert_spotify_track(&self, track: &SpotifyTrack) -> Result<()> {
-        self.conn.execute(
+    /// Returns true when the track is new or its details changed.
+    fn upsert_spotify_track(&self, track: &SpotifyTrack) -> Result<bool> {
+        let written = self.conn.execute(
             "INSERT INTO spotify_tracks (spotify_id, title, artists, album, duration_ms)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(spotify_id) DO UPDATE SET
                 title = excluded.title,
                 artists = excluded.artists,
                 album = excluded.album,
-                duration_ms = excluded.duration_ms",
+                duration_ms = excluded.duration_ms
+             WHERE title IS NOT excluded.title
+                OR artists IS NOT excluded.artists
+                OR album IS NOT excluded.album
+                OR duration_ms IS NOT excluded.duration_ms",
             params![track.spotify_id, track.title, track.artists, track.album, track.duration_ms],
         )?;
-        Ok(())
+        Ok(written > 0)
     }
 
-    /// Adds pairs that are not there yet, first seen now. Existing pairs are
-    /// left exactly as they are. Returns how many were added.
-    fn add_spotify_pairs(&self, list_id: &str, entries: &[ListEntry], now_ms: i64) -> Result<usize> {
-        let mut added = 0;
+    /// Adds pairs that are not there yet, first seen now. A pair already there
+    /// keeps its `first_seen_at`; only Spotify's `added_at` is refreshed.
+    /// Returns whether anything was written: a pair, its `added_at`, or a
+    /// track's details.
+    fn add_spotify_pairs(&self, list_id: &str, entries: &[ListEntry], now_ms: i64) -> Result<bool> {
+        let mut written = false;
         for entry in entries {
-            self.upsert_spotify_track(&entry.track)?;
-            added += self.conn.execute(
-                "INSERT OR IGNORE INTO spotify_list_tracks (list_id, spotify_id, added_at, first_seen_at)
-                 VALUES (?1, ?2, ?3, ?4)",
+            written |= self.upsert_spotify_track(&entry.track)?;
+            written |= self.conn.execute(
+                "INSERT INTO spotify_list_tracks (list_id, spotify_id, added_at, first_seen_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(list_id, spotify_id) DO UPDATE SET added_at = excluded.added_at
+                 WHERE added_at IS NOT excluded.added_at",
                 params![list_id, entry.track.spotify_id, entry.added_at, now_ms],
-            )?;
+            )? > 0;
         }
-        Ok(added)
+        Ok(written)
     }
 
     /// A full read of a list: add what is new, delete what Spotify no longer
@@ -443,7 +523,7 @@ impl Database {
             rows.collect::<Result<HashSet<_>>>()?
         };
 
-        let added = self.add_spotify_pairs(list_id, entries, now_ms)?;
+        let written = self.add_spotify_pairs(list_id, entries, now_ms)?;
 
         let wanted: HashSet<&str> = entries.iter().map(|e| e.track.spotify_id.as_str()).collect();
         let mut removed = 0;
@@ -453,7 +533,7 @@ impl Database {
                 params![list_id, gone],
             )?;
         }
-        Ok(added + removed > 0)
+        Ok(written || removed > 0)
     }
 }
 
@@ -587,6 +667,19 @@ mod tests {
 
         assert_eq!(db.get_spotify_library().unwrap().verdicts.len(), 1);
         assert_eq!(count(&db, "spotify_match_verdicts"), 1);
+    }
+
+    #[test]
+    fn a_deleted_files_verdicts_do_not_pass_to_the_file_that_reuses_its_id() {
+        let db = fresh();
+        let gone = db.create_track(&library_track("/music/a.mp3")).unwrap();
+        db.set_spotify_verdict("sp1", gone, "yes").unwrap();
+        db.conn.execute("DELETE FROM tracks WHERE id = ?1", [gone]).unwrap();
+
+        let reused = db.create_track(&library_track("/music/b.mp3")).unwrap();
+        assert_eq!(reused, gone, "SQLite reuses the highest id once it is free");
+        // Counted directly: reading the library would also drop stale rows.
+        assert_eq!(count(&db, "spotify_match_verdicts"), 0);
     }
 
     #[test]
@@ -870,5 +963,255 @@ mod tests {
         assert_eq!(base.snapshots, HashMap::from([("p1".to_string(), "s1".to_string())]));
         assert_eq!(base.refused, HashMap::from([("p9".to_string(), "s9".to_string())]));
         assert_eq!(db.spotify_refused().unwrap(), vec![meta("p9", "s9", 50)]);
+    }
+
+    // --- risky paths -------------------------------------------------------
+
+    type Snapshot = (Vec<SpotifyListRow>, Vec<SpotifyTrack>, Vec<SpotifyEntryRow>);
+
+    fn snapshot(db: &Database) -> Snapshot {
+        let dump = db.get_spotify_library().unwrap();
+        let mut tracks = dump.tracks;
+        tracks.sort_by(|a, b| a.spotify_id.cmp(&b.spotify_id));
+        let mut entries = dump.entries;
+        entries.sort_by(|a, b| (&a.list_id, &a.spotify_id).cmp(&(&b.list_id, &b.spotify_id)));
+        (dump.lists, tracks, entries)
+    }
+
+    fn ids_in(db: &Database, list_id: &str) -> Vec<String> {
+        let mut ids: Vec<String> = db
+            .get_spotify_library()
+            .unwrap()
+            .entries
+            .into_iter()
+            .filter(|e| e.list_id == list_id)
+            .map(|e| e.spotify_id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    fn stored_snapshot(db: &Database, list_id: &str) -> Option<String> {
+        db.conn
+            .query_row("SELECT snapshot_id FROM spotify_lists WHERE id = ?1", [list_id], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_sync_that_fails_at_the_last_write_leaves_everything_as_it_was() {
+        let db = baseline_db();
+        let before = snapshot(&db);
+        db.conn.execute_batch("DROP TABLE settings").unwrap();
+
+        let result = db.apply_spotify_sync(
+            &changes(
+                full(&["d"]),
+                vec![(meta("p2", "s2", 1), Some(entries(&["e"])))],
+            ),
+            2_000,
+        );
+        assert!(result.is_err());
+        assert_eq!(snapshot(&db), before);
+    }
+
+    #[test]
+    fn a_prepend_with_an_already_known_id_keeps_it_and_deletes_nothing() {
+        let db = baseline_db();
+        let changed = db
+            .apply_spotify_sync(
+                &changes(
+                    LikedChange::Prepend { entries: entries(&["d", "a"]), total: 3 },
+                    vec![(meta("p1", "s1", 2), None)],
+                ),
+                2_000,
+            )
+            .unwrap();
+        assert!(changed);
+        assert_eq!(first_seen(&db, LIKED_LIST_ID, "a"), 1_000);
+        assert_eq!(ids_in(&db, LIKED_LIST_ID), ["a", "b", "d"]);
+        assert_eq!(new_ids(&db, LIKED_LIST_ID), ["d"]);
+    }
+
+    #[test]
+    fn an_incremental_liked_change_with_no_stored_liked_songs_is_refused() {
+        let db = fresh();
+        for liked in [
+            LikedChange::Unchanged { total: 2 },
+            LikedChange::Prepend { entries: entries(&["a"]), total: 1 },
+        ] {
+            let result = db.apply_spotify_sync(
+                &changes(liked, vec![(meta("p1", "s1", 1), Some(entries(&["b"])))]),
+                1_000,
+            );
+            assert!(result.is_err());
+            assert_eq!(count(&db, "spotify_lists"), 0);
+        }
+        // So the next baseline has no Liked total, and the fetch reads it all.
+        assert_eq!(db.spotify_baseline().unwrap().liked_total, None);
+    }
+
+    #[test]
+    fn a_playlist_listed_but_never_read_is_read_next_time_as_a_baseline() {
+        let db = baseline_db();
+        // p2 is listed but its contents are missing from the change set.
+        db.apply_spotify_sync(
+            &changes(
+                LikedChange::Unchanged { total: 2 },
+                vec![(meta("p1", "s1", 2), None), (meta("p2", "s7", 2), None)],
+            ),
+            2_000,
+        )
+        .unwrap();
+        assert_eq!(stored_snapshot(&db, "p2"), None);
+        assert!(!db.spotify_baseline().unwrap().snapshots.contains_key("p2"));
+
+        db.apply_spotify_sync(
+            &changes(
+                LikedChange::Unchanged { total: 2 },
+                vec![(meta("p1", "s1", 2), None), (meta("p2", "s7", 2), Some(entries(&["x", "y"])))],
+            ),
+            3_000,
+        )
+        .unwrap();
+        assert_eq!(stored_snapshot(&db, "p2").as_deref(), Some("s7"));
+        assert_eq!(ids_in(&db, "p2"), ["x", "y"]);
+        assert!(new_ids(&db, "p2").is_empty(), "its first read is the baseline");
+    }
+
+    #[test]
+    fn a_stored_playlist_not_read_keeps_the_snapshot_its_contents_came_from() {
+        let db = baseline_db();
+        db.apply_spotify_sync(
+            &changes(LikedChange::Unchanged { total: 2 }, vec![(meta("p1", "s2", 2), None)]),
+            2_000,
+        )
+        .unwrap();
+        assert_eq!(stored_snapshot(&db, "p1").as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn a_refetched_playlist_that_lost_a_track_loses_it_here() {
+        let db = baseline_db();
+        let changed = db
+            .apply_spotify_sync(
+                &changes(
+                    LikedChange::Unchanged { total: 2 },
+                    vec![(meta("p1", "s2", 1), Some(entries(&["b"])))],
+                ),
+                2_000,
+            )
+            .unwrap();
+        assert!(changed);
+        assert_eq!(ids_in(&db, "p1"), ["b"]);
+        assert_eq!(first_seen(&db, "p1", "b"), 1_000);
+        // c was only in p1, so the track itself goes.
+        assert!(!snapshot(&db).1.iter().any(|t| t.spotify_id == "c"));
+    }
+
+    #[test]
+    fn a_full_refetch_refreshes_added_at_and_keeps_first_seen_at() {
+        let db = baseline_db();
+        let mut relike = entry("a");
+        relike.added_at = Some("2026-10-03T12:00:00Z".to_string());
+        let changed = db
+            .apply_spotify_sync(
+                &changes(
+                    LikedChange::Full { entries: vec![relike, entry("b")], total: 2 },
+                    vec![(meta("p1", "s1", 2), None)],
+                ),
+                2_000,
+            )
+            .unwrap();
+        assert!(changed);
+        let a = snapshot(&db)
+            .2
+            .into_iter()
+            .find(|e| e.list_id == LIKED_LIST_ID && e.spotify_id == "a")
+            .unwrap();
+        assert_eq!(a.added_at.as_deref(), Some("2026-10-03T12:00:00Z"));
+        assert_eq!(a.first_seen_at, 1_000);
+    }
+
+    #[test]
+    fn a_change_of_position_count_or_track_details_is_a_change() {
+        let db = fresh();
+        let two = |a: PlaylistMeta, b: PlaylistMeta| {
+            changes(LikedChange::Unchanged { total: 1 }, vec![(a, None), (b, None)])
+        };
+        db.apply_spotify_sync(
+            &changes(
+                full(&["a"]),
+                vec![
+                    (meta("p1", "s1", 1), Some(entries(&["b"]))),
+                    (meta("p2", "s2", 1), Some(entries(&["c"]))),
+                ],
+            ),
+            1_000,
+        )
+        .unwrap();
+        assert!(!db.apply_spotify_sync(&two(meta("p1", "s1", 1), meta("p2", "s2", 1)), 2_000).unwrap());
+
+        // Moved only.
+        assert!(db.apply_spotify_sync(&two(meta("p2", "s2", 1), meta("p1", "s1", 1)), 3_000).unwrap());
+        // Recounted only.
+        assert!(db.apply_spotify_sync(&two(meta("p2", "s2", 5), meta("p1", "s1", 1)), 4_000).unwrap());
+
+        // A track retitled, nothing else.
+        let mut retitled = entry("a");
+        retitled.track.title = "Come Get Up (Original Mix)".to_string();
+        let same_lists = vec![(meta("p2", "s2", 5), None), (meta("p1", "s1", 1), None)];
+        assert!(db
+            .apply_spotify_sync(
+                &changes(LikedChange::Full { entries: vec![retitled.clone()], total: 1 }, same_lists.clone()),
+                5_000,
+            )
+            .unwrap());
+        assert!(!db
+            .apply_spotify_sync(
+                &changes(LikedChange::Full { entries: vec![retitled], total: 1 }, same_lists),
+                6_000,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn unfollowing_then_following_again_starts_a_fresh_baseline() {
+        let db = baseline_db();
+        db.apply_spotify_sync(&changes(LikedChange::Unchanged { total: 2 }, vec![]), 2_000)
+            .unwrap();
+        assert!(!db.spotify_baseline().unwrap().snapshots.contains_key("p1"));
+
+        db.apply_spotify_sync(
+            &changes(
+                LikedChange::Unchanged { total: 2 },
+                vec![(meta("p1", "s1", 3), Some(entries(&["b", "c", "e"])))],
+            ),
+            3_000,
+        )
+        .unwrap();
+        assert_eq!(ids_in(&db, "p1"), ["b", "c", "e"]);
+        assert_eq!(first_seen(&db, "p1", "b"), 3_000);
+        assert!(new_ids(&db, "p1").is_empty());
+    }
+
+    #[test]
+    fn a_refused_playlist_shared_later_starts_with_its_own_baseline() {
+        let db = baseline_db();
+        let mut refused = changes(LikedChange::Unchanged { total: 2 }, vec![(meta("p1", "s1", 2), None)]);
+        refused.refused = vec![meta("p9", "s9", 3)];
+        db.apply_spotify_sync(&refused, 2_000).unwrap();
+        assert!(snapshot(&db).0.iter().all(|l| l.id != "p9"));
+
+        db.apply_spotify_sync(
+            &changes(
+                LikedChange::Unchanged { total: 2 },
+                vec![(meta("p1", "s1", 2), None), (meta("p9", "s10", 3), Some(entries(&["x", "y", "z"])))],
+            ),
+            3_000,
+        )
+        .unwrap();
+        assert_eq!(ids_in(&db, "p9"), ["x", "y", "z"]);
+        assert!(new_ids(&db, "p9").is_empty());
+        assert!(db.spotify_refused().unwrap().is_empty());
     }
 }

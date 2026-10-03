@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS spotify_lists (
 
 CREATE TABLE IF NOT EXISTS spotify_list_tracks (
     list_id       TEXT NOT NULL REFERENCES spotify_lists(id) ON DELETE CASCADE,
-    spotify_id    TEXT NOT NULL REFERENCES spotify_tracks(spotify_id) ON DELETE CASCADE,
+    -- No cascade: only tracks in no list are ever deleted, and a cascade would
+    -- silently drop first_seen_at if a track row were ever REPLACEd.
+    spotify_id    TEXT NOT NULL REFERENCES spotify_tracks(spotify_id),
     added_at      TEXT,                  -- Spotify's: when it was liked / added (ISO)
     first_seen_at INTEGER NOT NULL,      -- RecoDeck's: the sync that first stored this pair (unix ms)
     PRIMARY KEY (list_id, spotify_id)
@@ -42,10 +44,19 @@ CREATE INDEX IF NOT EXISTS idx_spotify_list_tracks_track ON spotify_list_tracks(
 
 -- Yes / No answered on a Maybe row, never asked again for the pair. Kept when
 -- the Spotify track leaves every list, so a re-like does not ask again. No
--- foreign key to tracks: a deleted file's verdicts are ignored, then removed.
+-- foreign key to tracks; the trigger below removes a deleted file's verdicts.
 CREATE TABLE IF NOT EXISTS spotify_match_verdicts (
     spotify_id       TEXT NOT NULL,
     library_track_id INTEGER NOT NULL,
     verdict          TEXT NOT NULL CHECK (verdict IN ('yes', 'no')),
     PRIMARY KEY (spotify_id, library_track_id)
 );
+
+-- tracks.id is reused by SQLite once the highest row is deleted (no
+-- AUTOINCREMENT), so a deleted file's verdicts go with it — otherwise a stale
+-- "yes" would make a track read Owned through an unrelated new file.
+CREATE TRIGGER IF NOT EXISTS trg_spotify_verdicts_track_deleted
+AFTER DELETE ON tracks
+BEGIN
+    DELETE FROM spotify_match_verdicts WHERE library_track_id = OLD.id;
+END;
