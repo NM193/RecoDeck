@@ -444,6 +444,16 @@ pub fn run() {
             commands::youtube::check_youtube_djs,
             commands::youtube::list_youtube_dj_finds,
             commands::youtube::mark_youtube_channel_seen,
+            // Spotify
+            commands::spotify::get_spotify_status,
+            commands::spotify::set_spotify_client_id,
+            commands::spotify::connect_spotify,
+            commands::spotify::disconnect_spotify,
+            commands::spotify::sync_spotify_now,
+            commands::spotify::get_spotify_library,
+            commands::spotify::mark_spotify_list_opened,
+            commands::spotify::set_spotify_verdict,
+            commands::spotify::play_spotify_track,
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,
