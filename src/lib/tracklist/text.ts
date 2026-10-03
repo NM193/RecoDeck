@@ -195,16 +195,22 @@ export function tokenSet(norm: string | null | undefined): Set<string> {
   return new Set((norm ?? '').split(' ').filter(Boolean))
 }
 
-export function containment(
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number {
-  const A = tokenSet(a)
-  const B = tokenSet(b)
+/**
+ * `containment` on names already split into words. A loop that compares one
+ * name against thousands splits each name once and calls this.
+ */
+export function containmentOf(A: Set<string>, B: Set<string>): number {
   if (!A.size || !B.size) return 0
   let hits = 0
   for (const token of A) if (B.has(token)) hits += 1
   return hits / Math.min(A.size, B.size)
+}
+
+export function containment(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  return containmentOf(tokenSet(a), tokenSet(b))
 }
 
 export const sameTitle = (

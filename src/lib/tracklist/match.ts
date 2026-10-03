@@ -14,7 +14,7 @@
  * so this is a loop over what is on screen.
  */
 
-import { containment, normalise, splitArtistTitle, tokenSet } from './text'
+import { containment, containmentOf, normalise, splitArtistTitle, tokenSet } from './text'
 import type { Track } from './types'
 
 /** The minimum shape needed from a library track — matches src/types/track.ts. */
@@ -35,6 +35,10 @@ export interface LibraryMatch {
   track: LibraryTrack
   /** 0-2: title agreement plus artist agreement. */
   score: number
+  /** 0-1: how fully the titles agree. */
+  titleScore: number
+  /** 0-1: how fully the artists agree. Under 0.8 the match is not strong. */
+  artistScore: number
   /** Both names line up cleanly, not just a containment pass. */
   strong: boolean
 }
@@ -85,12 +89,15 @@ export function versionOf(rawTitle: string | null | undefined): string | null {
 /** Placeholder tags that carry no information about who made the record. */
 const NO_ARTIST = /^(unknown artist|unknown|various artists|various|va)$/
 
-interface Indexed {
+export interface Indexed {
   track: LibraryTrack
   titleNorm: string | null
   artistNorm: string | null
   /** "extended mix", "afterlife mix" — whatever the tag calls this version. */
   versionNorm: string | null
+  /** The names split into words once, here, rather than on every comparison. */
+  titleTokens: Set<string>
+  artistTokens: Set<string>
 }
 
 /**
@@ -114,12 +121,10 @@ function creditsOf(track: LibraryTrack): { artist: string | null; title: string 
 }
 
 /** Title agreement, or null when the two are not the same record. */
-function titleAgreement(a: string | null, b: string | null): number | null {
-  const A = tokenSet(a)
-  const B = tokenSet(b)
+function titleAgreement(A: Set<string>, B: Set<string>): number | null {
   if (!A.size || !B.size) return null
 
-  const score = containment(a, b)
+  const score = containmentOf(A, B)
   if (score < TITLE_THRESHOLD) return null
 
   const ratio = Math.min(A.size, B.size) / Math.max(A.size, B.size)
@@ -135,11 +140,15 @@ function titleAgreement(a: string | null, b: string | null): number | null {
 export function indexLibrary(library: LibraryTrack[]): Indexed[] {
   return library.map((track) => {
     const credits = creditsOf(track)
+    const titleNorm = normalise(credits.title)
+    const artistNorm = normalise(credits.artist)
     return {
       track,
-      titleNorm: normalise(credits.title),
-      artistNorm: normalise(credits.artist),
+      titleNorm,
+      artistNorm,
       versionNorm: versionOf(track.title),
+      titleTokens: tokenSet(titleNorm),
+      artistTokens: tokenSet(artistNorm),
     }
   })
 }
@@ -179,6 +188,9 @@ export function matchOne(
   // Nothing to match against: the row itself does not say who played it.
   if (!parsedArtist) return null
 
+  const formTokens = titleForms.map((form) => tokenSet(form))
+  const artistTokens = tokenSet(parsedArtist)
+
   let best: LibraryMatch | null = null
 
   for (const entry of indexed) {
@@ -192,18 +204,18 @@ export function matchOne(
     }
 
     let titleScore: number | null = null
-    for (const form of titleForms) {
-      const score = titleAgreement(form, entry.titleNorm)
+    for (const tokens of formTokens) {
+      const score = titleAgreement(tokens, entry.titleTokens)
       if (score !== null && (titleScore === null || score > titleScore)) titleScore = score
     }
     if (titleScore === null) continue
 
-    const artistScore = containment(parsedArtist, entry.artistNorm)
+    const artistScore = containmentOf(artistTokens, entry.artistTokens)
     if (artistScore < ARTIST_THRESHOLD) continue
 
     const score = titleScore + artistScore
     if (!best || score > best.score) {
-      best = { track: entry.track, score, strong: artistScore >= 0.8 }
+      best = { track: entry.track, score, titleScore, artistScore, strong: artistScore >= 0.8 }
     }
   }
 

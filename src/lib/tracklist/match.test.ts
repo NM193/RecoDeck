@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { matchTracklist, type LibraryTrack } from './match'
+import { indexLibrary, matchOne, matchTracklist, type LibraryTrack } from './match'
 import { normalise } from './text'
 import type { Track } from './types'
 
@@ -189,5 +189,28 @@ describe('matching a tracklist against the library', () => {
     const result = matchTracklist([parsed(1, 'MK', 'Burning')], [])
     expect(result.owned).toBe(0)
     expect(result.missing).toBe(1)
+  })
+})
+
+describe('how sure a match is', () => {
+  it('reports a full agreement on both names', () => {
+    const shelf = [lib(30, 'Butch', 'Come Get Up (Extended Mix)')]
+    const match = matchOne(parsed(1, 'Butch', 'Come Get Up'), indexLibrary(shelf))
+    expect(match).toMatchObject({ titleScore: 1, artistScore: 1, strong: true })
+  })
+
+  it('reports an artist that only partly agrees', () => {
+    // Two of the three credited names are on the file.
+    const shelf = [lib(31, 'Moreno, Prieto, Ortega, Lopez', '300 Cash')]
+    const match = matchOne(parsed(1, 'Moreno & Prieto, Sortech', '300 Cash'), indexLibrary(shelf))
+    expect(match?.titleScore).toBe(1)
+    expect(match?.artistScore).toBeCloseTo(2 / 3)
+    expect(match?.strong).toBe(false)
+  })
+
+  it('splits the library into words once, when it is indexed', () => {
+    const [entry] = indexLibrary([lib(32, 'Clive & Deepower', 'Little Girl (Original Mix)')])
+    expect([...entry.titleTokens]).toEqual(['little', 'girl'])
+    expect([...entry.artistTokens]).toEqual(['clive', 'deepower'])
   })
 })
