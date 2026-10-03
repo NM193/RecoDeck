@@ -13,7 +13,7 @@ import type { Track } from '../tracklist/types'
 import type { SpotifyTrack } from '../../types/spotify'
 
 /** Words that make a suffix a version rather than part of the title. */
-const VERSION_WORDS =
+export const VERSION_WORDS =
   /\b(remix|mix|edit|version|bootleg|dub|rework|vip|remaster|remastered|instrumental|acapella|acappella|live|rerub|reprise)\b/i
 
 /** "… - Extended Mix": the last spaced dash, so "Love - Me - Dub" keeps "Love - Me". */

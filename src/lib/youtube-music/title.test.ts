@@ -178,6 +178,10 @@ describe('Topic channels, labels and version spellings', () => {
     )
   })
 
+  it('keeps a bracketed version that is not a remix or a mix', () => {
+    expect(parseYouTubeTitle('Artist - Title [Instrumental]', 'Label').mix).toBe('Instrumental')
+  })
+
   it('drops (Official Video HD) and its kin', () => {
     expect(parseYouTubeTitle('Bicep - Glue (Official Video HD)', 'Label').title).toBe('Glue')
     expect(parseYouTubeTitle('Bicep - Glue (Official Video 4K)', 'Label').title).toBe('Glue')

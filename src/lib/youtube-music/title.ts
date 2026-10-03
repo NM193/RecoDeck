@@ -9,7 +9,7 @@
  * channels ("Extrawelt - Topic") name the artist when the title does not.
  */
 import { ARTIST_TITLE, LABEL_SUFFIX, foldAccents, normalise } from '../tracklist/text'
-import { selectedRecsSearchUrl, splitSpotifyTitle } from '../spotify/title'
+import { VERSION_WORDS, selectedRecsSearchUrl, splitSpotifyTitle } from '../spotify/title'
 import type { MatchInput } from '../spotify/ownership'
 import type { YtmTrack } from '../../types/youtubeMusic'
 
@@ -19,9 +19,6 @@ const NOISE =
 
 /** " | Drumcode", " | Live Vinyl DJ Set | …": everything from the first spaced bar. */
 const BAR = /\s+\|\s+.*$/
-
-/** Version words, for telling a label from a mix. */
-const VERSION_WORDS = /\b(?:remix|mix|edit|version|bootleg|dub|rework|vip|remaster)\b/i
 
 /** YouTube's auto-generated artist channels: "Extrawelt - Topic". */
 const TOPIC = /\s+-\s+Topic$/
