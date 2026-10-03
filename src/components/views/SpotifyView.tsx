@@ -3,10 +3,13 @@
 // what is Missing, and what might be either.
 import { Fragment, useMemo, useState } from 'react'
 import { Icon } from '../Icon'
+import { SpotifyRowActions } from '../spotify/SpotifyRowActions'
 import { useNow } from '../spotify/useNow'
+import type { Track } from '../../types/track'
 import type { SpotifyData } from '../spotify/useSpotify'
 import {
   countByStatus,
+  fileName,
   filterRows,
   formatAdded,
   formatSynced,
@@ -22,6 +25,8 @@ interface SpotifyViewProps {
   /** ALL_LISTS, LIKED, or a playlist id. */
   listId: string
   spotify: SpotifyData
+  /** App's player: plays a library file with a queue. */
+  onPlayTrack: (track: Track, queue: Track[], index: number) => void
 }
 
 const FILTERS: { key: StatusFilter; label: string }[] = [
@@ -30,12 +35,6 @@ const FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'maybe', label: 'Maybe' },
   { key: 'owned', label: 'Owned' },
 ]
-
-const STATUS_LABEL = {
-  owned: 'Owned',
-  missing: 'Missing',
-  maybe: 'Maybe',
-} as const
 
 /** The meta line's last part: "synced 2 min ago", or why not. */
 function syncLine(spotify: SpotifyData, now: number | null): string {
@@ -54,15 +53,11 @@ function syncLine(spotify: SpotifyData, now: number | null): string {
   return ago ? `synced ${ago}` : 'synced'
 }
 
-function StatusCell({ row }: { row: SpotifyRow }) {
-  return (
-    <span className={`spotify-status__${row.ownership.kind}`}>
-      {STATUS_LABEL[row.ownership.kind]}
-    </span>
-  )
-}
-
-export function SpotifyView({ listId, spotify }: SpotifyViewProps) {
+export function SpotifyView({
+  listId,
+  spotify,
+  onPlayTrack,
+}: SpotifyViewProps) {
   const now = useNow(30_000)
   const nowDate = useMemo(() => (now === null ? null : new Date(now)), [now])
   const [query, setQuery] = useState('')
@@ -84,6 +79,29 @@ export function SpotifyView({ listId, spotify }: SpotifyViewProps) {
     () => filterRows(rows, spotify.filter, query),
     [rows, spotify.filter, query],
   )
+
+  // Double-clicking an Owned row plays its file, queued with the other owned rows on screen.
+  const ownedQueue = useMemo(
+    () =>
+      shown.flatMap((row) =>
+        row.ownership.kind === 'owned' && row.ownership.file
+          ? [row.ownership.file as Track]
+          : [],
+      ),
+    [shown],
+  )
+
+  const playOwned = (row: SpotifyRow) => {
+    const file = row.ownership.file
+    if (row.ownership.kind !== 'owned' || !file) return
+    const index = ownedQueue.findIndex((track) => track.id === file.id)
+    if (index >= 0) onPlayTrack(ownedQueue[index], ownedQueue, index)
+  }
+
+  const answer = (row: SpotifyRow, verdict: 'yes' | 'no') => {
+    if (row.ownership.file)
+      spotify.setVerdict(row.track.spotifyId, row.ownership.file.id, verdict)
+  }
 
   const reconnect = () => {
     setReconnecting(true)
@@ -187,7 +205,13 @@ export function SpotifyView({ listId, spotify }: SpotifyViewProps) {
 
         {shown.map((row, index) => (
           <Fragment key={row.track.spotifyId}>
-            <div className={rowClass('spotify-row--data')} role="row">
+            <div
+              className={rowClass(
+                `spotify-row--data ${row.ownership.kind === 'owned' ? 'spotify-row--owned' : ''}`,
+              )}
+              role="row"
+              onDoubleClick={() => playOwned(row)}
+            >
               <span className="spotify-cell--num">{index + 1}</span>
               <span className="spotify-cell--title" title={row.track.title}>
                 {row.isNew && (
@@ -209,10 +233,31 @@ export function SpotifyView({ listId, spotify }: SpotifyViewProps) {
               <span className="spotify-cell--added">
                 {nowDate ? formatAdded(row.addedAt, nowDate) : ''}
               </span>
-              <span className="spotify-cell--status">
-                <StatusCell row={row} />
+              {/* Double-clicking a button must not also play the row. */}
+              <span
+                className="spotify-cell--status"
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                <SpotifyRowActions
+                  row={row}
+                  onVerdict={(verdict) => answer(row, verdict)}
+                />
               </span>
             </div>
+            {row.ownership.kind === 'maybe' && row.ownership.file && (
+              <div className="spotify-row spotify-row--sub" role="row">
+                <span />
+                <span className="spotify-hint">
+                  In library:{' '}
+                  <code title={row.ownership.file.file_path}>
+                    {fileName(row.ownership.file.file_path)}
+                  </code>
+                  <span className="spotify-hint__why">
+                    · {row.ownership.reason}
+                  </span>
+                </span>
+              </div>
+            )}
           </Fragment>
         ))}
 

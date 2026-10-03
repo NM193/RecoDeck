@@ -1477,7 +1477,11 @@ function AppContent() {
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
             {shownSpotifyList !== null ? (
-              <SpotifyView listId={shownSpotifyList} spotify={spotify} />
+              <SpotifyView
+                listId={shownSpotifyList}
+                spotify={spotify}
+                onPlayTrack={handlePlayTrack}
+              />
             ) : showSets ? (
               <SetsView onPlayTrack={handlePlayTrack} />
             ) : showSettings ? (

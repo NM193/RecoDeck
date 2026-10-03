@@ -334,3 +334,67 @@
   color: var(--text-muted);
   font-size: 12px;
 }
+
+/* ---- Row actions ---- */
+
+.spotify-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+}
+
+.spotify-mini--icon {
+  padding: 0 6px;
+  color: var(--text-secondary);
+}
+
+/* Spotify's own green, whatever the theme's success colour is. */
+.spotify-mini--play {
+  color: #1ed760;
+}
+
+.spotify-mini--copied {
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.spotify-row--owned {
+  cursor: pointer;
+}
+
+/* ---- Maybe sub-row ---- */
+
+.spotify-row--sub {
+  height: 34px;
+  background: rgba(var(--color-warning-rgb), 0.06);
+}
+
+.spotify-hint {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.spotify-hint code {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-hint__why {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
