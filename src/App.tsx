@@ -38,6 +38,7 @@ import { useSidebarPrefs } from './components/layout/useSidebarPrefs'
 import { useSpotify } from './components/spotify/useSpotify'
 import { SpotifyView } from './components/views/SpotifyView'
 import { DjView } from './components/views/DjView'
+import { openSettingsSection } from './components/settings/openSections'
 import { djKey } from './lib/dj/names'
 import { useFolderTreeStore } from './store/folderTreeStore'
 import type { ActiveView } from './lib/sidebarPrefs'
@@ -811,6 +812,20 @@ function AppContent() {
     await loadTracks(null, playlistId)
   }
 
+  // Settings with its Spotify section open: a DJ page's "Connect Spotify".
+  function openSpotifySettings() {
+    openSettingsSection('spotify')
+    setShowSettings(true)
+    setSpotifyListId(null)
+    setDjPage(null)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(false)
+    setShowSearch(false)
+    setShowSets(false)
+    setShowAIChat(false)
+  }
+
   // Analyze folder — BPM and Key for tracks that don't have them yet (parallel batch)
   async function handleAnalyzeFolder(folderPath: string) {
     try {
@@ -1569,7 +1584,17 @@ function AppContent() {
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
             {djPage !== null ? (
-              <DjView name={djPage.name} onBack={closeDj} />
+              <DjView
+                name={djPage.name}
+                spotifyArtistId={djPage.spotifyArtistId}
+                spotify={spotify}
+                onBack={closeDj}
+                onOpenSets={openSets}
+                onOpenDj={(name, spotifyArtistId) =>
+                  openDj(name, spotifyArtistId)
+                }
+                onOpenSettings={openSpotifySettings}
+              />
             ) : shownSpotifyList !== null ? (
               <SpotifyView
                 listId={shownSpotifyList}

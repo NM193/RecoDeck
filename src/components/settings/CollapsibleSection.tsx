@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../Icon'
+import { readOpen, writeOpen } from './openSections'
 
 /**
  * One Settings section, collapsed until it is wanted.
@@ -9,29 +10,8 @@ import { Icon } from '../Icon'
  *
  * Which ones are open is remembered per person, in localStorage rather than the
  * settings table — it describes how somebody left a window, not anything about
- * their library, and it is no loss if it comes back empty.
+ * their library, and it is no loss if it comes back empty (openSections.ts).
  */
-const STORAGE_KEY = 'settingsOpenSections'
-
-function readOpen(): string[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) return []
-    const parsed: unknown = JSON.parse(stored)
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
-  } catch {
-    // A private window, cleared site data, or storage that throws on read.
-    return []
-  }
-}
-
-function writeOpen(ids: string[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
-  } catch {
-    // Not remembering is a smaller problem than failing to open a section.
-  }
-}
 
 export function CollapsibleSection({
   id,

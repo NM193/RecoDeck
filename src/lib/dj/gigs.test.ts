@@ -5,6 +5,7 @@ import {
   gigLabel,
   gigPlace,
   heroMeta,
+  heroMetaParts,
   localDay,
   splitGigs,
 } from './gigs'
@@ -81,5 +82,25 @@ describe("the hero's meta line", () => {
     expect(heroMeta({ owned: 0, tracks: 0, sets: 0, nextGig: null })).toEqual(
       [],
     )
+  })
+})
+
+describe("the hero's meta line, with its numbers bold", () => {
+  it('splits each part around the part shown bold', () => {
+    expect(
+      heroMetaParts({
+        owned: 23,
+        tracks: 214,
+        sets: 6,
+        nextGig: 'Sat, Oct 10',
+      }),
+    ).toEqual([
+      { lead: '', bold: 'You own 23', tail: ' of 214 tracks' },
+      { lead: '', bold: '6 sets', tail: ' saved' },
+      { lead: 'next gig ', bold: 'Sat, Oct 10', tail: '' },
+    ])
+    expect(
+      heroMetaParts({ owned: null, tracks: null, sets: 1, nextGig: null }),
+    ).toEqual([{ lead: '', bold: '1 set', tail: ' saved' }])
   })
 })

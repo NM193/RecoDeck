@@ -64,19 +64,41 @@ export function gigPlace(gig: DjGig): string {
   return [gig.city, gig.country].filter(Boolean).join(', ')
 }
 
-/** The hero's meta line, parts with no data left out. */
-export function heroMeta(facts: {
+export interface HeroMetaPart {
+  lead: string
+  /** The number the line is about, shown bold as in the mockup. */
+  bold: string
+  tail: string
+}
+
+/** The hero's meta line, parts with no data left out, each split around its bold words. */
+export function heroMetaParts(facts: {
   owned: number | null
   tracks: number | null
   sets: number
   nextGig: string | null
-}): string[] {
-  const parts: string[] = []
+}): HeroMetaPart[] {
+  const parts: HeroMetaPart[] = []
   if (facts.owned !== null && facts.tracks !== null && facts.tracks > 0) {
-    parts.push(`You own ${facts.owned} of ${facts.tracks} tracks`)
+    parts.push({
+      lead: '',
+      bold: `You own ${facts.owned}`,
+      tail: ` of ${facts.tracks} tracks`,
+    })
   }
-  if (facts.sets > 0)
-    parts.push(`${facts.sets} ${facts.sets === 1 ? 'set' : 'sets'} saved`)
-  if (facts.nextGig) parts.push(`next gig ${facts.nextGig}`)
+  if (facts.sets > 0) {
+    parts.push({
+      lead: '',
+      bold: `${facts.sets} ${facts.sets === 1 ? 'set' : 'sets'}`,
+      tail: ' saved',
+    })
+  }
+  if (facts.nextGig)
+    parts.push({ lead: 'next gig ', bold: facts.nextGig, tail: '' })
   return parts
+}
+
+/** The hero's meta line as plain text, parts with no data left out. */
+export function heroMeta(facts: Parameters<typeof heroMetaParts>[0]): string[] {
+  return heroMetaParts(facts).map((part) => part.lead + part.bold + part.tail)
 }
