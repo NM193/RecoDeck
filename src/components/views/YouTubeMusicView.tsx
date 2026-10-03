@@ -2,7 +2,7 @@
 // One YouTube Music list — or All playlists — against the library. The view is
 // StreamingListView; this gives it YouTube Music's rows, words and actions,
 // and the Sets group under the table.
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { StreamingListView, type RowText } from './StreamingListView'
 import { YouTubeMusicRowActions } from '../youtube-music/YouTubeMusicRowActions'
 import type { SpotifyData } from '../spotify/useSpotify'
@@ -75,9 +75,12 @@ function SetsGroup({
   sets: YtmSetRow[]
   onOpenSet: (videoId: string) => void
 }) {
+  const headingId = useId()
   return (
-    <section className="ytm-sets" aria-label="Sets">
-      <h2 className="ytm-sets__title">Sets ({sets.length})</h2>
+    <section className="ytm-sets" aria-labelledby={headingId}>
+      <h2 className="ytm-sets__title" id={headingId}>
+        Sets ({sets.length})
+      </h2>
       {sets.map(({ track }) => (
         <div className="ytm-sets__row" key={track.videoId}>
           <span className="ytm-sets__name" title={track.title}>
@@ -92,6 +95,7 @@ function SetsGroup({
           <button
             type="button"
             className="spotify-mini"
+            aria-label={`Open ${track.title} in Sets`}
             onClick={() => onOpenSet(track.videoId)}
           >
             Open in Sets
@@ -159,7 +163,9 @@ export function YouTubeMusicView({
       missingText={
         listId !== ALL_YTM_LISTS && !list
           ? 'This playlist is no longer in the sidebar.'
-          : null
+          : rows.length === 0 && sets.length > 0
+            ? 'No tracks — only DJ sets, listed below.'
+            : null
       }
       filter={youtubeMusic.filter}
       onFilter={youtubeMusic.setFilter}
