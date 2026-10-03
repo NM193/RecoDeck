@@ -332,6 +332,24 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/016_dj_pages.sql"))?;
+        // dj_profiles gained two columns after its table first existed, and
+        // CREATE TABLE IF NOT EXISTS leaves an existing table as it is.
+        // ALTER TABLE is not idempotent, so each column is checked for first.
+        for (column, definition) in [
+            ("spotify_appears_cutoff", "TEXT"),
+            ("spotify_generation", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            let has_column: bool = self.conn.query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('dj_profiles') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            )?;
+            if !has_column {
+                self.conn.execute_batch(&format!(
+                    "ALTER TABLE dj_profiles ADD COLUMN {column} {definition};"
+                ))?;
+            }
+        }
 
         // Migration 017: the YouTube Music section
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
@@ -4276,6 +4294,49 @@ mod tests {
         })
         .unwrap();
         assert_eq!(db.list_yt_channels().unwrap()[0].check_interval_hours, 168);
+    }
+
+    /// dj_profiles gained two columns after its table first shipped in
+    /// development builds. CREATE TABLE IF NOT EXISTS leaves an existing table
+    /// as it is, so a DJ page on such a database failed with "no such column".
+    #[test]
+    fn dj_profiles_made_before_its_last_columns_gets_them() {
+        let db = Database::new_in_memory().unwrap();
+        db.conn
+            .execute_batch(
+                "CREATE TABLE dj_profiles (
+                    name_key TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    spotify_artist_id TEXT,
+                    spotify_manual INTEGER NOT NULL DEFAULT 0,
+                    spotify_image_url TEXT,
+                    genres TEXT,
+                    ra_artist_id TEXT,
+                    ra_slug TEXT,
+                    ra_image_url TEXT,
+                    ra_manual INTEGER NOT NULL DEFAULT 0,
+                    spotify_synced_at INTEGER,
+                    ra_synced_at INTEGER,
+                    spotify_appears_limit INTEGER NOT NULL DEFAULT 150,
+                    spotify_appears_total INTEGER
+                );
+                INSERT INTO dj_profiles (name_key, display_name) VALUES ('solomun', 'Solomun');",
+            )
+            .expect("the table as it stood before the two columns");
+
+        db.run_migrations().unwrap();
+        db.run_migrations().expect("safe to re-run");
+
+        let (cutoff, generation): (Option<String>, i64) = db
+            .conn
+            .query_row(
+                "SELECT spotify_appears_cutoff, spotify_generation FROM dj_profiles WHERE name_key = 'solomun'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("both columns exist");
+        assert_eq!(cutoff, None);
+        assert_eq!(generation, 0);
     }
 
     /// Migration 014 is an ALTER TABLE on a table that already holds rows, and

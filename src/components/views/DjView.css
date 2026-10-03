@@ -686,7 +686,9 @@
 /* What they play: Track · bar + "4 of 6" · Status. */
 .dj-card-play {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* The bar and the status keep their width; the title gives way. With auto
+     tracks the bar (min-width: 0) was squeezed under the status. */
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
   align-items: center;
   height: 32px;
   font-size: 13px;
