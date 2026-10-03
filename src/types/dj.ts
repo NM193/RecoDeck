@@ -43,8 +43,9 @@ export interface DjTrack {
 export interface DjGig {
   raEventId: string
   /**
-   * The venue's local day, "2026-10-12": the Rust side cuts RA's
-   * "2026-10-12T00:00:00.000" down to its first ten characters before storing.
+   * The venue's local day in the format "YYYY-MM-DD", as stored and as sent
+   * here: the Rust side trims RA's "2026-10-12T00:00:00.000" down to its
+   * first ten characters ("2026-10-12") before storing.
    */
   date: string
   venue: string | null
@@ -102,7 +103,11 @@ export interface DjCandidates {
 }
 
 export type RefreshOutcome =
-  /** Cached data is new enough; nothing was asked. */
+  /**
+   * Cached data is new enough; nothing was asked. Also a refresh that
+   * stopped quietly because the artist was re-picked or Spotify was
+   * disconnected meanwhile.
+   */
   | 'fresh'
   | 'refreshed'
   /** The fetch failed; the cache is as it was. */

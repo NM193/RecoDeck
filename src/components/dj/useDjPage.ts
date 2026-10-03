@@ -143,6 +143,9 @@ export function useDjPage(
       const done = (spotify: DjSourceStatus) => {
         if (run === spotifyRun.current)
           patch(key, { spotify, progress: null, ...extra })
+        // A newer run owns the status, but this run's Load-older is over.
+        else if (extra.loadingOlder === false)
+          patch(key, { loadingOlder: false })
         return reload(key, djName)
       }
       return fetch().then(

@@ -232,7 +232,9 @@ export function useSpotify(
     if (!ready || !needLibrary) return
     const state = tracksLoad.current
     state.live = true
-    loadTracks()
+    // A library read earlier (a DJ page closed and opened again, no account)
+    // that still has App's count needs no second read; changes arrive below.
+    if (state.loadedCount !== state.count) loadTracks()
     const stop = listen('library-changed', loadTracks)
     return () => {
       state.live = false
