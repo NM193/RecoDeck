@@ -306,7 +306,7 @@ impl LiveRa {
 
 impl RaApi for LiveRa {
     async fn query(&self, query: &'static str, variables: Value) -> Result<Value, RaError> {
-        let response = self
+        let mut response = self
             .http
             .post(GRAPHQL_URL)
             .header("Referer", "https://ra.co/")
@@ -327,17 +327,45 @@ impl RaApi for LiveRa {
         }
         // A GraphQL answer is small; refuse anything huge rather than buffer it.
         if response.content_length().is_some_and(|n| n > MAX_BODY_BYTES) {
-            return Err(RaError::Shape("answer too large".to_string()));
+            return Err(too_large());
         }
-        let body = response
-            .text()
-            .await
-            .map_err(|e| RaError::Network(format!("Could not read Resident Advisor's answer: {e}")))?;
-        if body.len() as u64 > MAX_BODY_BYTES {
-            return Err(RaError::Shape("answer too large".to_string()));
-        }
-        serde_json::from_str(&body).map_err(|_| RaError::Shape("not JSON".to_string()))
+        // Read in chunks and stop at the cap too: a chunked answer has no
+        // Content-Length to check first.
+        let body = read_capped(&mut response, MAX_BODY_BYTES).await?;
+        serde_json::from_slice(&body).map_err(|_| RaError::Shape("not JSON".to_string()))
     }
+}
+
+fn too_large() -> RaError {
+    RaError::Shape("answer too large".to_string())
+}
+
+/// A response body, a chunk at a time.
+trait BodyChunks {
+    /// The next chunk, or None at the end.
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, RaError>;
+}
+
+impl BodyChunks for reqwest::Response {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, RaError> {
+        self.chunk()
+            .await
+            .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
+            .map_err(|e| RaError::Network(format!("Could not read Resident Advisor's answer: {e}")))
+    }
+}
+
+/// The whole body, or `answer too large` as soon as it passes `cap` bytes —
+/// without reading the rest.
+async fn read_capped<B: BodyChunks>(body: &mut B, cap: u64) -> Result<Vec<u8>, RaError> {
+    let mut out = Vec::new();
+    while let Some(chunk) = body.next_chunk().await? {
+        if (out.len() + chunk.len()) as u64 > cap {
+            return Err(too_large());
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -666,5 +694,44 @@ mod tests {
             RaError::Shape("no data".into()).to_string(),
             "Resident Advisor answered in an unexpected shape (no data)"
         );
+    }
+    /// A body of `size`-byte chunks that never ends, counting what was read.
+    struct Endless {
+        size: usize,
+        read: usize,
+    }
+
+    impl BodyChunks for Endless {
+        async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, RaError> {
+            self.read += 1;
+            Ok(Some(vec![b' '; self.size]))
+        }
+    }
+
+    struct Chunks(Vec<Vec<u8>>);
+
+    impl BodyChunks for Chunks {
+        async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, RaError> {
+            Ok((!self.0.is_empty()).then(|| self.0.remove(0)))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_body_without_a_length_stops_being_read_at_the_cap() {
+        let mut body = Endless { size: 1024, read: 0 };
+        assert_eq!(read_capped(&mut body, 10 * 1024).await, Err(too_large()));
+        assert_eq!(body.read, 11, "stopped at the chunk that passed the cap");
+
+        let mut real_cap = Endless { size: 64 * 1024, read: 0 };
+        assert_eq!(read_capped(&mut real_cap, MAX_BODY_BYTES).await, Err(too_large()));
+        assert_eq!(real_cap.read as u64, MAX_BODY_BYTES / (64 * 1024) + 1);
+    }
+
+    #[tokio::test]
+    async fn a_body_up_to_the_cap_is_read_whole() {
+        let mut body = Chunks(vec![b"{\"a\":".to_vec(), b"1}".to_vec()]);
+        assert_eq!(read_capped(&mut body, 8).await.unwrap(), b"{\"a\":1}");
+        let mut over = Chunks(vec![b"{\"a\":".to_vec(), b"123}".to_vec()]);
+        assert_eq!(read_capped(&mut over, 8).await, Err(too_large()));
     }
 }
