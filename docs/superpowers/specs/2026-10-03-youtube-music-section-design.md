@@ -212,9 +212,12 @@ library matcher reads (the shape `toParsed` gives Spotify tracks):
 3. `Artist - Title (Mix)`: the first ` - ` (or ` – `) splits artist from title.
    A trailing `(… Mix)`, `(… Remix)`, `(… Edit)` or `[… Mix]` is the mix.
    `feat.` is handled as the parser already does.
-4. When there is no ` - `, the channel is the artist if it ends in ` - Topic`
-   (YouTube's auto-generated artist channels), with that suffix removed.
-   Otherwise the title alone is matched, which usually ends Missing or Maybe.
+4. On a channel ending in ` - Topic` (YouTube's auto-generated artist
+   channels) the title never contains the artist, so this rule comes before
+   rule 3: the channel minus ` - Topic` is the artist, and a ` - Extended Mix`
+   or `(Extended Mix)` in the title is the mix, as in a Spotify title.
+   Elsewhere, when there is no ` - `, the title alone is matched, which
+   usually ends Missing or Maybe.
 
 The examples from the account's Liked music are the test cases.
 
