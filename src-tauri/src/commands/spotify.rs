@@ -388,16 +388,22 @@ pub async fn connect_spotify(
         })?;
 
     remember_access(&spotify, &tokens);
-    with_db(&state, |db| {
-        // Another account's lists would make this one's whole library read as new.
-        if setting(db, ACCOUNT_SETTING)?.is_some_and(|previous| previous != account) {
-            db.clear_spotify().map_err(db_err)?;
-        }
-        db.set_setting(REFRESH_TOKEN_SETTING, &refresh_token).map_err(db_err)?;
-        db.set_setting(ACCOUNT_SETTING, &account).map_err(db_err)?;
-        db.set_setting(NEEDS_RECONNECT_SETTING, "").map_err(db_err)?;
-        db.set_setting(LAST_ERROR_SETTING, "").map_err(db_err)
-    })?;
+    {
+        // As in disconnect: a sync running now would write the previous
+        // account's rows back after the clear. Released before the first sync
+        // below, which only tries the lock.
+        let _running = spotify.sync_lock.lock().await;
+        with_db(&state, |db| {
+            // Another account's lists would make this one's whole library read as new.
+            if setting(db, ACCOUNT_SETTING)?.is_some_and(|previous| previous != account) {
+                db.clear_spotify().map_err(db_err)?;
+            }
+            db.set_setting(REFRESH_TOKEN_SETTING, &refresh_token).map_err(db_err)?;
+            db.set_setting(ACCOUNT_SETTING, &account).map_err(db_err)?;
+            db.set_setting(NEEDS_RECONNECT_SETTING, "").map_err(db_err)?;
+            db.set_setting(LAST_ERROR_SETTING, "").map_err(db_err)
+        })?;
+    }
 
     // The first sync starts now, not in ten minutes. It reports through the event.
     let handle = app.clone();
