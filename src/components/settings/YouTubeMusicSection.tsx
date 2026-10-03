@@ -117,25 +117,22 @@ export function YouTubeMusicSection() {
               Google Auth Platform
             </a>{' '}
             in the Google Cloud project that holds your YouTube API key
-            (Settings → YouTube Tracklists), and press <strong>Get started</strong>:
-            any app name, your email, audience <strong>External</strong>.
+            (Settings → YouTube Tracklists), and press <strong>Get started</strong>.
+            Four pages: app name and support email; audience{' '}
+            <strong>External</strong>; contact email; agree and{' '}
+            <strong>Create</strong>.
           </li>
           <li>
-            Under <strong>Audience → Test users</strong>, add the Google account
-            you use YouTube Music with.
-          </li>
-          <li>
-            Still under <strong>Audience</strong>, press{' '}
-            <strong>Publish app</strong>. While the app is in Testing, Google
-            signs you out every 7 days. Signing in, Google then says it
-            hasn&apos;t verified the app: choose <strong>Advanced</strong>, then{' '}
-            <strong>Go to … (unsafe)</strong> and <strong>Continue</strong> — it
-            is your own app.
+            Under <strong>Audience</strong>, press <strong>Publish app</strong>{' '}
+            and confirm <strong>Push to production</strong>. While the app is in
+            Testing, Google signs you out every 7 days. (If you leave it in
+            Testing, add your Google account under <strong>Test users</strong>.)
           </li>
           <li>
             Under <strong>Clients</strong>, press <strong>Create client</strong>,
-            choose <strong>Desktop app</strong>, create it, and download its
-            JSON. No redirect URI is needed.
+            choose <strong>Desktop app</strong>, press <strong>Create</strong>,
+            then <strong>Download JSON</strong> in the dialog that opens — Google
+            shows the secret only there. No redirect URI is needed.
           </li>
           <li>
             Choose that file below. RecoDeck keeps its Client ID and secret, not
@@ -171,7 +168,7 @@ export function YouTubeMusicSection() {
           {status?.connected ? (
             <>
               <span>
-                Connected as <strong>{status.email}</strong>
+                Connected as <strong>{status.email ?? 'your Google account'}</strong>
               </span>
               {status.needsReconnect && (
                 <button
@@ -205,6 +202,14 @@ export function YouTubeMusicSection() {
             </button>
           )}
         </div>
+        {!status?.connected && (
+          <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
+            Google may say it hasn&apos;t verified this app: choose{' '}
+            <strong>Advanced</strong>, then <strong>Go to … (unsafe)</strong>,
+            and <strong>Continue</strong> — it is your own app. Tick the YouTube
+            access box if Google shows one.
+          </p>
+        )}
         {error && (
           <p style={{ marginTop: '0.5rem', color: 'var(--color-danger)', fontSize: '0.875rem' }}>
             {error}
@@ -231,7 +236,7 @@ export function YouTubeMusicSection() {
         <div className="sv-subsection" style={{ marginTop: '1.25rem' }}>
           <label className="sv-setting-row__label">Last sync</label>
           <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
-            {status.lastError
+            {status.lastError && status.lastErrorKind !== 'quotaExceeded'
               ? `Failed: ${status.lastError}`
               : status.lastSyncedAt
                 ? `Synced ${new Date(status.lastSyncedAt).toLocaleString()} — every 30 minutes while RecoDeck is open. It uses the same daily quota as YouTube Tracklists.`

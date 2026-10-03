@@ -20,6 +20,8 @@ pub const SERVICE: &str = "YouTube Music";
 
 pub const NOT_A_CLIENT_FILE: &str =
     "This is not a Google OAuth client file — download the JSON of a Desktop app client";
+const NO_SECRET: &str =
+    "This Desktop client file has no secret — download the JSON from the dialog Google shows right after Create, or add a new secret to the client";
 const WEB_CLIENT: &str =
     "This file is for a Web application client — create an OAuth client of type Desktop app and choose its JSON";
 
@@ -56,6 +58,7 @@ pub fn parse_client_file(raw: &str) -> Result<ClientFile, String> {
         };
         return match (field("client_id"), field("client_secret")) {
             (Some(client_id), Some(client_secret)) => Ok(ClientFile { client_id, client_secret }),
+            (Some(_), None) => Err(NO_SECRET.to_string()),
             _ => Err(NOT_A_CLIENT_FILE.to_string()),
         };
     }
@@ -252,8 +255,17 @@ mod tests {
     }
 
     #[test]
+    fn a_desktop_file_without_a_secret_says_so() {
+        for raw in [r#"{"installed":{"client_id":"x"}}"#, r#"{"installed":{"client_id":"x","client_secret":" "}}"#] {
+            let err = parse_client_file(raw).unwrap_err();
+            assert!(err.contains("no secret"), "{err}");
+            assert!(!err.contains('\n'));
+        }
+    }
+
+    #[test]
     fn anything_else_is_not_a_client_file() {
-        for raw in ["", "not json", "{}", "[1,2]", r#"{"installed":{"client_id":"x"}}"#, r#"{"installed":{"client_id":"","client_secret":"s"}}"#] {
+        for raw in ["", "not json", "{}", "[1,2]", r#"{"installed":{"client_id":"","client_secret":"s"}}"#] {
             assert_eq!(parse_client_file(raw), Err(NOT_A_CLIENT_FILE.to_string()), "{raw}");
         }
     }
