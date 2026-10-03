@@ -304,6 +304,9 @@ function AppContent() {
       setSelectedFolder(null)
       setSelectedPlaylistId(null)
       setShowAllTracks(false)
+      setShowSets(false)
+      setShowSearch(false)
+      setShowAIChat(false)
     })
   }, [])
 

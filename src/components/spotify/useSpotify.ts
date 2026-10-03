@@ -1,6 +1,6 @@
 // Everything the Spotify section shows, loaded once and kept current. Called
 // from App.tsx so the sidebar's new-likes number is right in every view.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { tauriApi } from '../../lib/tauri-api'
 import {
@@ -33,6 +33,8 @@ export interface SpotifyData {
   library: SpotifyLibrary
   /** The whole RecoDeck library — App only holds the view on screen. */
   libraryTracks: Track[]
+  /** False until the library has arrived once: until then every row would read Missing. */
+  libraryLoaded: boolean
   ownership: Map<string, Ownership>
   newCounts: NewCounts
   /** Rows behind each sidebar item, plus ALL_LISTS. */
@@ -45,13 +47,57 @@ export interface SpotifyData {
   setFilter: (filter: StatusFilter) => void
   openList: (listId: string) => void
   syncNow: () => void
+  /** Rejects when the answer could not be saved. */
   setVerdict: (
     spotifyId: string,
     libraryTrackId: number,
     verdict: Verdict,
-  ) => void
+  ) => Promise<void>
   /** Rejects with the error when the login fails. */
   reconnect: () => Promise<void>
+}
+
+/** The library reads for matching: one at a time, a change during a read asks for one more. */
+interface TracksLoad {
+  /** The account is connected and the hook mounted. */
+  live: boolean
+  inFlight: boolean
+  /** library-changed arrived during a read. */
+  again: boolean
+  /** App's track count moved during a read. */
+  countMoved: boolean
+  /** Tracks in the last read; -1 before the first. */
+  loadedCount: number
+  /** App's latest track count. */
+  count: number
+}
+
+function readAllTracks(
+  state: TracksLoad,
+  apply: (tracks: Track[]) => void,
+): void {
+  if (state.inFlight) {
+    state.again = true
+    return
+  }
+  state.inFlight = true
+  state.again = false
+  state.countMoved = false
+  const done = (tracks: Track[] | null) => {
+    state.inFlight = false
+    if (!state.live) return
+    if (tracks) {
+      state.loadedCount = tracks.length
+      apply(tracks)
+    }
+    const stale =
+      state.again || (state.countMoved && state.loadedCount !== state.count)
+    if (stale) readAllTracks(state, apply)
+  }
+  tauriApi
+    .getAllTracks()
+    .then(done)
+    .catch(() => done(null))
 }
 
 /**
@@ -71,35 +117,80 @@ export function useSpotify(
     () => new Map(),
   )
   const [syncing, setSyncing] = useState(false)
+  /** Counts the times the account became connected — each one loads the rows. */
+  const [connections, setConnections] = useState(0)
   const [filter, setFilter] = useState<StatusFilter>('all')
 
   const connected = status?.connected ?? false
 
+  // Each load of the Spotify data gets a number; only the newest may land, so a
+  // load read before a local write (opening a list, an answer) never undoes it.
+  const loadSeq = useRef(0)
+  const loadPending = useRef(false)
+  /** The status's connected as last applied — refresh reads it without a render. */
+  const wasConnected = useRef(false)
+
   const loadLibrary = useCallback(() => {
+    const seq = ++loadSeq.current
+    loadPending.current = true
     tauriApi
       .getSpotifyLibrary()
-      .then(setLibrary)
-      .catch(() => {})
+      .then((next) => {
+        if (seq !== loadSeq.current) return
+        loadPending.current = false
+        setLibrary(next)
+      })
+      .catch(() => {
+        if (seq === loadSeq.current) loadPending.current = false
+      })
   }, [])
 
-  /** Status first; the data only when there is an account. */
+  /** A local write landed: a load still in flight read the old rows, so read again. */
+  const supersedeLoad = useCallback(() => {
+    if (loadPending.current) loadLibrary()
+  }, [loadLibrary])
+
+  const applyStatus = useCallback((next: SpotifyStatus) => {
+    const was = wasConnected.current
+    wasConnected.current = next.connected
+    setStatus(next)
+    if (!was && next.connected) setConnections((n) => n + 1)
+    if (!next.connected) {
+      // Drop any load in flight: its rows belong to the account that left.
+      loadSeq.current++
+      loadPending.current = false
+      setLibrary(EMPTY)
+    }
+    return was
+  }, [])
+
+  /**
+   * Status first. The rows reload here only when the account was already
+   * connected; becoming connected loads them in the effect below.
+   */
   const refresh = useCallback(
     (reloadData: boolean) => {
       tauriApi
         .getSpotifyStatus()
         .then((next) => {
-          setStatus(next)
-          if (!next.connected) setLibrary(EMPTY)
-          else if (reloadData) loadLibrary()
+          const was = applyStatus(next)
+          if (reloadData && was && next.connected) loadLibrary()
         })
         .catch(() => {})
     },
-    [loadLibrary],
+    [applyStatus, loadLibrary],
   )
 
   useEffect(() => {
-    if (ready) refresh(true)
+    if (ready) refresh(false)
   }, [ready, refresh])
+
+  // Whenever the account becomes connected — at start-up, after Connect, or
+  // after reconnecting the same account, whose rows stayed on disk. Counting
+  // the connections also catches a disconnect and reconnect within one render.
+  useEffect(() => {
+    if (ready && connected) loadLibrary()
+  }, [ready, connected, connections, loadLibrary])
 
   // Every sync reports, changed or not: the "synced …" line and the Reconnect
   // bar read the status, the rows only when something changed.
@@ -114,26 +205,44 @@ export function useSpotify(
   }, [refresh])
 
   // The whole library, for matching — only while there is something to match.
+  const tracksLoad = useRef<TracksLoad>({
+    live: false,
+    inFlight: false,
+    again: false,
+    countMoved: false,
+    loadedCount: -1,
+    count: totalTrackCount,
+  })
+
+  const loadTracks = useCallback(() => {
+    readAllTracks(tracksLoad.current, (tracks) => {
+      setLibraryTracks(tracks)
+      setLibraryLoaded(true)
+    })
+  }, [])
+
   useEffect(() => {
     if (!ready || !connected) return
-    let live = true
-    const load = () => {
-      tauriApi
-        .getAllTracks()
-        .then((tracks) => {
-          if (!live) return
-          setLibraryTracks(tracks)
-          setLibraryLoaded(true)
-        })
-        .catch(() => {})
-    }
-    load()
-    const stop = listen('library-changed', load)
+    const state = tracksLoad.current
+    state.live = true
+    loadTracks()
+    const stop = listen('library-changed', loadTracks)
     return () => {
-      live = false
+      state.live = false
       void stop.then((unlisten) => unlisten())
     }
-  }, [ready, connected, totalTrackCount])
+  }, [ready, connected, loadTracks])
+
+  // App's count moved: read again only if it disagrees with what was read. At
+  // start-up the count arrives while the first read is running, which already
+  // holds the new tracks — so no second read.
+  useEffect(() => {
+    tracksLoad.current.count = totalTrackCount
+    if (!ready || !connected) return
+    const state = tracksLoad.current
+    if (state.inFlight) state.countMoved = true
+    else if (state.loadedCount !== totalTrackCount) loadTracks()
+  }, [ready, connected, totalTrackCount, loadTracks])
 
   const index = useMemo(
     () => buildOwnershipIndex(libraryTracks),
@@ -170,10 +279,11 @@ export function useSpotify(
                 : list,
             ),
           }))
+          supersedeLoad()
         })
         .catch(() => {})
     },
-    [library.lists],
+    [library.lists, supersedeLoad],
   )
 
   const syncNow = useCallback(() => {
@@ -185,7 +295,7 @@ export function useSpotify(
   }, [])
 
   const setVerdict = useCallback(
-    (spotifyId: string, libraryTrackId: number, verdict: Verdict) => {
+    (spotifyId: string, libraryTrackId: number, verdict: Verdict) =>
       tauriApi
         .setSpotifyVerdict(spotifyId, libraryTrackId, verdict)
         .then(() => {
@@ -202,22 +312,21 @@ export function useSpotify(
               { spotifyId, libraryTrackId, verdict },
             ],
           }))
-        })
-        .catch(() => {})
-    },
-    [],
+          supersedeLoad()
+        }),
+    [supersedeLoad],
   )
 
   const reconnect = useCallback(async () => {
-    const next = await tauriApi.connectSpotify()
-    setStatus(next)
-  }, [])
+    applyStatus(await tauriApi.connectSpotify())
+  }, [applyStatus])
 
   return {
     status,
     connected,
     library,
     libraryTracks,
+    libraryLoaded,
     ownership,
     newCounts,
     counts,

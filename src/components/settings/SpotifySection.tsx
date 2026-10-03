@@ -103,9 +103,10 @@ export function SpotifySection() {
               type="button"
               className="btn-secondary btn-small"
               onClick={() => {
-                void navigator.clipboard
+                navigator.clipboard
                   .writeText(REDIRECT_URI)
                   .then(() => setCopied(true))
+                  .catch(() => {})
               }}
             >
               {copied ? '✓ Copied' : 'Copy'}
@@ -159,7 +160,7 @@ export function SpotifySection() {
               run('save', () => tauriApi.setSpotifyClientId(clientId))
             }
           >
-            {busy === 'save' ? 'Saving...' : 'Save'}
+            {busy === 'save' ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -183,7 +184,8 @@ export function SpotifySection() {
                 <button
                   type="button"
                   className="btn-primary btn-small"
-                  disabled={busy !== null}
+                  disabled={dirty || busy !== null}
+                  title={dirty ? 'Save the Client ID first' : undefined}
                   onClick={() =>
                     run('connect', () => tauriApi.connectSpotify())
                   }
@@ -206,7 +208,9 @@ export function SpotifySection() {
             <button
               type="button"
               className="btn-primary btn-small"
-              disabled={!saved || busy !== null}
+              // Connect signs in with the saved Client ID, not the one being typed.
+              disabled={!saved || dirty || busy !== null}
+              title={dirty ? 'Save the Client ID first' : undefined}
               onClick={() => run('connect', () => tauriApi.connectSpotify())}
             >
               {busy === 'connect'

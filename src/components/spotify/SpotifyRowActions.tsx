@@ -1,6 +1,6 @@
 // src/components/spotify/SpotifyRowActions.tsx
 // The Status cell of a Spotify row: what it is, and what can be done about it.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { SpotifyGlyph } from './SpotifyGlyph'
@@ -11,19 +11,59 @@ import type { Verdict } from '../../types/spotify'
 
 interface SpotifyRowActionsProps {
   row: SpotifyRow
-  onVerdict: (verdict: Verdict) => void
+  /** Rejects when the answer could not be saved. */
+  onVerdict: (verdict: Verdict) => Promise<void>
+  /** The library has not arrived yet: the status is not known. */
+  checking?: boolean
 }
 
 const COPIED_MS = 1500
 
-export function SpotifyRowActions({ row, onVerdict }: SpotifyRowActionsProps) {
+export function SpotifyRowActions({
+  row,
+  onVerdict,
+  checking = false,
+}: SpotifyRowActionsProps) {
   const [copied, setCopied] = useState(false)
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
+  /** The answer being saved; the buttons wait for it. */
+  const [pending, setPending] = useState<Verdict | null>(null)
+  const [answerFailed, setAnswerFailed] = useState(false)
 
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), COPIED_MS)
-    return () => clearTimeout(timer)
-  }, [copied])
+  useEffect(() => () => clearTimeout(copiedTimer.current), [])
+
+  // Every click restarts the "Copied" time.
+  const copy = () => {
+    navigator.clipboard
+      .writeText(copyText(row.track))
+      .then(() => {
+        clearTimeout(copiedTimer.current)
+        setCopied(true)
+        copiedTimer.current = setTimeout(() => setCopied(false), COPIED_MS)
+      })
+      .catch(() => {})
+  }
+
+  const answer = (verdict: Verdict) => {
+    setPending(verdict)
+    setAnswerFailed(false)
+    onVerdict(verdict)
+      .catch(() => setAnswerFailed(true))
+      .finally(() => setPending(null))
+  }
+
+  if (checking) {
+    return (
+      <span className="spotify-status">
+        <span className="spotify-status__checking">
+          <span aria-hidden="true">—</span>
+          <span className="spotify-sr-only">Checking</span>
+        </span>
+      </span>
+    )
+  }
 
   const play = (
     <button
@@ -57,21 +97,30 @@ export function SpotifyRowActions({ row, onVerdict }: SpotifyRowActionsProps) {
       <span className="spotify-status">
         <span className="spotify-status__maybe">Maybe</span>
         {play}
+        {answerFailed && (
+          <span className="spotify-status__error" role="status">
+            Not saved
+          </span>
+        )}
         <button
           type="button"
           className="spotify-mini"
-          onClick={() => onVerdict('yes')}
+          disabled={pending !== null}
+          aria-busy={pending === 'yes'}
+          onClick={() => answer('yes')}
           title="This is the file"
         >
-          Yes
+          {pending === 'yes' ? '…' : 'Yes'}
         </button>
         <button
           type="button"
           className="spotify-mini"
-          onClick={() => onVerdict('no')}
+          disabled={pending !== null}
+          aria-busy={pending === 'no'}
+          onClick={() => answer('no')}
           title="Not this file"
         >
-          No
+          {pending === 'no' ? '…' : 'No'}
         </button>
       </span>
     )
@@ -87,7 +136,7 @@ export function SpotifyRowActions({ row, onVerdict }: SpotifyRowActionsProps) {
         title="Search on SelectedRecs"
         aria-label="Search on SelectedRecs"
         onClick={() => {
-          void openUrl(selectedRecsUrl(row.track))
+          openUrl(selectedRecsUrl(row.track)).catch(() => {})
         }}
       >
         <Icon name="ExternalLink" size={12} />
@@ -96,12 +145,7 @@ export function SpotifyRowActions({ row, onVerdict }: SpotifyRowActionsProps) {
         type="button"
         className={`spotify-mini ${copied ? 'spotify-mini--copied' : 'spotify-mini--primary'}`}
         title={copyText(row.track)}
-        onClick={() => {
-          void navigator.clipboard
-            .writeText(copyText(row.track))
-            .then(() => setCopied(true))
-            .catch(() => {})
-        }}
+        onClick={copy}
       >
         <Icon name={copied ? 'Check' : 'Copy'} size={12} />
         {copied ? 'Copied' : 'Copy'}

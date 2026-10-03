@@ -80,15 +80,24 @@ export function SpotifyView({
     [rows, spotify.filter, query],
   )
 
+  const checking = !spotify.libraryLoaded
+
+  // The player wants full Tracks: look the matched file up in the loaded library.
+  const tracksById = useMemo(
+    () => new Map(spotify.libraryTracks.map((track) => [track.id, track])),
+    [spotify.libraryTracks],
+  )
+
   // Double-clicking an Owned row plays its file, queued with the other owned rows on screen.
   const ownedQueue = useMemo(
     () =>
-      shown.flatMap((row) =>
-        row.ownership.kind === 'owned' && row.ownership.file
-          ? [row.ownership.file as Track]
-          : [],
-      ),
-    [shown],
+      shown.flatMap((row) => {
+        const id =
+          row.ownership.kind === 'owned' ? row.ownership.file?.id : undefined
+        const track = id === undefined ? undefined : tracksById.get(id)
+        return track ? [track] : []
+      }),
+    [shown, tracksById],
   )
 
   const playOwned = (row: SpotifyRow) => {
@@ -98,9 +107,29 @@ export function SpotifyView({
     if (index >= 0) onPlayTrack(ownedQueue[index], ownedQueue, index)
   }
 
-  const answer = (row: SpotifyRow, verdict: 'yes' | 'no') => {
-    if (row.ownership.file)
-      spotify.setVerdict(row.track.spotifyId, row.ownership.file.id, verdict)
+  const answer = (row: SpotifyRow, verdict: 'yes' | 'no') =>
+    row.ownership.file
+      ? spotify.setVerdict(row.track.spotifyId, row.ownership.file.id, verdict)
+      : Promise.resolve()
+
+  const emptyText = (): string => {
+    if (listId !== ALL_LISTS && !list)
+      return 'This playlist is no longer on Spotify, or Spotify stopped sharing it.'
+    if (rows.length === 0)
+      return 'Nothing here yet — the first sync may still be running.'
+    if (checking) return 'Checking your library…'
+    // Rows under this filter, so the search is what hid them.
+    if (counts[spotify.filter] > 0) return 'Nothing matches.'
+    switch (spotify.filter) {
+      case 'missing':
+        return 'Nothing missing.'
+      case 'owned':
+        return 'Nothing owned.'
+      case 'maybe':
+        return 'No maybes.'
+      default:
+        return 'Nothing matches.'
+    }
   }
 
   const reconnect = () => {
@@ -153,9 +182,21 @@ export function SpotifyView({
           <h1 className="spotify-header__title">{title}</h1>
           <div className="spotify-header__meta">
             <b>{counts.all} tracks</b>·
-            <span className="spotify-header__owned">{counts.owned} owned</span>·
-            <span>{counts.missing} missing</span>·
-            <span className="spotify-header__maybe">{counts.maybe} maybe</span>
+            {checking ? (
+              <span className="spotify-header__checking">
+                Checking your library…
+              </span>
+            ) : (
+              <>
+                <span className="spotify-header__owned">
+                  {counts.owned} owned
+                </span>
+                ·<span>{counts.missing} missing</span>·
+                <span className="spotify-header__maybe">
+                  {counts.maybe} maybe
+                </span>
+              </>
+            )}
             <button
               type="button"
               className="spotify-header__sync"
@@ -186,21 +227,27 @@ export function SpotifyView({
             key={key}
             type="button"
             className={`spotify-chip ${spotify.filter === key ? 'spotify-chip--on' : ''}`}
+            aria-pressed={spotify.filter === key}
             onClick={() => spotify.setFilter(key)}
           >
-            {label} <small>{counts[key]}</small>
+            {/* Until the library is known only the total is. */}
+            {label} <small>{checking && key !== 'all' ? '…' : counts[key]}</small>
           </button>
         ))}
       </div>
 
       <div className="spotify-table" role="table" aria-label={title}>
         <div className={rowClass('spotify-row--head')} role="row">
-          <span className="spotify-cell--num">#</span>
-          <span>Title</span>
-          <span>Artist</span>
-          {showLists && <span>Playlist</span>}
-          <span>Added</span>
-          <span className="spotify-cell--status">Status</span>
+          <span className="spotify-cell--num" role="columnheader">
+            #
+          </span>
+          <span role="columnheader">Title</span>
+          <span role="columnheader">Artist</span>
+          {showLists && <span role="columnheader">Playlist</span>}
+          <span role="columnheader">Added</span>
+          <span className="spotify-cell--status" role="columnheader">
+            Status
+          </span>
         </div>
 
         {shown.map((row, index) => (
@@ -212,42 +259,55 @@ export function SpotifyView({
               role="row"
               onDoubleClick={() => playOwned(row)}
             >
-              <span className="spotify-cell--num">{index + 1}</span>
-              <span className="spotify-cell--title" title={row.track.title}>
+              <span className="spotify-cell--num" role="cell">
+                {index + 1}
+              </span>
+              <span
+                className="spotify-cell--title"
+                role="cell"
+                title={row.track.title}
+              >
                 {row.isNew && (
-                  <i className="spotify-new-dot" aria-label="New" />
+                  <i className="spotify-new-dot" role="img" aria-label="New" />
                 )}
                 {row.track.title}
               </span>
-              <span className="spotify-cell--artist" title={row.track.artists}>
+              <span
+                className="spotify-cell--artist"
+                role="cell"
+                title={row.track.artists}
+              >
                 {row.track.artists}
               </span>
               {showLists && (
                 <span
                   className="spotify-cell--lists"
+                  role="cell"
                   title={row.lists.join(', ')}
                 >
                   {row.lists.join(', ')}
                 </span>
               )}
-              <span className="spotify-cell--added">
+              <span className="spotify-cell--added" role="cell">
                 {nowDate ? formatAdded(row.addedAt, nowDate) : ''}
               </span>
               {/* Double-clicking a button must not also play the row. */}
               <span
                 className="spotify-cell--status"
+                role="cell"
                 onDoubleClick={(e) => e.stopPropagation()}
               >
                 <SpotifyRowActions
                   row={row}
+                  checking={checking}
                   onVerdict={(verdict) => answer(row, verdict)}
                 />
               </span>
             </div>
             {row.ownership.kind === 'maybe' && row.ownership.file && (
               <div className="spotify-row spotify-row--sub" role="row">
-                <span />
-                <span className="spotify-hint">
+                <span role="cell" />
+                <span className="spotify-hint" role="cell" aria-colspan={showLists ? 5 : 4}>
                   In library:{' '}
                   <code title={row.ownership.file.file_path}>
                     {fileName(row.ownership.file.file_path)}
@@ -262,13 +322,9 @@ export function SpotifyView({
         ))}
 
         {shown.length === 0 && (
-          <p className="spotify-empty">
-            {listId !== ALL_LISTS && !list
-              ? 'This playlist is no longer on Spotify, or Spotify stopped sharing it.'
-              : rows.length === 0
-                ? 'Nothing here yet — the first sync may still be running.'
-                : 'Nothing matches.'}
-          </p>
+          <div className="spotify-empty" role="row">
+            <span role="cell">{emptyText()}</span>
+          </div>
         )}
       </div>
 

@@ -601,6 +601,7 @@ export function Sidebar({
                 spotify.newTotal > 0 ? (
                   <span className="sidebar-section__new">
                     {spotify.newTotal}
+                    <span className="spotify-sr-only"> new</span>
                   </span>
                 ) : undefined
               }
