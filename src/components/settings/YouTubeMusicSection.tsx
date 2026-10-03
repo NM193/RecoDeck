@@ -124,9 +124,12 @@ export function YouTubeMusicSection() {
           </li>
           <li>
             Under <strong>Audience</strong>, press <strong>Publish app</strong>{' '}
-            and confirm <strong>Push to production</strong>. While the app is in
-            Testing, Google signs you out every 7 days. (If you leave it in
-            Testing, add your Google account under <strong>Test users</strong>.)
+            and confirm <strong>Push to production</strong>. If the button is
+            grey, open <strong>Branding</strong>, fill in{' '}
+            <strong>Developer contact information</strong> at the bottom and
+            press <strong>Save</strong> first. While the app is in Testing,
+            Google signs you out every 7 days. (If you leave it in Testing, add
+            your Google account under <strong>Test users</strong>.)
           </li>
           <li>
             Under <strong>Clients</strong>, press <strong>Create client</strong>,
