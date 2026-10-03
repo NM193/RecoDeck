@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-03
+
+### Changed
+- On a DJ page the hero and the tabs stay put while the page under them scrolls; on Tracks and Plays the count, search, chips and column heads stay put too, and only the rows move
+- The Overview's Tracks card lists every track, not just the first few; the Tracks and Gigs cards keep their height and scroll inside, so the wheel moves the card and not the page
+
+### Fixed
+- DJ pages open again on a library whose DJ table came from an earlier build, instead of failing with "no such column"
+- The DJ's photo stands whole beside the name over a blurred copy, instead of a slice of a face stretched across the band
+- The ⋯ menu on a DJ page opens below the hero again
+- What they play keeps its count beside the status, instead of running under it
+
 ## [0.4.0] - 2026-10-03
 
 ### Added
