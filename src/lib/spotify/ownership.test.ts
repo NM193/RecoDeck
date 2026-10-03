@@ -370,6 +370,33 @@ describe('ownership through the shared shape', () => {
     expect(ownershipOf(otherArtist, index, undefined, true)).toEqual({ kind: 'missing' })
   })
 
+  it('takes the file with exactly the same title, not one that merely contains it', () => {
+    const files = [lib(10, 'A', 'Honey Hunter'), lib(11, 'B', 'Honey'), lib(12, 'C', 'Home Again')]
+    const idx = buildOwnershipIndex(files)
+    const honey = { ...bareHoney, title: 'Honey', titleNorm: 'honey' }
+    expect(ownershipOf(honey, idx, undefined, true)).toMatchObject({ kind: 'maybe', file: files[1] })
+    const home = { ...bareHoney, title: 'Home', titleNorm: 'home' }
+    expect(ownershipOf(home, idx, undefined, true)).toEqual({ kind: 'missing' })
+    const aHome = { ...bareHoney, title: 'A Home', titleNorm: 'a home' }
+    expect(ownershipOf(aHome, buildOwnershipIndex([lib(13, 'D', 'Home')]), undefined, true)).toEqual({
+      kind: 'missing',
+    })
+  })
+
+  it('treats Various Artists as no artist', () => {
+    const va = { ...bareHoney, artist: 'Various Artists', artistNorm: 'various artists' }
+    expect(ownershipOf(va, index, undefined, true)).toMatchObject({ kind: 'maybe', file: shelf[1] })
+  })
+
+  it('moves a title-only Maybe on after a No verdict', () => {
+    const files = [lib(20, 'A', 'Honey Hunter'), lib(21, 'B', 'Honey Hunter')]
+    const idx = buildOwnershipIndex(files)
+    const item = { id: 'v9', parsed: bareHoney, titleOnly: true }
+    const no = (id: number) => ({ id: 'v9', libraryTrackId: id, verdict: 'no' as const })
+    expect(classifyItems([item], idx, [no(20)]).get('v9')).toMatchObject({ kind: 'maybe', file: files[1] })
+    expect(classifyItems([item], idx, [no(20), no(21)]).get('v9')).toEqual({ kind: 'missing' })
+  })
+
   it('says why a title-only Maybe is unsure', () => {
     expect(maybeReason({ titleScore: 1, artistScore: 0 })).toBe(
       'same title, artist unknown',

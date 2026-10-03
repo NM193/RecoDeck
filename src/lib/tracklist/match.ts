@@ -266,6 +266,14 @@ export function titleFormsOf(parsed: Pick<Track, 'title' | 'mix' | 'titleNorm'>)
   return [...new Set([fullNorm, baseNorm].filter(Boolean))] as string[]
 }
 
+/** True when the row does not say who made it: no artist, or a placeholder like "Various Artists". */
+export function namesNoArtist(
+  parsed: Pick<Track, 'artist' | 'artistNorm'>,
+): boolean {
+  const rowArtist = foldedNorm(parsed.artistNorm, parsed.artist)
+  return !rowArtist || NO_ARTIST.test(rowArtist)
+}
+
 export function matchOne(
   parsed: Pick<Track, 'title' | 'mix' | 'artist' | 'titleNorm' | 'artistNorm'>,
   indexed: Indexed[],
@@ -336,8 +344,11 @@ export function matchTitleOnly(
     if (versionTokens.size && entry.versionTokens.size) {
       if (!sameVersion(versionTokens, entry.versionTokens)) continue
     }
+    // The same words, not one title inside another: "Honey" is not "Honey Hunter".
     const agrees = formTokens.some(
-      (tokens) => titleAgreement(tokens, entry.titleTokens) === 1,
+      (tokens) =>
+        tokens.size === entry.titleTokens.size &&
+        titleAgreement(tokens, entry.titleTokens) === 1,
     )
     if (agrees) {
       return { track: entry.track, score: 1, titleScore: 1, artistScore: 0, strong: false }

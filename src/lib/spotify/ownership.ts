@@ -16,6 +16,7 @@ import {
   indexLibrary,
   matchOne,
   matchTitleOnly,
+  namesNoArtist,
   titleFormsOf,
   type Indexed,
   type LibraryMatch,
@@ -105,10 +106,10 @@ export function maybeReason(
   match: Pick<LibraryMatch, 'titleScore' | 'artistScore'>,
 ): string {
   const title = match.titleScore >= 1 ? 'same title' : 'similar title'
-  // A match is Maybe only when it is not `strong`, and `strong` means an
-  // artistScore of 0.8 or more, so a Maybe's artist never fully agrees: in
-  // practice this always reads "artist partly matches". The "same artist"
-  // branch only matters if what counts as `strong` ever changes.
+  // A Maybe is never `strong` (an artistScore of 0.8 or more), so its artist
+  // never fully agrees: it reads "artist partly matches", or "artist unknown"
+  // for a title-only match (artistScore 0). "same artist" only matters if what
+  // counts as `strong` ever changes.
   const artist =
     match.artistScore >= 1
       ? 'same artist'
@@ -135,7 +136,7 @@ export function ownershipOf(
     if (match.strong) return { kind: 'owned', file: match.track }
     return { kind: 'maybe', file: match.track, reason: maybeReason(match) }
   }
-  if (titleOnly && !parsed.artist) {
+  if (titleOnly && namesNoArtist(parsed)) {
     const byTitle = matchTitleOnly(parsed, pool)
     if (byTitle)
       return { kind: 'maybe', file: byTitle.track, reason: maybeReason(byTitle) }
