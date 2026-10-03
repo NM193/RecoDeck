@@ -13,7 +13,7 @@ import { describePreview, previewSet } from '../../lib/tracklist/preview'
 import { playerPageUrl, watchUrl } from '../../lib/youtubeWindow'
 import { looksLikeAChannel } from '../../lib/channelInput'
 import type { Track as LibraryTrack } from '../../types/track'
-import { getErrorMessage } from '../../types/ai'
+import { getErrorMessage, isAppError } from '../../types/ai'
 import { usePlayerStore } from '../../store/playerStore'
 import { audioPlayer } from '../../lib/audioPlayer'
 import type {
@@ -517,30 +517,62 @@ export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: S
     refreshLibrary()
   }, [refreshQuota, refreshLibrary])
 
-  // Arriving on a set: shown as opening it from the Library shows it. Not
-  // stored again (openStored does that to fill in old sets; this one was open
-  // a moment ago). A set deleted meanwhile just leaves the Set tab empty.
-  // Late, it gives way to whatever the user fetched or opened meanwhile.
+  // Arriving on a set: shown as opening it from the Library shows it. A set
+  // that is not stored — YouTube Music's Open in Sets, or one deleted since —
+  // is fetched as a pasted link is: shown, stored, its units counted, and a
+  // failure said in the Set tab. Late, it gives way to whatever the user
+  // fetched or opened meanwhile.
   useEffect(() => {
     if (!openVideoId) return
     let live = true
     const claim = shownSets.current
+    const current = () => live && shownSets.current === claim
+    // As show() does (it is not a dependency here).
+    const showSet = (raw: RawSet) => {
+      shownSets.current++
+      const parsed = analyse(raw.video, raw.comments)
+      setReanalysed(null)
+      setCurrentSet(raw)
+      setResult(parsed)
+      setTab('set')
+      return parsed
+    }
+
     tauriApi
       .getYouTubeSet(openVideoId)
       .then((raw) => {
-        if (!live || shownSets.current !== claim) return
-        // As show() does (it is not a dependency here).
-        shownSets.current++
-        setReanalysed(null)
-        setCurrentSet(raw)
-        setResult(analyse(raw.video, raw.comments))
-        setTab('set')
+        if (current()) showSet(raw)
       })
-      .catch(() => {})
+      .catch(async (err: unknown) => {
+        if (!current()) return
+        if (!isAppError(err) || err.kind !== 'NotFound') {
+          setError(getErrorMessage(err))
+          return
+        }
+        setLoading(true)
+        setError(null)
+        try {
+          const raw = await tauriApi.fetchYouTubeSet(openVideoId)
+          const parsed = current()
+            ? showSet(raw)
+            : analyse(raw.video, raw.comments)
+          // Kept for good, as a pasted link is: reopening it costs nothing.
+          await storeParsedSet(raw, parsed)
+          refreshLibrary()
+        } catch (fetchErr) {
+          if (current()) {
+            setError(getErrorMessage(fetchErr))
+            setResult(null)
+          }
+        } finally {
+          if (live) setLoading(false)
+          refreshQuota()
+        }
+      })
     return () => {
       live = false
     }
-  }, [openVideoId])
+  }, [openVideoId, refreshLibrary, refreshQuota])
 
   // Reloaded whenever the set changes, and whenever the library of sets grows —
   // a record with nowhere to go today may have somewhere tomorrow.
