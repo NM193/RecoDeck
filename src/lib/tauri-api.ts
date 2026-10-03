@@ -46,6 +46,7 @@ import type {
   SpotifyStatus,
   Verdict,
 } from '../types/spotify'
+import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
 import type {
   ArtistCandidate,
   DjCandidates,
@@ -688,6 +689,67 @@ export const tauriApi = {
 
   async playSpotifyTrack(spotifyId: string): Promise<PlayOutcome> {
     return await invoke('play_spotify_track', { spotifyId })
+  },
+
+  // YouTube Music. Read-only on YouTube's side; the same trust model as Spotify's.
+  async getYouTubeMusicStatus(): Promise<YtmStatus> {
+    return await invoke('get_youtube_music_status')
+  },
+
+  /** Asks for the Desktop client's JSON. Null when the dialog was cancelled. */
+  async chooseYouTubeMusicClientFile(): Promise<string | null> {
+    const selected = await openDialog({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Google OAuth client', extensions: ['json'] }],
+    })
+    return typeof selected === 'string' ? selected : null
+  },
+
+  /** Rust reads the file and keeps its two values; the file is not kept. */
+  async setYouTubeMusicClientFile(path: string): Promise<YtmStatus> {
+    return await invoke('set_youtube_music_client_file', { path })
+  },
+
+  /** Resolves when the browser login is done (or fails); can take minutes. */
+  async connectYouTubeMusic(): Promise<YtmStatus> {
+    return await invoke('connect_youtube_music')
+  },
+
+  async disconnectYouTubeMusic(): Promise<YtmStatus> {
+    return await invoke('disconnect_youtube_music')
+  },
+
+  /** The sidebar learns it from the `youtube-music-synced` event this sends. */
+  async setYouTubeMusicShowInSidebar(show: boolean): Promise<YtmStatus> {
+    return await invoke('set_youtube_music_show_in_sidebar', { show })
+  },
+
+  /** The result arrives as a `youtube-music-synced` event. */
+  async syncYouTubeMusicNow(): Promise<void> {
+    return await invoke('sync_youtube_music_now')
+  },
+
+  async getYouTubeMusicLibrary(): Promise<YtmLibrary> {
+    return await invoke('get_youtube_music_library')
+  },
+
+  /** Answers the lastOpenedAt it wrote (unix ms). `all` marks every list. */
+  async markYouTubeMusicListOpened(listId: string): Promise<number> {
+    return await invoke('mark_youtube_music_list_opened', { listId })
+  },
+
+  async setYouTubeMusicVerdict(videoId: string, libraryTrackId: number, verdict: Verdict): Promise<void> {
+    return await invoke('set_youtube_music_verdict', { videoId, libraryTrackId, verdict })
+  },
+
+  /** Rejects with the line the field shows ("Not found — …"). The rows arrive by event. */
+  async addYouTubeMusicPlaylist(link: string): Promise<void> {
+    return await invoke('add_youtube_music_playlist', { link })
+  },
+
+  async removeYouTubeMusicPlaylist(listId: string): Promise<void> {
+    return await invoke('remove_youtube_music_playlist', { listId })
   },
 
   // DJ pages. Reads are cached in the database; the refreshes go to Spotify / RA.

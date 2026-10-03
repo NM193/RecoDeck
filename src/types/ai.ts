@@ -96,6 +96,10 @@ export type AppErrorKind =
   | 'SpotifyReconnect'
   | 'SpotifyLoginCancelled'
   | 'Spotify'
+  | 'YouTubeMusicNotConnected'
+  | 'YouTubeMusicReconnect'
+  | 'YouTubeMusicLoginCancelled'
+  | 'YouTubeMusic'
 
 export interface AppError {
   kind: AppErrorKind
@@ -162,6 +166,12 @@ export function getErrorMessage(e: unknown): string {
         return 'Spotify needs you to sign in again'
       case 'SpotifyLoginCancelled':
         return 'The Spotify sign-in was cancelled'
+      case 'YouTubeMusicNotConnected':
+        return 'YouTube Music is not connected -- connect it in Settings'
+      case 'YouTubeMusicReconnect':
+        return 'YouTube Music needs you to sign in again'
+      case 'YouTubeMusicLoginCancelled':
+        return 'The YouTube Music sign-in was cancelled'
       default:
         return e.message ?? 'An unexpected error occurred'
     }
