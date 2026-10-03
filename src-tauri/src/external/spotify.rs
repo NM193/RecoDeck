@@ -11,8 +11,10 @@
 //! and a playlist's count is `items.total` (formerly `tracks.total`). Both
 //! spellings are read.
 
-use crate::db::spotify::{ListEntry, PlaylistMeta, SpotifyTrack};
+use crate::db::spotify::{LikedChange, ListEntry, PlaylistMeta, SpotifyTrack, SyncBaseline, SyncChanges};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::future::Future;
 
 pub const API_BASE: &str = "https://api.spotify.com/v1";
 /// Spotify's largest page on every endpoint used here.
@@ -204,6 +206,115 @@ pub fn profile_name(me: &Value) -> String {
         .unwrap_or_else(|| "your Spotify account".to_string())
 }
 
+// --- what a sync fetches ----------------------------------------------
+
+/// One GET against the Web API, answering with the JSON body. The live client
+/// adds the token and waits out 429s; tests replay hand-written pages.
+pub trait SpotifyApi {
+    fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, SpotifyError>> + Send;
+}
+
+/// Every page from `first_url` on. The total is the first page's.
+async fn fetch_all<A: SpotifyApi + Sync>(
+    api: &A,
+    first_url: String,
+) -> Result<(Vec<ListEntry>, i64), SpotifyError> {
+    let mut entries = Vec::new();
+    let mut total = None;
+    let mut url = Some(first_url);
+    while let Some(current) = url {
+        let page = parse_entry_page(&api.get_json(&current).await?);
+        total.get_or_insert(page.total);
+        entries.extend(page.items);
+        url = page.next;
+    }
+    Ok((entries, total.unwrap_or(0)))
+}
+
+async fn fetch_liked<A: SpotifyApi + Sync>(
+    api: &A,
+    base: &SyncBaseline,
+) -> Result<LikedChange, SpotifyError> {
+    let Some(stored_total) = base.liked_total else {
+        let (entries, total) = fetch_all(api, liked_url()).await?;
+        return Ok(LikedChange::Full { entries, total });
+    };
+
+    let mut fresh = Vec::new();
+    let mut total = None;
+    let mut reached_known = false;
+    let mut url = Some(liked_url());
+    'pages: while let Some(current) = url.take() {
+        let page = parse_entry_page(&api.get_json(&current).await?);
+        total.get_or_insert(page.total);
+        for entry in page.items {
+            if base.liked_known.contains(&entry.track.spotify_id) {
+                reached_known = true;
+                break 'pages;
+            }
+            fresh.push(entry);
+        }
+        url = page.next;
+    }
+    let total = total.unwrap_or(0);
+
+    // Read to the end without meeting a known track: what was read is all of it.
+    if !reached_known {
+        return Ok(LikedChange::Full { entries: fresh, total });
+    }
+    if stored_total + fresh.len() as i64 == total {
+        return Ok(if fresh.is_empty() {
+            LikedChange::Unchanged { total }
+        } else {
+            LikedChange::Prepend { entries: fresh, total }
+        });
+    }
+
+    // The total no longer adds up: something was unliked, which reading
+    // newest-first cannot see. Read it all again.
+    let (entries, total) = fetch_all(api, liked_url()).await?;
+    Ok(LikedChange::Full { entries, total })
+}
+
+pub async fn fetch_changes<A: SpotifyApi + Sync>(
+    api: &A,
+    base: &SyncBaseline,
+) -> Result<SyncChanges, SpotifyError> {
+    let liked = fetch_liked(api, base).await?;
+
+    let mut listed = Vec::new();
+    let mut url = Some(playlists_url());
+    while let Some(current) = url {
+        let page = parse_playlist_page(&api.get_json(&current).await?);
+        listed.extend(page.items);
+        url = page.next;
+    }
+
+    let mut playlists = Vec::new();
+    let mut refetched = HashMap::new();
+    let mut refused = Vec::new();
+    for meta in listed {
+        if base.snapshots.get(&meta.id) == Some(&meta.snapshot_id) {
+            playlists.push(meta);
+            continue;
+        }
+        if base.refused.get(&meta.id) == Some(&meta.snapshot_id) {
+            refused.push(meta);
+            continue;
+        }
+        match fetch_all(api, playlist_items_url(&meta.id)).await {
+            Ok((entries, _)) => {
+                refetched.insert(meta.id.clone(), entries);
+                playlists.push(meta);
+            }
+            Err(err) if is_refusal(&err) => refused.push(meta),
+            Err(err) => return Err(err),
+        }
+    }
+
+    Ok(SyncChanges { liked, playlists, refetched, refused })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,5 +467,220 @@ mod tests {
         assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": "Nemanja" })), "Nemanja");
         assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": null })), "nm93");
         assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": " " })), "nm93");
+    }
+
+    // --- what a sync fetches ------------------------------------------
+
+    use crate::db::spotify::{LikedChange, SyncBaseline};
+    use std::collections::{HashMap, HashSet};
+    use std::future::Future;
+    use std::sync::Mutex;
+
+    /// Replays hand-written pages by URL and records what was asked for.
+    #[derive(Default)]
+    struct FakeApi {
+        pages: HashMap<String, Result<Value, SpotifyError>>,
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl FakeApi {
+        fn page(mut self, url: &str, body: Value) -> Self {
+            self.pages.insert(url.to_string(), Ok(body));
+            self
+        }
+
+        fn fail(mut self, url: &str, err: SpotifyError) -> Self {
+            self.pages.insert(url.to_string(), Err(err));
+            self
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl SpotifyApi for FakeApi {
+        fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, SpotifyError>> + Send {
+            self.calls.lock().unwrap().push(url.to_string());
+            let answer = self
+                .pages
+                .get(url)
+                .cloned()
+                .unwrap_or_else(|| Err(SpotifyError::Network(format!("no page for {url}"))));
+            async move { answer }
+        }
+    }
+
+    const LIKED_PAGE_2: &str = "https://api.spotify.com/v1/me/tracks?offset=50&limit=50";
+
+    fn liked_item(id: &str) -> Value {
+        json!({ "added_at": "2026-10-01T00:00:00Z", "track": track_json(id, id) })
+    }
+
+    fn playlist_item(id: &str) -> Value {
+        json!({ "added_at": "2026-10-01T00:00:00Z", "is_local": false, "item": track_json(id, id) })
+    }
+
+    fn page(items: Vec<Value>, next: Option<&str>, total: i64) -> Value {
+        json!({ "items": items, "next": next, "total": total })
+    }
+
+    fn playlists(metas: &[(&str, &str)]) -> Value {
+        page(
+            metas
+                .iter()
+                .map(|(id, snapshot)| {
+                    json!({ "id": id, "name": format!("List {id}"), "snapshot_id": snapshot, "items": { "total": 1 } })
+                })
+                .collect(),
+            None,
+            metas.len() as i64,
+        )
+    }
+
+    fn known(ids: &[&str], total: i64) -> SyncBaseline {
+        SyncBaseline {
+            liked_known: ids.iter().map(|id| id.to_string()).collect::<HashSet<_>>(),
+            liked_total: Some(total),
+            ..SyncBaseline::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn the_first_sync_reads_everything() {
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a"), liked_item("b")], Some(LIKED_PAGE_2), 3))
+            .page(LIKED_PAGE_2, page(vec![liked_item("c")], None, 3))
+            .page(&playlists_url(), playlists(&[("p1", "s1")]))
+            .page(&playlist_items_url("p1"), page(vec![playlist_item("b")], None, 1));
+
+        let changes = fetch_changes(&api, &SyncBaseline::default()).await.unwrap();
+
+        match &changes.liked {
+            LikedChange::Full { entries, total } => {
+                assert_eq!(ids(entries), ["a", "b", "c"]);
+                assert_eq!(*total, 3);
+            }
+            other => panic!("expected a full read, got {other:?}"),
+        }
+        assert_eq!(changes.playlists.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p1"]);
+        assert_eq!(ids(&changes.refetched["p1"]), ["b"]);
+        assert!(changes.refused.is_empty());
+    }
+
+    #[tokio::test]
+    async fn liked_songs_stop_at_the_first_known_track() {
+        let api = FakeApi::default()
+            .page(
+                &liked_url(),
+                page(vec![liked_item("new"), liked_item("a"), liked_item("b")], Some(LIKED_PAGE_2), 3),
+            )
+            .page(&playlists_url(), playlists(&[]));
+
+        let changes = fetch_changes(&api, &known(&["a", "b"], 2)).await.unwrap();
+
+        assert_eq!(
+            changes.liked,
+            LikedChange::Prepend { entries: vec![parse_entry(&liked_item("new")).unwrap()], total: 3 }
+        );
+        // The second page was never asked for.
+        assert_eq!(api.calls(), vec![liked_url(), playlists_url()]);
+    }
+
+    #[tokio::test]
+    async fn nothing_new_costs_one_request_for_liked_songs() {
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a"), liked_item("b")], None, 2))
+            .page(&playlists_url(), playlists(&[]));
+
+        let changes = fetch_changes(&api, &known(&["a", "b"], 2)).await.unwrap();
+
+        assert_eq!(changes.liked, LikedChange::Unchanged { total: 2 });
+        assert_eq!(api.calls(), vec![liked_url(), playlists_url()]);
+    }
+
+    #[tokio::test]
+    async fn an_unlike_makes_the_total_disagree_and_liked_songs_is_read_again_in_full() {
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a"), liked_item("c")], None, 2))
+            .page(&playlists_url(), playlists(&[]));
+
+        let changes = fetch_changes(&api, &known(&["a", "b", "c"], 3)).await.unwrap();
+
+        match &changes.liked {
+            LikedChange::Full { entries, total } => {
+                assert_eq!(ids(entries), ["a", "c"]);
+                assert_eq!(*total, 2);
+            }
+            other => panic!("expected a full read, got {other:?}"),
+        }
+        assert_eq!(api.calls(), vec![liked_url(), liked_url(), playlists_url()]);
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_playlist_is_not_read_again() {
+        let mut base = known(&["a"], 1);
+        base.snapshots.insert("p1".to_string(), "s1".to_string());
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s1"), ("p2", "s7")]))
+            .page(&playlist_items_url("p2"), page(vec![playlist_item("x")], None, 1));
+
+        let changes = fetch_changes(&api, &base).await.unwrap();
+
+        assert_eq!(changes.playlists.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p1", "p2"]);
+        assert_eq!(changes.refetched.keys().collect::<Vec<_>>(), ["p2"]);
+        assert!(!api.calls().contains(&playlist_items_url("p1")));
+    }
+
+    #[tokio::test]
+    async fn a_changed_playlist_is_read_in_full_across_pages() {
+        let mut base = known(&["a"], 1);
+        base.snapshots.insert("p1".to_string(), "s1".to_string());
+        let second = "https://api.spotify.com/v1/playlists/p1/items?offset=50&limit=50";
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s2")]))
+            .page(&playlist_items_url("p1"), page(vec![playlist_item("x")], Some(second), 2))
+            .page(second, page(vec![playlist_item("y")], None, 2));
+
+        let changes = fetch_changes(&api, &base).await.unwrap();
+
+        assert_eq!(ids(&changes.refetched["p1"]), ["x", "y"]);
+    }
+
+    #[tokio::test]
+    async fn a_playlist_spotify_will_not_share_is_listed_and_not_asked_for_again() {
+        let forbidden = SpotifyError::Api { status: 403, message: "Forbidden".into(), reason: None };
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s1")]))
+            .fail(&playlist_items_url("p1"), forbidden);
+
+        let changes = fetch_changes(&api, &known(&["a"], 1)).await.unwrap();
+        assert_eq!(changes.refused.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p1"]);
+        assert!(changes.playlists.is_empty());
+        assert!(changes.refetched.is_empty());
+
+        // Next time, with the same snapshot, it is not asked for at all.
+        let mut base = known(&["a"], 1);
+        base.refused.insert("p1".to_string(), "s1".to_string());
+        let again = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s1")]));
+        let changes = fetch_changes(&again, &base).await.unwrap();
+        assert_eq!(changes.refused.len(), 1);
+        assert!(!again.calls().contains(&playlist_items_url("p1")));
+    }
+
+    #[tokio::test]
+    async fn any_other_failure_fails_the_sync() {
+        let broken = SpotifyError::Api { status: 500, message: "Server error".into(), reason: None };
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s1")]))
+            .fail(&playlist_items_url("p1"), broken.clone());
+
+        assert_eq!(fetch_changes(&api, &known(&["a"], 1)).await, Err(broken));
     }
 }
