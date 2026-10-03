@@ -198,7 +198,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 4px 0;
-  min-width: 236px;
+  min-width: 252px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -444,7 +444,7 @@
 
 .sidebar-colour-menu__swatches {
   display: grid;
-  grid-template-columns: repeat(8, 20px);
+  grid-template-columns: repeat(9, 20px);
   gap: 6px;
   padding: 0 12px 8px;
 }
@@ -513,4 +513,49 @@
 .folder-row.selected .spotify-list-row__icon,
 .folder-row.selected .spotify-list-row__new {
   color: inherit;
+}
+
+/* ===== YouTube Music ===== */
+
+.ytm-list-row__gone {
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.ytm-add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 6px 28px;
+}
+
+.ytm-add__input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ytm-add__hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.ytm-add__error {
+  padding: 0 8px 6px 28px;
+  color: var(--color-danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Only one item: no need for the colour menu's width. */
+.sidebar-ctx-menu.ytm-list-menu {
+  min-width: 160px;
 }

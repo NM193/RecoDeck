@@ -52,6 +52,7 @@ export type SidebarSection =
   | 'folders'
   | 'playlists'
   | 'spotify'
+  | 'youtube-music'
 
 export const SECTION_LABELS: Record<SidebarSection, string> = {
   home: 'Home',
@@ -62,6 +63,7 @@ export const SECTION_LABELS: Record<SidebarSection, string> = {
   folders: 'Folders',
   playlists: 'Playlists',
   spotify: 'Spotify',
+  'youtube-music': 'YouTube Music',
 }
 
 /** The views App.tsx can be showing. */
@@ -75,6 +77,7 @@ export type ActiveView =
   | 'ai-chat'
   | 'sets'
   | 'spotify'
+  | 'youtube-music'
   /** A DJ page. App lights the section it was opened from instead (Search or Sets). */
   | 'dj'
 
@@ -89,6 +92,7 @@ export const DEFAULT_COLOURS: Record<SidebarSection, string> = {
   folders: '#a78bfa',
   playlists: '#f472b6',
   spotify: '#1ed760',
+  'youtube-music': '#ff4e45',
 }
 
 /** The right-click menu's swatches: every default, plus yellow. */
@@ -100,6 +104,7 @@ export const PALETTE = [
   '#a78bfa',
   '#f472b6',
   '#1ed760',
+  '#ff4e45',
   '#facc15',
 ] as const
 

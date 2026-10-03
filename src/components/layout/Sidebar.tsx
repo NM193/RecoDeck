@@ -14,9 +14,11 @@ import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import { SidebarRail } from './SidebarRail'
 import { SidebarColourMenu } from './SidebarColourMenu'
-import type { NavItem, SidebarSpotify } from './sidebarTypes'
+import type { NavItem, SidebarSpotify, SidebarYouTubeMusic } from './sidebarTypes'
 import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
 import { SpotifyLists } from '../spotify/SpotifyLists'
+import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
+import { YouTubeMusicLists } from '../youtube-music/YouTubeMusicLists'
 import { useFolderTreeStore } from '../../store/folderTreeStore'
 import {
   COLLAPSED_WIDTH,
@@ -153,6 +155,7 @@ interface SidebarProps {
   onNavigateSets?: () => void
   onNavigateAIChat?: () => void
   spotify?: SidebarSpotify
+  youtubeMusic?: SidebarYouTubeMusic
 }
 
 // --- Main Sidebar ---
@@ -192,6 +195,7 @@ export function Sidebar({
   onNavigateSets,
   onNavigateAIChat,
   spotify,
+  youtubeMusic,
 }: SidebarProps) {
   // The folder tree's expansion and loaded children live in a store that
   // outlives the trees (collapsing unmounts them; each flyout mounts a new
@@ -210,6 +214,7 @@ export function Sidebar({
   const [foldersExpanded, setFoldersExpanded] = useState(true)
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true)
   const [spotifyExpanded, setSpotifyExpanded] = useState(true)
+  const [youtubeMusicExpanded, setYouTubeMusicExpanded] = useState(true)
 
   // Right-click menu: a section's colour, plus Create Playlist / Folder on Playlists.
   const [ctxMenu, setCtxMenu] = useState<{
@@ -399,7 +404,7 @@ export function Sidebar({
     (e: React.MouseEvent) => {
       e.preventDefault()
       setCtxMenu({
-        x: Math.min(e.clientX, window.innerWidth - 248),
+        x: Math.min(e.clientX, window.innerWidth - 264),
         y: Math.min(e.clientY, window.innerHeight - 240),
         section,
         withCreate,
@@ -467,6 +472,7 @@ export function Sidebar({
           onOpenSettings={onOpenSettings}
           settingsActive={activeView === 'settings'}
           spotifyNew={spotify ? spotify.newTotal : null}
+          youtubeMusicNew={youtubeMusic ? youtubeMusic.newTotal : null}
           renderSection={(section, close) =>
             section === 'spotify' ? (
               spotify && (
@@ -479,6 +485,21 @@ export function Sidebar({
                     spotify.onOpenList(id)
                     close()
                   }}
+                />
+              )
+            ) : section === 'youtube-music' ? (
+              youtubeMusic && (
+                <YouTubeMusicLists
+                  lists={youtubeMusic.lists}
+                  counts={youtubeMusic.counts}
+                  newByList={youtubeMusic.newByList}
+                  activeListId={youtubeMusic.activeListId}
+                  onOpen={(id) => {
+                    youtubeMusic.onOpenList(id)
+                    close()
+                  }}
+                  onAdd={youtubeMusic.onAddPlaylist}
+                  onRemove={youtubeMusic.onRemovePlaylist}
                 />
               )
             ) : (
@@ -612,6 +633,40 @@ export function Sidebar({
                 newByList={spotify.newByList}
                 activeListId={spotify.activeListId}
                 onOpen={spotify.onOpenList}
+              />
+            </Section>
+          </>
+        )}
+
+        {/* YouTube Music section — connected, and Show in sidebar on */}
+        {youtubeMusic && (
+          <>
+            <div className="sidebar-divider" />
+            <Section
+              title="YouTube Music"
+              glyph={
+                <YouTubeGlyph size={14} style={iconStyle('youtube-music')} />
+              }
+              expanded={youtubeMusicExpanded}
+              onToggle={() => setYouTubeMusicExpanded((v) => !v)}
+              onContextMenu={openColourMenu('youtube-music')}
+              trailing={
+                youtubeMusic.newTotal > 0 ? (
+                  <span className="sidebar-section__new">
+                    {youtubeMusic.newTotal}
+                    <span className="spotify-sr-only"> new</span>
+                  </span>
+                ) : undefined
+              }
+            >
+              <YouTubeMusicLists
+                lists={youtubeMusic.lists}
+                counts={youtubeMusic.counts}
+                newByList={youtubeMusic.newByList}
+                activeListId={youtubeMusic.activeListId}
+                onOpen={youtubeMusic.onOpenList}
+                onAdd={youtubeMusic.onAddPlaylist}
+                onRemove={youtubeMusic.onRemovePlaylist}
               />
             </Section>
           </>

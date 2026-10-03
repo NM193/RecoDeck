@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '../Icon'
 import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
+import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
 import { SECTION_LABELS, type SidebarSection } from '../../lib/sidebarPrefs'
 import type { FlyoutSection, NavItem } from './sidebarTypes'
 import { SidebarFlyout } from './SidebarFlyout'
@@ -22,6 +23,8 @@ interface SidebarRailProps {
   settingsActive: boolean
   /** The Spotify new-likes number; null hides the Spotify icon (not connected). */
   spotifyNew: number | null
+  /** The YouTube Music number; null hides its icon (not connected, or hidden). */
+  youtubeMusicNew: number | null
   /** Section contents for the flyouts; `close` is called after a navigation. */
   renderSection: (section: FlyoutSection, close: () => void) => ReactNode
 }
@@ -37,6 +40,7 @@ export function SidebarRail({
   onOpenSettings,
   settingsActive,
   spotifyNew,
+  youtubeMusicNew,
   renderSection,
 }: SidebarRailProps) {
   // --- Tooltip ---
@@ -173,6 +177,13 @@ export function SidebarRail({
             SECTION_LABELS.spotify,
             <SpotifyGlyph size={16} style={iconStyle('spotify')} />,
             spotifyNew,
+          )}
+        {youtubeMusicNew !== null &&
+          sectionButton(
+            'youtube-music',
+            SECTION_LABELS['youtube-music'],
+            <YouTubeGlyph size={16} style={iconStyle('youtube-music')} />,
+            youtubeMusicNew,
           )}
       </div>
 

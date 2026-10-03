@@ -37,6 +37,11 @@ import { Sidebar } from './components/layout/Sidebar'
 import { useSidebarPrefs } from './components/layout/useSidebarPrefs'
 import { useSpotify } from './components/spotify/useSpotify'
 import { SpotifyView } from './components/views/SpotifyView'
+import {
+  useYouTubeMusic,
+  useYouTubeMusicMatches,
+} from './components/youtube-music/useYouTubeMusic'
+import { YouTubeMusicView } from './components/views/YouTubeMusicView'
 import { DjView } from './components/views/DjView'
 import { openSettingsSection } from './components/settings/openSections'
 import { djKey } from './lib/dj/names'
@@ -66,6 +71,8 @@ type PromptAction =
 
 /** Where a DJ page was first opened from: Back returns there. */
 type DjOrigin = { view: 'search' } | { view: 'sets'; openVideoId: string | null }
+/** The open Spotify or YouTube Music list: 'all', or a list id. */
+type StreamList = { service: 'spotify' | 'youtube-music'; listId: string }
 
 interface DjPageState {
   name: string
@@ -121,8 +128,8 @@ function AppContent() {
   const [showSearch, setShowSearch] = useState(false)
   const [showSets, setShowSets] = useState(false)
   const [showAIChat, setShowAIChat] = useState(false)
-  /** The open Spotify list: 'all', 'liked' or a playlist id; null when another view is open. */
-  const [spotifyListId, setSpotifyListId] = useState<string | null>(null)
+  /** The open Spotify or YouTube Music list; null when another view is open. */
+  const [streamList, setStreamList] = useState<StreamList | null>(null)
   /** The open DJ page and where Back goes; null when another view is open. */
   const [djPage, setDjPage] = useState<DjPageState | null>(null)
   /** Search's query, held here so Back from a DJ page shows the same results. */
@@ -159,8 +166,19 @@ function AppContent() {
   // Ref into FolderTree to refresh a root after folder mutations
   const folderTreeRef = useRef<FolderTreeRef>(null)
   const sidebarPrefs = useSidebarPrefs({ dbReady })
-  // A DJ page needs the whole library for Plays, Spotify or not.
-  const spotify = useSpotify(dbReady, totalTrackCount, djPage !== null)
+  // YouTube Music first: while it is shown (connected, and Show in sidebar
+  // on) useSpotify loads the library, whose index YouTube Music then matches
+  // against. Hidden, it needs no matching. A DJ page needs the library too,
+  // for Plays, Spotify or not.
+  const youtubeMusic = useYouTubeMusic(dbReady)
+  const youtubeMusicShown =
+    youtubeMusic.connected && youtubeMusic.status?.showInSidebar !== false
+  const spotify = useSpotify(
+    dbReady,
+    totalTrackCount,
+    djPage !== null || youtubeMusicShown,
+  )
+  const youtubeMusicMatches = useYouTubeMusicMatches(youtubeMusic.library, spotify)
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
@@ -332,7 +350,7 @@ function AppContent() {
   useEffect(() => {
     useAIStore.getState().registerOpenSettings(() => {
       setShowSettings(true)
-      setSpotifyListId(null)
+      setStreamList(null)
       setDjPage(null)
       setSelectedFolder(null)
       setSelectedPlaylistId(null)
@@ -733,7 +751,7 @@ function AppContent() {
   // Folder selection from Track Collection
   async function handleFolderSelect(folderPath: string | null) {
     setSelectedFolder(folderPath)
-    setSpotifyListId(null)
+    setStreamList(null)
     setDjPage(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
@@ -747,7 +765,7 @@ function AppContent() {
 
   // A Spotify list: every other view closes, and opening it marks it seen.
   function openSpotifyList(listId: string) {
-    setSpotifyListId(listId)
+    setStreamList({ service: 'spotify', listId })
     setDjPage(null)
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
@@ -757,6 +775,20 @@ function AppContent() {
     setShowSets(false)
     setShowAIChat(false)
     spotify.openList(listId)
+  }
+
+  // A YouTube Music list: the same, for the other service.
+  function openYouTubeMusicList(listId: string) {
+    setStreamList({ service: 'youtube-music', listId })
+    setDjPage(null)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(false)
+    setShowSettings(false)
+    setShowSearch(false)
+    setShowSets(false)
+    setShowAIChat(false)
+    youtubeMusic.openList(listId)
   }
 
   // A DJ page. From another DJ page it replaces that one and keeps its origin,
@@ -788,7 +820,7 @@ function AppContent() {
   function openSets(start: SetsStart) {
     setSetsStart(start)
     setDjPage(null)
-    setSpotifyListId(null)
+    setStreamList(null)
     setShowSets(true)
     setShowSearch(false)
     setSelectedFolder(null)
@@ -801,7 +833,7 @@ function AppContent() {
   // Playlist selection
   async function handlePlaylistSelect(playlistId: number) {
     setSelectedPlaylistId(playlistId)
-    setSpotifyListId(null)
+    setStreamList(null)
     setDjPage(null)
     setSelectedFolder(null)
     setShowAllTracks(false)
@@ -816,7 +848,7 @@ function AppContent() {
   function openSpotifySettings() {
     openSettingsSection('spotify')
     setShowSettings(true)
-    setSpotifyListId(null)
+    setStreamList(null)
     setDjPage(null)
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
@@ -1342,12 +1374,18 @@ function AppContent() {
       : 'Click "Scan Folder" to add music to your library'
 
   // Derive a unique view key so AnimatePresence knows when to animate
-  // The SPOTIFY section and its view exist while an account is connected and
+  // A service's section and its view exist while its account is connected and
   // Show in sidebar is on. Off, an open list falls through to the default
-  // view; DJ pages and Search still use the account.
+  // view; DJ pages and Search still use Spotify.
+  // (`youtubeMusicShown` is worked out next to the hooks, above.)
   const spotifyShown =
     spotify.connected && spotify.status?.showInSidebar !== false
-  const shownSpotifyList = spotifyShown ? spotifyListId : null
+  const shownSpotifyList =
+    spotifyShown && streamList?.service === 'spotify' ? streamList.listId : null
+  const shownYouTubeMusicList =
+    youtubeMusicShown && streamList?.service === 'youtube-music'
+      ? streamList.listId
+      : null
 
   // The DJ page comes first: it opens over Search or Sets, whose flags stay set.
   const viewKey =
@@ -1355,6 +1393,8 @@ function AppContent() {
       ? `dj-${djKey(djPage.name)}`
       : shownSpotifyList !== null
       ? `spotify-${shownSpotifyList}`
+      : shownYouTubeMusicList !== null
+      ? `youtube-music-${shownYouTubeMusicList}`
       : showSettings
         ? 'settings'
         : showSearch
@@ -1374,6 +1414,8 @@ function AppContent() {
       ? 'dj'
       : shownSpotifyList !== null
       ? 'spotify'
+      : shownYouTubeMusicList !== null
+      ? 'youtube-music'
       : showSettings
         ? 'settings'
         : showSets
@@ -1426,7 +1468,7 @@ function AppContent() {
       folderTreeRef={folderTreeRef}
       onOpenSettings={() => {
         setShowSettings(true)
-        setSpotifyListId(null)
+        setStreamList(null)
         setDjPage(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
@@ -1436,7 +1478,7 @@ function AppContent() {
         setShowAIChat(false)
       }}
       onNavigateHome={() => {
-        setSpotifyListId(null)
+        setStreamList(null)
         setDjPage(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
@@ -1447,7 +1489,7 @@ function AppContent() {
         setShowAIChat(false)
       }}
       onShowAllTracks={() => {
-        setSpotifyListId(null)
+        setStreamList(null)
         setDjPage(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
@@ -1460,7 +1502,7 @@ function AppContent() {
       }}
       onSearch={() => {
         setShowSearch(true)
-        setSpotifyListId(null)
+        setStreamList(null)
         setDjPage(null)
         setShowSets(false)
         setSelectedFolder(null)
@@ -1473,10 +1515,13 @@ function AppContent() {
       onNavigateSets={() => {
         // Sets already showing keeps its start: a new one would remount it and lose its state.
         const setsShowing =
-          showSets && djPage === null && shownSpotifyList === null
+          showSets &&
+          djPage === null &&
+          shownSpotifyList === null &&
+          shownYouTubeMusicList === null
         setShowSets(true)
         if (!setsShowing) setSetsStart(NO_SETS_START)
-        setSpotifyListId(null)
+        setStreamList(null)
         setDjPage(null)
         setShowSearch(false)
         setSelectedFolder(null)
@@ -1497,11 +1542,29 @@ function AppContent() {
             }
           : undefined
       }
+      youtubeMusic={
+        youtubeMusicShown
+          ? {
+              lists: youtubeMusic.library.lists,
+              counts: youtubeMusicMatches.counts,
+              newTotal: youtubeMusicMatches.newCounts.total,
+              newByList: youtubeMusicMatches.newCounts.byList,
+              activeListId: shownYouTubeMusicList,
+              onOpenList: openYouTubeMusicList,
+              onAddPlaylist: youtubeMusic.addPlaylist,
+              onRemovePlaylist: (listId) =>
+                youtubeMusic.removePlaylist(listId).then(() => {
+                  // The open list was removed: back to the default view.
+                  if (shownYouTubeMusicList === listId) setStreamList(null)
+                }),
+            }
+          : undefined
+      }
       onNavigateAIChat={
         AI_ENABLED
           ? () => {
               setShowAIChat(true)
-              setSpotifyListId(null)
+              setStreamList(null)
               setDjPage(null)
               setShowSettings(false)
               setShowSearch(false)
@@ -1609,6 +1672,17 @@ function AppContent() {
                 spotify={spotify}
                 onPlayTrack={handlePlayTrack}
               />
+            ) : shownYouTubeMusicList !== null ? (
+              <YouTubeMusicView
+                listId={shownYouTubeMusicList}
+                youtubeMusic={youtubeMusic}
+                matches={youtubeMusicMatches}
+                library={spotify}
+                onPlayTrack={handlePlayTrack}
+                onOpenSet={(videoId) =>
+                  openSets({ openVideoId: videoId, initialQuery: '' })
+                }
+              />
             ) : showSets ? (
               <SetsView
                 // A new start is a new SetsView: it reads these props only when it mounts.
@@ -1637,7 +1711,7 @@ function AppContent() {
                 spotify={spotify}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
-                  setSpotifyListId(null)
+                  setStreamList(null)
                   setDjPage(null)
                   setShowSearch(false)
                   setShowSets(false)
@@ -1655,7 +1729,7 @@ function AppContent() {
                   AI_ENABLED
                     ? () => {
                         setShowAIChat(true)
-                        setSpotifyListId(null)
+                        setStreamList(null)
                         setDjPage(null)
                         setSelectedPlaylistId(null)
                         setSelectedFolder(null)
@@ -1668,7 +1742,7 @@ function AppContent() {
                 }
                 onOpenSettings={() => {
                   setShowSettings(true)
-                  setSpotifyListId(null)
+                  setStreamList(null)
                   setDjPage(null)
                   setShowAIChat(false)
                   setSelectedPlaylistId(null)

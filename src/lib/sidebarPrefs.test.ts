@@ -54,8 +54,8 @@ describe('collapsing the sidebar', () => {
 })
 
 describe('section colours', () => {
-  it('offers eight swatches that include every default', () => {
-    expect(PALETTE).toHaveLength(8)
+  it('offers nine swatches that include every default', () => {
+    expect(PALETTE).toHaveLength(9)
     for (const hex of new Set(Object.values(DEFAULT_COLOURS))) {
       expect(PALETTE).toContain(hex)
     }
@@ -125,5 +125,13 @@ describe('a DJ page', () => {
   // Search or Sets stays lit; 'dj' itself lights nothing.
   it('lights no section of its own', () => {
     expect(sectionForView('dj')).toBeNull()
+  })
+})
+
+describe('the YouTube Music view', () => {
+  it('lights the YouTube Music section, in YouTube red by default', () => {
+    expect(sectionForView('youtube-music')).toBe('youtube-music')
+    expect(DEFAULT_COLOURS['youtube-music']).toBe('#ff4e45')
+    expect(SECTION_LABELS['youtube-music']).toBe('YouTube Music')
   })
 })
