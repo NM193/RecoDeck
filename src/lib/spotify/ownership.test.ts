@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildOwnershipIndex,
+  classifyItems,
   classifyTracks,
   maybeReason,
   ownershipOf,
@@ -313,5 +314,65 @@ describe('ownership of a row that is not a Spotify track', () => {
     expect(ownershipOf(comeGetUp, index, new Set([1]))).toEqual({
       kind: 'missing',
     })
+  })
+})
+
+describe('ownership through the shared shape', () => {
+  const shelf = [
+    lib(1, 'Soulva', 'Odyssey (Original Mix)'),
+    lib(2, 'Some Producer', 'Honey Hunter'),
+  ]
+  const index = buildOwnershipIndex(shelf)
+  const odyssey = {
+    artist: 'Soulva',
+    title: 'Odyssey',
+    mix: 'Original Mix',
+    artistNorm: 'soulva',
+    titleNorm: 'odyssey original mix',
+  }
+  const bareHoney = {
+    artist: null,
+    title: 'Honey Hunter',
+    mix: null,
+    artistNorm: null,
+    titleNorm: 'honey hunter',
+  }
+
+  it('answers any source by its id', () => {
+    const result = classifyItems([{ id: 'v1', parsed: odyssey }], index, [])
+    expect(result.get('v1')).toEqual({ kind: 'owned', file: shelf[0] })
+  })
+
+  it('reads verdicts keyed by the same id', () => {
+    const result = classifyItems(
+      [{ id: 'v4', parsed: bareHoney, titleOnly: true }],
+      index,
+      [{ id: 'v4', libraryTrackId: 2, verdict: 'yes' }],
+    )
+    expect(result.get('v4')).toEqual({ kind: 'owned', file: shelf[1] })
+  })
+
+  it('makes a same-titled file a Maybe when the row names no artist and asks for it', () => {
+    expect(ownershipOf(bareHoney, index)).toEqual({ kind: 'missing' })
+    expect(ownershipOf(bareHoney, index, undefined, true)).toEqual({
+      kind: 'maybe',
+      file: shelf[1],
+      reason: 'same title, artist unknown',
+    })
+  })
+
+  it('wants the title to agree in full, and never answers Owned on a title alone', () => {
+    const partly = { ...bareHoney, title: 'Honey Monster', titleNorm: 'honey monster' }
+    expect(ownershipOf(partly, index, undefined, true)).toEqual({ kind: 'missing' })
+    // A row with an artist that does not agree stays Missing: titleOnly is
+    // only for rows that name none.
+    const otherArtist = { ...bareHoney, artist: 'Extrawelt', artistNorm: 'extrawelt' }
+    expect(ownershipOf(otherArtist, index, undefined, true)).toEqual({ kind: 'missing' })
+  })
+
+  it('says why a title-only Maybe is unsure', () => {
+    expect(maybeReason({ titleScore: 1, artistScore: 0 })).toBe(
+      'same title, artist unknown',
+    )
   })
 })

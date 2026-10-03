@@ -317,6 +317,35 @@ export function matchOne(
   return best
 }
 
+/**
+ * The file for a row that names no artist — a bare YouTube title such as
+ * "Honey Hunter" on a channel that is not the artist's. Only a full title
+ * agreement counts, and the answer is never strong: dozens of records share
+ * a title, so it can only make a Maybe the user confirms.
+ */
+export function matchTitleOnly(
+  parsed: Pick<Track, 'title' | 'mix' | 'titleNorm'>,
+  indexed: Indexed[],
+): LibraryMatch | null {
+  const formTokens = titleFormsOf(parsed).map((form) => tokenSet(form))
+  if (!formTokens.length) return null
+  const versionTokens = tokenSet(matchNorm(parsed.mix) ?? versionOf(parsed.title))
+
+  for (const entry of indexed) {
+    if (!entry.titleNorm) continue
+    if (versionTokens.size && entry.versionTokens.size) {
+      if (!sameVersion(versionTokens, entry.versionTokens)) continue
+    }
+    const agrees = formTokens.some(
+      (tokens) => titleAgreement(tokens, entry.titleTokens) === 1,
+    )
+    if (agrees) {
+      return { track: entry.track, score: 1, titleScore: 1, artistScore: 0, strong: false }
+    }
+  }
+  return null
+}
+
 export interface MatchSummary {
   /** Keyed by the parsed track's index. */
   byIndex: Map<number, LibraryMatch>

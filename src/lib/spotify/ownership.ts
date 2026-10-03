@@ -15,12 +15,14 @@ import { tokenSet } from '../tracklist/text'
 import {
   indexLibrary,
   matchOne,
+  matchTitleOnly,
   titleFormsOf,
   type Indexed,
   type LibraryMatch,
   type LibraryTrack,
 } from '../tracklist/match'
-import type { SpotifyTrack, SpotifyVerdict } from '../../types/spotify'
+import type { Track } from '../tracklist/types'
+import type { SpotifyTrack, SpotifyVerdict, Verdict } from '../../types/spotify'
 import { toParsed } from './title'
 
 export type OwnershipKind = 'owned' | 'maybe' | 'missing'
@@ -57,8 +59,27 @@ export function buildOwnershipIndex(library: LibraryTrack[]): OwnershipIndex {
   }
 }
 
-/** What the matcher reads of a row: a Spotify track through `toParsed`, or a set's row as it is. */
-export type MatchInput = ReturnType<typeof toParsed>
+/**
+ * What the matcher reads of a row, whatever it came from: a Spotify track
+ * through its `toParsed`, a YouTube video through its own, or a set's row as
+ * it is.
+ */
+export type MatchInput = Pick<Track, 'title' | 'mix' | 'artist' | 'titleNorm' | 'artistNorm'>
+
+/** One row to classify. Spotify, YouTube Music and DJ pages all make these. */
+export interface OwnershipItem {
+  /** A Spotify id or a YouTube video id: the key of the answer and of its verdicts. */
+  id: string
+  parsed: MatchInput
+  /** With no artist, a file with the same title is a Maybe rather than Missing. */
+  titleOnly?: boolean
+}
+
+export interface OwnershipVerdict {
+  id: string
+  libraryTrackId: number
+  verdict: Verdict
+}
 
 /** Files sharing a title word with the track, in library order, minus those answered No. */
 function candidates(
@@ -89,29 +110,44 @@ export function maybeReason(
   // practice this always reads "artist partly matches". The "same artist"
   // branch only matters if what counts as `strong` ever changes.
   const artist =
-    match.artistScore >= 1 ? 'same artist' : 'artist partly matches'
+    match.artistScore >= 1
+      ? 'same artist'
+      : match.artistScore === 0
+        ? 'artist unknown'
+        : 'artist partly matches'
   return `${title}, ${artist}`
 }
 
 /**
  * Owned / Maybe / Missing for one row, by the library match alone: no verdicts.
- * `excluded` holds files already answered No for this row.
+ * `excluded` holds files already answered No for this row. `titleOnly` lets a
+ * row that names no artist match on its title (`matchTitleOnly`), as a Maybe.
  */
 export function ownershipOf(
   parsed: MatchInput,
   index: OwnershipIndex,
   excluded?: Set<number>,
+  titleOnly = false,
 ): Ownership {
-  const match = matchOne(parsed, candidates(index, parsed, excluded))
-  if (!match) return { kind: 'missing' }
-  if (match.strong) return { kind: 'owned', file: match.track }
-  return { kind: 'maybe', file: match.track, reason: maybeReason(match) }
+  const pool = candidates(index, parsed, excluded)
+  const match = matchOne(parsed, pool)
+  if (match) {
+    if (match.strong) return { kind: 'owned', file: match.track }
+    return { kind: 'maybe', file: match.track, reason: maybeReason(match) }
+  }
+  if (titleOnly && !parsed.artist) {
+    const byTitle = matchTitleOnly(parsed, pool)
+    if (byTitle)
+      return { kind: 'maybe', file: byTitle.track, reason: maybeReason(byTitle) }
+  }
+  return { kind: 'missing' }
 }
 
-export function classifyTracks(
-  tracks: SpotifyTrack[],
+/** Every row's answer, keyed by its id, with Yes / No verdicts applied. */
+export function classifyItems(
+  items: OwnershipItem[],
   index: OwnershipIndex,
-  verdicts: SpotifyVerdict[],
+  verdicts: OwnershipVerdict[],
 ): Map<string, Ownership> {
   const yes = new Map<string, number>()
   const no = new Map<string, Set<number>>()
@@ -119,29 +155,42 @@ export function classifyTracks(
     // A verdict about a file that is gone says nothing any more.
     if (!index.byId.has(verdict.libraryTrackId)) continue
     if (verdict.verdict === 'yes') {
-      yes.set(verdict.spotifyId, verdict.libraryTrackId)
+      yes.set(verdict.id, verdict.libraryTrackId)
     } else {
-      const set = no.get(verdict.spotifyId) ?? new Set<number>()
+      const set = no.get(verdict.id) ?? new Set<number>()
       set.add(verdict.libraryTrackId)
-      no.set(verdict.spotifyId, set)
+      no.set(verdict.id, set)
     }
   }
 
   const result = new Map<string, Ownership>()
-  for (const track of tracks) {
-    const confirmed = yes.get(track.spotifyId)
+  for (const item of items) {
+    const confirmed = yes.get(item.id)
     if (confirmed !== undefined) {
-      result.set(track.spotifyId, {
-        kind: 'owned',
-        file: index.byId.get(confirmed),
-      })
+      result.set(item.id, { kind: 'owned', file: index.byId.get(confirmed) })
       continue
     }
-
     result.set(
-      track.spotifyId,
-      ownershipOf(toParsed(track), index, no.get(track.spotifyId)),
+      item.id,
+      ownershipOf(item.parsed, index, no.get(item.id), item.titleOnly ?? false),
     )
   }
   return result
+}
+
+/** Spotify's tracks and verdicts, through the shared shape. */
+export function classifyTracks(
+  tracks: SpotifyTrack[],
+  index: OwnershipIndex,
+  verdicts: SpotifyVerdict[],
+): Map<string, Ownership> {
+  return classifyItems(
+    tracks.map((track) => ({ id: track.spotifyId, parsed: toParsed(track) })),
+    index,
+    verdicts.map((v) => ({
+      id: v.spotifyId,
+      libraryTrackId: v.libraryTrackId,
+      verdict: v.verdict,
+    })),
+  )
 }
