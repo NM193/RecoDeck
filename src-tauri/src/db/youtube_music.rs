@@ -262,7 +262,7 @@ pub enum ListChange {
 pub struct SyncChanges {
     /// One per list checked, Liked music first.
     pub lists: Vec<(String, ListChange)>,
-    /// Durations of the videos that were not stored before this sync.
+    /// Durations of the videos not in `known_ids` (new, or stored without a length).
     pub durations: HashMap<String, i64>,
 }
 
@@ -361,7 +361,17 @@ impl Database {
             };
 
             match change {
-                ListChange::Unchanged => {}
+                // An unchanged first page proves the list answered: the next
+                // successful read clears the vanished mark.
+                ListChange::Unchanged => {
+                    if unavailable_at.is_some() {
+                        self.conn.execute(
+                            "UPDATE ytm_lists SET unavailable_at = NULL WHERE id = ?1",
+                            params![list_id],
+                        )?;
+                        changed = true;
+                    }
+                }
                 ListChange::Gone => {
                     if unavailable_at.is_none() {
                         self.conn.execute(
@@ -456,7 +466,6 @@ impl Database {
         Ok(written || removed > 0)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -668,8 +677,6 @@ mod tests {
     }
 
     // --- applying a sync ----------------------------------------------
-
-    use std::collections::{HashMap, HashSet};
 
     fn entry(id: &str) -> YtmEntry {
         YtmEntry {
@@ -888,9 +895,27 @@ mod tests {
     #[test]
     fn a_video_listed_twice_is_one_row() {
         let db = fresh();
-        db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, full(&["a", "a", "b"]))]), 1_000).unwrap();
+        let mut second = entry("a");
+        second.added_at = Some("2026-10-02T09:00:00Z".to_string());
+        let change = ListChange::Full {
+            entries: vec![entry("a"), second, entry("b")],
+            total_results: 3,
+            first_page_ids: vec!["a".to_string(), "a".to_string(), "b".to_string()],
+        };
+        db.apply_ytm_sync(&sync(vec![(LIKED_MUSIC_ID, change)]), 1_000).unwrap();
         let dump = db.get_ytm_library().unwrap();
         assert_eq!(dump.entries.len(), 2);
+        let a = dump.entries.iter().find(|e| e.video_id == "a").unwrap();
+        assert_eq!(a.added_at.as_deref(), Some("2026-10-01T09:00:00Z"), "the first listing wins");
         assert_eq!(dump.lists[0].track_count, 3, "YouTube's items, for the unavailable count");
+    }
+
+    #[test]
+    fn an_unchanged_read_clears_the_vanished_mark() {
+        let db = baseline_db();
+        db.apply_ytm_sync(&sync(vec![("PL1", ListChange::Gone)]), 2_000).unwrap();
+        let changed = db.apply_ytm_sync(&sync(vec![("PL1", ListChange::Unchanged)]), 3_000).unwrap();
+        assert!(changed);
+        assert_eq!(list(&db, "PL1").unavailable_at, None);
     }
 }
