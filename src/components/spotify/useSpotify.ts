@@ -7,6 +7,7 @@ import {
   buildOwnershipIndex,
   classifyTracks,
   type Ownership,
+  type OwnershipIndex,
 } from '../../lib/spotify/ownership'
 import { newAndMissing, type NewCounts } from '../../lib/spotify/newness'
 import { listCounts, type StatusFilter } from '../../lib/spotify/rows'
@@ -33,6 +34,8 @@ export interface SpotifyData {
   library: SpotifyLibrary
   /** The whole RecoDeck library — App only holds the view on screen. */
   libraryTracks: Track[]
+  /** The library index every ownership check shares (Spotify lists, DJ pages, Search). */
+  index: OwnershipIndex
   /** False until the library has arrived once: until then every row would read Missing. */
   libraryLoaded: boolean
   ownership: Map<string, Ownership>
@@ -103,10 +106,12 @@ function readAllTracks(
 /**
  * @param ready the database is open (App's start-up has finished).
  * @param totalTrackCount App's library count — a change means the library changed.
+ * @param wantLibrary load the library even without Spotify (a DJ page's Plays needs it).
  */
 export function useSpotify(
   ready: boolean,
   totalTrackCount: number,
+  wantLibrary: boolean,
 ): SpotifyData {
   const [status, setStatus] = useState<SpotifyStatus | null>(null)
   const [library, setLibrary] = useState<SpotifyLibrary>(EMPTY)
@@ -122,6 +127,8 @@ export function useSpotify(
   const [filter, setFilter] = useState<StatusFilter>('all')
 
   const connected = status?.connected ?? false
+  // One flag, so opening a DJ page while connected does not reload the library.
+  const needLibrary = connected || wantLibrary
 
   // Each load of the Spotify data gets a number; only the newest may land, so a
   // load read before a local write (opening a list, an answer) never undoes it.
@@ -222,7 +229,7 @@ export function useSpotify(
   }, [])
 
   useEffect(() => {
-    if (!ready || !connected) return
+    if (!ready || !needLibrary) return
     const state = tracksLoad.current
     state.live = true
     loadTracks()
@@ -231,18 +238,18 @@ export function useSpotify(
       state.live = false
       void stop.then((unlisten) => unlisten())
     }
-  }, [ready, connected, loadTracks])
+  }, [ready, needLibrary, loadTracks])
 
   // App's count moved: read again only if it disagrees with what was read. At
   // start-up the count arrives while the first read is running, which already
   // holds the new tracks — so no second read.
   useEffect(() => {
     tracksLoad.current.count = totalTrackCount
-    if (!ready || !connected) return
+    if (!ready || !needLibrary) return
     const state = tracksLoad.current
     if (state.inFlight) state.countMoved = true
     else if (state.loadedCount !== totalTrackCount) loadTracks()
-  }, [ready, connected, totalTrackCount, loadTracks])
+  }, [ready, needLibrary, totalTrackCount, loadTracks])
 
   const index = useMemo(
     () => buildOwnershipIndex(libraryTracks),
@@ -327,6 +334,7 @@ export function useSpotify(
     library,
     libraryTracks,
     libraryLoaded,
+    index,
     ownership,
     newCounts,
     counts,

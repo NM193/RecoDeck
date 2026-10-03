@@ -85,6 +85,17 @@ export interface ArtistCandidate {
   slug: string | null
 }
 
+/**
+ * A "Not this artist?" choice on RA, as `set_dj_ra_artist` takes it: the RA id,
+ * the `ra.co/dj/<slug>` part, and the photo — built from an `ArtistCandidate`
+ * whose `slug` is set.
+ */
+export interface RaPick {
+  id: string
+  slug: string
+  imageUrl: string | null
+}
+
 export interface DjCandidates {
   spotify: ArtistCandidate[]
   ra: ArtistCandidate[]

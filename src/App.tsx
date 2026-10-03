@@ -128,7 +128,8 @@ function AppContent() {
   // Ref into FolderTree to refresh a root after folder mutations
   const folderTreeRef = useRef<FolderTreeRef>(null)
   const sidebarPrefs = useSidebarPrefs({ dbReady })
-  const spotify = useSpotify(dbReady, totalTrackCount)
+  // false until the DJ view exists (Task 12): then the library loads for a DJ page too.
+  const spotify = useSpotify(dbReady, totalTrackCount, false)
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{

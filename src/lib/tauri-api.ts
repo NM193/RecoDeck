@@ -46,6 +46,15 @@ import type {
   SpotifyStatus,
   Verdict,
 } from '../types/spotify'
+import type {
+  ArtistCandidate,
+  DjCandidates,
+  DjPage,
+  DjRefresh,
+  DjSetTrack,
+  DjTrack,
+  RaPick,
+} from '../types/dj'
 // AppError, isAppError, getErrorMessage are exported from ../types/ai for use by UI components
 
 export const tauriApi = {
@@ -674,6 +683,62 @@ export const tauriApi = {
 
   async playSpotifyTrack(spotifyId: string): Promise<PlayOutcome> {
     return await invoke('play_spotify_track', { spotifyId })
+  },
+
+  // DJ pages. Reads are cached in the database; the refreshes go to Spotify / RA.
+  /** What is cached for a DJ, by name; creates the profile on a first open. */
+  async getDjPage(name: string): Promise<DjPage> {
+    return await invoke('get_dj_page', { name })
+  },
+
+  /** Progress arrives as `dj-tracks-progress` events; the outcome says what happened. */
+  async refreshDjSpotify(name: string): Promise<DjRefresh> {
+    return await invoke('refresh_dj_spotify', { name })
+  },
+
+  /** The next 150 appears-on / compilation releases ("Load older releases"). */
+  async loadOlderDjReleases(name: string): Promise<DjRefresh> {
+    return await invoke('load_older_dj_releases', { name })
+  },
+
+  /** RA failures come back as `outcome: 'failed'`, never as a thrown error. */
+  async refreshDjGigs(name: string): Promise<DjRefresh> {
+    return await invoke('refresh_dj_gigs', { name })
+  },
+
+  /** "Not this artist?": the search results on each source for this name. */
+  async djArtistCandidates(name: string): Promise<DjCandidates> {
+    return await invoke('dj_artist_candidates', { name })
+  },
+
+  /** A manual pick; null means "none". Answers the page as it now reads (a different artist reads empty until the next refresh). */
+  async setDjSpotifyArtist(
+    name: string,
+    artistId: string | null,
+  ): Promise<DjPage> {
+    return await invoke('set_dj_spotify_artist', { name, artistId })
+  },
+
+  /** A manual pick; null means "none". Answers the page as it now reads. */
+  async setDjRaArtist(name: string, ra: RaPick | null): Promise<DjPage> {
+    return await invoke('set_dj_ra_artist', { name, ra })
+  },
+
+  /** Search's Spotify DJ cards (at most 10 results). */
+  async searchSpotifyArtists(query: string): Promise<ArtistCandidate[]> {
+    return await invoke('search_spotify_artists', { query })
+  },
+
+  /** Cached tracks per name key, duplicates collapsed; keys never opened are absent. */
+  async getDjCachedTracks(
+    nameKeys: string[],
+  ): Promise<Record<string, DjTrack[]>> {
+    return await invoke('get_dj_cached_tracks', { nameKeys })
+  },
+
+  /** The tracklist rows of these saved sets, for Plays. */
+  async getYtTracksForSets(videoIds: string[]): Promise<DjSetTrack[]> {
+    return await invoke('get_yt_tracks_for_sets', { videoIds })
   },
 
   // AI commands
