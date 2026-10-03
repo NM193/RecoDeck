@@ -455,6 +455,7 @@ pub fn run() {
             commands::spotify::mark_spotify_list_opened,
             commands::spotify::set_spotify_verdict,
             commands::spotify::play_spotify_track,
+            commands::spotify::set_spotify_show_in_sidebar,
             // DJ pages
             commands::dj::get_dj_page,
             commands::dj::refresh_dj_spotify,

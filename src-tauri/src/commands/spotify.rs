@@ -29,6 +29,9 @@ const LAST_ERROR_SETTING: &str = "spotify_last_error";
 /// What kind of failure the last error was, for the view's short line.
 const LAST_ERROR_KIND_SETTING: &str = "spotify_last_error_kind";
 const NEEDS_RECONNECT_SETTING: &str = "spotify_needs_reconnect";
+/// "0" hides the SPOTIFY section and pauses the loop. Absent, it shows: the
+/// switch is on until the user turns it off.
+const SHOW_IN_SIDEBAR_SETTING: &str = "spotify_show_in_sidebar";
 /// The display name, for showing only — the user can change it on Spotify.
 const ACCOUNT_SETTING: &str = "spotify_account_name";
 /// The Spotify user id, which tells one account from another.
@@ -148,6 +151,18 @@ impl SyncedPayload {
     fn cleared() -> Self {
         Self { changed: true, last_synced_at: None, error: None, error_kind: None, needs_reconnect: false }
     }
+
+    /// Nothing was synced, but the status changed (the switch): the sidebar,
+    /// the view and Settings read it again. `changed` is false, so no rows reload.
+    fn from_status(status: &SpotifyStatusDTO) -> Self {
+        Self {
+            changed: false,
+            last_synced_at: status.last_synced_at,
+            error: status.last_error.clone(),
+            error_kind: status.last_error_kind,
+            needs_reconnect: status.needs_reconnect,
+        }
+    }
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -166,10 +181,17 @@ fn setting(db: &Database, key: &str) -> Result<Option<String>, AppError> {
     Ok(db.get_setting(key).map_err(db_err)?.filter(|v| !v.trim().is_empty()))
 }
 
-/// Connected, and not waiting for the user to sign in again.
+/// Whether the SPOTIFY section is in the sidebar. Only the section and the
+/// loop read it: DJ pages and Search use the account either way.
+fn shows_in_sidebar(db: &Database) -> bool {
+    !matches!(setting(db, SHOW_IN_SIDEBAR_SETTING), Ok(Some(value)) if value == "0")
+}
+
+/// Connected, not waiting for the user to sign in again, and in the sidebar.
 fn should_sync(db: &Database) -> bool {
     matches!(setting(db, REFRESH_TOKEN_SETTING), Ok(Some(_)))
         && matches!(setting(db, NEEDS_RECONNECT_SETTING), Ok(None))
+        && shows_in_sidebar(db)
 }
 
 fn remember_access(spotify: &SpotifyState, tokens: &TokenSet) {
@@ -445,6 +467,8 @@ pub struct SpotifyStatusDTO {
     pub connected: bool,
     pub account_name: Option<String>,
     pub needs_reconnect: bool,
+    /// Settings → Spotify → Show in sidebar.
+    pub show_in_sidebar: bool,
     pub last_synced_at: Option<i64>,
     pub last_error: Option<String>,
     /// Set with `last_error`.
@@ -470,6 +494,7 @@ fn read_status(db: &Database) -> Result<SpotifyStatusDTO, AppError> {
         connected: setting(db, REFRESH_TOKEN_SETTING)?.is_some(),
         account_name: setting(db, ACCOUNT_SETTING)?,
         needs_reconnect: setting(db, NEEDS_RECONNECT_SETTING)?.is_some(),
+        show_in_sidebar: shows_in_sidebar(db),
         last_synced_at: setting(db, LAST_SYNCED_SETTING)?.and_then(|v| v.parse().ok()),
         last_error: setting(db, LAST_ERROR_SETTING)?,
         last_error_kind: setting(db, LAST_ERROR_SETTING)?
@@ -682,6 +707,29 @@ pub async fn disconnect_spotify(
     with_db(&state, read_status)
 }
 
+/// Show in sidebar. Off hides the section and pauses the loop; the sign-in and
+/// the stored lists stay. On again shows the stored lists at once and syncs.
+#[tauri::command]
+pub async fn set_spotify_show_in_sidebar(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    show: bool,
+) -> Result<SpotifyStatusDTO, AppError> {
+    let status = with_db(&state, |db| {
+        db.set_setting(SHOW_IN_SIDEBAR_SETTING, if show { "1" } else { "0" })
+            .map_err(db_err)?;
+        read_status(db)
+    })?;
+    let _ = app.emit(SYNCED_EVENT, &SyncedPayload::from_status(&status));
+    if show && status.connected {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = run_sync(&handle).await;
+        });
+    }
+    Ok(status)
+}
+
 #[tauri::command]
 pub async fn sync_spotify_now(app: AppHandle) -> Result<(), AppError> {
     let _ = run_sync(&app).await;
@@ -845,6 +893,7 @@ mod tests {
                 connected: false,
                 account_name: None,
                 needs_reconnect: false,
+                show_in_sidebar: true,
                 last_synced_at: None,
                 last_error: None,
                 last_error_kind: None,
@@ -1087,5 +1136,44 @@ mod tests {
         assert_eq!(serde_json::to_value(PlayOutcome::Played).unwrap(), serde_json::json!("played"));
         assert_eq!(serde_json::to_value(PlayOutcome::OpenedApp).unwrap(), serde_json::json!("openedApp"));
         assert_eq!(serde_json::to_value(PlayOutcome::OpenedWeb).unwrap(), serde_json::json!("openedWeb"));
+    }
+
+    #[test]
+    fn the_show_in_sidebar_switch_is_on_until_switched_off() {
+        let db = fresh();
+        assert!(read_status(&db).unwrap().show_in_sidebar);
+        db.set_setting(SHOW_IN_SIDEBAR_SETTING, "0").unwrap();
+        assert!(!read_status(&db).unwrap().show_in_sidebar);
+        db.set_setting(SHOW_IN_SIDEBAR_SETTING, "1").unwrap();
+        assert!(read_status(&db).unwrap().show_in_sidebar);
+    }
+
+    #[test]
+    fn a_hidden_section_makes_the_loop_skip_but_keeps_the_account() {
+        let db = fresh();
+        db.set_setting(REFRESH_TOKEN_SETTING, "rt").unwrap();
+        db.set_setting(SHOW_IN_SIDEBAR_SETTING, "0").unwrap();
+        assert!(!should_sync(&db));
+        assert!(read_status(&db).unwrap().connected);
+        assert!(has_account(&db), "DJ pages and Search still use the account");
+
+        db.set_setting(SHOW_IN_SIDEBAR_SETTING, "1").unwrap();
+        assert!(should_sync(&db));
+
+        // A preference, not part of the account: disconnecting leaves it.
+        db.set_setting(SHOW_IN_SIDEBAR_SETTING, "0").unwrap();
+        forget_account(&db).unwrap();
+        assert!(!read_status(&db).unwrap().show_in_sidebar);
+    }
+
+    #[test]
+    fn a_status_change_is_reported_as_an_unchanged_sync() {
+        let db = fresh();
+        db.set_setting(LAST_SYNCED_SETTING, "7").unwrap();
+        db.set_setting(NEEDS_RECONNECT_SETTING, "1").unwrap();
+        let payload = SyncedPayload::from_status(&read_status(&db).unwrap());
+        assert!(!payload.changed);
+        assert_eq!(payload.last_synced_at, Some(7));
+        assert!(payload.needs_reconnect);
     }
 }
