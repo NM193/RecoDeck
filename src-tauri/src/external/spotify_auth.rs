@@ -9,6 +9,15 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::time::Duration;
+use axum::{
+    extract::{Query, State},
+    response::Html,
+    routing::get,
+    Router,
+};
+use std::sync::{Arc, Mutex};
+use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 
 pub const AUTHORIZE_URL: &str = "https://accounts.spotify.com/authorize";
 pub const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
@@ -153,6 +162,69 @@ pub fn code_from_callback(params: &HashMap<String, String>, expected_state: &str
         .ok_or_else(|| "Spotify sent no sign-in code — press Connect to try again".to_string())
 }
 
+// --- the loopback redirect --------------------------------------------
+
+/// How long a login waits for the browser.
+pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+
+const CLOSE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>RecoDeck</title>\
+<body style=\"font-family:-apple-system,sans-serif;background:#121212;color:#fff;\
+display:grid;place-items:center;height:100vh;margin:0\">\
+<p>Signed in. You can close this tab and go back to RecoDeck.</p>";
+
+type Reply = Arc<Mutex<Option<oneshot::Sender<HashMap<String, String>>>>>;
+
+/// Binds the redirect port, or says in one line why it cannot.
+pub async fn bind_listener(port: u16) -> Result<TcpListener, String> {
+    TcpListener::bind(("127.0.0.1", port)).await.map_err(|_| {
+        format!(
+            "Port {port} is in use by another app, so Spotify cannot hand the login back — close that app and press Connect again"
+        )
+    })
+}
+
+async fn callback(
+    State(reply): State<Reply>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Html<&'static str> {
+    if let Some(sender) = reply.lock().ok().and_then(|mut slot| slot.take()) {
+        let _ = sender.send(params);
+    }
+    Html(CLOSE_PAGE)
+}
+
+/// Serves one redirect on `listener`, then stops listening. Answers with the
+/// query parameters Spotify sent back.
+pub async fn wait_for_callback(
+    listener: TcpListener,
+    timeout: Duration,
+) -> Result<HashMap<String, String>, String> {
+    let (sender, receiver) = oneshot::channel();
+    let reply: Reply = Arc::new(Mutex::new(Some(sender)));
+    let (stop, stopped) = oneshot::channel::<()>();
+
+    let app = Router::new().route("/callback", get(callback)).with_state(reply);
+    let server = tokio::spawn(async move {
+        let _ = axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await;
+    });
+
+    let answer = tokio::time::timeout(timeout, receiver).await;
+
+    let _ = stop.send(());
+    // Let the page reach the browser and the port close, but never hang on it.
+    let _ = tokio::time::timeout(Duration::from_secs(2), server).await;
+
+    match answer {
+        Ok(Ok(params)) => Ok(params),
+        Ok(Err(_)) => Err("The sign-in listener stopped unexpectedly — press Connect to try again".to_string()),
+        Err(_) => Err("No answer from the browser — press Connect to try again".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +336,43 @@ mod tests {
     #[test]
     fn no_code_is_an_error() {
         assert!(code_from_callback(&params(&[("state", "S")]), "S").is_err());
+    }
+
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn the_listener_hands_back_what_the_browser_brought() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5)));
+
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let page = client
+            .get(format!("http://127.0.0.1:{port}/callback?code=C&state=S"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(page.status().as_u16(), 200);
+        assert!(page.text().await.unwrap().contains("close this tab"));
+
+        let params = waiting.await.unwrap().unwrap();
+        assert_eq!(params.get("code").map(String::as_str), Some("C"));
+        assert_eq!(params.get("state").map(String::as_str), Some("S"));
+    }
+
+    #[tokio::test]
+    async fn the_listener_gives_up_after_the_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let err = wait_for_callback(listener, Duration::from_millis(50)).await.unwrap_err();
+        assert!(err.contains("No answer"));
+    }
+
+    #[tokio::test]
+    async fn a_taken_port_is_said_in_one_line() {
+        let holder = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = holder.local_addr().unwrap().port();
+        let err = bind_listener(port).await.unwrap_err();
+        assert!(err.contains(&port.to_string()));
+        assert!(!err.contains('\n'));
     }
 }
