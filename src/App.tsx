@@ -1557,6 +1557,7 @@ function AppContent() {
                 query={searchQuery}
                 onQueryChange={setSearchQuery}
                 onOpenDj={(name, spotifyArtistId) => openDj(name, spotifyArtistId, { view: 'search' })}
+                spotify={spotify}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
                   setSpotifyListId(null)
