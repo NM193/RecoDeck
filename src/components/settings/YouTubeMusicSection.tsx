@@ -124,12 +124,13 @@ export function YouTubeMusicSection() {
           </li>
           <li>
             Under <strong>Audience</strong>, press <strong>Publish app</strong>{' '}
-            and confirm <strong>Push to production</strong>. If the button is
-            grey, open <strong>Branding</strong>, fill in{' '}
-            <strong>Developer contact information</strong> at the bottom and
-            press <strong>Save</strong> first. While the app is in Testing,
-            Google signs you out every 7 days. (If you leave it in Testing, add
-            your Google account under <strong>Test users</strong>.)
+            and confirm <strong>Push to production</strong>. Google allows it
+            only once <strong>Branding</strong> has a home page and a privacy
+            policy link on a domain of yours. Without them, leave the app in
+            Testing and add your Google account under{' '}
+            <strong>Test users</strong>: everything works the same, but Google
+            signs you out every 7 days, and <strong>Reconnect</strong> signs you
+            back in.
           </li>
           <li>
             Under <strong>Clients</strong>, press <strong>Create client</strong>,
