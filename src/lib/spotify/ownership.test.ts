@@ -1,7 +1,8 @@
 // src/lib/spotify/ownership.test.ts
 import { describe, expect, it } from 'vitest'
-import { buildOwnershipIndex, classifyTracks } from './ownership'
-import type { LibraryTrack } from '../tracklist/match'
+import { buildOwnershipIndex, classifyTracks, maybeReason, type Ownership } from './ownership'
+import { indexLibrary, matchOne, type LibraryTrack } from '../tracklist/match'
+import { toParsed } from './title'
 import type { SpotifyTrack, SpotifyVerdict } from '../../types/spotify'
 
 function lib(id: number, artist: string, title: string): LibraryTrack {
@@ -105,5 +106,58 @@ describe('do I own this Spotify track?', () => {
   it('answers for every track, keyed by Spotify id', () => {
     const result = classify([sp('a', 'Come Get Up', 'Butch'), sp('c', 'Tell You', 'Prunk')], shelf)
     expect([...result.keys()]).toEqual(['a', 'c'])
+  })
+})
+
+describe('the title-word pre-filter', () => {
+  it('gives exactly what comparing every track with every file gives', () => {
+    const library: LibraryTrack[] = [
+      lib(1, 'Butch', 'Come Get Up (Extended Mix)'),
+      lib(2, 'Moreno, Prieto, Ortega, Lopez', '300 Cash'),
+      lib(3, 'Moreno, Prieto, Garcia, Ruiz', '300 Cash'),
+      lib(4, 'Witchy', 'Witch Doctor (Extended Mix)'),
+      lib(5, 'Witchy', 'Witch Doctor (Hot Since 82 Remix)'),
+      lib(6, 'Clive, Deepower', 'Little Girl (Original Mix)'),
+      { id: 7, title: 'Lee Burridge & Lost Desert - Elongi feat. Junior', file_path: '/m/7.mp3' },
+      lib(8, 'Unknown Artist', 'Movement Of Whale'),
+      lib(9, 'Discoplex, Izaac Moses', 'I Need A Rush (feat. Sheree Hicks) [Extended Mix]'),
+      lib(10, 'Dolly Parton', 'Jolene'),
+      lib(11, 'Some Other Artist', 'Jolene'),
+      lib(12, 'Makèz', 'Reverse Things'),
+    ]
+    const tracks: SpotifyTrack[] = [
+      sp('a', 'Come Get Up - Extended Mix', 'Butch, Santos'),
+      sp('b', '300 Cash', 'Moreno & Prieto, Sortech'),
+      sp('c', 'Witch Doctor - Hot Since 82 Remix', 'Witchy'),
+      sp('d', 'Witch Doctor - Radio Edit', 'Witchy'),
+      sp('e', 'Little Girl - Extended Mix', 'Clive, Deepower'),
+      sp('f', 'Elongi', 'Lee Burridge, Lost Desert'),
+      sp('g', 'Lost', 'Simion, Roland Clark'),
+      sp('h', 'Movement Of Whale', 'SevenDoors'),
+      sp('i', 'I Need A Rush (feat. Sheree Hicks) - Extended Mix', 'Discoplex, Izaac Moses, Sheree Hicks'),
+      sp('j', 'Jolene', 'Dolly Parton'),
+      sp('k', 'Reverse Things', 'Makèz, Toman'),
+      sp('l', 'Tell You', 'Prunk, Retrouve'),
+      sp('m', '', 'Nobody'),
+    ]
+
+    const everything = indexLibrary(library)
+    const expected = new Map<string, Ownership>()
+    for (const track of tracks) {
+      const match = matchOne(toParsed(track), everything)
+      expected.set(
+        track.spotifyId,
+        !match
+          ? { kind: 'missing' }
+          : match.strong
+            ? { kind: 'owned', file: match.track }
+            : { kind: 'maybe', file: match.track, reason: maybeReason(match) },
+      )
+    }
+
+    const result = classify(tracks, library)
+    expect(result).toEqual(expected)
+    // The fixture exercises all three answers, so the comparison means something.
+    expect(new Set([...result.values()].map((o) => o.kind))).toEqual(new Set(['owned', 'maybe', 'missing']))
   })
 })

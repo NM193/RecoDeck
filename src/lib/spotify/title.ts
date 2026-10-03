@@ -79,7 +79,13 @@ export function toParsed(
 export function copyText(track: SpotifyTrack): string {
   const { bare, mix } = splitSpotifyTitle(track.title)
   const name = mix ? `${bare} (${mix})` : bare
-  return track.artists ? `${track.artists} - ${name}` : name
+  return credit(track.artists, name)
+}
+
+/** "Artists - Name", or whichever half there is: never a dangling "Artists - ". */
+function credit(artists: string, name: string): string {
+  if (!name) return artists
+  return artists ? `${artists} - ${name}` : name
 }
 
 const SELECTED_RECS_SEARCH = 'https://srv.selectedrecs.com/#/search?text='
@@ -90,6 +96,6 @@ const SELECTED_RECS_SEARCH = 'https://srv.selectedrecs.com/#/search?text='
  */
 export function selectedRecsUrl(track: SpotifyTrack): string {
   const { bare } = splitSpotifyTitle(track.title)
-  const text = track.artists ? `${track.artists} - ${bare}` : bare
+  const text = credit(track.artists, bare)
   return SELECTED_RECS_SEARCH + encodeURIComponent(text)
 }

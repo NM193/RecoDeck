@@ -88,6 +88,11 @@ describe('what Copy and SelectedRecs get', () => {
     ).toBe('Discoplex, Izaac Moses, Sheree Hicks - I Need A Rush (Extended Mix)')
   })
 
+  it('copies the artists alone when the title is empty, and the title alone when there are no artists', () => {
+    expect(copyText(track('', 'Clive, Deepower'))).toBe('Clive, Deepower')
+    expect(copyText(track('Little Girl - Original Mix', ''))).toBe('Little Girl (Original Mix)')
+  })
+
   it('searches SelectedRecs for the same text without the mix', () => {
     expect(selectedRecsUrl(track('300 Cash - Extended Mix', 'Moreno & Prieto, Sortech'))).toBe(
       'https://srv.selectedrecs.com/#/search?text=Moreno%20%26%20Prieto%2C%20Sortech%20-%20300%20Cash',

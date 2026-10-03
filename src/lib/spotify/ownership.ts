@@ -73,6 +73,10 @@ function candidates(
 /** Why a Maybe is unsure, in the words the sub-row shows. */
 export function maybeReason(match: Pick<LibraryMatch, 'titleScore' | 'artistScore'>): string {
   const title = match.titleScore >= 1 ? 'same title' : 'similar title'
+  // A match is Maybe only when it is not `strong`, and `strong` means an
+  // artistScore of 0.8 or more, so a Maybe's artist never fully agrees: in
+  // practice this always reads "artist partly matches". The "same artist"
+  // branch only matters if what counts as `strong` ever changes.
   const artist = match.artistScore >= 1 ? 'same artist' : 'artist partly matches'
   return `${title}, ${artist}`
 }
