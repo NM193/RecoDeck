@@ -82,13 +82,18 @@ export function countByStatus(rows: SpotifyRow[]): Record<StatusFilter, number> 
   return counts
 }
 
+/** Lower case without accents, so "makez" finds "Makèz" and "Makèz" finds "Makez". */
+function fold(text: string): string {
+  return text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
 /** Status first, then every typed word must appear in title, artists or album. */
 export function filterRows(rows: SpotifyRow[], filter: StatusFilter, query: string): SpotifyRow[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const words = fold(query).split(/\s+/).filter(Boolean)
   return rows.filter((row) => {
     if (filter !== 'all' && row.ownership.kind !== filter) return false
     if (!words.length) return true
-    const haystack = `${row.track.title} ${row.track.artists} ${row.track.album ?? ''}`.toLowerCase()
+    const haystack = fold(`${row.track.title} ${row.track.artists} ${row.track.album ?? ''}`)
     return words.every((word) => haystack.includes(word))
   })
 }

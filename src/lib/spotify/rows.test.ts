@@ -70,7 +70,9 @@ describe('the rows of a list', () => {
     const rows = rowsFor('all', library, ownership, new Map())
     expect(countByStatus(rows)).toEqual({ all: 3, owned: 1, missing: 1, maybe: 1 })
     expect(filterRows(rows, 'missing', '').map((r) => r.track.spotifyId)).toEqual(['t1'])
-    expect(filterRows(rows, 'all', 'makez').map((r) => r.track.spotifyId)).toEqual([])
+    // Accents are folded on both sides: typing without them still finds them.
+    expect(filterRows(rows, 'all', 'makez').map((r) => r.track.spotifyId)).toEqual(['t2'])
+    expect(filterRows(rows, 'all', 'MAKÈZ').map((r) => r.track.spotifyId)).toEqual(['t2'])
     expect(filterRows(rows, 'all', 'toman reverse').map((r) => r.track.spotifyId)).toEqual(['t2'])
     expect(filterRows(rows, 'all', 'control ep').map((r) => r.track.spotifyId)).toEqual(['t1'])
   })
