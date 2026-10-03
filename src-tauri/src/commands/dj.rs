@@ -12,6 +12,7 @@
 //! missing database.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -21,12 +22,12 @@ use crate::commands::library::AppState;
 use crate::commands::spotify::{forget_access, has_account, now_ms, spotify_token, SpotifyState};
 use crate::commands::youtube::{dj_key, with_db};
 use crate::db::dj::{
-    is_stale, DjGig, DjProfileRow, DjRaArtist, DjRelease, DjSetTrack, DjTrack, RA_MAX_AGE_MS,
-    SPOTIFY_MAX_AGE_MS,
+    is_stale, AppearsWindow, DjGig, DjProfileRow, DjRaArtist, DjRelease, DjSetTrack, DjTrack,
+    APPEARS_STEP, RA_MAX_AGE_MS, SPOTIFY_MAX_AGE_MS,
 };
 use crate::db::Database;
 use crate::error::AppError;
-use crate::external::dj_releases::{fetch_dj_tracks, FetchError, Listing, ReleaseStore};
+use crate::external::dj_releases::{fetch_dj_tracks, FetchError, Listing, ReleaseStore, StoreError};
 use crate::external::resident_advisor::{self as ra, LiveRa, RaApi};
 use crate::external::spotify::{self as web_api, ArtistInfo, LiveApi, SpotifyApi, SpotifyError};
 
@@ -145,7 +146,10 @@ pub struct DjCandidates {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RefreshOutcome {
-    /// Cached data is new enough; nothing was asked.
+    /// Nothing new to show: the cached data is new enough and nothing was
+    /// asked, or a refresh stopped quietly because the DJ's Spotify artist was
+    /// chosen again or Spotify was disconnected while it ran (the page then
+    /// reads what that change left).
     Fresh,
     Refreshed,
     /// The fetch failed; the cache is as it was.
@@ -237,65 +241,62 @@ fn read_page(db: &Database, key: &str, display: &str) -> Result<DjPageDTO, AppEr
 
 // --- Spotify ---------------------------------------------------------------
 
-/// The message of a write refused because the artist changed; the fetch turns
-/// it into `FetchError::Superseded`, a quiet stop.
-const SUPERSEDED: &str = "The Spotify artist was changed during the fetch";
-
 /// The fetch's storage for one DJ, on the shared database. Every write checks
-/// the profile still points at the artist being fetched (and Spotify is still
-/// connected) in the same database lock acquisition as the write itself: a
-/// manual change or a disconnect during a long first fetch cannot slip in
-/// between the check and the write, nor be undone by it.
+/// the fetch is still the profile's — the same artist, no manual choice since
+/// it began (the generation), Spotify still connected — in the same database
+/// lock acquisition as the write itself: a manual change or a disconnect
+/// during a long first fetch cannot slip in between the check and the write,
+/// nor be undone by it. A refused call answers `StoreError::Superseded`.
 struct SharedStore<'a> {
     state: &'a AppState,
     key: &'a str,
     artist_id: &'a str,
+    /// The profile's `spotify_generation` when the fetch began.
+    generation: i64,
 }
 
 impl SharedStore<'_> {
     fn is_current_in(&self, db: &Database) -> Result<bool, AppError> {
-        let current = db.get_dj_profile(self.key).map_err(db_err)?.and_then(|p| p.spotify_artist_id);
-        Ok(current.as_deref() == Some(self.artist_id) && has_account(db))
+        let ours = db.get_dj_profile(self.key).map_err(db_err)?.is_some_and(|p| {
+            p.spotify_artist_id.as_deref() == Some(self.artist_id) && p.spotify_generation == self.generation
+        });
+        Ok(ours && has_account(db))
     }
 
-    fn with_artist<T>(&self, f: impl FnOnce(&Database) -> rusqlite::Result<T>) -> Result<T, String> {
+    fn with_artist<T>(&self, f: impl FnOnce(&Database) -> rusqlite::Result<T>) -> Result<T, StoreError> {
         with_db(self.state, |db| {
             if !self.is_current_in(db)? {
-                return Err(AppError::Internal(SUPERSEDED.to_string()));
+                return Ok(None);
             }
-            f(db).map_err(db_err)
+            f(db).map(Some).map_err(db_err)
         })
-        .map_err(|e| e.to_string())
+        .map_err(|e| StoreError::Failed(e.to_string()))?
+        .ok_or(StoreError::Superseded)
     }
 }
 
 impl ReleaseStore for SharedStore<'_> {
-    fn is_current(&self) -> Result<bool, String> {
-        with_db(self.state, |db| self.is_current_in(db)).map_err(|e| e.to_string())
+    fn is_current(&self) -> Result<bool, StoreError> {
+        with_db(self.state, |db| self.is_current_in(db)).map_err(|e| StoreError::Failed(e.to_string()))
     }
 
-    fn known_releases(&self) -> Result<std::collections::HashSet<String>, String> {
+    fn known_releases(&self) -> Result<std::collections::HashSet<String>, StoreError> {
         self.with_artist(|db| db.dj_release_ids(self.key))
     }
 
-    fn record_releases(
-        &self,
-        releases: &[DjRelease],
-        appears_limit: i64,
-        appears_total: Option<i64>,
-    ) -> Result<(), String> {
-        self.with_artist(|db| db.record_dj_releases(self.key, releases, appears_limit, appears_total).map(|_| ()))
+    fn record_releases(&self, releases: &[DjRelease], window: &AppearsWindow) -> Result<(), StoreError> {
+        self.with_artist(|db| db.record_dj_releases(self.key, releases, window).map(|_| ()))
     }
 
-    fn pending_releases(&self) -> Result<Vec<DjRelease>, String> {
+    fn pending_releases(&self) -> Result<Vec<DjRelease>, StoreError> {
         self.with_artist(|db| db.pending_dj_releases(self.key))
     }
 
-    fn write_batch(&self, release_ids: &[String], tracks: &[DjTrack]) -> Result<(), String> {
+    fn write_batch(&self, release_ids: &[String], tracks: &[DjTrack]) -> Result<(), StoreError> {
         self.with_artist(|db| db.write_dj_track_batch(self.key, release_ids, tracks))
     }
 
-    fn mark_synced(&self) -> Result<(), String> {
+    fn mark_synced(&self) -> Result<(), StoreError> {
         self.with_artist(|db| db.mark_dj_spotify_synced(self.key, now_ms()))
     }
 }
@@ -323,7 +324,8 @@ async fn fetch_spotify<A: SpotifyApi + Sync>(
         .map_err(store_err)?
         .ok_or_else(|| FetchError::Store("No such DJ page".to_string()))?;
 
-    let artist_id = match profile.spotify_artist_id.clone() {
+    // The artist, generation and window the fetch works with, read together.
+    let profile = match profile.spotify_artist_id.clone() {
         Some(id) => {
             let artist = api.get_json(&web_api::artist_url(&id)).await?;
             if let Some(info) = web_api::parse_artist(&artist) {
@@ -333,7 +335,7 @@ async fn fetch_spotify<A: SpotifyApi + Sync>(
                 })
                 .map_err(store_err)?;
             }
-            id
+            profile
         }
         None if profile.spotify_manual => return Ok(Fetched::NotFound),
         None => {
@@ -343,29 +345,39 @@ async fn fetch_spotify<A: SpotifyApi + Sync>(
                 return Ok(Fetched::NotFound);
             };
             let stored = with_db(state, |db| {
+                // Disconnected during the search: the disconnect cleared this
+                // page, and resolving now would write Spotify data back.
+                if !has_account(db) {
+                    return Ok(None);
+                }
                 db.resolve_dj_spotify(key, &pick.id).map_err(db_err)?;
                 db.set_dj_spotify_details(key, &pick.id, pick.image_url.as_deref(), &pick.genres)
                     .map_err(db_err)?;
-                Ok(db.get_dj_profile(key).map_err(db_err)?.and_then(|p| p.spotify_artist_id))
+                db.get_dj_profile(key).map_err(db_err)
             })
             .map_err(store_err)?;
             // A manual pick may have landed meanwhile; it wins.
-            match stored {
-                Some(id) => id,
-                None => return Ok(Fetched::NotFound),
-            }
+            stored.ok_or(FetchError::Superseded)?
         }
     };
+    let Some(artist_id) = profile.spotify_artist_id.clone() else {
+        return Ok(Fetched::NotFound);
+    };
 
-    let store = SharedStore { state, key, artist_id: &artist_id };
-    fetch_dj_tracks(api, &store, &artist_id, profile.appears_limit, listing, progress)
-        .await
-        .map_err(|err| match err {
-            // A write refused because the artist changed is the same quiet stop.
-            FetchError::Store(message) if message == SUPERSEDED => FetchError::Superseded,
-            other => other,
-        })?;
+    let store = SharedStore { state, key, artist_id: &artist_id, generation: profile.spotify_generation };
+    let stored = AppearsWindow {
+        limit: profile.appears_limit,
+        total: profile.appears_total,
+        cutoff: profile.appears_cutoff.clone(),
+    };
+    fetch_dj_tracks(api, &store, &artist_id, &stored, listing, progress).await?;
     Ok(Fetched::Refreshed)
+}
+
+/// "Load older releases": the stored window plus `APPEARS_STEP`, worked out
+/// once per request so the 401 retry lists the same window.
+fn load_older(profile: &DjProfileRow) -> Listing {
+    Listing::LoadOlder { appears_limit: profile.appears_limit + APPEARS_STEP }
 }
 
 /// The outer error is about getting a token; the inner one is the fetch's.
@@ -401,9 +413,26 @@ fn spotify_refresh(outcome: Result<Result<Fetched, FetchError>, AppError>) -> Dj
     }
 }
 
+/// A pass, and one more after a 401 (with `forget` run in between).
+async fn retry_unauthorized<T, Fut>(
+    mut pass: impl FnMut() -> Fut,
+    forget: impl FnOnce(),
+) -> Result<Result<T, FetchError>, AppError>
+where
+    Fut: Future<Output = Result<Result<T, FetchError>, AppError>>,
+{
+    let outcome = pass().await;
+    if !is_unauthorized(&outcome) {
+        return outcome;
+    }
+    forget();
+    pass().await
+}
+
 /// A pass, and one more with a fresh token after a 401 — an app revoked at
 /// spotify.com loses its access token before it expires. Finished batches
-/// are kept, so the second pass continues where the first stopped.
+/// are kept, so the second pass continues where the first stopped. Both
+/// passes make the same `listing`.
 async fn run_spotify(
     app: &AppHandle,
     state: &AppState,
@@ -411,12 +440,8 @@ async fn run_spotify(
     key: &str,
     listing: Listing,
 ) -> DjRefresh {
-    let mut outcome = spotify_pass(app, state, spotify, key, listing).await;
-    if is_unauthorized(&outcome) {
-        forget_access(spotify);
-        outcome = spotify_pass(app, state, spotify, key, listing).await;
-    }
-    spotify_refresh(outcome)
+    let pass = move || spotify_pass(app, state, spotify, key, listing);
+    spotify_refresh(retry_unauthorized(pass, || forget_access(spotify)).await)
 }
 
 /// Artist search on Spotify, with the same 401 retry.
@@ -516,8 +541,8 @@ pub async fn load_older_dj_releases(
     let lock = dj.lock_for(format!("spotify:{key}"));
     let _running = lock.lock().await;
 
-    with_db(&state, |db| db.ensure_dj_profile(&key, &display).map_err(db_err))?;
-    Ok(run_spotify(&app, &state, &spotify, &key, Listing::LoadOlder).await)
+    let profile = with_db(&state, |db| db.ensure_dj_profile(&key, &display).map_err(db_err))?;
+    Ok(run_spotify(&app, &state, &spotify, &key, load_older(&profile)).await)
 }
 
 /// Refreshes the gigs when they are a day old.
@@ -676,6 +701,8 @@ mod tests {
             ra_synced_at: None,
             appears_limit: 150,
             appears_total: None,
+            appears_cutoff: None,
+            spotify_generation: 0,
         }
     }
 
@@ -848,8 +875,7 @@ mod tests {
             db.record_dj_releases(
                 KEY,
                 &[DjRelease { id: "r1".into(), name: "EP".into(), release_date: Some("2020".into()) }],
-                150,
-                Some(0),
+                &AppearsWindow { limit: 150, total: Some(0), cutoff: None },
             )
             .unwrap();
             read_page(db, KEY, "Marco Carola")
@@ -862,24 +888,81 @@ mod tests {
 
     // --- one pass against a fake Spotify -----------------------------------
 
+    /// Replays pages by URL. `fail_once` answers its error the first time its
+    /// URL is asked; `on_call` runs against the database when its URL is asked
+    /// (a disconnect or a manual pick landing mid-fetch).
     #[derive(Default)]
-    struct FakeApi {
+    struct FakeApi<'a> {
         pages: HashMap<String, Value>,
+        fail_once: Mutex<HashMap<String, SpotifyError>>,
+        on_call: Option<OnCall<'a>>,
     }
 
-    impl SpotifyApi for FakeApi {
+    /// A URL, and what happens to the database when it is asked.
+    type OnCall<'a> = (String, &'a AppState, fn(&Database));
+
+    impl FakeApi<'_> {
+        fn failing_once(self, url: String, err: SpotifyError) -> Self {
+            self.fail_once.lock().unwrap().insert(url, err);
+            self
+        }
+    }
+
+    impl<'a> FakeApi<'a> {
+        fn on_call(mut self, url: String, state: &'a AppState, action: fn(&Database)) -> Self {
+            self.on_call = Some((url, state, action));
+            self
+        }
+    }
+
+    impl SpotifyApi for FakeApi<'_> {
         fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, SpotifyError>> + Send {
-            let answer = match self.pages.get(url) {
-                Some(body) => Ok(body.clone()),
-                None if url.contains("/albums?include_groups=") => Ok(json!({ "items": [], "next": null, "total": 0 })),
-                None => Err(SpotifyError::Network(format!("no page for {url}"))),
+            if let Some((at, state, action)) = &self.on_call {
+                if at == url {
+                    with_db(state, |db| {
+                        action(db);
+                        Ok(())
+                    })
+                    .unwrap();
+                }
+            }
+            let answer = match (self.fail_once.lock().unwrap().remove(url), self.pages.get(url)) {
+                (Some(err), _) => Err(err),
+                (None, Some(body)) => Ok(body.clone()),
+                (None, None) if url.contains("/albums?include_groups=") => {
+                    Ok(json!({ "items": [], "next": null, "total": 0 }))
+                }
+                (None, None) => Err(SpotifyError::Network(format!("no page for {url}"))),
             };
             async move { answer }
         }
     }
 
-    fn spotify_with(pages: &[(String, Value)]) -> FakeApi {
-        FakeApi { pages: pages.iter().cloned().collect() }
+    fn spotify_with<'a>(pages: &[(String, Value)]) -> FakeApi<'a> {
+        FakeApi { pages: pages.iter().cloned().collect(), ..FakeApi::default() }
+    }
+
+    fn disconnect(db: &Database) {
+        db.delete_setting("spotify_refresh_token").unwrap();
+    }
+
+    /// "4mo" chosen by hand, with two albums of one track each.
+    fn picked_with_two_albums<'a>() -> FakeApi<'a> {
+        let album = |id: &str| json!({ "id": id, "name": id, "release_date": "2020-01-01" });
+        let track = |id: &str| json!({ "items": [{ "id": id, "name": id, "artists": [{ "id": "4mo", "name": "Marco Carola" }] }], "next": null, "total": 1 });
+        spotify_with(&[
+            (web_api::artist_url("4mo"), json!({ "id": "4mo", "name": "Marco Carola" })),
+            (
+                web_api::artist_albums_url("4mo", "album"),
+                json!({ "items": [album("lp1"), album("lp2")], "next": null, "total": 2 }),
+            ),
+            (web_api::album_tracks_url("lp1"), track("t1")),
+            (web_api::album_tracks_url("lp2"), track("t2")),
+        ])
+    }
+
+    fn stored_tracks(state: &AppState) -> Vec<DjTrack> {
+        with_db(state, |db| Ok(db.dj_tracks(KEY).unwrap())).unwrap()
     }
 
     #[tokio::test]
@@ -943,7 +1026,8 @@ mod tests {
     fn a_fetch_for_an_artist_no_longer_chosen_writes_nothing() {
         let state = app_state();
         with_db(&state, |db| Ok(db.set_dj_spotify_manual(KEY, Some("new")).unwrap())).unwrap();
-        let stale = SharedStore { state: &state, key: KEY, artist_id: "old" };
+        let generation = profile_of(&state).spotify_generation;
+        let stale = SharedStore { state: &state, key: KEY, artist_id: "old", generation };
 
         let wrote = stale.write_batch(
             &[],
@@ -958,26 +1042,111 @@ mod tests {
             }],
         );
 
-        assert!(wrote.is_err());
-        assert!(with_db(&state, |db| Ok(db.dj_tracks(KEY).unwrap())).unwrap().is_empty());
-        assert!(SharedStore { state: &state, key: KEY, artist_id: "new" }.mark_synced().is_ok());
+        assert_eq!(wrote, Err(StoreError::Superseded));
+        assert!(stored_tracks(&state).is_empty());
+        assert!(SharedStore { state: &state, key: KEY, artist_id: "new", generation }.mark_synced().is_ok());
     }
 
     #[test]
     fn a_fetch_stops_quietly_once_spotify_is_disconnected() {
         let state = app_state();
         with_db(&state, |db| Ok(db.set_dj_spotify_manual(KEY, Some("4mo")).unwrap())).unwrap();
-        let store = SharedStore { state: &state, key: KEY, artist_id: "4mo" };
+        let generation = profile_of(&state).spotify_generation;
+        let store = SharedStore { state: &state, key: KEY, artist_id: "4mo", generation };
         assert_eq!(store.is_current(), Ok(true));
 
-        with_db(&state, |db| Ok(db.delete_setting("spotify_refresh_token").unwrap())).unwrap();
+        with_db(&state, |db| {
+            disconnect(db);
+            Ok(())
+        })
+        .unwrap();
 
         assert_eq!(store.is_current(), Ok(false));
-        assert!(store.write_batch(&[], &[]).is_err());
+        assert_eq!(store.write_batch(&[], &[]), Err(StoreError::Superseded));
+        assert_eq!(store.known_releases(), Err(StoreError::Superseded));
         assert_eq!(
             spotify_refresh(Ok(Err(FetchError::Superseded))),
             DjRefresh::just(RefreshOutcome::Fresh),
             "no error reaches the page"
         );
+    }
+    #[tokio::test]
+    async fn a_disconnect_mid_fetch_stops_the_fetch_quietly() {
+        let state = app_state();
+        with_db(&state, |db| Ok(db.set_dj_spotify_manual(KEY, Some("4mo")).unwrap())).unwrap();
+        let api = picked_with_two_albums().on_call(web_api::album_tracks_url("lp1"), &state, disconnect);
+
+        let fetched = fetch_spotify(&api, &state, KEY, Listing::Update, |_, _| {}).await;
+
+        assert_eq!(fetched, Err(FetchError::Superseded));
+        assert_eq!(spotify_refresh(Ok(fetched)), DjRefresh::just(RefreshOutcome::Fresh));
+        assert!(stored_tracks(&state).is_empty(), "the batch read before the disconnect is not written");
+        assert_eq!(profile_of(&state).spotify_synced_at, None);
+    }
+
+    #[tokio::test]
+    async fn a_disconnect_during_the_search_resolves_nothing() {
+        let state = app_state();
+        let api = spotify_with(&[(
+            web_api::artist_search_url("Marco Carola"),
+            json!({ "artists": { "items": [
+                { "id": "4mo", "name": "Marco Carola", "images": [{ "url": "https://i.scdn.co/mc.jpg" }], "genres": ["techno"] }
+            ]}}),
+        )])
+        .on_call(web_api::artist_search_url("Marco Carola"), &state, disconnect);
+
+        assert_eq!(fetch_spotify(&api, &state, KEY, Listing::Update, |_, _| {}).await, Err(FetchError::Superseded));
+        let profile = profile_of(&state);
+        assert_eq!(profile.spotify_artist_id, None);
+        assert_eq!(profile.spotify_image_url, None);
+        assert!(profile.genres.is_empty());
+    }
+
+    #[tokio::test]
+    async fn picking_another_artist_and_back_stops_the_fetch_that_was_running() {
+        let state = app_state();
+        with_db(&state, |db| Ok(db.set_dj_spotify_manual(KEY, Some("4mo")).unwrap())).unwrap();
+        fn b_then_back(db: &Database) {
+            db.set_dj_spotify_manual(KEY, Some("other")).unwrap();
+            db.set_dj_spotify_manual(KEY, Some("4mo")).unwrap();
+        }
+        let api = picked_with_two_albums().on_call(web_api::album_tracks_url("lp1"), &state, b_then_back);
+
+        let fetched = fetch_spotify(&api, &state, KEY, Listing::Update, |_, _| {}).await;
+
+        assert_eq!(fetched, Err(FetchError::Superseded), "same artist id, but a newer choice");
+        assert!(stored_tracks(&state).is_empty());
+        let profile = profile_of(&state);
+        assert_eq!(profile.spotify_artist_id.as_deref(), Some("4mo"));
+        assert_eq!(profile.spotify_synced_at, None, "the next open fetches again");
+
+        // The fetch the new choice starts runs through.
+        let api = picked_with_two_albums();
+        assert_eq!(fetch_spotify(&api, &state, KEY, Listing::Update, |_, _| {}).await, Ok(Fetched::Refreshed));
+        assert_eq!(stored_tracks(&state).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_401_retry_during_load_older_widens_the_window_once() {
+        let state = app_state();
+        with_db(&state, |db| Ok(db.set_dj_spotify_manual(KEY, Some("4mo")).unwrap())).unwrap();
+        // The listing is recorded (window widened), then a track read 401s.
+        let api = picked_with_two_albums().failing_once(
+            web_api::album_tracks_url("lp2"),
+            SpotifyError::Api { status: 401, message: String::new(), reason: None },
+        );
+        let listing = load_older(&profile_of(&state));
+        let forgot = std::cell::Cell::new(0);
+
+        let outcome = retry_unauthorized(
+            || async { Ok(fetch_spotify(&api, &state, KEY, listing, |_, _| {}).await) },
+            || forgot.set(forgot.get() + 1),
+        )
+        .await;
+
+        assert!(matches!(outcome, Ok(Ok(Fetched::Refreshed))), "{outcome:?}");
+        assert_eq!(forgot.get(), 1);
+        assert_eq!(profile_of(&state).appears_limit, 150 + APPEARS_STEP, "not 150 + 2 × 150");
+        assert_eq!(stored_tracks(&state).len(), 2);
     }
 }

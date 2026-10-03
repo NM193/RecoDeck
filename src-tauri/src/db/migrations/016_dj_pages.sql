@@ -28,7 +28,16 @@ CREATE TABLE IF NOT EXISTS dj_profiles (
     -- "Load older releases" raises it by 150.
     spotify_appears_limit INTEGER NOT NULL DEFAULT 150,
     -- What Spotify said both groups hold together, at the last listing.
-    spotify_appears_total INTEGER
+    spotify_appears_total INTEGER,
+    -- The release date of the oldest appears-on / compilation release in the
+    -- window, when the window left older ones out (NULL when it holds them
+    -- all). A refresh never records an appearance older than this: a group
+    -- the window left out entirely has nothing recorded to stop at.
+    spotify_appears_cutoff TEXT,
+    -- Raised by every manual Spotify choice (and by a disconnect). A fetch
+    -- writes only while it is still the generation it started with, so
+    -- picking B and then A again stops a fetch that A started before.
+    spotify_generation    INTEGER NOT NULL DEFAULT 0
 );
 
 -- Every release whose tracks were or will be read. Releases never change, so a

@@ -40,6 +40,21 @@ pub struct DjProfileRow {
     pub ra_synced_at: Option<i64>,
     pub appears_limit: i64,
     pub appears_total: Option<i64>,
+    /// See `spotify_appears_cutoff` in migration 016.
+    pub appears_cutoff: Option<String>,
+    /// See `spotify_generation` in migration 016.
+    pub spotify_generation: i64,
+}
+
+/// The appears-on / compilation window a listing was made with.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AppearsWindow {
+    /// How many of the newest appearances are recorded.
+    pub limit: i64,
+    /// What Spotify said both groups hold together.
+    pub total: Option<i64>,
+    /// The oldest recorded appearance's date, when older ones were left out.
+    pub cutoff: Option<String>,
 }
 
 /// A Resident Advisor artist, as a profile stores it.
@@ -164,7 +179,8 @@ pub fn collapse_duplicates(tracks: Vec<DjTrack>) -> Vec<DjTrack> {
 
 const PROFILE_COLUMNS: &str = "name_key, display_name, spotify_artist_id, spotify_manual,
     spotify_image_url, genres, ra_artist_id, ra_slug, ra_image_url, ra_manual,
-    spotify_synced_at, ra_synced_at, spotify_appears_limit, spotify_appears_total";
+    spotify_synced_at, ra_synced_at, spotify_appears_limit, spotify_appears_total,
+    spotify_appears_cutoff, spotify_generation";
 
 fn profile_from_row(r: &rusqlite::Row<'_>) -> Result<DjProfileRow> {
     let genres: Option<String> = r.get(5)?;
@@ -183,6 +199,8 @@ fn profile_from_row(r: &rusqlite::Row<'_>) -> Result<DjProfileRow> {
         ra_synced_at: r.get(11)?,
         appears_limit: r.get(12)?,
         appears_total: r.get(13)?,
+        appears_cutoff: r.get(14)?,
+        spotify_generation: r.get(15)?,
     })
 }
 
@@ -269,7 +287,8 @@ impl Database {
     }
 
     /// A choice made by hand: an artist id, or None for "none of these". It is
-    /// never replaced automatically.
+    /// never replaced automatically. Every call raises the profile's Spotify
+    /// generation, so a fetch started before it stops writing.
     ///
     /// A different artist than the stored one forgets everything fetched for
     /// the old one, so the next refresh starts over. Returns whether that
@@ -297,13 +316,15 @@ impl Database {
                 "UPDATE dj_profiles SET
                     spotify_artist_id = ?2, spotify_manual = 1,
                     spotify_image_url = NULL, genres = NULL, spotify_synced_at = NULL,
-                    spotify_appears_limit = ?3, spotify_appears_total = NULL
+                    spotify_appears_limit = ?3, spotify_appears_total = NULL,
+                    spotify_appears_cutoff = NULL, spotify_generation = spotify_generation + 1
                  WHERE name_key = ?1",
                 params![name_key, artist_id, APPEARS_STEP],
             )?;
         } else {
             self.conn.execute(
-                "UPDATE dj_profiles SET spotify_manual = 1 WHERE name_key = ?1",
+                "UPDATE dj_profiles SET spotify_manual = 1, spotify_generation = spotify_generation + 1
+                 WHERE name_key = ?1",
                 [name_key],
             )?;
         }
@@ -380,7 +401,8 @@ impl Database {
              UPDATE dj_profiles SET
                 spotify_artist_id = NULL, spotify_manual = 0, spotify_image_url = NULL,
                 genres = NULL, spotify_synced_at = NULL,
-                spotify_appears_limit = {APPEARS_STEP}, spotify_appears_total = NULL;"
+                spotify_appears_limit = {APPEARS_STEP}, spotify_appears_total = NULL,
+                spotify_appears_cutoff = NULL, spotify_generation = spotify_generation + 1;"
         ))?;
         tx.commit()
     }
@@ -405,8 +427,7 @@ impl Database {
         &self,
         name_key: &str,
         releases: &[DjRelease],
-        appears_limit: i64,
-        appears_total: Option<i64>,
+        window: &AppearsWindow,
     ) -> Result<usize> {
         let tx = self.dj_immediate_transaction()?;
         let mut added = 0;
@@ -418,9 +439,10 @@ impl Database {
             )?;
         }
         self.conn.execute(
-            "UPDATE dj_profiles SET spotify_appears_limit = ?2, spotify_appears_total = ?3
+            "UPDATE dj_profiles SET spotify_appears_limit = ?2, spotify_appears_total = ?3,
+                spotify_appears_cutoff = ?4
              WHERE name_key = ?1",
-            params![name_key, appears_limit, appears_total],
+            params![name_key, window.limit, window.total, window.cutoff],
         )?;
         tx.commit()?;
         Ok(added)
@@ -627,6 +649,10 @@ mod tests {
             .unwrap()
     }
 
+    fn window(limit: i64, total: Option<i64>, cutoff: Option<&str>) -> AppearsWindow {
+        AppearsWindow { limit, total, cutoff: cutoff.map(str::to_string) }
+    }
+
     fn release(id: &str, date: &str) -> DjRelease {
         DjRelease { id: id.to_string(), name: format!("Release {id}"), release_date: Some(date.to_string()) }
     }
@@ -658,7 +684,7 @@ mod tests {
     /// A profile that has fetched something: one release, one track, synced.
     fn with_spotify_rows(db: &Database) {
         db.resolve_dj_spotify(KEY, "artistA").unwrap();
-        db.record_dj_releases(KEY, &[release("r1", "2024-01-01")], 300, Some(400)).unwrap();
+        db.record_dj_releases(KEY, &[release("r1", "2024-01-01")], &window(300, Some(400), Some("2020-01-01"))).unwrap();
         db.write_dj_track_batch(KEY, &["r1".to_string()], &[track("t1", "Song", Some("2024-01-01"), None)])
             .unwrap();
         db.mark_dj_spotify_synced(KEY, 1_000).unwrap();
@@ -741,7 +767,7 @@ mod tests {
         assert_eq!(p.spotify_image_url, None);
         assert_eq!(p.spotify_synced_at, None);
         assert_eq!(p.appears_limit, APPEARS_STEP);
-        assert_eq!(p.appears_total, None);
+        assert_eq!((p.appears_total, p.appears_cutoff), (None, None));
         assert_eq!(count(&db, "dj_spotify_releases"), 0);
         assert_eq!(count(&db, "dj_spotify_tracks"), 0);
     }
@@ -801,11 +827,11 @@ mod tests {
     fn recording_keeps_only_releases_not_seen_before() {
         let db = fresh();
         let first = [release("a", "2024-01-01"), release("b", "2023-01-01")];
-        assert_eq!(db.record_dj_releases(KEY, &first, 150, Some(2)).unwrap(), 2);
+        assert_eq!(db.record_dj_releases(KEY, &first, &window(150, Some(2), None)).unwrap(), 2);
         db.write_dj_track_batch(KEY, &["a".to_string()], &[]).unwrap();
 
         let second = [release("c", "2025-01-01"), release("a", "2024-01-01"), release("b", "2023-01-01")];
-        let added = db.record_dj_releases(KEY, &second, 151, Some(3)).unwrap();
+        let added = db.record_dj_releases(KEY, &second, &window(151, Some(3), Some("2022"))).unwrap();
 
         assert_eq!(added, 1);
         assert_eq!(db.dj_release_ids(KEY).unwrap(), HashSet::from(["a".into(), "b".into(), "c".into()]));
@@ -815,13 +841,14 @@ mod tests {
         assert_eq!(db.count_pending_dj_releases(KEY).unwrap(), 2);
         let p = profile(&db);
         assert_eq!((p.appears_limit, p.appears_total), (151, Some(3)));
+        assert_eq!(p.appears_cutoff.as_deref(), Some("2022"));
     }
 
     #[test]
     fn a_batch_stores_its_tracks_and_marks_its_releases_fetched() {
         let db = fresh();
         let both = [release("a", "2024-01-01"), release("b", "2023-01-01")];
-        db.record_dj_releases(KEY, &both, 150, None).unwrap();
+        db.record_dj_releases(KEY, &both, &window(150, None, None)).unwrap();
         db.write_dj_track_batch(
             KEY,
             &["a".to_string()],
@@ -868,6 +895,25 @@ mod tests {
     }
 
     #[test]
+    fn every_manual_choice_and_a_disconnect_raise_the_generation() {
+        let db = fresh();
+        assert_eq!(profile(&db).spotify_generation, 0);
+        db.resolve_dj_spotify(KEY, "artistA").unwrap();
+        assert_eq!(profile(&db).spotify_generation, 0, "an automatic match is not a choice");
+
+        db.set_dj_spotify_manual(KEY, Some("artistB")).unwrap();
+        db.set_dj_spotify_manual(KEY, Some("artistA")).unwrap();
+        let p = profile(&db);
+        assert_eq!((p.spotify_artist_id.as_deref(), p.spotify_generation), (Some("artistA"), 2));
+
+        db.set_dj_spotify_manual(KEY, Some("artistA")).unwrap();
+        assert_eq!(profile(&db).spotify_generation, 3, "the same artist again counts too");
+
+        db.clear_dj_spotify().unwrap();
+        assert_eq!(profile(&db).spotify_generation, 4);
+    }
+
+    #[test]
     fn disconnecting_spotify_forgets_spotify_and_keeps_ra() {
         let db = fresh();
         with_spotify_rows(&db);
@@ -882,7 +928,7 @@ mod tests {
         assert_eq!(p.spotify_artist_id, None);
         assert!(!p.spotify_manual);
         assert_eq!(p.spotify_synced_at, None);
-        assert_eq!((p.appears_limit, p.appears_total), (APPEARS_STEP, None));
+        assert_eq!((p.appears_limit, p.appears_total, p.appears_cutoff), (APPEARS_STEP, None, None));
         assert_eq!(count(&db, "dj_spotify_releases"), 0);
         assert_eq!(count(&db, "dj_spotify_tracks"), 0);
         assert_eq!(p.ra_artist_id.as_deref(), Some("570"));
