@@ -119,3 +119,11 @@ describe('section labels', () => {
     }
   })
 })
+
+describe('a DJ page', () => {
+  // App passes the Sidebar the view the page was opened from instead, so
+  // Search or Sets stays lit; 'dj' itself lights nothing.
+  it('lights no section of its own', () => {
+    expect(sectionForView('dj')).toBeNull()
+  })
+})

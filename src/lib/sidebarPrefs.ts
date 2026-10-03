@@ -75,6 +75,8 @@ export type ActiveView =
   | 'ai-chat'
   | 'sets'
   | 'spotify'
+  /** A DJ page. App lights the section it was opened from instead (Search or Sets). */
+  | 'dj'
 
 export type ColourOverrides = Partial<Record<SidebarSection, string>>
 
@@ -131,7 +133,7 @@ export function colourFor(
   return overrides[section] ?? DEFAULT_COLOURS[section]
 }
 
-/** The section whose icon is lit while a view is showing. Settings lights nothing. */
+/** The section whose icon is lit while a view is showing. Settings and a DJ page light nothing. */
 export function sectionForView(view: ActiveView): SidebarSection | null {
   switch (view) {
     case 'folder':
@@ -139,6 +141,7 @@ export function sectionForView(view: ActiveView): SidebarSection | null {
     case 'playlist':
       return 'playlists'
     case 'settings':
+    case 'dj':
       return null
     default:
       return view

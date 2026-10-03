@@ -37,6 +37,8 @@ import { Sidebar } from './components/layout/Sidebar'
 import { useSidebarPrefs } from './components/layout/useSidebarPrefs'
 import { useSpotify } from './components/spotify/useSpotify'
 import { SpotifyView } from './components/views/SpotifyView'
+import { DjView } from './components/views/DjView'
+import { djKey } from './lib/dj/names'
 import { useFolderTreeStore } from './store/folderTreeStore'
 import type { ActiveView } from './lib/sidebarPrefs'
 import type { FolderTreeRef } from './components/FolderTree'
@@ -60,6 +62,16 @@ type PromptAction =
   | { kind: 'rename'; id: number; currentName: string }
   | { kind: 'create-subfolder'; parentPath: string }
   | { kind: 'rename-folder'; folderPath: string; currentName: string }
+
+/** Where a DJ page was first opened from: Back returns there. */
+type DjOrigin = { view: 'search' } | { view: 'sets'; openVideoId: string | null }
+
+interface DjPageState {
+  name: string
+  /** From a Spotify search card: that artist, stored as a manual match. */
+  spotifyArtistId: string | null
+  from: DjOrigin
+}
 
 function App() {
   const [hash, setHash] = useState(() => window.location.hash)
@@ -98,6 +110,10 @@ function AppContent() {
   const [showAIChat, setShowAIChat] = useState(false)
   /** The open Spotify list: 'all', 'liked' or a playlist id; null when another view is open. */
   const [spotifyListId, setSpotifyListId] = useState<string | null>(null)
+  /** The open DJ page and where Back goes; null when another view is open. */
+  const [djPage, setDjPage] = useState<DjPageState | null>(null)
+  /** Search's query, held here so Back from a DJ page shows the same results. */
+  const [searchQuery, setSearchQuery] = useState('')
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -128,8 +144,8 @@ function AppContent() {
   // Ref into FolderTree to refresh a root after folder mutations
   const folderTreeRef = useRef<FolderTreeRef>(null)
   const sidebarPrefs = useSidebarPrefs({ dbReady })
-  // false until the DJ view exists (Task 12): then the library loads for a DJ page too.
-  const spotify = useSpotify(dbReady, totalTrackCount, false)
+  // A DJ page needs the whole library for Plays, Spotify or not.
+  const spotify = useSpotify(dbReady, totalTrackCount, djPage !== null)
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
@@ -302,6 +318,7 @@ function AppContent() {
     useAIStore.getState().registerOpenSettings(() => {
       setShowSettings(true)
       setSpotifyListId(null)
+      setDjPage(null)
       setSelectedFolder(null)
       setSelectedPlaylistId(null)
       setShowAllTracks(false)
@@ -702,6 +719,7 @@ function AppContent() {
   async function handleFolderSelect(folderPath: string | null) {
     setSelectedFolder(folderPath)
     setSpotifyListId(null)
+    setDjPage(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
     setShowSettings(false)
@@ -715,6 +733,7 @@ function AppContent() {
   // A Spotify list: every other view closes, and opening it marks it seen.
   function openSpotifyList(listId: string) {
     setSpotifyListId(listId)
+    setDjPage(null)
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
@@ -725,10 +744,28 @@ function AppContent() {
     spotify.openList(listId)
   }
 
+  // A DJ page. From another DJ page it replaces that one and keeps its origin,
+  // so Back still returns to where the first one was opened. The origin's view
+  // stays set underneath (showSearch / showSets) and keeps its sidebar item lit.
+  function openDj(name: string, spotifyArtistId: string | null = null, from?: DjOrigin) {
+    const origin: DjOrigin =
+      djPage?.from ?? from ?? (showSets ? { view: 'sets', openVideoId: null } : { view: 'search' })
+    setDjPage({ name, spotifyArtistId, from: origin })
+  }
+
+  // Back: the view the first DJ page was opened from, Search with its query.
+  function closeDj() {
+    if (!djPage) return
+    setShowSearch(djPage.from.view === 'search')
+    setShowSets(djPage.from.view === 'sets')
+    setDjPage(null)
+  }
+
   // Playlist selection
   async function handlePlaylistSelect(playlistId: number) {
     setSelectedPlaylistId(playlistId)
     setSpotifyListId(null)
+    setDjPage(null)
     setSelectedFolder(null)
     setShowAllTracks(false)
     setShowSettings(false)
@@ -1257,8 +1294,11 @@ function AppContent() {
   // The Spotify view only exists while an account is connected.
   const shownSpotifyList = spotify.connected ? spotifyListId : null
 
+  // The DJ page comes first: it opens over Search or Sets, whose flags stay set.
   const viewKey =
-    shownSpotifyList !== null
+    djPage !== null
+      ? `dj-${djKey(djPage.name)}`
+      : shownSpotifyList !== null
       ? `spotify-${shownSpotifyList}`
       : showSettings
         ? 'settings'
@@ -1275,7 +1315,9 @@ function AppContent() {
                   : 'home'
 
   const activeView: ActiveView =
-    shownSpotifyList !== null
+    djPage !== null
+      ? 'dj'
+      : shownSpotifyList !== null
       ? 'spotify'
       : showSettings
         ? 'settings'
@@ -1293,6 +1335,9 @@ function AppContent() {
                     ? 'all-tracks'
                     : 'home'
 
+  // A DJ page lights the section Back returns to: Search or Sets.
+  const sidebarView: ActiveView = djPage !== null ? djPage.from.view : activeView
+
   const sidebarEl = (
     <Sidebar
       libraryFolders={libraryFolders}
@@ -1300,7 +1345,7 @@ function AppContent() {
       selectedFolder={selectedFolder}
       selectedPlaylistId={selectedPlaylistId}
       totalTrackCount={totalTrackCount}
-      activeView={activeView}
+      activeView={sidebarView}
       collapsed={sidebarPrefs.collapsed}
       onToggleCollapsed={sidebarPrefs.toggleCollapsed}
       colours={sidebarPrefs.colours}
@@ -1327,6 +1372,7 @@ function AppContent() {
       onOpenSettings={() => {
         setShowSettings(true)
         setSpotifyListId(null)
+        setDjPage(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
@@ -1336,6 +1382,7 @@ function AppContent() {
       }}
       onNavigateHome={() => {
         setSpotifyListId(null)
+        setDjPage(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
@@ -1346,6 +1393,7 @@ function AppContent() {
       }}
       onShowAllTracks={() => {
         setSpotifyListId(null)
+        setDjPage(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(true)
@@ -1358,6 +1406,7 @@ function AppContent() {
       onSearch={() => {
         setShowSearch(true)
         setSpotifyListId(null)
+        setDjPage(null)
         setShowSets(false)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
@@ -1369,6 +1418,7 @@ function AppContent() {
       onNavigateSets={() => {
         setShowSets(true)
         setSpotifyListId(null)
+        setDjPage(null)
         setShowSearch(false)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
@@ -1393,6 +1443,7 @@ function AppContent() {
           ? () => {
               setShowAIChat(true)
               setSpotifyListId(null)
+              setDjPage(null)
               setShowSettings(false)
               setShowSearch(false)
               setShowSets(false)
@@ -1480,7 +1531,9 @@ function AppContent() {
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
-            {shownSpotifyList !== null ? (
+            {djPage !== null ? (
+              <DjView name={djPage.name} onBack={closeDj} />
+            ) : shownSpotifyList !== null ? (
               <SpotifyView
                 listId={shownSpotifyList}
                 spotify={spotify}
@@ -1501,9 +1554,13 @@ function AppContent() {
                 tracks={tracks}
                 playlists={playlists}
                 onTrackPlay={handlePlayTrack}
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                onOpenDj={(name, spotifyArtistId) => openDj(name, spotifyArtistId, { view: 'search' })}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
                   setSpotifyListId(null)
+                  setDjPage(null)
                   setShowSearch(false)
                   setShowSets(false)
                 }}
@@ -1521,6 +1578,7 @@ function AppContent() {
                     ? () => {
                         setShowAIChat(true)
                         setSpotifyListId(null)
+                        setDjPage(null)
                         setSelectedPlaylistId(null)
                         setSelectedFolder(null)
                         setShowAllTracks(false)
@@ -1533,6 +1591,7 @@ function AppContent() {
                 onOpenSettings={() => {
                   setShowSettings(true)
                   setSpotifyListId(null)
+                  setDjPage(null)
                   setShowAIChat(false)
                   setSelectedPlaylistId(null)
                   setSelectedFolder(null)

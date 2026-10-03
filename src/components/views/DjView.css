@@ -1,0 +1,81 @@
+/* A DJ's page, after the approved mockup (docs/superpowers/specs/2026-10-03-dj-pages-mockup.html, first section). */
+
+.dj-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+
+/* ---- Hero: the artist photo when there is one, else this gradient ---- */
+
+.dj-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 210px;
+  padding: 20px 24px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #3b2a5c, #1b1b2f 55%, #0f3b4a);
+  background-size: cover;
+  background-position: center;
+}
+
+/* Darkens the bottom so the name reads on any photo. */
+.dj-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 35%, rgba(18, 18, 18, 0.95));
+  pointer-events: none;
+}
+
+.dj-hero__back {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(30, 30, 30, 0.85);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dj-hero__back:hover {
+  background: var(--bg-elevated);
+}
+
+.dj-hero__in {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.dj-hero__kicker {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dj-hero__name {
+  margin: 4px 0 8px;
+  color: var(--text-primary);
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

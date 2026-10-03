@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { Icon } from '../Icon'
 import type { Track, Playlist } from '../../types/track'
 import './SearchView.css'
@@ -27,10 +27,21 @@ interface SearchViewProps {
   playlists: Playlist[]
   onTrackPlay: (track: Track, tracks: Track[], index: number) => void
   onPlaylistSelect: (id: number) => void
+  /** Held by App, so Back from a DJ page finds the same query and results. */
+  query: string
+  onQueryChange: (query: string) => void
+  /** Opens a DJ page from the DJs row; a Spotify card passes its artist id. */
+  onOpenDj: (name: string, spotifyArtistId: string | null) => void
 }
 
-export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }: SearchViewProps) {
-  const [query, setQuery] = useState('')
+export function SearchView({
+  tracks,
+  playlists,
+  onTrackPlay,
+  onPlaylistSelect,
+  query,
+  onQueryChange,
+}: SearchViewProps) {
 
   const filteredTracks = useMemo(() => {
     if (!query.trim()) return []
@@ -75,11 +86,11 @@ export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }:
           className="search-view__input"
           placeholder="Search tracks, playlists, artists..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => onQueryChange(e.target.value)}
           autoFocus
         />
         {query && (
-          <button className="search-view__input-clear" onClick={() => setQuery('')} type="button">
+          <button className="search-view__input-clear" onClick={() => onQueryChange('')} type="button">
             <Icon name="X" size={16} />
           </button>
         )}
