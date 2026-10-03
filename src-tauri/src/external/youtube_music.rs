@@ -21,8 +21,8 @@ use std::future::Future;
 pub const API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 /// The largest page `playlistItems` and `videos` give.
 pub const PAGE_SIZE: usize = 50;
-/// The most pages one list is read to: 10,000 videos.
-pub const MAX_PAGES: usize = 200;
+/// The most pages one list is read to: 5,000 videos, YouTube's cap on a playlist.
+pub const MAX_PAGES: usize = 100;
 /// A list last read in full this long ago is read in full again, whatever its
 /// first page says.
 pub const FULL_REFETCH_MS: i64 = 24 * 60 * 60 * 1000;
@@ -235,8 +235,9 @@ async fn read_list<A: YtmApi + Sync>(api: &A, list: &ListBaseline, now_ms: i64) 
 
     let ItemsPage { ids: first_page_ids, mut entries, mut next_page_token, total_results } = first;
     let mut pages = 1;
+    let mut seen: HashSet<String> = HashSet::new();
     while let Some(token) = next_page_token {
-        if pages >= MAX_PAGES {
+        if pages >= MAX_PAGES || !seen.insert(token.clone()) {
             return Err(YtmError::Network(format!("A YouTube playlist ran past {MAX_PAGES} pages")));
         }
         let page = parse_items_page(&api.get_json(&items_url(&list.id, Some(&token))).await?);
@@ -703,5 +704,26 @@ mod tests {
 
         let api = FakeApi::default().fail(playlist_url("PLz"), gone);
         assert_eq!(fetch_new_playlist(&api, "PLz", &HashSet::new(), NOW).await, Ok(None));
+    }
+
+    #[tokio::test]
+    async fn a_repeated_page_token_stops_the_read_with_an_error() {
+        let api = FakeApi::default()
+            .page(items_url("LM", None), page_of(&["a"], 9, Some("P2")))
+            .page(items_url("LM", Some("P2")), page_of(&["b"], 9, Some("P2")));
+        let base = SyncBaseline { lists: vec![ListBaseline::new("LM")], known_ids: HashSet::new() };
+        assert!(matches!(fetch_changes(&api, &base, NOW).await, Err(YtmError::Network(_))));
+        assert_eq!(api.calls().len(), 2, "page one and P2 once, not again");
+    }
+
+    #[tokio::test]
+    async fn a_404_on_a_later_page_marks_the_list_gone() {
+        let gone = YtmError::Api { status: 404, message: "x".into(), reason: None };
+        let api = FakeApi::default()
+            .page(items_url("LM", None), page_of(&["a"], 2, Some("P2")))
+            .fail(items_url("LM", Some("P2")), gone);
+        let base = SyncBaseline { lists: vec![ListBaseline::new("LM")], known_ids: HashSet::new() };
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+        assert_eq!(changes.lists, vec![("LM".to_string(), ListChange::Gone)]);
     }
 }
