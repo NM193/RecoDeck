@@ -2,7 +2,8 @@
 // The sidebar collapsed to icons: nav items, Folders and Playlists as icons
 // that open flyouts, tooltips after a short hover, the profile at the bottom.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Icon, type IconName } from '../Icon'
+import { Icon } from '../Icon'
+import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
 import { SECTION_LABELS, type SidebarSection } from '../../lib/sidebarPrefs'
 import type { FlyoutSection, NavItem } from './sidebarTypes'
 import { SidebarFlyout } from './SidebarFlyout'
@@ -19,6 +20,8 @@ interface SidebarRailProps {
   onToggleCollapsed: () => void
   onOpenSettings: () => void
   settingsActive: boolean
+  /** The Spotify new-likes number; null hides the Spotify icon (not connected). */
+  spotifyNew: number | null
   /** Section contents for the flyouts; `close` is called after a navigation. */
   renderSection: (section: FlyoutSection, close: () => void) => ReactNode
 }
@@ -33,6 +36,7 @@ export function SidebarRail({
   onToggleCollapsed,
   onOpenSettings,
   settingsActive,
+  spotifyNew,
   renderSection,
 }: SidebarRailProps) {
   // --- Tooltip ---
@@ -91,7 +95,7 @@ export function SidebarRail({
   const sectionButton = (
     section: FlyoutSection,
     label: string,
-    icon: IconName,
+    glyph: ReactNode,
     badge?: number,
   ) => (
     <button
@@ -100,12 +104,14 @@ export function SidebarRail({
       onContextMenu={onColourMenu(section, section === 'playlists')}
       onMouseEnter={flyout ? undefined : showTip(label)}
       onMouseLeave={hideTip}
-      aria-label={label}
+      aria-label={
+        badge != null && badge > 0 ? `${label}, ${badge} new` : label
+      }
       aria-haspopup="dialog"
       aria-expanded={flyout?.section === section}
       type="button"
     >
-      <Icon name={icon} size={16} style={iconStyle(section)} />
+      {glyph}
       {badge != null && badge > 0 && (
         <span className="sidebar-rail__badge" aria-hidden="true">
           {badge}
@@ -153,8 +159,23 @@ export function SidebarRail({
           </button>
         ))}
         <span className="sidebar-rail__divider" />
-        {sectionButton('folders', SECTION_LABELS.folders, 'Disc3')}
-        {sectionButton('playlists', SECTION_LABELS.playlists, 'ListMusic')}
+        {sectionButton(
+          'folders',
+          SECTION_LABELS.folders,
+          <Icon name="Disc3" size={16} style={iconStyle('folders')} />,
+        )}
+        {sectionButton(
+          'playlists',
+          SECTION_LABELS.playlists,
+          <Icon name="ListMusic" size={16} style={iconStyle('playlists')} />,
+        )}
+        {spotifyNew !== null &&
+          sectionButton(
+            'spotify',
+            SECTION_LABELS.spotify,
+            <SpotifyGlyph size={16} style={iconStyle('spotify')} />,
+            spotifyNew,
+          )}
       </div>
 
       <button

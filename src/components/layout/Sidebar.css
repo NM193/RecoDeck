@@ -477,3 +477,40 @@
   background: var(--border);
   margin: 4px 0;
 }
+
+/* ===== Spotify ===== */
+
+/* The new-likes number: plain, in the accent colour, where counts sit. */
+.sidebar-section__new {
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.spotify-list-row {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.spotify-list-row__icon {
+  margin-right: 6px;
+  color: var(--text-secondary);
+}
+
+.spotify-list-row__new {
+  margin-left: 6px;
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.folder-row.selected .spotify-list-row__icon,
+.folder-row.selected .spotify-list-row__new {
+  color: inherit;
+}

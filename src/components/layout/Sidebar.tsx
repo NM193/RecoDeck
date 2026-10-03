@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useCallback,
+  type ReactNode,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Icon, type IconName } from '../Icon'
@@ -13,7 +14,9 @@ import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import { SidebarRail } from './SidebarRail'
 import { SidebarColourMenu } from './SidebarColourMenu'
-import type { NavItem } from './sidebarTypes'
+import type { NavItem, SidebarSpotify } from './sidebarTypes'
+import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
+import { SpotifyLists } from '../spotify/SpotifyLists'
 import { useFolderTreeStore } from '../../store/folderTreeStore'
 import {
   COLLAPSED_WIDTH,
@@ -51,7 +54,9 @@ function readStoredWidth(): number {
 
 interface SectionProps {
   title: string
-  iconName: IconName
+  iconName?: IconName
+  /** Drawn instead of `iconName` — for Spotify, which lucide does not draw. */
+  glyph?: ReactNode
   expanded: boolean
   onToggle: () => void
   iconStyle?: React.CSSProperties
@@ -65,6 +70,7 @@ interface SectionProps {
 function Section({
   title,
   iconName,
+  glyph,
   expanded,
   onToggle,
   iconStyle,
@@ -85,7 +91,7 @@ function Section({
         >
           <Icon name="ChevronDown" size={14} />
         </span>
-        <Icon name={iconName} size={14} style={iconStyle} />
+        {glyph ?? (iconName && <Icon name={iconName} size={14} style={iconStyle} />)}
         <span className="sidebar-section__title">{title}</span>
         {trailing != null && (
           <span className="sidebar-section__trailing">{trailing}</span>
@@ -146,6 +152,7 @@ interface SidebarProps {
   onSearch?: () => void
   onNavigateSets?: () => void
   onNavigateAIChat?: () => void
+  spotify?: SidebarSpotify
 }
 
 // --- Main Sidebar ---
@@ -184,6 +191,7 @@ export function Sidebar({
   onSearch,
   onNavigateSets,
   onNavigateAIChat,
+  spotify,
 }: SidebarProps) {
   // The folder tree's expansion and loaded children live in a store that
   // outlives the trees (collapsing unmounts them; each flyout mounts a new
@@ -201,6 +209,7 @@ export function Sidebar({
   // Section expand states — all start expanded
   const [foldersExpanded, setFoldersExpanded] = useState(true)
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true)
+  const [spotifyExpanded, setSpotifyExpanded] = useState(true)
 
   // Right-click menu: a section's colour, plus Create Playlist / Folder on Playlists.
   const [ctxMenu, setCtxMenu] = useState<{
@@ -457,22 +466,38 @@ export function Sidebar({
           onToggleCollapsed={onToggleCollapsed}
           onOpenSettings={onOpenSettings}
           settingsActive={activeView === 'settings'}
-          renderSection={(section, close) => (
-            // Navigating closes the flyout; expanding a playlist folder does
-            // not, because FolderTree handles that without calling these.
-            <FolderTree
-              {...treeProps}
-              section={section}
-              onFolderSelect={(path) => {
-                onFolderSelect(path)
-                close()
-              }}
-              onPlaylistSelect={(id) => {
-                onPlaylistSelect(id)
-                close()
-              }}
-            />
-          )}
+          spotifyNew={spotify ? spotify.newTotal : null}
+          renderSection={(section, close) =>
+            section === 'spotify' ? (
+              spotify && (
+                <SpotifyLists
+                  lists={spotify.lists}
+                  counts={spotify.counts}
+                  newByList={spotify.newByList}
+                  activeListId={spotify.activeListId}
+                  onOpen={(id) => {
+                    spotify.onOpenList(id)
+                    close()
+                  }}
+                />
+              )
+            ) : (
+              // Navigating closes the flyout; expanding a playlist folder does
+              // not, because FolderTree handles that without calling these.
+              <FolderTree
+                {...treeProps}
+                section={section}
+                onFolderSelect={(path) => {
+                  onFolderSelect(path)
+                  close()
+                }}
+                onPlaylistSelect={(id) => {
+                  onPlaylistSelect(id)
+                  close()
+                }}
+              />
+            )
+          }
         />
         {colourMenuEl}
         {toastEl}
@@ -561,6 +586,35 @@ export function Sidebar({
         >
           <FolderTree {...treeProps} section="playlists" />
         </Section>
+
+        {/* Spotify section — only once an account is connected */}
+        {spotify && (
+          <>
+            <div className="sidebar-divider" />
+            <Section
+              title="Spotify"
+              glyph={<SpotifyGlyph size={14} style={iconStyle('spotify')} />}
+              expanded={spotifyExpanded}
+              onToggle={() => setSpotifyExpanded((v) => !v)}
+              onContextMenu={openColourMenu('spotify')}
+              trailing={
+                spotify.newTotal > 0 ? (
+                  <span className="sidebar-section__new">
+                    {spotify.newTotal}
+                  </span>
+                ) : undefined
+              }
+            >
+              <SpotifyLists
+                lists={spotify.lists}
+                counts={spotify.counts}
+                newByList={spotify.newByList}
+                activeListId={spotify.activeListId}
+                onOpen={spotify.onOpenList}
+              />
+            </Section>
+          </>
+        )}
       </div>
 
       {colourMenuEl}

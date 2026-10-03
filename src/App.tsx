@@ -35,6 +35,8 @@ import { MixPrepPanel } from './components/ai/MixPrepPanel'
 import { AppShell } from './components/layout/AppShell'
 import { Sidebar } from './components/layout/Sidebar'
 import { useSidebarPrefs } from './components/layout/useSidebarPrefs'
+import { useSpotify } from './components/spotify/useSpotify'
+import { SpotifyView } from './components/views/SpotifyView'
 import { useFolderTreeStore } from './store/folderTreeStore'
 import type { ActiveView } from './lib/sidebarPrefs'
 import type { FolderTreeRef } from './components/FolderTree'
@@ -94,6 +96,8 @@ function AppContent() {
   const [showSearch, setShowSearch] = useState(false)
   const [showSets, setShowSets] = useState(false)
   const [showAIChat, setShowAIChat] = useState(false)
+  /** The open Spotify list: 'all', 'liked' or a playlist id; null when another view is open. */
+  const [spotifyListId, setSpotifyListId] = useState<string | null>(null)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -124,6 +128,7 @@ function AppContent() {
   // Ref into FolderTree to refresh a root after folder mutations
   const folderTreeRef = useRef<FolderTreeRef>(null)
   const sidebarPrefs = useSidebarPrefs({ dbReady })
+  const spotify = useSpotify(dbReady, totalTrackCount)
 
   // Share playlist modal
   const [sharePlaylistModal, setSharePlaylistModal] = useState<{
@@ -295,6 +300,7 @@ function AppContent() {
   useEffect(() => {
     useAIStore.getState().registerOpenSettings(() => {
       setShowSettings(true)
+      setSpotifyListId(null)
       setSelectedFolder(null)
       setSelectedPlaylistId(null)
       setShowAllTracks(false)
@@ -691,6 +697,7 @@ function AppContent() {
   // Folder selection from Track Collection
   async function handleFolderSelect(folderPath: string | null) {
     setSelectedFolder(folderPath)
+    setSpotifyListId(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
     setShowSettings(false)
@@ -701,9 +708,23 @@ function AppContent() {
     await loadTracks(folderPath, null)
   }
 
+  // A Spotify list: every other view closes, and opening it marks it seen.
+  function openSpotifyList(listId: string) {
+    setSpotifyListId(listId)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(false)
+    setShowSettings(false)
+    setShowSearch(false)
+    setShowSets(false)
+    setShowAIChat(false)
+    spotify.openList(listId)
+  }
+
   // Playlist selection
   async function handlePlaylistSelect(playlistId: number) {
     setSelectedPlaylistId(playlistId)
+    setSpotifyListId(null)
     setSelectedFolder(null)
     setShowAllTracks(false)
     setShowSettings(false)
@@ -1229,35 +1250,44 @@ function AppContent() {
       : 'Click "Scan Folder" to add music to your library'
 
   // Derive a unique view key so AnimatePresence knows when to animate
-  const viewKey = showSettings
-    ? 'settings'
-    : showSearch
-      ? 'search'
-      : showAIChat
-        ? 'ai-chat'
-        : selectedPlaylistId
-          ? `playlist-${selectedPlaylistId}`
-          : selectedFolder
-            ? `folder-${selectedFolder}`
-            : showAllTracks
-              ? 'all-tracks'
-              : 'home'
+  // The Spotify view only exists while an account is connected.
+  const shownSpotifyList = spotify.connected ? spotifyListId : null
 
-  const activeView: ActiveView = showSettings
-    ? 'settings'
-    : showSets
-      ? 'sets'
-      : showSearch
-        ? 'search'
-        : showAIChat
-          ? 'ai-chat'
-          : selectedPlaylistId
-            ? 'playlist'
-            : selectedFolder
-              ? 'folder'
-              : showAllTracks
-                ? 'all-tracks'
-                : 'home'
+  const viewKey =
+    shownSpotifyList !== null
+      ? `spotify-${shownSpotifyList}`
+      : showSettings
+        ? 'settings'
+        : showSearch
+          ? 'search'
+          : showAIChat
+            ? 'ai-chat'
+            : selectedPlaylistId
+              ? `playlist-${selectedPlaylistId}`
+              : selectedFolder
+                ? `folder-${selectedFolder}`
+                : showAllTracks
+                  ? 'all-tracks'
+                  : 'home'
+
+  const activeView: ActiveView =
+    shownSpotifyList !== null
+      ? 'spotify'
+      : showSettings
+        ? 'settings'
+        : showSets
+          ? 'sets'
+          : showSearch
+            ? 'search'
+            : showAIChat
+              ? 'ai-chat'
+              : selectedPlaylistId
+                ? 'playlist'
+                : selectedFolder
+                  ? 'folder'
+                  : showAllTracks
+                    ? 'all-tracks'
+                    : 'home'
 
   const sidebarEl = (
     <Sidebar
@@ -1292,6 +1322,7 @@ function AppContent() {
       folderTreeRef={folderTreeRef}
       onOpenSettings={() => {
         setShowSettings(true)
+        setSpotifyListId(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
@@ -1300,6 +1331,7 @@ function AppContent() {
         setShowAIChat(false)
       }}
       onNavigateHome={() => {
+        setSpotifyListId(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
@@ -1309,6 +1341,7 @@ function AppContent() {
         setShowAIChat(false)
       }}
       onShowAllTracks={() => {
+        setSpotifyListId(null)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(true)
@@ -1320,6 +1353,8 @@ function AppContent() {
       }}
       onSearch={() => {
         setShowSearch(true)
+        setSpotifyListId(null)
+        setShowSets(false)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
@@ -1329,6 +1364,7 @@ function AppContent() {
       }}
       onNavigateSets={() => {
         setShowSets(true)
+        setSpotifyListId(null)
         setShowSearch(false)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
@@ -1336,10 +1372,23 @@ function AppContent() {
         setShowSettings(false)
         setShowAIChat(false)
       }}
+      spotify={
+        spotify.connected
+          ? {
+              lists: spotify.library.lists,
+              counts: spotify.counts,
+              newTotal: spotify.newCounts.total,
+              newByList: spotify.newCounts.byList,
+              activeListId: shownSpotifyList,
+              onOpenList: openSpotifyList,
+            }
+          : undefined
+      }
       onNavigateAIChat={
         AI_ENABLED
           ? () => {
               setShowAIChat(true)
+              setSpotifyListId(null)
               setShowSettings(false)
               setShowSearch(false)
               setShowSets(false)
@@ -1427,7 +1476,9 @@ function AppContent() {
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
-            {showSets ? (
+            {shownSpotifyList !== null ? (
+              <SpotifyView listId={shownSpotifyList} spotify={spotify} />
+            ) : showSets ? (
               <SetsView onPlayTrack={handlePlayTrack} />
             ) : showSettings ? (
               <SettingsView
@@ -1444,6 +1495,7 @@ function AppContent() {
                 onTrackPlay={handlePlayTrack}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
+                  setSpotifyListId(null)
                   setShowSearch(false)
                   setShowSets(false)
                 }}
@@ -1460,6 +1512,7 @@ function AppContent() {
                   AI_ENABLED
                     ? () => {
                         setShowAIChat(true)
+                        setSpotifyListId(null)
                         setSelectedPlaylistId(null)
                         setSelectedFolder(null)
                         setShowAllTracks(false)
@@ -1471,6 +1524,7 @@ function AppContent() {
                 }
                 onOpenSettings={() => {
                   setShowSettings(true)
+                  setSpotifyListId(null)
                   setShowAIChat(false)
                   setSelectedPlaylistId(null)
                   setSelectedFolder(null)

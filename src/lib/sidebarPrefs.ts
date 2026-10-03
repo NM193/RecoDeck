@@ -74,6 +74,7 @@ export type ActiveView =
   | 'search'
   | 'ai-chat'
   | 'sets'
+  | 'spotify'
 
 export type ColourOverrides = Partial<Record<SidebarSection, string>>
 

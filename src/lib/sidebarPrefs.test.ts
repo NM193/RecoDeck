@@ -104,6 +104,12 @@ describe('section colours', () => {
   })
 })
 
+describe('the Spotify view', () => {
+  it('lights the Spotify section', () => {
+    expect(sectionForView('spotify')).toBe('spotify')
+  })
+})
+
 describe('section labels', () => {
   it('has a non-empty label for every section', () => {
     for (const section of Object.keys(
