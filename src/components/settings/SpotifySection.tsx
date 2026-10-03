@@ -1,6 +1,7 @@
 // src/components/settings/SpotifySection.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
+import { confirm } from '@tauri-apps/plugin-dialog'
 import { tauriApi } from '../../lib/tauri-api'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { SPOTIFY_SYNCED_EVENT, type SpotifyStatus } from '../../types/spotify'
@@ -17,6 +18,8 @@ export function SpotifySection() {
   )
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  /** Each action; only the newest one's end clears `busy`. */
+  const runSeq = useRef(0)
 
   useEffect(() => {
     let live = true
@@ -48,16 +51,41 @@ export function SpotifySection() {
     kind: 'save' | 'connect' | 'disconnect',
     action: () => Promise<SpotifyStatus>,
   ) => {
+    const seq = ++runSeq.current
     setBusy(kind)
     setError(null)
     action()
       .then(setStatus)
       .catch((e: unknown) => {
-        // A newer Connect or a Client ID change cancelled this login on purpose.
+        // A newer Connect, a Client ID change or Disconnect cancelled this login on purpose.
         if (isAppError(e) && e.kind === 'SpotifyLoginCancelled') return
         setError(getErrorMessage(e))
       })
-      .finally(() => setBusy(null))
+      .finally(() => {
+        if (seq === runSeq.current) setBusy(null)
+      })
+  }
+
+  // While a login waits in the browser the button stays live: a closed tab
+  // would otherwise hold it for the five-minute timeout. Clicking again starts
+  // a fresh login, and Rust cancels the old one.
+  const waiting = busy === 'connect'
+  const connect = () => run('connect', () => tauriApi.connectSpotify())
+
+  const disconnect = () => {
+    void confirm(
+      'Disconnect Spotify? Your Spotify lists and Yes/No answers will be removed from RecoDeck.',
+      {
+        title: 'Disconnect Spotify',
+        kind: 'warning',
+        okLabel: 'Disconnect',
+        cancelLabel: 'Cancel',
+      },
+    )
+      .then((yes) => {
+        if (yes) run('disconnect', () => tauriApi.disconnectSpotify())
+      })
+      .catch(() => {})
   }
 
   const saved = status?.clientId ?? null
@@ -184,22 +212,19 @@ export function SpotifySection() {
                 <button
                   type="button"
                   className="btn-primary btn-small"
-                  disabled={dirty || busy !== null}
+                  disabled={dirty || (busy !== null && !waiting)}
                   title={dirty ? 'Save the Client ID first' : undefined}
-                  onClick={() =>
-                    run('connect', () => tauriApi.connectSpotify())
-                  }
+                  onClick={connect}
                 >
-                  {busy === 'connect' ? 'Waiting for Spotify…' : 'Reconnect'}
+                  {waiting ? 'Waiting for Spotify… (try again)' : 'Reconnect'}
                 </button>
               )}
               <button
                 type="button"
                 className="btn-secondary btn-small"
-                disabled={busy !== null}
-                onClick={() =>
-                  run('disconnect', () => tauriApi.disconnectSpotify())
-                }
+                // Allowed while a login waits: it cancels that login too.
+                disabled={busy !== null && !waiting}
+                onClick={disconnect}
               >
                 Disconnect
               </button>
@@ -209,13 +234,11 @@ export function SpotifySection() {
               type="button"
               className="btn-primary btn-small"
               // Connect signs in with the saved Client ID, not the one being typed.
-              disabled={!saved || dirty || busy !== null}
+              disabled={!saved || dirty || (busy !== null && !waiting)}
               title={dirty ? 'Save the Client ID first' : undefined}
-              onClick={() => run('connect', () => tauriApi.connectSpotify())}
+              onClick={connect}
             >
-              {busy === 'connect'
-                ? 'Waiting for Spotify in your browser…'
-                : 'Connect Spotify'}
+              {waiting ? 'Waiting for Spotify… (try again)' : 'Connect Spotify'}
             </button>
           )}
         </div>
@@ -242,6 +265,15 @@ export function SpotifySection() {
                 ? `Synced ${new Date(status.lastSyncedAt).toLocaleString()} — every 10 minutes while RecoDeck is open.`
                 : 'The first sync is running…'}
           </p>
+          {status.unreadable.length > 0 && (
+            <p className="settings-hint">
+              {status.unreadable.length === 1
+                ? "1 playlist couldn't be read this time"
+                : `${status.unreadable.length} playlists couldn't be read this time`}{' '}
+              ({status.unreadable.join(', ')}) — RecoDeck kept what it had and
+              will try again at the next sync.
+            </p>
+          )}
           {status.refused.length > 0 && (
             <p className="settings-hint">
               Spotify would not share{' '}

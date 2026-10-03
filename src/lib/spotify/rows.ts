@@ -8,6 +8,7 @@ import { isNew } from './newness'
 import type { Ownership, OwnershipKind } from './ownership'
 import {
   ALL_LISTS,
+  type SpotifyErrorKind,
   type SpotifyLibrary,
   type SpotifyTrack,
 } from '../../types/spotify'
@@ -164,6 +165,20 @@ export function formatSynced(ms: number, now: number): string {
   if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} min ago`
   if (elapsed < DAY_MS) return `${Math.floor(elapsed / 3_600_000)} h ago`
   return `${Math.floor(elapsed / DAY_MS)} d ago`
+}
+
+/** The view's short word on a failed sync. The full message is in Settings. */
+export function syncErrorText(kind: SpotifyErrorKind | null): string {
+  switch (kind) {
+    case 'network':
+      return "couldn't reach Spotify"
+    case 'rateLimited':
+      return 'Spotify asked to wait — will retry'
+    case 'notOnUserManagement':
+      return "this account isn't added to your Spotify app (User Management)"
+    default:
+      return 'sync failed — see Settings → Spotify'
+  }
 }
 
 /** The last part of a path, for "In library: <file name>". */

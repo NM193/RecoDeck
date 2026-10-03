@@ -633,7 +633,10 @@ export const tauriApi = {
     return await invoke('delete_saved_youtube_track', { videoId, cueMs, title })
   },
 
-  // Spotify. Read-only on Spotify's side; the tokens never reach the webview.
+  // Spotify. Read-only on Spotify's side. No Spotify command returns a token,
+  // but they sit in the settings table, so the generic get_setting /
+  // set_setting commands can read them — the same trust model as the YouTube
+  // and AI keys.
   async getSpotifyStatus(): Promise<SpotifyStatus> {
     return await invoke('get_spotify_status')
   },

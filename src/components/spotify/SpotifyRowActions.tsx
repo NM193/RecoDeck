@@ -72,8 +72,15 @@ export function SpotifyRowActions({
       title="Play on Spotify"
       aria-label="Play on Spotify"
       onClick={() => {
-        // Rust opens the Spotify app itself when there is no active device or no Premium.
-        void tauriApi.playSpotifyTrack(row.track.spotifyId).catch(() => {})
+        // Rust opens the Spotify app itself when there is no active device or
+        // no Premium, and the web player when there is no Spotify app.
+        const id = row.track.spotifyId
+        void tauriApi.playSpotifyTrack(id).catch(() =>
+          // Anything else that failed: the web player still plays it.
+          openUrl(
+            `https://open.spotify.com/track/${encodeURIComponent(id)}`,
+          ).catch(() => {}),
+        )
       }}
     >
       <SpotifyGlyph size={12} />

@@ -8,6 +8,7 @@ import {
   formatSynced,
   listCounts,
   rowsFor,
+  syncErrorText,
 } from './rows'
 import type { Ownership } from './ownership'
 import type { SpotifyLibrary } from '../../types/spotify'
@@ -183,5 +184,20 @@ describe('how times read', () => {
       'Butch & Santos - Come Get Up.mp3',
     )
     expect(fileName('C:\\Music\\Track.flac')).toBe('Track.flac')
+  })
+})
+
+describe('syncErrorText', () => {
+  it('says what kind of failure it was', () => {
+    expect(syncErrorText('network')).toBe("couldn't reach Spotify")
+    expect(syncErrorText('rateLimited')).toBe(
+      'Spotify asked to wait — will retry',
+    )
+    expect(syncErrorText('notOnUserManagement')).toBe(
+      "this account isn't added to your Spotify app (User Management)",
+    )
+    expect(syncErrorText('other')).toBe('sync failed — see Settings → Spotify')
+    // A status saved before kinds were kept.
+    expect(syncErrorText(null)).toBe('sync failed — see Settings → Spotify')
   })
 })

@@ -1,7 +1,7 @@
 // src/components/views/SpotifyView.tsx
 // One Spotify list — or All playlists — against the library: what is Owned,
 // what is Missing, and what might be either.
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { SpotifyRowActions } from '../spotify/SpotifyRowActions'
 import { useNow } from '../spotify/useNow'
@@ -14,6 +14,7 @@ import {
   formatAdded,
   formatSynced,
   rowsFor,
+  syncErrorText,
   type SpotifyRow,
   type StatusFilter,
 } from '../../lib/spotify/rows'
@@ -45,10 +46,10 @@ function syncLine(spotify: SpotifyData, now: number | null): string {
       ? formatSynced(status.lastSyncedAt, now)
       : null
   if (status?.needsReconnect) return ago ? `last synced ${ago}` : 'not synced'
-  if (status?.lastError)
-    return ago
-      ? `last synced ${ago} · couldn't reach Spotify`
-      : "couldn't reach Spotify"
+  if (status?.lastError) {
+    const why = syncErrorText(status.lastErrorKind)
+    return ago ? `last synced ${ago} · ${why}` : why
+  }
   if (!status?.lastSyncedAt) return 'not synced yet'
   return ago ? `synced ${ago}` : 'synced'
 }
@@ -63,6 +64,8 @@ export function SpotifyView({
   const [query, setQuery] = useState('')
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
+  /** Each Reconnect click; only the newest one's end clears "Waiting…". */
+  const reconnectSeq = useRef(0)
 
   const list = spotify.library.lists.find((l) => l.id === listId)
   const title =
@@ -132,7 +135,9 @@ export function SpotifyView({
     }
   }
 
+  // Clicking again while waiting starts a fresh login; Rust cancels the old one.
   const reconnect = () => {
+    const seq = ++reconnectSeq.current
     setReconnecting(true)
     setReconnectError(null)
     spotify
@@ -140,9 +145,11 @@ export function SpotifyView({
       .catch((e: unknown) => {
         // A newer Connect cancelled this login on purpose.
         if (isAppError(e) && e.kind === 'SpotifyLoginCancelled') return
-        setReconnectError(getErrorMessage(e))
+        if (seq === reconnectSeq.current) setReconnectError(getErrorMessage(e))
       })
-      .finally(() => setReconnecting(false))
+      .finally(() => {
+        if (seq === reconnectSeq.current) setReconnecting(false)
+      })
   }
 
   const rowClass = (extra: string) =>
@@ -158,10 +165,16 @@ export function SpotifyView({
           <button
             type="button"
             className="spotify-mini spotify-mini--primary"
-            disabled={reconnecting}
             onClick={reconnect}
+            title={
+              reconnecting
+                ? 'Closed the browser tab? Click to sign in again'
+                : undefined
+            }
           >
-            {reconnecting ? 'Waiting for Spotify…' : 'Reconnect Spotify'}
+            {reconnecting
+              ? 'Waiting for Spotify… (try again)'
+              : 'Reconnect Spotify'}
           </button>
           {reconnectError && (
             <span className="spotify-reconnect__error">{reconnectError}</span>

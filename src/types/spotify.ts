@@ -52,6 +52,14 @@ export interface SpotifyLibrary {
   verdicts: SpotifyVerdict[]
 }
 
+/** Why the last sync failed, in the kinds the view words differently. */
+export type SpotifyErrorKind =
+  | 'network'
+  | 'rateLimited'
+  /** 403 on the account's own library: not on the app's User Management list. */
+  | 'notOnUserManagement'
+  | 'other'
+
 export interface SpotifyStatus {
   clientId: string | null
   connected: boolean
@@ -62,8 +70,12 @@ export interface SpotifyStatus {
   lastSyncedAt: number | null
   /** Why the last sync failed, or null when it worked. */
   lastError: string | null
+  /** Set with lastError. */
+  lastErrorKind: SpotifyErrorKind | null
   /** Names of the playlists Spotify would not share. */
   refused: string[]
+  /** Names of the playlists the last sync could not read; their old rows stay. */
+  unreadable: string[]
 }
 
 /** Payload of the `spotify-synced` event, sent after every sync. */
@@ -71,9 +83,12 @@ export interface SpotifySynced {
   changed: boolean
   lastSyncedAt: number | null
   error: string | null
+  /** Set with error. */
+  errorKind: SpotifyErrorKind | null
   needsReconnect: boolean
 }
 
 export const SPOTIFY_SYNCED_EVENT = 'spotify-synced'
 
-export type PlayOutcome = 'played' | 'openedApp'
+/** openedWeb: the Spotify app would not open, so the web player did. */
+export type PlayOutcome = 'played' | 'openedApp' | 'openedWeb'
