@@ -105,10 +105,8 @@ function GigsBody({
   if (state === 'link') return <RaLinkCard raUrl={data.raUrl} />
   if (state === 'searching') return <Note>Looking on Resident Advisor…</Note>
   if (state === 'none') return <Note>No gigs listed on Resident Advisor.</Note>
-  const shown =
-    kind === 'upcoming'
-      ? upcoming.slice(0, CARD_ROWS['upcoming-gigs'])
-      : past.slice(0, CARD_ROWS['past-gigs'])
+  // Every gig, in a box the height of three that scrolls.
+  const shown = kind === 'upcoming' ? upcoming : past
   if (shown.length === 0)
     return (
       <Note>
@@ -118,7 +116,7 @@ function GigsBody({
       </Note>
     )
   return (
-    <div className="dj-gigs">
+    <div className="dj-gigs dj-gigs--scroll">
       {shown.map((gig) => (
         <GigRow
           key={gig.raEventId}
@@ -168,11 +166,15 @@ function PlaysBody({ data }: { data: OverviewData }) {
 function TracksBody({
   filter,
   limit,
+  scroll = false,
   data,
   actions,
 }: {
   filter: StatusFilter
-  limit: number
+  /** The first rows only; without it, every row. */
+  limit?: number
+  /** Every row, in a box the height of six that scrolls. */
+  scroll?: boolean
   data: OverviewData
   actions: OverviewActions
 }) {
@@ -211,7 +213,10 @@ function TracksBody({
     if (start) actions.onPlayFiles(start.queue, start.index)
   }
   return (
-    <div className="spotify-table dj-table dj-card__table" role="table">
+    <div
+      className={`spotify-table dj-table dj-card__table${scroll ? ' dj-card__table--scroll' : ''}`}
+      role="table"
+    >
       {shown.map((row, index) => (
         <DjTrackRow
           key={row.track.spotifyId}
@@ -287,12 +292,7 @@ function CardBody({
       return <PlaysBody data={data} />
     case 'tracks':
       return (
-        <TracksBody
-          filter={filter}
-          limit={CARD_ROWS.tracks}
-          data={data}
-          actions={actions}
-        />
+        <TracksBody filter={filter} scroll data={data} actions={actions} />
       )
     case 'missing':
       return (

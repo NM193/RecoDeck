@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Search Empty State Mockup</title>
+<style>
+body{margin:0;padding:24px 32px 64px;background:#1d1d1f;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+h1{margin:0 0 4px;font-size:22px}
+h2{margin:40px 0 4px;font-size:18px}
+.cap{color:#86868b;font-size:13px;margin:0 0 14px;max-width:900px;line-height:1.5}
+.rd{--bg:#121212;--bg2:#181818;--bg3:#282828;--el:#2a2a2a;--t1:#fff;--t2:#b3b3b3;--tm:#6a6a6a;--acc:#6366f1;--acch:#818cf8;--ok:#1ed760;--yt:#ff0033;--bd:#333;--bds:#2a2a2a;
+  font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;background:var(--bg);color:var(--t1);border-radius:12px;overflow:hidden;border:1px solid #000;box-shadow:0 20px 50px rgba(0,0,0,.35);font-size:13px;-webkit-font-smoothing:antialiased;max-width:1180px}
+.rd *{box-sizing:border-box}
+svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.view{padding:20px 24px 28px;height:640px;overflow:hidden}
+.search{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;border:1px solid var(--acc);border-radius:8px;background:#1b1b1b;color:var(--tm);font-size:14px;margin-bottom:22px}
+.sec{margin-bottom:22px}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+.sec-h b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)}
+.sec-h a{font-size:12px;color:var(--tm);text-decoration:none}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 12px;border-radius:14px;background:var(--el);color:var(--t1);font-size:12px}
+.chip .x{color:var(--tm);font-size:13px}
+.chip .k{color:var(--tm);font-size:11px}
+.row{display:flex;gap:14px;overflow:hidden}
+.tile{flex:0 0 150px}
+.art{width:150px;height:150px;border-radius:8px;display:flex;align-items:flex-end;padding:10px;font-weight:800;font-size:13px;color:rgba(255,255,255,.9);position:relative}
+.art .play{position:absolute;right:10px;bottom:10px;width:34px;height:34px;border-radius:50%;background:var(--acc);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,.4)}
+.tile .t{margin-top:8px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .s{color:var(--tm);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dj{flex:0 0 112px;text-align:center}
+.av{width:96px;height:96px;border-radius:50%;margin:0 auto;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:26px;background-size:cover;background-position:center}
+.dj .t{margin-top:8px;font-size:13px}
+.dj .s{color:var(--tm);font-size:11px}
+.genres{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.genre{height:92px;border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;font-weight:800;font-size:15px}
+.genre span{display:block;font-weight:500;font-size:12px;opacity:.85;margin-top:4px}
+.genre i{position:absolute;right:-14px;bottom:-14px;width:70px;height:70px;border-radius:8px;transform:rotate(25deg);background:rgba(0,0,0,.18)}
+.list{display:grid}
+.li{display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:12px;height:44px;padding:0 8px;border-radius:6px}
+.li:hover{background:var(--bg3)}
+.cov{width:36px;height:36px;border-radius:4px}
+.li .t{font-size:13px}
+.li .s{font-size:12px;color:var(--tm)}
+.li .m{font-size:12px;color:var(--tm)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--bg2);border:1px solid var(--bds);border-radius:10px;padding:14px 16px}
+.card .sec-h{margin-bottom:8px}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--t2)}
+.num{color:var(--acch);font-weight:700}
+.big{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bds)}
+.big:last-child{border-bottom:0}
+.big .n{font-size:22px;font-weight:800;min-width:42px}
+.big .t{font-size:13px}
+.big .s{font-size:12px;color:var(--tm)}
+.gig{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bds)}
+.gig:last-child{border-bottom:0}
+.gig .d{font-weight:800;font-size:16px;line-height:1}
+.gig .d small{display:block;font-size:10px;color:var(--tm);font-weight:600;margin-top:2px}
+.letter{display:inline-block;width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;font-weight:800;text-align:center;line-height:26px;margin-right:8px;font-size:13px}
+</style></head><body>
+
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><polygon points="7 4 19 12 7 20 7 4" fill="currentColor"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-spotify" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 9.5c3.5-1 7.5-.7 10.5 1"/><path d="M7.5 12.7c3-.8 6.2-.5 8.7.9"/><path d="M8 15.7c2.3-.6 4.7-.4 6.6.6"/></symbol>
+<symbol id="i-yt" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/></symbol>
+<symbol id="i-radio" viewBox="0 0 24 24"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></symbol>
+</defs></svg>
+
+<h1>Search — before you type</h1>
+<p class="cap">Three directions for the empty Search page. Genres and their counts, the DJs, Traumer's gigs and the track names come from your library; the small numbers (new likes, sets owned, "3 sets saved") are examples. Pick one, or mix parts.</p>
+
+<!-- ============ A ============ -->
+<h2>A · Jump back in</h2>
+<p class="cap">Recent searches as chips, then rows of what you used last: recently played tracks, your DJs (round photos → DJ page), and recently added. Feels like Spotify's search home. Cheapest to build: everything is already stored (play history, DJ profiles, date added); recent searches are kept on this machine.</p>
+<div class="rd"><div class="view">
+  <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search tracks, playlists, artists, DJs…</div>
+  <div class="sec"><div class="sec-h"><b>Recent searches</b><a href="#">Clear</a></div>
+    <div class="chips">
+      <span class="chip">traumer <span class="x">×</span></span>
+      <span class="chip">afro house <span class="x">×</span></span>
+      <span class="chip">hot since 82 <span class="x">×</span></span>
+      <span class="chip">original mix 2025 <span class="x">×</span></span>
+      <span class="chip">capriati <span class="x">×</span></span>
+    </div></div>
+  <div class="sec"><div class="sec-h"><b>Recently played</b><a href="#">Show all</a></div>
+    <div class="row">
+      <div class="tile"><div class="art" style="background:linear-gradient(135deg,#7c3aed,#1e1b4b)"><span class="play"><svg class="ic" style="width:14px;height:14px"><use href="#i-play"/></svg></span></div><div class="t">Doubler (Original Mix)</div><div class="s">Tuccillo</div></div>
+      <div class="tile"><div class="art" style="background:linear-gradient(135deg,#0891b2,#082f49)"></div><div class="t">Aquatic Journey</div><div class="s">Helly Larson</div></div>
+      <div class="tile"><div class="art" style="background:linear-gradient(135deg,#db2777,#3b0764)"></div><div class="t">Alone (Original Mix)</div><div class="s">Mihai Popoviciu</div></div>
+      <div class="tile"><div class="art" style="background:linear-gradient(135deg,#ea580c,#431407)"></div><div class="t">Satisfaction</div><div class="s">Fiberroot</div></div>
+      <div class="tile"><div class="art" style="background:linear-gradient(135deg,#16a34a,#052e16)"></div><div class="t">More Than Love</div><div class="s">Raffa Fl</div></div>
+      <div class="tile"><div class="art" style="background:linear-gradient(135deg,#4f46e5,#111827)"></div><div class="t">Us Two (Extended Mix)</div><div class="s">Soniks</div></div>
+    </div></div>
+  <div class="sec"><div class="sec-h"><b>Your DJs</b><a href="#">Show all</a></div>
+    <div class="row">
+      <div class="dj"><div class="av" style="background-image:url('https://i.scdn.co/image/ab6761610000e5ebcc6a1669ab806edd15502d93')"></div><div class="t">Traumer</div><div class="s">next gig Sat, Oct 3</div></div>
+      <div class="dj"><div class="av" style="background:linear-gradient(135deg,#f59e0b,#7c2d12)">JC</div><div class="t">Joseph Capriati</div><div class="s">3 sets saved</div></div>
+      <div class="dj"><div class="av" style="background:linear-gradient(135deg,#ec4899,#4c0519)">H82</div><div class="t">Hot Since 82</div><div class="s">watching for sets</div></div>
+      <div class="dj"><div class="av" style="background:linear-gradient(135deg,#22d3ee,#164e63)">BR</div><div class="t">Ben Rau</div><div class="s">you own 6 tracks</div></div>
+    </div></div>
+</div></div>
+
+<!-- ============ B ============ -->
+<h2>B · Browse by genre</h2>
+<p class="cap">Recent searches, then your library as coloured genre tiles with their track counts. A tile opens All Tracks filtered to that genre. Below, quick filters a DJ actually searches by. Good for an 8,500-track library: two clicks to "all my Afro House".</p>
+<div class="rd"><div class="view">
+  <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search tracks, playlists, artists, DJs…</div>
+  <div class="sec"><div class="sec-h"><b>Recent searches</b><a href="#">Clear</a></div>
+    <div class="chips">
+      <span class="chip">traumer <span class="x">×</span></span>
+      <span class="chip">afro house <span class="x">×</span></span>
+      <span class="chip">hot since 82 <span class="x">×</span></span>
+      <span class="chip">capriati <span class="x">×</span></span>
+    </div></div>
+  <div class="sec"><div class="sec-h"><b>Your library by genre</b><a href="#">All genres</a></div>
+    <div class="genres">
+      <div class="genre" style="background:#7c3aed">Tech House<span>1,581 tracks</span><i></i></div>
+      <div class="genre" style="background:#0e7490">House<span>792 tracks</span><i></i></div>
+      <div class="genre" style="background:#be185d">Deep House<span>721 tracks</span><i></i></div>
+      <div class="genre" style="background:#c2410c">Minimal / Deep Tech<span>451 tracks</span><i></i></div>
+      <div class="genre" style="background:#4338ca">Melodic House &amp; Techno<span>349 tracks</span><i></i></div>
+      <div class="genre" style="background:#15803d">Afro House<span>332 tracks</span><i></i></div>
+      <div class="genre" style="background:#334155">Recently added<span>last 30 days</span><i></i></div>
+      <div class="genre" style="background:#3f3f46">Never played<span>since you added them</span><i></i></div>
+    </div></div>
+  <div class="sec"><div class="sec-h"><b>Your DJs</b><a href="#">Show all</a></div>
+    <div class="chips">
+      <span class="chip"><span class="letter" style="width:20px;height:20px;line-height:20px;font-size:10px;margin-right:2px;background:#0891b2">T</span>Traumer</span>
+      <span class="chip"><span class="letter" style="width:20px;height:20px;line-height:20px;font-size:10px;margin-right:2px;background:#f59e0b">J</span>Joseph Capriati</span>
+      <span class="chip"><span class="letter" style="width:20px;height:20px;line-height:20px;font-size:10px;margin-right:2px;background:#ec4899">H</span>Hot Since 82</span>
+      <span class="chip"><span class="letter" style="width:20px;height:20px;line-height:20px;font-size:10px;margin-right:2px;background:#22d3ee">B</span>Ben Rau</span>
+    </div></div>
+</div></div>
+
+<!-- ============ C ============ -->
+<h2>C · What needs you</h2>
+<p class="cap">Search as a small dashboard of things to act on. New likes you don't own yet, from Spotify and YouTube Music. Your DJs' next gigs. Sets you saved recently. Tracks added lately. Each card opens its section. Most useful, but it mostly repeats Home — worth it only if Home stays a widget page.</p>
+<div class="rd"><div class="view">
+  <div class="search"><svg class="ic"><use href="#i-search"/></svg>Search tracks, playlists, artists, DJs…</div>
+  <div class="cols">
+    <div class="card"><div class="sec-h"><b>New &amp; missing</b><a href="#">Open</a></div>
+      <div class="big"><span class="n" style="color:var(--ok)">3</span><div><div class="t"><svg class="ic" style="vertical-align:-3px;color:var(--ok)"><use href="#i-spotify"/></svg> New Spotify likes you don't own</div><div class="s">Liked Songs · My Shazam Tracks</div></div></div>
+      <div class="big"><span class="n" style="color:var(--yt)">1</span><div><div class="t"><svg class="ic" style="vertical-align:-3px;color:var(--yt)"><use href="#i-yt"/></svg> New YouTube Music likes you don't own</div><div class="s">Liked music</div></div></div>
+      <div class="big"><span class="n" style="color:var(--acch)">280</span><div><div class="t">Traumer tracks you're missing</div><div class="s">of 304 on Spotify</div></div></div>
+    </div>
+    <div class="card"><div class="sec-h"><b>Your DJs play next</b><a href="#">All gigs</a></div>
+      <div class="gig"><div class="d">03<small>OCT</small></div><div><div class="t">Traumer · Depot Mayfield</div><div class="s" style="color:var(--tm);font-size:12px">Manchester, UK</div></div><span class="badge">RA</span></div>
+      <div class="gig"><div class="d">03<small>OCT</small></div><div><div class="t">Traumer · The Nest</div><div class="s" style="color:var(--tm);font-size:12px">Nottingham, UK</div></div><span class="badge">RA</span></div>
+      <div class="gig"><div class="d">06<small>OCT</small></div><div><div class="t">Traumer · Hï Ibiza</div><div class="s" style="color:var(--tm);font-size:12px">Ibiza, ES</div></div><span class="badge">RA</span></div>
+    </div>
+    <div class="card"><div class="sec-h"><b>Sets you saved lately</b><a href="#">Sets</a></div>
+      <div class="list">
+        <div class="li"><div class="cov" style="background:linear-gradient(135deg,#f59e0b,#7c2d12)"></div><div><div class="t">Joseph Capriati · Boiler Room</div><div class="s">you own 12 of 31</div></div><svg class="ic" style="color:var(--tm)"><use href="#i-radio"/></svg></div>
+        <div class="li"><div class="cov" style="background:linear-gradient(135deg,#0891b2,#082f49)"></div><div><div class="t">Traumer · Cercle</div><div class="s">you own 4 of 22</div></div><svg class="ic" style="color:var(--tm)"><use href="#i-radio"/></svg></div>
+        <div class="li"><div class="cov" style="background:linear-gradient(135deg,#ec4899,#4c0519)"></div><div><div class="t">Hot Since 82 · Printworks</div><div class="s">you own 9 of 27</div></div><svg class="ic" style="color:var(--tm)"><use href="#i-radio"/></svg></div>
+      </div></div>
+    <div class="card"><div class="sec-h"><b>Added lately</b><a href="#">All Tracks</a></div>
+      <div class="list">
+        <div class="li"><div class="cov" style="background:linear-gradient(135deg,#4f46e5,#111827)"></div><div><div class="t">Technik (Original Mix)</div><div class="s">Joe Vanditti, Jeky Saviro</div></div><span class="m">today</span></div>
+        <div class="li"><div class="cov" style="background:linear-gradient(135deg,#16a34a,#052e16)"></div><div><div class="t">Selecta (Traumer Remix)</div><div class="s">Job De Jong</div></div><span class="m">today</span></div>
+        <div class="li"><div class="cov" style="background:linear-gradient(135deg,#db2777,#3b0764)"></div><div><div class="t">She's A Replicant (Afriqua Remix)</div><div class="s">Ben Rau, Afriqua</div></div><span class="m">2 days ago</span></div>
+      </div></div>
+  </div>
+</div></div>
+
+</body></html>

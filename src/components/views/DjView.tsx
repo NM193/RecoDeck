@@ -1,7 +1,7 @@
 // src/components/views/DjView.tsx
 // One DJ's page (the approved mockup's first section): the hero with the
 // artist photo, the meta line and the buttons, then the tabs.
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
@@ -186,7 +186,11 @@ export function DjView({
     <div className="dj-view">
       <header
         className={`dj-hero${photo ? ' dj-hero--photo' : ''}`}
-        style={photo ? { backgroundImage: `url("${photo}")` } : undefined}
+        style={
+          photo
+            ? ({ '--dj-photo': `url("${photo}")` } as CSSProperties)
+            : undefined
+        }
       >
         <button
           type="button"
@@ -198,6 +202,7 @@ export function DjView({
           Back
         </button>
         <div className="dj-hero__in">
+          {photo && <img className="dj-hero__portrait" src={photo} alt="" />}
           <div className="dj-hero__text">
             <div className="dj-hero__kicker">DJ · Producer</div>
             <h1 className="dj-hero__name">{displayName}</h1>
