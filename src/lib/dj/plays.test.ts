@@ -79,4 +79,25 @@ describe('what a DJ plays', () => {
       'https://srv.selectedrecs.com/#/search?text=Candido%20-%20Jingo',
     )
   })
+
+  it('groups spellings that differ only by accents', () => {
+    const plays = countPlays([
+      row('s1', 'Kölsch', 'Loreley'),
+      row('s2', 'Kolsch', 'Loreley'),
+    ])
+    expect(plays).toHaveLength(1)
+    expect(plays[0].count).toBe(2)
+  })
+
+  it('keeps names with no Latin letters apart', () => {
+    const plays = countPlays([
+      row('s1', 'Аквариум', 'Город'),
+      row('s1', '坂本龍一', 'Energy Flow'),
+      row('s2', 'Аквариум', 'город'),
+    ])
+    expect(plays.map((p) => [p.artist, p.count])).toEqual([
+      ['Аквариум', 2],
+      ['坂本龍一', 1],
+    ])
+  })
 })

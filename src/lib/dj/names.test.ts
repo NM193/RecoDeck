@@ -26,6 +26,7 @@ describe('splitting a billing into DJs', () => {
       'Adam Beyer',
       'Ida Engberg',
     ])
+    expect(splitDjNames('A vs. B')).toEqual(['A', 'B'])
     expect(splitDjNames('A b2b B b2b C')).toEqual(['A', 'B', 'C'])
   })
 
@@ -128,5 +129,16 @@ describe('the DJs row in Search', () => {
     )
     expect(djCardSubtitle({ setCount: 0, owned: null })).toBe('watched')
     expect(djCardSubtitle('spotify')).toBe('on Spotify')
+  })
+})
+
+describe('finding known DJs ignoring accents', () => {
+  const known = [{ key: 'kölsch', name: 'Kölsch', setCount: 1 }]
+  it('finds an accented name from plain letters and back', () => {
+    expect(findKnownDjs(known, 'kolsch')).toHaveLength(1)
+    expect(findKnownDjs(known, 'KÖL')).toHaveLength(1)
+    expect(
+      findKnownDjs([{ key: 'kolsch', name: 'Kolsch', setCount: 1 }], 'kölsch'),
+    ).toHaveLength(1)
   })
 })

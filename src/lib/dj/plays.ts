@@ -6,7 +6,7 @@
  * the question is in how many of their sets it turns up. Unknown slots ("ID")
  * are left out: they say a record was played, not which.
  */
-import { normalise } from '../tracklist/text'
+import { foldAccents, normalise } from '../tracklist/text'
 import {
   ownershipOf,
   type Ownership,
@@ -26,10 +26,14 @@ export interface Play {
   count: number
 }
 
+/** Accent-folded norm; a name with no Latin letters keeps its lower-cased text. */
+function keyPart(value: string | null): string {
+  if (!value) return ''
+  return normalise(foldAccents(value)) || value.trim().toLowerCase()
+}
+
 function keyOf(row: Pick<DjSetTrack, 'artist' | 'title' | 'mix'>): string {
-  return [normalise(row.artist), normalise(row.title), normalise(row.mix)]
-    .map((part) => part ?? '')
-    .join('|')
+  return [keyPart(row.artist), keyPart(row.title), keyPart(row.mix)].join('|')
 }
 
 /** Most-played first; ties by artist, then title, then mix (the plain record before its versions). */

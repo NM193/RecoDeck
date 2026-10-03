@@ -276,6 +276,10 @@ impl Database {
     /// happened; the same id only marks the choice manual.
     pub fn set_dj_spotify_manual(&self, name_key: &str, artist_id: Option<&str>) -> Result<bool> {
         let tx = self.dj_immediate_transaction()?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO dj_profiles (name_key, display_name) VALUES (?1, ?1)",
+            [name_key],
+        )?;
         let stored: Option<String> = self
             .conn
             .query_row(
@@ -330,6 +334,10 @@ impl Database {
     /// forgets the cached gigs. Returns whether that happened.
     pub fn set_dj_ra_manual(&self, name_key: &str, artist: Option<&DjRaArtist>) -> Result<bool> {
         let tx = self.dj_immediate_transaction()?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO dj_profiles (name_key, display_name) VALUES (?1, ?1)",
+            [name_key],
+        )?;
         let stored: Option<String> = self
             .conn
             .query_row(
@@ -747,6 +755,22 @@ mod tests {
         assert!(p.spotify_manual);
         assert_eq!(p.spotify_synced_at, Some(1_000));
         assert_eq!(count(&db, "dj_spotify_tracks"), 1);
+    }
+
+    #[test]
+    fn a_manual_choice_on_a_missing_profile_creates_it() {
+        let db = Database::new_in_memory().expect("in-memory db");
+        db.run_migrations().expect("migrations");
+        assert!(db.set_dj_spotify_manual("nobody", Some("a1")).unwrap());
+        let p = db.get_dj_profile("nobody").unwrap().expect("profile");
+        assert_eq!(p.spotify_artist_id.as_deref(), Some("a1"));
+        assert!(p.spotify_manual);
+
+        let ra = DjRaArtist { id: "7".into(), slug: "x".into(), image_url: None };
+        assert!(db.set_dj_ra_manual("other", Some(&ra)).unwrap());
+        let p = db.get_dj_profile("other").unwrap().expect("profile");
+        assert_eq!(p.ra_artist_id.as_deref(), Some("7"));
+        assert!(p.ra_manual);
     }
 
     #[test]

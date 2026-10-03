@@ -6,11 +6,12 @@
  * Luciano"), which is right for filing the Sets library under one heading. A
  * DJ page needs each name on its own: a b2b set belongs to both DJs.
  */
+import { foldAccents } from '../tracklist/text'
 import { extractDjName } from '../tracklist/djName'
 import type { WatchedDj, YtSetSummary } from '../../types/youtube'
 
-/** " b2b " or " vs ", in any case — the spec's `/\s+(b2b|vs)\s+/i`, without the capture. */
-const BACK_TO_BACK = /\s+(?:b2b|vs)\s+/i
+/** " b2b ", " vs " or " vs. ", in any case. */
+const BACK_TO_BACK = /\s+(?:b2b|vs\.?)\s+/i
 
 /** What `extractDjName` answers when a title names nobody and there is no channel. */
 const NOBODY = 'unknown'
@@ -85,11 +86,12 @@ export function knownDjs(
   )
 }
 
-/** Known DJs whose name contains the query, ignoring case. An empty query finds nobody. */
+/** Known DJs whose name contains the query, ignoring case and accents. An empty query finds nobody. */
 export function findKnownDjs(known: KnownDj[], query: string): KnownDj[] {
-  const q = query.trim().toLowerCase()
+  const fold = (value: string) => foldAccents(value).toLowerCase()
+  const q = fold(query.trim())
   if (!q) return []
-  return known.filter((dj) => dj.key.includes(q))
+  return known.filter((dj) => fold(dj.key).includes(q))
 }
 
 /** Spotify's answers, minus the names Search already shows, at most `max`. */

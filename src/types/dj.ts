@@ -43,8 +43,8 @@ export interface DjTrack {
 export interface DjGig {
   raEventId: string
   /**
-   * The venue's local day, as RA sends it: "2026-10-12T00:00:00.000" (no time
-   * zone). Only the first ten characters, "2026-10-12", are read.
+   * The venue's local day, "2026-10-12": the Rust side cuts RA's
+   * "2026-10-12T00:00:00.000" down to its first ten characters before storing.
    */
   date: string
   venue: string | null
