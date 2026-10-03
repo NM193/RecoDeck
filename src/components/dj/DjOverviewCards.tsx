@@ -40,6 +40,8 @@ import type { YtSetSummary } from '../../types/youtube'
 export interface OverviewData {
   /** The DJ's name as the page shows it. */
   name: string
+  /** djKey of the page's name: in a lineup, this DJ is plain text. */
+  pageKey: string
   /** Null until the page and the day are known. */
   gigs: { state: GigsState; upcoming: DjGig[]; past: DjGig[] } | null
   raUrl: string | null
@@ -118,7 +120,12 @@ function GigsBody({
   return (
     <div className="dj-gigs">
       {shown.map((gig) => (
-        <GigRow key={gig.raEventId} gig={gig} onOpenDj={actions.onOpenDj} />
+        <GigRow
+          key={gig.raEventId}
+          gig={gig}
+          pageKey={data.pageKey}
+          onOpenDj={actions.onOpenDj}
+        />
       ))}
     </div>
   )
@@ -327,7 +334,10 @@ export function OverviewCard({
   const card = overviewCard(id)
   const target = cardTarget(id)
   const more = cardMore(id, counts)
-  const open = target ? () => onOpenTab(target.tab, target.filter) : null
+  // The Tracks card opens its tab on the chip it shows.
+  const open = target
+    ? () => onOpenTab(target.tab, id === 'tracks' ? filter : target.filter)
+    : null
   return (
     <section className="dj-card" style={style} aria-label={card.title}>
       <h4 className="dj-card__head">

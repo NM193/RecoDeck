@@ -1,6 +1,7 @@
 // src/components/dj/DjCandidatesMenu.tsx
 // The hero's ⋯ menu: "Not this artist?". Per source, the artists its search
-// finds for this name, the one the page uses checked, and "None".
+// finds for this name, the one the page uses checked, and "None". The Spotify
+// part shows only while Spotify is connected.
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { raPick } from '../../lib/dj/page'
@@ -13,6 +14,11 @@ interface DjCandidatesMenuProps {
   /** The artists the page uses now. */
   spotifyArtistId: string | null
   raArtistId: string | null
+  /** The current match was picked by hand: a manual "None" is already recorded. */
+  spotifyManual: boolean
+  raManual: boolean
+  /** Spotify is connected: without it there is no Spotify part. */
+  spotifyConnected: boolean
   /** Called as the menu opens: the candidates are searched for then, not before. */
   onOpen: () => void
   onPickSpotify: (artistId: string | null) => void
@@ -67,6 +73,9 @@ export function DjCandidatesMenu({
   error,
   spotifyArtistId,
   raArtistId,
+  spotifyManual,
+  raManual,
+  spotifyConnected,
   onOpen,
   onPickSpotify,
   onPickRa,
@@ -92,13 +101,19 @@ export function DjCandidatesMenu({
     }
   }, [open])
 
+  // The same artist again changes nothing; but "None" while nothing was
+  // resolved is still a choice: it records the manual "none".
   const pickSpotify = (artistId: string | null) => {
     setOpen(false)
-    if (artistId !== spotifyArtistId) onPickSpotify(artistId)
+    const same =
+      artistId === spotifyArtistId && (artistId !== null || spotifyManual)
+    if (!same) onPickSpotify(artistId)
   }
   const pickRa = (pick: RaPick | null) => {
     setOpen(false)
-    if ((pick?.id ?? null) !== raArtistId) onPickRa(pick)
+    const id = pick?.id ?? null
+    const same = id === raArtistId && (id !== null || raManual)
+    if (!same) onPickRa(pick)
   }
 
   return (
@@ -123,25 +138,31 @@ export function DjCandidatesMenu({
           {error && <div className="dj-menu__note">{error}</div>}
           {loading && !candidates && (
             <div className="dj-menu__note">
-              Searching Spotify and Resident Advisor…
+              {spotifyConnected
+                ? 'Searching Spotify and Resident Advisor…'
+                : 'Searching Resident Advisor…'}
             </div>
           )}
           {candidates && (
             <>
-              <div className="dj-menu__source">Spotify</div>
-              {candidates.spotify.map((candidate) => (
-                <Choice
-                  key={candidate.id}
-                  candidate={candidate}
-                  checked={candidate.id === spotifyArtistId}
-                  onPick={() => pickSpotify(candidate.id)}
-                />
-              ))}
-              <Choice
-                candidate={null}
-                checked={spotifyArtistId === null}
-                onPick={() => pickSpotify(null)}
-              />
+              {spotifyConnected && (
+                <>
+                  <div className="dj-menu__source">Spotify</div>
+                  {candidates.spotify.map((candidate) => (
+                    <Choice
+                      key={candidate.id}
+                      candidate={candidate}
+                      checked={candidate.id === spotifyArtistId}
+                      onPick={() => pickSpotify(candidate.id)}
+                    />
+                  ))}
+                  <Choice
+                    candidate={null}
+                    checked={spotifyArtistId === null}
+                    onPick={() => pickSpotify(null)}
+                  />
+                </>
+              )}
               <div className="dj-menu__source">Resident Advisor</div>
               {candidates.ra.map((candidate) => {
                 const pick = raPick(candidate)

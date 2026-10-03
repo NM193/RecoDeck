@@ -253,13 +253,19 @@
 
 /* ---- Tabs, and the sliders button at the end of the row ---- */
 
-.dj-tabs {
+.dj-tabs-row {
   display: flex;
   align-items: center;
   gap: 22px;
   padding: 0 24px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+}
+
+.dj-tabs {
+  display: flex;
+  align-items: center;
+  gap: 22px;
 }
 
 .dj-tab {
@@ -754,7 +760,7 @@
   padding: 8px 24px;
   border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
   background: rgba(var(--accent-rgb), 0.12);
-  color: #c7d2fe;
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -783,7 +789,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  border: 1px dashed #4b4b6b;
+  border: 1px dashed var(--border);
 }
 
 .dj-card__grip {

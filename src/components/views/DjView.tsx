@@ -21,6 +21,7 @@ import { gigLabel, heroMetaParts, localDay, splitGigs } from '../../lib/dj/gigs'
 import { djTabs, gigsState, spotifyArtistUrl } from '../../lib/dj/page'
 import { tracksEmptyText, tracksTabState } from '../../lib/dj/tabs'
 import { djPhotos } from '../../lib/dj/cards'
+import { djKey } from '../../lib/dj/names'
 import {
   countByStatus,
   type SpotifyRow,
@@ -53,6 +54,15 @@ interface DjViewProps {
   onOpenSettings: () => void
   /** App's player: double-clicking an Owned row plays its library file. */
   onPlayTrack: (track: Track, queue: Track[], index: number) => void
+}
+
+/** The tab a key moves to (arrows wrap, Home / End), or null for other keys. */
+function tabKeyTarget(key: string, at: number, count: number): number | null {
+  if (key === 'ArrowRight') return (at + 1) % count
+  if (key === 'ArrowLeft') return (at - 1 + count) % count
+  if (key === 'Home') return 0
+  if (key === 'End') return count - 1
+  return null
 }
 
 export function DjView({
@@ -253,6 +263,9 @@ export function DjView({
               error={dj.candidatesError}
               spotifyArtistId={profile?.spotifyArtistId ?? null}
               raArtistId={profile?.raArtistId ?? null}
+              spotifyManual={profile?.spotifyManual ?? false}
+              raManual={profile?.raManual ?? false}
+              spotifyConnected={spotify.connected}
               onOpen={dj.loadCandidates}
               onPickSpotify={dj.pickSpotify}
               onPickRa={dj.pickRa}
@@ -261,20 +274,33 @@ export function DjView({
         </div>
       </header>
 
-      <nav className="dj-tabs" role="tablist">
-        {tabs.map((item) => (
-          <button
-            type="button"
-            role="tab"
-            key={item.id}
-            aria-selected={tab === item.id}
-            className={`dj-tab${tab === item.id ? ' dj-tab--on' : ''}`}
-            onClick={() => openTab(item.id)}
-          >
-            {item.label}
-            {item.count !== null && <small>{item.count}</small>}
-          </button>
-        ))}
+      <div className="dj-tabs-row">
+        <div className="dj-tabs" role="tablist" aria-label="DJ page">
+          {tabs.map((item, i) => (
+            <button
+              type="button"
+              role="tab"
+              key={item.id}
+              id={`dj-tab-${item.id}`}
+              aria-controls="dj-panel"
+              aria-selected={tab === item.id}
+              tabIndex={tab === item.id ? 0 : -1}
+              className={`dj-tab${tab === item.id ? ' dj-tab--on' : ''}`}
+              onClick={() => openTab(item.id)}
+              onKeyDown={(event) => {
+                const next = tabKeyTarget(event.key, i, tabs.length)
+                if (next === null) return
+                event.preventDefault()
+                const id = tabs[next].id
+                openTab(id)
+                document.getElementById(`dj-tab-${id}`)?.focus()
+              }}
+            >
+              {item.label}
+              {item.count !== null && <small>{item.count}</small>}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           className={`dj-tabs__customize${customizing ? ' dj-tabs__customize--on' : ''}`}
@@ -288,11 +314,16 @@ export function DjView({
         >
           <Icon name="SlidersHorizontal" size={16} />
         </button>
-      </nav>
+      </div>
 
       {dj.loadError && <p className="dj-note dj-note--error">{dj.loadError}</p>}
 
-      <div className="dj-body">
+      <div
+        className="dj-body"
+        role="tabpanel"
+        id="dj-panel"
+        aria-labelledby={`dj-tab-${tab}`}
+      >
         {tab === 'overview' && (
           <DjOverview
             ids={overview.ids}
@@ -303,6 +334,7 @@ export function DjView({
             }}
             data={{
               name: displayName,
+              pageKey: djKey(name),
               gigs: gigList,
               raUrl: profile?.raUrl ?? null,
               tracksState: tracksTabState({
@@ -376,6 +408,7 @@ export function DjView({
               upcoming={gigList.upcoming}
               past={gigList.past}
               raUrl={profile?.raUrl ?? null}
+              pageKey={djKey(name)}
               onOpenDj={openDj}
             />
           ) : (

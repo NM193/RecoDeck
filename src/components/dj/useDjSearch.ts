@@ -1,7 +1,7 @@
 // Search's DJs row: the DJs the user knows as they type (no network), then
 // Spotify's artists for the query once typing pauses, with "you own N" for the
 // DJs whose page was opened before.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { tauriApi } from '../../lib/tauri-api'
 import { findKnownDjs, knownDjs, type KnownDj } from '../../lib/dj/names'
 import {
@@ -83,25 +83,45 @@ export function useDjSearch(
     }
   }, [connected, trimmed])
 
+  /** Keys asked for (or being asked for): each is read once per visit to Search. */
+  const asked = useRef(new Set<string>())
+
   // One string, so the effect runs when the shown DJs change, not on every render.
+  // Only the new keys are read, debounced as Spotify is: typing narrows the row.
   const shownKeys = shown.map((dj) => dj.key).join('\n')
   useEffect(() => {
     if (!shownKeys) return
+    const seen = asked.current
+    const keys = shownKeys.split('\n').filter((key) => !seen.has(key))
+    if (keys.length === 0) return
     let live = true
-    tauriApi
-      .getDjCachedTracks(shownKeys.split('\n'))
-      .then((byKey) => {
-        if (!live) return
-        setCached((prev) => {
-          const next = new Map(prev)
-          for (const [key, tracks] of Object.entries(byKey))
-            next.set(key, tracks)
-          return next
+    /** Sent and not yet answered: cleaning up now drops the answer. */
+    let pending = false
+    const timer = setTimeout(() => {
+      pending = true
+      for (const key of keys) seen.add(key)
+      tauriApi
+        .getDjCachedTracks(keys)
+        .then((byKey) => {
+          if (!live) return
+          pending = false
+          setCached((prev) => {
+            const next = new Map(prev)
+            for (const [key, tracks] of Object.entries(byKey))
+              next.set(key, tracks)
+            return next
+          })
         })
-      })
-      .catch(() => {})
+        .catch(() => {
+          pending = false
+          for (const key of keys) seen.delete(key)
+        })
+    }, SPOTIFY_DEBOUNCE_MS)
     return () => {
       live = false
+      clearTimeout(timer)
+      // An answer that will be dropped: those keys are asked for again.
+      if (pending) for (const key of keys) seen.delete(key)
     }
   }, [shownKeys])
 

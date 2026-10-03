@@ -1467,8 +1467,11 @@ function AppContent() {
         loadTracks(null, null)
       }}
       onNavigateSets={() => {
+        // Sets already showing keeps its start: a new one would remount it and lose its state.
+        const setsShowing =
+          showSets && djPage === null && shownSpotifyList === null
         setShowSets(true)
-        setSetsStart(NO_SETS_START)
+        if (!setsShowing) setSetsStart(NO_SETS_START)
         setSpotifyListId(null)
         setDjPage(null)
         setShowSearch(false)

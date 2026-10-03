@@ -391,6 +391,8 @@ export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: S
   const [echoes, setEchoes] = useState<Map<number, TrackEcho>>(new Map())
   /** What the last re-fetch changed, said plainly because it cost something. */
   const [reanalysed, setReanalysed] = useState<string | null>(null)
+  /** Counts the sets put on the Set tab: an opening set arriving late yields to a newer one. */
+  const shownSets = useRef(0)
   /** A bare name typed into the Follow box, held back before it costs 100. */
   const [bareName, setBareName] = useState<string | null>(null)
   const [djs, setDjs] = useState<WatchedDj[]>([])
@@ -518,15 +520,21 @@ export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: S
   // Arriving on a set: shown as opening it from the Library shows it. Not
   // stored again (openStored does that to fill in old sets; this one was open
   // a moment ago). A set deleted meanwhile just leaves the Set tab empty.
+  // Late, it gives way to whatever the user fetched or opened meanwhile.
   useEffect(() => {
     if (!openVideoId) return
     let live = true
+    const claim = shownSets.current
     tauriApi
       .getYouTubeSet(openVideoId)
       .then((raw) => {
-        if (!live) return
+        if (!live || shownSets.current !== claim) return
+        // As show() does (it is not a dependency here).
+        shownSets.current++
+        setReanalysed(null)
         setCurrentSet(raw)
         setResult(analyse(raw.video, raw.comments))
+        setTab('set')
       })
       .catch(() => {})
     return () => {
@@ -704,6 +712,7 @@ export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: S
   }
 
   function show(raw: RawSet): TracklistResult {
+    shownSets.current++
     const parsed = analyse(raw.video, raw.comments)
     setReanalysed(null)
     setCurrentSet(raw)
@@ -725,6 +734,7 @@ export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: S
     setFound(null)
     try {
       const raw = await tauriApi.fetchYouTubeSet(input.trim())
+      shownSets.current++
       const parsed = analyse(raw.video, raw.comments)
       setCurrentSet(raw)
       setResult(parsed)

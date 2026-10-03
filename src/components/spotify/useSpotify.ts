@@ -73,6 +73,12 @@ interface TracksLoad {
   loadedCount: number
   /** App's latest track count. */
   count: number
+  /**
+   * The last read may not match the files: library-changed arrived with no
+   * consumer live, or a read failed or landed after the consumers left. A
+   * same count then proves nothing (files edited, or as many added as removed).
+   */
+  dirty: boolean
 }
 
 function readAllTracks(
@@ -86,8 +92,10 @@ function readAllTracks(
   state.inFlight = true
   state.again = false
   state.countMoved = false
+  state.dirty = false
   const done = (tracks: Track[] | null) => {
     state.inFlight = false
+    if (!state.live || !tracks) state.dirty = true
     if (!state.live) return
     if (tracks) {
       state.loadedCount = tracks.length
@@ -219,6 +227,7 @@ export function useSpotify(
     countMoved: false,
     loadedCount: -1,
     count: totalTrackCount,
+    dirty: false,
   })
 
   const loadTracks = useCallback(() => {
@@ -233,14 +242,24 @@ export function useSpotify(
     const state = tracksLoad.current
     state.live = true
     // A library read earlier (a DJ page closed and opened again, no account)
-    // that still has App's count needs no second read; changes arrive below.
-    if (state.loadedCount !== state.count) loadTracks()
+    // that still has App's count, and saw no change since, needs no second read.
+    if (state.dirty || state.loadedCount !== state.count) loadTracks()
     const stop = listen('library-changed', loadTracks)
     return () => {
       state.live = false
       void stop.then((unlisten) => unlisten())
     }
   }, [ready, needLibrary, loadTracks])
+
+  // Changes while nothing is live: the next consumer reads again.
+  useEffect(() => {
+    const stop = listen('library-changed', () => {
+      if (!tracksLoad.current.live) tracksLoad.current.dirty = true
+    })
+    return () => {
+      void stop.then((unlisten) => unlisten())
+    }
+  }, [])
 
   // App's count moved: read again only if it disagrees with what was read. At
   // start-up the count arrives while the first read is running, which already

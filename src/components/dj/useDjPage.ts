@@ -156,14 +156,20 @@ export function useDjPage(
     [patch, reload],
   )
 
+  // The run is claimed before fetch starts, so a pick's write and refresh
+  // own the RA status against the opening refresh.
   const runRa = useCallback(
-    (key: string, djName: string) => {
+    (
+      key: string,
+      djName: string,
+      fetch: () => Promise<DjRefresh> = () => tauriApi.refreshDjGigs(djName),
+    ) => {
       const run = ++raRun.current
       const done = (ra: DjSourceStatus) => {
         if (run === raRun.current) patch(key, { ra })
         return reload(key, djName)
       }
-      return tauriApi.refreshDjGigs(djName).then(
+      return fetch().then(
         (result) => done(sourceAfter(result)),
         (e) => done(failedWith(e)),
       )
@@ -278,13 +284,13 @@ export function useDjPage(
   const pickRa = useCallback(
     (pick: RaPick | null) => {
       patch(nameKey, { ra: REFRESHING })
-      tauriApi
-        .setDjRaArtist(name, pick)
-        .then(() => {
+      void runRa(nameKey, name, () =>
+        // A different artist clears the old gigs: show that at once.
+        tauriApi.setDjRaArtist(name, pick).then(() => {
           void reload(nameKey, name)
-          return runRa(nameKey, name)
-        })
-        .catch((e) => patch(nameKey, { ra: failedWith(e) }))
+          return tauriApi.refreshDjGigs(name)
+        }),
+      )
     },
     [name, nameKey, patch, reload, runRa],
   )
