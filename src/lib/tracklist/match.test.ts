@@ -217,6 +217,47 @@ describe('matching a tracklist against the library', () => {
     expect(matchTracklist([namedExtended], extendedShelf).owned).toBe(0)
   })
 
+  it('matches a name typed with or without its accents', () => {
+    const shelf: LibraryTrack[] = [lib(27, 'Kölsch', 'Grey'), lib(28, 'Ame', 'Rej')]
+    const { byIndex, owned } = matchTracklist(
+      [parsed(1, 'Kolsch', 'Grey'), parsed(2, 'Âme', 'Rej')],
+      shelf,
+    )
+    expect(owned).toBe(2)
+    expect(byIndex.get(1)!.track.id).toBe(27)
+    expect(byIndex.get(2)!.track.id).toBe(28)
+  })
+
+  it('folds accents in the version too', () => {
+    const shelf: LibraryTrack[] = [lib(29, 'Shakedown', 'At Night (Kid Creme Club Mix)')]
+    const atNight: Track = {
+      ...parsed(1, 'Shakedown', 'At Night'),
+      mix: 'Kid Crème Club Mix',
+      titleNorm: normalise('At Night Kid Crème Club Mix'),
+    }
+    expect(matchTracklist([atNight], shelf).owned).toBe(1)
+    // The row's stored norm is left as the parser made it.
+    expect(atNight.titleNorm).toBe('at night kid cr me club mix')
+  })
+
+  it('takes a remaster for the same cut, but not an instrumental', () => {
+    const remastered: LibraryTrack[] = [lib(33, 'Clive & Deepower', 'Little Girl (Extended Mix Remastered)')]
+    const extended: Track = {
+      ...parsed(1, 'Clive & Deepower', 'Little Girl'),
+      mix: 'Extended Mix',
+      titleNorm: normalise('Little Girl Extended Mix'),
+    }
+    expect(matchTracklist([extended], remastered).owned).toBe(1)
+
+    const plain: LibraryTrack[] = [lib(34, 'Clive & Deepower', 'Little Girl (Extended Mix)')]
+    const instrumental: Track = {
+      ...extended,
+      mix: 'Extended Instrumental Mix',
+      titleNorm: normalise('Little Girl Extended Instrumental Mix'),
+    }
+    expect(matchTracklist([instrumental], plain).owned).toBe(0)
+  })
+
   it('handles an empty library without pretending', () => {
     const result = matchTracklist([parsed(1, 'MK', 'Burning')], [])
     expect(result.owned).toBe(0)

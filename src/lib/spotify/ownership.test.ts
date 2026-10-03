@@ -73,6 +73,19 @@ describe('do I own this Spotify track?', () => {
     })
   })
 
+  it('is Owned whether or not either side types the accents', () => {
+    const accented = [lib(13, 'Kölsch', 'Grey'), lib(14, 'Âme', 'Rej')]
+    const plain = [lib(15, 'Kolsch', 'Grey'), lib(16, 'Ame', 'Rej')]
+
+    const unaccented = classify([sp('k', 'Grey', 'Kolsch'), sp('m', 'Rej', 'Ame')], accented)
+    expect(unaccented.get('k')).toEqual({ kind: 'owned', file: accented[0] })
+    expect(unaccented.get('m')).toEqual({ kind: 'owned', file: accented[1] })
+
+    const withAccents = classify([sp('k', 'Grey', 'Kölsch'), sp('m', 'Rej', 'Âme')], plain)
+    expect(withAccents.get('k')).toEqual({ kind: 'owned', file: plain[0] })
+    expect(withAccents.get('m')).toEqual({ kind: 'owned', file: plain[1] })
+  })
+
   it('is Owned after a Yes, whatever the matcher thinks', () => {
     const verdicts: SpotifyVerdict[] = [{ spotifyId: 'c', libraryTrackId: 2, verdict: 'yes' }]
     const result = classify([sp('c', 'Tell You', 'Prunk, Retrouve')], shelf, verdicts)

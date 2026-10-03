@@ -14,7 +14,7 @@
  * so this is a loop over what is on screen.
  */
 
-import { containmentOf, normalise, splitArtistTitle, tokenSet } from './text'
+import { containmentOf, foldAccents, normalise, splitArtistTitle, tokenSet } from './text'
 import type { Track } from './types'
 
 /** The minimum shape needed from a library track — matches src/types/track.ts. */
@@ -67,13 +67,45 @@ const MIN_SIZE_RATIO = 0.5
 const MIN_VERSION_MATCH = 0.6
 
 /**
+ * How the matcher reads a name: `normalise` after folding accents, so a file
+ * tagged "Kölsch" and a list typing "Kolsch" agree. The parser's own stored
+ * norms are left unfolded — they are saved with a set and compared with the
+ * standalone tool's output.
+ */
+function matchNorm(value: string | null | undefined): string | null {
+  return value ? normalise(foldAccents(value)) : null
+}
+
+/**
+ * A row's stored norm, with accents folded.
+ *
+ * The stored norm itself cannot be folded: `normalise` already turned the
+ * accented letter into a space ("kid cr me"). So it is rebuilt from the raw
+ * text it was made from — but only when normalising that text gives the stored
+ * norm back, which proves it is the source. Otherwise (a merged row whose mix
+ * came from another source, say) the stored norm is used as it is, and that
+ * row compares exactly as it did before accents were folded.
+ */
+function foldedNorm(
+  stored: string | null | undefined,
+  ...sources: (string | null | undefined)[]
+): string | null {
+  if (!stored) return null
+  for (const source of sources) {
+    if (source && normalise(source) === stored) return matchNorm(source)
+  }
+  return stored
+}
+
+/**
  * The words a version may be made of and still be the artist's own cut.
  *
  * "Original Mix", "Extended Mix", "Radio Edit", "Club Mix", "Extended" — a
  * store, Spotify and a tag each pick one of these for the same record, and a DJ
  * owning the extended mix owns the record whose Spotify page says "Original
- * Mix". Anything else in a version — a remixer's name, "dub", "instrumental",
- * "remaster" — makes it a version of its own.
+ * Mix". A remaster is the same cut too ("Extended Mix Remastered"). Anything
+ * else in a version — a remixer's name, "dub", "instrumental", a year — makes
+ * it a version of its own.
  */
 const PLAIN_VERSION_WORDS = new Set([
   'original',
@@ -86,6 +118,8 @@ const PLAIN_VERSION_WORDS = new Set([
   'mix',
   'edit',
   'version',
+  'remaster',
+  'remastered',
 ])
 
 /** A version made only of plain words: the record itself, not someone's take on it. */
@@ -124,7 +158,7 @@ export function versionOf(rawTitle: string | null | undefined): string | null {
 
   for (const match of rawTitle.matchAll(/[([]([^)\]]+)[)\]]/g)) {
     const inside = match[1]
-    if (VERSION_WORDS.test(inside)) return normalise(inside)
+    if (VERSION_WORDS.test(inside)) return matchNorm(inside)
   }
   return null
 }
@@ -134,6 +168,7 @@ const NO_ARTIST = /^(unknown artist|unknown|various artists|various|va)$/
 
 export interface Indexed {
   track: LibraryTrack
+  /** The names as the matcher reads them: normalised, accents folded. */
   titleNorm: string | null
   artistNorm: string | null
   /** "extended mix", "afterlife mix" — whatever the tag calls this version. */
@@ -185,8 +220,8 @@ function titleAgreement(A: Set<string>, B: Set<string>): number | null {
 export function indexLibrary(library: LibraryTrack[]): Indexed[] {
   return library.map((track) => {
     const credits = creditsOf(track)
-    const titleNorm = normalise(credits.title)
-    const artistNorm = normalise(credits.artist)
+    const titleNorm = matchNorm(credits.title)
+    const artistNorm = matchNorm(credits.artist)
     const versionNorm = versionOf(track.title)
     return {
       track,
@@ -218,19 +253,30 @@ export function indexLibrary(library: LibraryTrack[]): Indexed[] {
  * tracklist writes "Horny (Radio Slave Just 17 Mix)" where the file is tagged
  * plainly "Horny", and either side may be the fuller one.
  */
+/**
+ * The spellings of a row's title the matcher tries — the full one (version,
+ * featured artist) and the bare one — normalised with accents folded.
+ * Exported so a pre-filter can look up exactly the words matching will use.
+ */
+export function titleFormsOf(parsed: Pick<Track, 'title' | 'mix' | 'titleNorm'>): string[] {
+  const baseNorm = matchNorm(parsed.title)
+  const fullNorm =
+    foldedNorm(parsed.titleNorm, [parsed.title, parsed.mix].filter(Boolean).join(' '), parsed.title) ??
+    baseNorm
+  return [...new Set([fullNorm, baseNorm].filter(Boolean))] as string[]
+}
+
 export function matchOne(
   parsed: Pick<Track, 'title' | 'mix' | 'artist' | 'titleNorm' | 'artistNorm'>,
   indexed: Indexed[],
 ): LibraryMatch | null {
-  const baseNorm = normalise(parsed.title)
-  const fullNorm = parsed.titleNorm ?? baseNorm
-  const titleForms = [...new Set([fullNorm, baseNorm].filter(Boolean))] as string[]
+  const titleForms = titleFormsOf(parsed)
   if (!titleForms.length) return null
 
-  const parsedArtist =
-    parsed.artistNorm && !NO_ARTIST.test(parsed.artistNorm) ? parsed.artistNorm : null
+  const rowArtist = foldedNorm(parsed.artistNorm, parsed.artist)
+  const parsedArtist = rowArtist && !NO_ARTIST.test(rowArtist) ? rowArtist : null
   // The tracklist keeps the version in its own field; a tag hides it in the title.
-  const parsedVersion = normalise(parsed.mix) ?? versionOf(parsed.title)
+  const parsedVersion = matchNorm(parsed.mix) ?? versionOf(parsed.title)
 
   // Nothing to match against: the row itself does not say who played it.
   if (!parsedArtist) return null

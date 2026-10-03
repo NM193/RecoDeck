@@ -172,6 +172,18 @@ export function splitArtistTitle(rawText: string): ParsedName {
   return { artist, title, mix, label, note, uncertain, isUnknown }
 }
 
+/**
+ * "Kölsch" -> "Kolsch", "Âme" -> "Ame": letters without their accents.
+ *
+ * Kept apart from `normalise` on purpose. `normalise` builds the norms a set
+ * stores and compares with the standalone tool's output, and those must not
+ * change; the library matcher folds before normalising, where one source
+ * typing the accent and the other not must still agree.
+ */
+export function foldAccents(value: string): string {
+  return value.normalize('NFKD').replace(/\p{M}/gu, '')
+}
+
 /** Strips noise so the same track from two sources normalises to the same string. */
 export function normalise(value: string | null | undefined): string | null {
   if (!value) return null

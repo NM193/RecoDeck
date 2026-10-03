@@ -8,7 +8,7 @@
  * being told apart from the extended mix, and Copy would search a store for
  * the wrong thing.
  */
-import { normalise } from '../tracklist/text'
+import { foldAccents, normalise } from '../tracklist/text'
 import type { Track } from '../tracklist/types'
 import type { SpotifyTrack } from '../../types/spotify'
 
@@ -58,6 +58,10 @@ export function splitSpotifyTitle(name: string): SpotifyTitle {
  * What `matchOne` reads, built the way the tracklist parser builds a row:
  * the title to match on is the bare one, and `titleNorm` carries the
  * featured artist and the version — so both spellings are tried.
+ *
+ * The norms are folded ("Makèz" -> "makez"), as the matcher reads names:
+ * they are never shown or saved, and `titleNorm` cannot be rebuilt from the
+ * fields here (the featured artist is not in `title`).
  */
 export function toParsed(
   track: SpotifyTrack,
@@ -67,8 +71,8 @@ export function toParsed(
     artist: track.artists || null,
     title: bare,
     mix,
-    artistNorm: normalise(track.artists),
-    titleNorm: normalise([title, mix].filter(Boolean).join(' ')),
+    artistNorm: normalise(foldAccents(track.artists)),
+    titleNorm: normalise(foldAccents([title, mix].filter(Boolean).join(' '))),
   }
 }
 

@@ -11,10 +11,11 @@
  *   title match needs a shared word, so the answer is exactly what comparing
  *   with every file would give.
  */
-import { normalise, tokenSet } from '../tracklist/text'
+import { tokenSet } from '../tracklist/text'
 import {
   indexLibrary,
   matchOne,
+  titleFormsOf,
   type Indexed,
   type LibraryMatch,
   type LibraryTrack,
@@ -59,7 +60,7 @@ function candidates(
   excluded: Set<number> | undefined,
 ): Indexed[] {
   const positions = new Set<number>()
-  for (const form of [parsed.titleNorm, normalise(parsed.title)]) {
+  for (const form of titleFormsOf(parsed)) {
     for (const token of tokenSet(form)) {
       for (const position of index.byToken.get(token) ?? []) positions.add(position)
     }
