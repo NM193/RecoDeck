@@ -1,6 +1,7 @@
 // src/lib/dj/names.test.ts
 import { describe, expect, it } from 'vitest'
 import {
+  billingParts,
   djCardSubtitle,
   djKey,
   djNamesOfSet,
@@ -140,5 +141,34 @@ describe('finding known DJs ignoring accents', () => {
     expect(
       findKnownDjs([{ key: 'kolsch', name: 'Kolsch', setCount: 1 }], 'kölsch'),
     ).toHaveLength(1)
+  })
+})
+
+describe('a billing as the Sets chip shows it', () => {
+  it('makes each DJ a part of its own, with b2b / vs as written between them', () => {
+    expect(billingParts('Marco Carola b2b Luciano')).toEqual([
+      { text: 'Marco Carola', dj: true },
+      { text: 'b2b', dj: false },
+      { text: 'Luciano', dj: true },
+    ])
+    expect(billingParts('Adam Beyer VS Cirez D').map((p) => p.text)).toEqual([
+      'Adam Beyer',
+      'VS',
+      'Cirez D',
+    ])
+  })
+
+  it('links exactly the names splitDjNames finds', () => {
+    const billing = 'Marco Carola B2B Luciano vs Loco Dice'
+    const djs = billingParts(billing)
+      .filter((p) => p.dj)
+      .map((p) => p.text)
+    expect(djs).toEqual(splitDjNames(billing))
+  })
+
+  it('keeps a solo DJ whole, and links nobody when the set names nobody', () => {
+    expect(billingParts('Luciano')).toEqual([{ text: 'Luciano', dj: true }])
+    // extractDjName's answer for a title without a name and no channel.
+    expect(billingParts('Unknown')).toEqual([{ text: 'Unknown', dj: false }])
   })
 })

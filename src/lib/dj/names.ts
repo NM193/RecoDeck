@@ -29,6 +29,27 @@ export function splitDjNames(name: string): string[] {
     .filter(Boolean)
 }
 
+export interface BillingPart {
+  text: string
+  /** A DJ's name, which links to their page; false for "b2b" / "vs" and for nobody. */
+  dj: boolean
+}
+
+/**
+ * A billing as the open set's DJ chip shows it: each DJ on their own, with
+ * "b2b" / "vs" as written between them. The DJs are exactly `splitDjNames`'s.
+ */
+export function billingParts(billing: string): BillingPart[] {
+  // A capturing split keeps the separators, at the odd positions.
+  return billing
+    .split(new RegExp(`(${BACK_TO_BACK.source})`, BACK_TO_BACK.flags))
+    .map((text, i) => ({ text: text.trim(), dj: i % 2 === 0 }))
+    .filter((part) => part.text !== '')
+    .map((part) =>
+      part.dj && djKey(part.text) === NOBODY ? { ...part, dj: false } : part,
+    )
+}
+
 /** Everyone who played a saved set: one name for a solo set, each name for a b2b. */
 export function djNamesOfSet(
   set: Pick<YtSetSummary, 'title' | 'channel'>,

@@ -8,6 +8,7 @@ import { analyse, msToCue, type Track, type TracklistResult } from '../../lib/tr
 import { storeParsedSet } from '../../lib/tracklist/importSet'
 import { matchTracklist, type LibraryMatch, type MatchSummary } from '../../lib/tracklist/match'
 import { extractDjName, groupByDj } from '../../lib/tracklist/djName'
+import { billingParts } from '../../lib/dj/names'
 import { describePreview, previewSet } from '../../lib/tracklist/preview'
 import { playerPageUrl, watchUrl } from '../../lib/youtubeWindow'
 import { looksLikeAChannel } from '../../lib/channelInput'
@@ -347,13 +348,26 @@ function TrackRow({
   )
 }
 
-export function SetsView({
-  onPlayTrack,
-}: {
+interface SetsViewProps {
   onPlayTrack: (track: LibraryTrack, queue: LibraryTrack[], index: number) => void
-}) {
+  /**
+   * A stored set to show on arrival: Back from a DJ page opened from it, or a
+   * DJ page's set card. Read once — App remounts the view (`key`) to change it.
+   */
+  openVideoId?: string | null
+  /**
+   * Put in the Set tab's box on arrival, not searched: a DJ page's Find more.
+   * The user presses Search here, where its cost is shown first.
+   */
+  initialQuery?: string
+  /** Each DJ in the open set's chip opens their page; Back reopens this set. */
+  onOpenDj?: (name: string, openVideoId: string | null) => void
+}
+
+export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: SetsViewProps) {
+  // Opens on the Set tab, where both an arriving set and initialQuery show.
   const [tab, setTab] = useState<Tab>('set')
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialQuery ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<TracklistResult | null>(null)
@@ -500,6 +514,25 @@ export function SetsView({
     refreshQuota()
     refreshLibrary()
   }, [refreshQuota, refreshLibrary])
+
+  // Arriving on a set: shown as opening it from the Library shows it. Not
+  // stored again (openStored does that to fill in old sets; this one was open
+  // a moment ago). A set deleted meanwhile just leaves the Set tab empty.
+  useEffect(() => {
+    if (!openVideoId) return
+    let live = true
+    tauriApi
+      .getYouTubeSet(openVideoId)
+      .then((raw) => {
+        if (!live) return
+        setCurrentSet(raw)
+        setResult(analyse(raw.video, raw.comments))
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [openVideoId])
 
   // Reloaded whenever the set changes, and whenever the library of sets grows —
   // a record with nowhere to go today may have somewhere tomorrow.
@@ -1392,7 +1425,26 @@ export function SetsView({
                     <h2 className="sets-result__title">{result.video.title}</h2>
                     <div className="sets-result__meta">
                       <span className="sets-dj__chip">
-                        {extractDjName(result.video.title, result.video.channel)}
+                        {onOpenDj
+                          ? billingParts(extractDjName(result.video.title, result.video.channel)).map(
+                              (part, i) =>
+                                part.dj ? (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    className="sets-dj__link"
+                                    onClick={() => onOpenDj(part.text, result.video.id)}
+                                    title={`Open ${part.text}'s page`}
+                                  >
+                                    {part.text}
+                                  </button>
+                                ) : (
+                                  <span key={i} className="sets-dj__sep">
+                                    {part.text}
+                                  </span>
+                                ),
+                            )
+                          : extractDjName(result.video.title, result.video.channel)}
                       </span>
                       <span>{result.video.channel}</span>
                       <span className={`sets-badge sets-badge--${badge!.kind}`}>{badge!.text}</span>

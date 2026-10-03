@@ -73,6 +73,18 @@ interface DjPageState {
   from: DjOrigin
 }
 
+/**
+ * What the Sets view opens with: a stored set to show (Back from a DJ page
+ * opened from it, a DJ page's set card) or a DJ's name in the Set tab's box
+ * (a DJ page's Find more). SetsView reads both once, when it mounts.
+ */
+interface SetsStart {
+  openVideoId: string | null
+  initialQuery: string
+}
+
+const NO_SETS_START: SetsStart = { openVideoId: null, initialQuery: '' }
+
 function App() {
   const [hash, setHash] = useState(() => window.location.hash)
 
@@ -114,6 +126,8 @@ function AppContent() {
   const [djPage, setDjPage] = useState<DjPageState | null>(null)
   /** Search's query, held here so Back from a DJ page shows the same results. */
   const [searchQuery, setSearchQuery] = useState('')
+  /** How Sets opens next; the sidebar's Sets opens it plain. */
+  const [setsStart, setSetsStart] = useState<SetsStart>(NO_SETS_START)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -753,12 +767,34 @@ function AppContent() {
     setDjPage({ name, spotifyArtistId, from: origin })
   }
 
-  // Back: the view the first DJ page was opened from, Search with its query.
+  // Back: the view the first DJ page was opened from — Search with its query,
+  // or Sets with the set the page was opened from open again. `djPage.from`
+  // is gone once the page closes, so the set goes into `setsStart`.
   function closeDj() {
     if (!djPage) return
-    setShowSearch(djPage.from.view === 'search')
-    setShowSets(djPage.from.view === 'sets')
+    if (djPage.from.view === 'sets') {
+      openSets({ openVideoId: djPage.from.openVideoId, initialQuery: '' })
+      return
+    }
+    setShowSearch(true)
+    setShowSets(false)
     setDjPage(null)
+  }
+
+  // Sets, arriving on a set or with a DJ's name in the Set tab's box: Back
+  // here, and a DJ page's set cards and Find more. Every other view closes,
+  // as with the sidebar's Sets.
+  function openSets(start: SetsStart) {
+    setSetsStart(start)
+    setDjPage(null)
+    setSpotifyListId(null)
+    setShowSets(true)
+    setShowSearch(false)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(false)
+    setShowSettings(false)
+    setShowAIChat(false)
   }
 
   // Playlist selection
@@ -1417,6 +1453,7 @@ function AppContent() {
       }}
       onNavigateSets={() => {
         setShowSets(true)
+        setSetsStart(NO_SETS_START)
         setSpotifyListId(null)
         setDjPage(null)
         setShowSearch(false)
@@ -1540,7 +1577,14 @@ function AppContent() {
                 onPlayTrack={handlePlayTrack}
               />
             ) : showSets ? (
-              <SetsView onPlayTrack={handlePlayTrack} />
+              <SetsView
+                // A new start is a new SetsView: it reads these props only when it mounts.
+                key={`sets-${setsStart.openVideoId ?? ''}-${setsStart.initialQuery}`}
+                onPlayTrack={handlePlayTrack}
+                openVideoId={setsStart.openVideoId}
+                initialQuery={setsStart.initialQuery}
+                onOpenDj={(name, openVideoId) => openDj(name, null, { view: 'sets', openVideoId })}
+              />
             ) : showSettings ? (
               <SettingsView
                 onFoldersChanged={handleFoldersChanged}

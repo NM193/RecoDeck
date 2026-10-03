@@ -962,3 +962,25 @@
   color: var(--text-primary);
   font-weight: 500;
 }
+
+/* Each DJ in the chip opens their page. */
+.sets-dj__link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sets-dj__link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* "b2b" / "vs" between two links. */
+.sets-dj__sep {
+  margin: 0 0.35em;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
