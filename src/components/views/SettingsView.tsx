@@ -6,6 +6,8 @@ import { AudioSection } from '../settings/AudioSection'
 import { DatabaseSection } from '../settings/DatabaseSection'
 import { AISection } from '../settings/AISection'
 import { YouTubeSection } from '../settings/YouTubeSection'
+import { SpotifySection } from '../settings/SpotifySection'
+import { YouTubeMusicSection } from '../settings/YouTubeMusicSection'
 import { CompanionSection } from '../settings/CompanionSection'
 import { AboutSection } from '../settings/AboutSection'
 import { CollapsibleSection } from '../settings/CollapsibleSection'
@@ -69,6 +71,22 @@ function SettingsContent() {
           summary="Your API key and what is left of today's quota"
         >
           <YouTubeSection />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          id="spotify"
+          title="Spotify"
+          summary="Your likes and playlists, checked against your library"
+        >
+          <SpotifySection />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          id="youtube-music"
+          title="YouTube Music"
+          summary="Your liked music and playlists, checked against your library"
+        >
+          <YouTubeMusicSection />
         </CollapsibleSection>
 
         <CollapsibleSection

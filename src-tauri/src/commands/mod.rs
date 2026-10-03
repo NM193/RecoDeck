@@ -4,14 +4,17 @@ pub mod ai;
 pub mod analysis;
 pub mod conversations;
 pub mod dashboard;
+pub mod dj;
 pub mod genre;
 pub mod library;
 pub mod playback;
 pub mod playlists;
 pub mod server;
 pub mod settings;
+pub mod spotify;
 pub mod watcher;
 pub mod youtube;
+pub mod youtube_music;
 
 // Re-export commonly used items
 pub use library::{AppState, TrackDTO};

@@ -3,6 +3,10 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
+pub mod dj;
+pub mod spotify;
+pub mod youtube_music;
+
 /// Track with optional analysis fields: (track, bpm, bpm_confidence, musical_key, key_confidence)
 pub type TrackWithAnalysis = (Track, Option<f64>, Option<f64>, Option<String>, Option<f64>);
 
@@ -318,6 +322,21 @@ impl Database {
             self.conn
                 .execute_batch(include_str!("migrations/014_yt_dj_auto_import.sql"))?;
         }
+
+        // Migration 015: the Spotify section
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/015_spotify.sql"))?;
+
+        // Migration 016: DJ pages
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/016_dj_pages.sql"))?;
+
+        // Migration 017: the YouTube Music section
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/017_youtube_music.sql"))?;
 
         Ok(())
     }

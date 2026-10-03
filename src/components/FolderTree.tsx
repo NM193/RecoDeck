@@ -3,21 +3,18 @@
 //   1. Track Collection — scanned library folders with track counts
 //   2. Playlists — user-created playlists and folders
 
+import { useState, useEffect, useRef } from 'react'
+import type { Playlist } from '../types/track'
 import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  forwardRef,
-  useImperativeHandle,
-} from 'react'
-import { tauriApi } from '../lib/tauri-api'
-import type { FolderInfo, Playlist } from '../types/track'
+  useFolderTreeStore,
+  type FolderNodeData,
+} from '../store/folderTreeStore'
 import { Icon } from './Icon'
 import './FolderTree.css'
 
 // --- Types ---
 
+/** The refresh handle Sidebar exposes (as `folderTreeRef`) for App. */
 export interface FolderTreeRef {
   /** Invalidate cached children for the library root containing `affectedPath`
    *  and re-fetch subdirectories from disk. */
@@ -45,12 +42,6 @@ interface FolderTreeProps {
   onDeleteFolder: (folderPath: string, folderName: string) => void
   /** When set, render only the given section instead of both sections */
   section?: 'folders' | 'playlists'
-}
-
-interface FolderNodeData {
-  info: FolderInfo
-  children: FolderNodeData[] | null
-  expanded: boolean
 }
 
 type ContextMenuType =
@@ -156,46 +147,50 @@ function FolderNode({
 
 // --- Main FolderTree Component ---
 
-export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
-  function FolderTree(
-    {
-      libraryFolders,
-      playlists,
-      selectedFolder,
-      selectedPlaylistId,
-      totalTrackCount,
-      onFolderSelect,
-      onPlaylistSelect,
-      onAnalyzeFolder,
-      onAnalyzeAll,
-      onCreatePlaylist,
-      onCreateFolder,
-      onRenamePlaylist,
-      onDeletePlaylist,
-      onSharePlaylist,
-      onExportPlaylist,
-      onCreateSubfolder,
-      onRenameFolder,
-      onDeleteFolder,
-      section,
-    },
-    ref,
-  ) {
+export function FolderTree({
+  libraryFolders,
+  playlists,
+  selectedFolder,
+  selectedPlaylistId,
+  totalTrackCount,
+  onFolderSelect,
+  onPlaylistSelect,
+  onAnalyzeFolder,
+  onAnalyzeAll,
+  onCreatePlaylist,
+  onCreateFolder,
+  onRenamePlaylist,
+  onDeletePlaylist,
+  onSharePlaylist,
+  onExportPlaylist,
+  onCreateSubfolder,
+  onRenameFolder,
+  onDeleteFolder,
+  section,
+}: FolderTreeProps) {
   // ===== TRACK COLLECTION state =====
-  const [libraryNodes, setLibraryNodes] = useState<
-    Map<string, FolderNodeData[]>
-  >(new Map())
-  const [libraryExpandedRoots, setLibraryExpandedRoots] = useState<Set<string>>(
-    new Set(),
-  )
-  const [rootCounts, setRootCounts] = useState<Map<string, number>>(new Map())
+  // Expansion, loaded children and root counts live in a store shared by every
+  // tree (split into `folders` and `playlists` data), so they survive
+  // collapsing the sidebar and the rail's flyouts (which mount a fresh tree
+  // each time). Refreshing is Sidebar's job: it is always mounted.
+  const {
+    expandedRoots: libraryExpandedRoots,
+    nodes: libraryNodes,
+    rootCounts,
+  } = useFolderTreeStore((s) => s.folders)
+  const loadRootCounts = useFolderTreeStore((s) => s.loadRootCounts)
+  const toggleLibraryRoot = useFolderTreeStore((s) => s.toggleRoot)
+  const toggleLibraryNode = useFolderTreeStore((s) => s.toggleNode)
   const [collectionExpanded, setCollectionExpanded] = useState(true)
 
   // ===== PLAYLISTS state =====
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true)
-  const [expandedPlaylistFolders, setExpandedPlaylistFolders] = useState<
-    Set<number>
-  >(new Set())
+  const expandedPlaylistFolders = useFolderTreeStore(
+    (s) => s.playlists.expandedFolders,
+  )
+  const togglePlaylistFolder = useFolderTreeStore(
+    (s) => s.togglePlaylistFolder,
+  )
 
   // ===== CONTEXT MENU =====
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -206,156 +201,11 @@ export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
   })
   const contextMenuRef = useRef<HTMLDivElement>(null)
 
-  // Load track counts for library folders
+  // Load track counts for library folders (skipped when already known for
+  // this list of folders, e.g. when a flyout mounts a new tree)
   useEffect(() => {
-    async function loadRootCounts() {
-      const counts = new Map<string, number>()
-      for (const folder of libraryFolders) {
-        try {
-          const count = await tauriApi.countTracksInFolder(folder)
-          counts.set(folder, count)
-        } catch {
-          counts.set(folder, 0)
-        }
-      }
-      setRootCounts(counts)
-    }
-    if (libraryFolders.length > 0) {
-      loadRootCounts()
-    }
-  }, [libraryFolders])
-
-  // Load subdirectories
-  const loadSubdirectories = useCallback(
-    async (folderPath: string): Promise<FolderNodeData[]> => {
-      try {
-        const folders = await tauriApi.listSubdirectories(folderPath)
-        return folders.map((info) => ({
-          info,
-          children: null,
-          expanded: false,
-        }))
-      } catch (err) {
-        console.warn('Failed to list subdirectories:', err)
-        return []
-      }
-    },
-    [],
-  )
-
-  // Invalidate cached children for the library root containing `affectedPath`
-  // and re-fetch them. Also refreshes the root's track count.
-  const refreshLibraryRoot = useCallback(
-    async (affectedPath: string) => {
-      const root = libraryFolders.find(
-        (r) => affectedPath === r || affectedPath.startsWith(r + '/'),
-      )
-      if (!root) return
-      const children = await loadSubdirectories(root)
-      setLibraryNodes((prev) => {
-        const next = new Map(prev)
-        next.set(root, children)
-        return next
-      })
-      try {
-        const count = await tauriApi.countTracksInFolder(root)
-        setRootCounts((prev) => {
-          const next = new Map(prev)
-          next.set(root, count)
-          return next
-        })
-      } catch {
-        // ignore count refresh failures
-      }
-    },
-    [libraryFolders, loadSubdirectories],
-  )
-
-  useImperativeHandle(
-    ref,
-    () => ({ refreshLibraryRoot }),
-    [refreshLibraryRoot],
-  )
-
-  // Toggle library root
-  const toggleLibraryRoot = useCallback(
-    async (rootPath: string) => {
-      setLibraryExpandedRoots((prev) => {
-        const next = new Set(prev)
-        if (next.has(rootPath)) next.delete(rootPath)
-        else next.add(rootPath)
-        return next
-      })
-      if (!libraryNodes.has(rootPath)) {
-        const children = await loadSubdirectories(rootPath)
-        setLibraryNodes((prev) => {
-          const next = new Map(prev)
-          next.set(rootPath, children)
-          return next
-        })
-      }
-    },
-    [libraryNodes, loadSubdirectories],
-  )
-
-  // Recursive toggle for library subfolder nodes
-  async function toggleNodeRecursive(
-    nodes: FolderNodeData[],
-    targetPath: string,
-  ): Promise<FolderNodeData[] | null> {
-    for (let i = 0; i < nodes.length; i++) {
-      if (nodes[i].info.path === targetPath) {
-        const node = { ...nodes[i] }
-        node.expanded = !node.expanded
-        if (node.expanded && node.children === null) {
-          node.children = await loadSubdirectories(targetPath)
-        }
-        const updated = [...nodes]
-        updated[i] = node
-        return updated
-      }
-      if (nodes[i].children) {
-        const updatedChildren = await toggleNodeRecursive(
-          nodes[i].children!,
-          targetPath,
-        )
-        if (updatedChildren) {
-          const updated = [...nodes]
-          updated[i] = { ...nodes[i], children: updatedChildren }
-          return updated
-        }
-      }
-    }
-    return null
-  }
-
-  const toggleLibraryNode = useCallback(
-    async (nodePath: string) => {
-      for (const [rootPath, children] of libraryNodes.entries()) {
-        if (!children) continue
-        const updated = await toggleNodeRecursive(children, nodePath)
-        if (updated) {
-          setLibraryNodes((prev) => {
-            const next = new Map(prev)
-            next.set(rootPath, [...updated])
-            return next
-          })
-          break
-        }
-      }
-    },
-    [libraryNodes, loadSubdirectories],
-  )
-
-  // Toggle playlist folder expand/collapse
-  const togglePlaylistFolder = (folderId: number) => {
-    setExpandedPlaylistFolders((prev) => {
-      const next = new Set(prev)
-      if (next.has(folderId)) next.delete(folderId)
-      else next.add(folderId)
-      return next
-    })
-  }
+    void loadRootCounts(libraryFolders)
+  }, [libraryFolders, loadRootCounts])
 
   // Context menu handlers
   const showContextMenu = (
@@ -1276,5 +1126,4 @@ export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
       )}
     </div>
   )
-  },
-)
+}

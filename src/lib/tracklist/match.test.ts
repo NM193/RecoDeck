@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { matchTracklist, type LibraryTrack } from './match'
+import { indexLibrary, matchOne, matchTracklist, type LibraryTrack } from './match'
 import { normalise } from './text'
 import type { Track } from './types'
 
@@ -185,9 +185,105 @@ describe('matching a tracklist against the library', () => {
     expect(matchTracklist([sameMix], shelf).owned).toBe(1)
   })
 
+  it('takes the plain versions of a record for one another', () => {
+    // A tracklist writes "(Original Mix)", the file says "(Extended Mix)": the
+    // artist's own cut either way, not a different record.
+    const shelf: LibraryTrack[] = [lib(24, 'Clive & Deepower', 'Little Girl (Extended Mix)')]
+    const original: Track = {
+      ...parsed(1, 'Clive & Deepower', 'Little Girl'),
+      mix: 'Original Mix',
+      titleNorm: normalise('Little Girl Original Mix'),
+    }
+    const radio: Track = { ...original, index: 2, mix: 'Radio Edit', titleNorm: normalise('Little Girl Radio Edit') }
+    expect(matchTracklist([original, radio], shelf).owned).toBe(2)
+  })
+
+  it('still keeps a named remix apart from the plain versions', () => {
+    const shelf: LibraryTrack[] = [lib(25, 'John Summit', 'Witch Doctor (Original Mix)')]
+    const remix: Track = {
+      ...parsed(1, 'John Summit', 'Witch Doctor'),
+      mix: 'Hot Since 82 Remix',
+      titleNorm: normalise('Witch Doctor Hot Since 82 Remix'),
+    }
+    expect(matchTracklist([remix], shelf).owned).toBe(0)
+
+    // Plain words inside a named version do not make it plain.
+    const extendedShelf: LibraryTrack[] = [lib(26, 'John Summit', 'Witch Doctor (Extended Mix)')]
+    const namedExtended: Track = {
+      ...remix,
+      mix: 'Hot Since 82 Extended Mix',
+      titleNorm: normalise('Witch Doctor Hot Since 82 Extended Mix'),
+    }
+    expect(matchTracklist([namedExtended], extendedShelf).owned).toBe(0)
+  })
+
+  it('matches a name typed with or without its accents', () => {
+    const shelf: LibraryTrack[] = [lib(27, 'Kölsch', 'Grey'), lib(28, 'Ame', 'Rej')]
+    const { byIndex, owned } = matchTracklist(
+      [parsed(1, 'Kolsch', 'Grey'), parsed(2, 'Âme', 'Rej')],
+      shelf,
+    )
+    expect(owned).toBe(2)
+    expect(byIndex.get(1)!.track.id).toBe(27)
+    expect(byIndex.get(2)!.track.id).toBe(28)
+  })
+
+  it('folds accents in the version too', () => {
+    const shelf: LibraryTrack[] = [lib(29, 'Shakedown', 'At Night (Kid Creme Club Mix)')]
+    const atNight: Track = {
+      ...parsed(1, 'Shakedown', 'At Night'),
+      mix: 'Kid Crème Club Mix',
+      titleNorm: normalise('At Night Kid Crème Club Mix'),
+    }
+    expect(matchTracklist([atNight], shelf).owned).toBe(1)
+    // The row's stored norm is left as the parser made it.
+    expect(atNight.titleNorm).toBe('at night kid cr me club mix')
+  })
+
+  it('takes a remaster for the same cut, but not an instrumental', () => {
+    const remastered: LibraryTrack[] = [lib(33, 'Clive & Deepower', 'Little Girl (Extended Mix Remastered)')]
+    const extended: Track = {
+      ...parsed(1, 'Clive & Deepower', 'Little Girl'),
+      mix: 'Extended Mix',
+      titleNorm: normalise('Little Girl Extended Mix'),
+    }
+    expect(matchTracklist([extended], remastered).owned).toBe(1)
+
+    const plain: LibraryTrack[] = [lib(34, 'Clive & Deepower', 'Little Girl (Extended Mix)')]
+    const instrumental: Track = {
+      ...extended,
+      mix: 'Extended Instrumental Mix',
+      titleNorm: normalise('Little Girl Extended Instrumental Mix'),
+    }
+    expect(matchTracklist([instrumental], plain).owned).toBe(0)
+  })
+
   it('handles an empty library without pretending', () => {
     const result = matchTracklist([parsed(1, 'MK', 'Burning')], [])
     expect(result.owned).toBe(0)
     expect(result.missing).toBe(1)
+  })
+})
+
+describe('how sure a match is', () => {
+  it('reports a full agreement on both names', () => {
+    const shelf = [lib(30, 'Butch', 'Come Get Up (Extended Mix)')]
+    const match = matchOne(parsed(1, 'Butch', 'Come Get Up'), indexLibrary(shelf))
+    expect(match).toMatchObject({ titleScore: 1, artistScore: 1, strong: true })
+  })
+
+  it('reports an artist that only partly agrees', () => {
+    // Two of the three credited names are on the file.
+    const shelf = [lib(31, 'Moreno, Prieto, Ortega, Lopez', '300 Cash')]
+    const match = matchOne(parsed(1, 'Moreno & Prieto, Sortech', '300 Cash'), indexLibrary(shelf))
+    expect(match?.titleScore).toBe(1)
+    expect(match?.artistScore).toBeCloseTo(2 / 3)
+    expect(match?.strong).toBe(false)
+  })
+
+  it('splits the library into words once, when it is indexed', () => {
+    const [entry] = indexLibrary([lib(32, 'Clive & Deepower', 'Little Girl (Original Mix)')])
+    expect([...entry.titleTokens]).toEqual(['little', 'girl'])
+    expect([...entry.artistTokens]).toEqual(['clive', 'deepower'])
   })
 })

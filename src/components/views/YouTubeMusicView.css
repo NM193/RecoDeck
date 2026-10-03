@@ -1,0 +1,90 @@
+/* src/components/views/YouTubeMusicView.css */
+/* StreamingListView's look (SpotifyView.css), in YouTube's red, plus the Sets group. */
+
+.spotify-header__cover--youtube-music {
+  background: linear-gradient(135deg, #ff0033, #8c1023);
+}
+
+.ytm-sets {
+  flex-shrink: 0;
+  margin: 12px 16px 0;
+}
+
+/* Open, it takes at most 40% and scrolls; the table keeps the rest. */
+.ytm-sets--open {
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.ytm-sets__title {
+  position: sticky;
+  top: 0;
+  padding: 0 0 6px 4px;
+  background: var(--bg-primary);
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ytm-sets__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.ytm-sets__toggle:hover {
+  color: var(--text-primary);
+}
+
+.ytm-sets__chevron {
+  transition: transform 0.15s ease;
+}
+
+.ytm-sets--open .ytm-sets__chevron {
+  transform: rotate(90deg);
+}
+
+.ytm-sets__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.3fr) 64px auto;
+  gap: 12px;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.ytm-sets__row:hover {
+  background: var(--bg-tertiary);
+}
+
+.ytm-sets__name,
+.ytm-sets__channel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ytm-sets__channel,
+.ytm-sets__length {
+  color: var(--text-secondary);
+}
+
+.ytm-sets__length {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

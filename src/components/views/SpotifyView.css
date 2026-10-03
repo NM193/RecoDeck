@@ -1,0 +1,444 @@
+/* src/components/views/SpotifyView.css
+   The Spotify view, after the approved mockup (docs/superpowers/specs/2026-10-03-spotify-section-mockup.html). */
+
+.spotify-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+
+/* ---- Reconnect bar ---- */
+
+.spotify-reconnect {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 24px;
+  flex-shrink: 0;
+  background: rgba(var(--color-warning-rgb), 0.1);
+  border-bottom: 1px solid rgba(var(--color-warning-rgb), 0.35);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.spotify-reconnect__error {
+  color: var(--color-danger);
+  font-size: 12px;
+}
+
+/* ---- Header ---- */
+
+.spotify-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 22px 24px 14px;
+  flex-shrink: 0;
+}
+
+.spotify-header__cover {
+  width: 84px;
+  height: 84px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #9333ea);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.spotify-header__info {
+  min-width: 0;
+}
+
+.spotify-header__kicker {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.spotify-header__title {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 2px 0 6px;
+  letter-spacing: -0.4px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-header__meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spotify-header__meta b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.spotify-header__owned {
+  color: var(--color-success);
+}
+
+.spotify-header__maybe {
+  color: var(--color-warning);
+}
+
+.spotify-header__checking {
+  color: var(--text-muted);
+}
+
+/* "no longer available": a playlist YouTube stopped showing. */
+.spotify-header__notice {
+  color: var(--color-danger);
+}
+
+.spotify-header__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.spotify-header__sync:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.spotify-empty {
+  padding: 32px 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ---- Small buttons (reconnect, row actions) ---- */
+
+.spotify-mini {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spotify-mini:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.spotify-mini:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.spotify-mini--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ---- Toolbar ---- */
+
+.spotify-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 24px 12px;
+  flex-shrink: 0;
+}
+
+.spotify-search {
+  flex: 1;
+  max-width: 320px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+}
+
+.spotify-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.spotify-chip {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.spotify-chip small {
+  opacity: 0.6;
+  font-size: 11px;
+}
+
+.spotify-chip--on {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+}
+
+/* ---- Table: TrackTable's sizes — 36px header, 32px rows, 13px ---- */
+
+.spotify-table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.spotify-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1.7fr) minmax(0, 1.3fr) 72px 220px;
+  align-items: center;
+  height: 32px;
+  padding: 0 16px 0 8px;
+  font-size: 13px;
+}
+
+.spotify-row--lists {
+  grid-template-columns:
+    44px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1fr)
+    72px 220px;
+}
+
+.spotify-row--head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 36px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spotify-row--data:hover {
+  background: var(--bg-tertiary);
+}
+
+.spotify-cell--num {
+  color: var(--text-muted);
+  text-align: right;
+  padding-right: 14px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.spotify-cell--title,
+.spotify-cell--artist,
+.spotify-cell--lists {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 12px;
+}
+
+.spotify-cell--title {
+  color: var(--text-primary);
+}
+
+.spotify-cell--artist {
+  color: var(--text-secondary);
+}
+
+.spotify-cell--lists {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.spotify-cell--added {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spotify-cell--status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.spotify-new-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-hover);
+  margin-right: 7px;
+  vertical-align: 2px;
+}
+
+.spotify-status__owned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.spotify-status__missing {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-right: auto;
+}
+
+.spotify-status__checking {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.spotify-status__error {
+  color: var(--color-danger);
+  font-size: 11px;
+}
+
+.spotify-status__maybe {
+  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.spotify-footer {
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- Row actions ---- */
+
+.spotify-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+}
+
+.spotify-mini--icon {
+  padding: 0 6px;
+  color: var(--text-secondary);
+}
+
+/* Spotify's own green, whatever the theme's success colour is. */
+.spotify-mini--play {
+  color: #1ed760;
+}
+
+/* YouTube's own red, likewise. */
+.spotify-mini--youtube {
+  color: #ff0033;
+}
+
+.spotify-mini--copied {
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.spotify-row--owned {
+  cursor: pointer;
+}
+
+/* ---- Maybe sub-row ---- */
+
+.spotify-row--sub {
+  height: 34px;
+  background: rgba(var(--color-warning-rgb), 0.06);
+}
+
+.spotify-hint {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.spotify-hint code {
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-hint__why {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Read by screen readers, not shown. */
+.spotify-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

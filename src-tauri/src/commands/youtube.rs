@@ -48,7 +48,7 @@ pub struct QuotaStatus {
 /// It takes `&AppState` rather than `&State<AppState>` so the automatic check,
 /// which has an `AppHandle` and no command state, can use the same path.
 /// Command call sites are unchanged — `State` derefs to it.
-fn with_db<T>(
+pub(crate) fn with_db<T>(
     state: &AppState,
     f: impl FnOnce(&Database) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
@@ -117,7 +117,7 @@ fn spend_units(db: &Database, units: u32, now: i64) -> Result<QuotaStatus, AppEr
 }
 
 /// Add what a call cost. Called after the network work, never during it.
-fn record_spend(state: &AppState, units: u32) -> Result<QuotaStatus, AppError> {
+pub(crate) fn record_spend(state: &AppState, units: u32) -> Result<QuotaStatus, AppError> {
     let now = now_unix();
     with_db(state, |db| spend_units(db, units, now))
 }
@@ -1077,8 +1077,8 @@ pub struct WatchedDjDTO {
     pub auto_import: bool,
 }
 
-/// "Solomun" and "solomun" are the same DJ.
-fn dj_key(name: &str) -> String {
+/// "Solomun" and "solomun" are the same DJ. DJ pages use the same key.
+pub(crate) fn dj_key(name: &str) -> String {
     name.trim().to_lowercase()
 }
 

@@ -53,4 +53,32 @@ pub enum AppError {
 
     #[error("{0}")]
     YtNetwork(String),
+
+    #[error("Spotify is not connected -- connect it in Settings")]
+    SpotifyNotConnected,
+
+    #[error("Spotify needs you to sign in again")]
+    SpotifyReconnect,
+
+    /// A pending sign-in was replaced by a newer one or by a Client ID change.
+    /// The frontend ignores it.
+    #[error("The Spotify sign-in was replaced by a newer one")]
+    SpotifyLoginCancelled,
+
+    #[error("{0}")]
+    Spotify(String),
+
+    #[error("YouTube Music is not connected -- connect it in Settings")]
+    YouTubeMusicNotConnected,
+
+    #[error("YouTube Music needs you to sign in again")]
+    YouTubeMusicReconnect,
+
+    /// A pending sign-in was replaced by a newer one, a new client file, or
+    /// Disconnect. The frontend ignores it.
+    #[error("The YouTube Music sign-in was replaced by a newer one")]
+    YouTubeMusicLoginCancelled,
+
+    #[error("{0}")]
+    YouTubeMusic(String),
 }

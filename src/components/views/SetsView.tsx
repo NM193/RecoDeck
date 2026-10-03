@@ -8,11 +8,12 @@ import { analyse, msToCue, type Track, type TracklistResult } from '../../lib/tr
 import { storeParsedSet } from '../../lib/tracklist/importSet'
 import { matchTracklist, type LibraryMatch, type MatchSummary } from '../../lib/tracklist/match'
 import { extractDjName, groupByDj } from '../../lib/tracklist/djName'
+import { billingParts } from '../../lib/dj/names'
 import { describePreview, previewSet } from '../../lib/tracklist/preview'
 import { playerPageUrl, watchUrl } from '../../lib/youtubeWindow'
 import { looksLikeAChannel } from '../../lib/channelInput'
 import type { Track as LibraryTrack } from '../../types/track'
-import { getErrorMessage } from '../../types/ai'
+import { getErrorMessage, isAppError } from '../../types/ai'
 import { usePlayerStore } from '../../store/playerStore'
 import { audioPlayer } from '../../lib/audioPlayer'
 import type {
@@ -347,13 +348,26 @@ function TrackRow({
   )
 }
 
-export function SetsView({
-  onPlayTrack,
-}: {
+interface SetsViewProps {
   onPlayTrack: (track: LibraryTrack, queue: LibraryTrack[], index: number) => void
-}) {
+  /**
+   * A stored set to show on arrival: Back from a DJ page opened from it, or a
+   * DJ page's set card. Read once — App remounts the view (`key`) to change it.
+   */
+  openVideoId?: string | null
+  /**
+   * Put in the Set tab's box on arrival, not searched: a DJ page's Find more.
+   * The user presses Search here, where its cost is shown first.
+   */
+  initialQuery?: string
+  /** Each DJ in the open set's chip opens their page; Back reopens this set. */
+  onOpenDj?: (name: string, openVideoId: string | null) => void
+}
+
+export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: SetsViewProps) {
+  // Opens on the Set tab, where both an arriving set and initialQuery show.
   const [tab, setTab] = useState<Tab>('set')
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialQuery ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<TracklistResult | null>(null)
@@ -377,6 +391,8 @@ export function SetsView({
   const [echoes, setEchoes] = useState<Map<number, TrackEcho>>(new Map())
   /** What the last re-fetch changed, said plainly because it cost something. */
   const [reanalysed, setReanalysed] = useState<string | null>(null)
+  /** Counts the sets put on the Set tab: an opening set arriving late yields to a newer one. */
+  const shownSets = useRef(0)
   /** A bare name typed into the Follow box, held back before it costs 100. */
   const [bareName, setBareName] = useState<string | null>(null)
   const [djs, setDjs] = useState<WatchedDj[]>([])
@@ -500,6 +516,63 @@ export function SetsView({
     refreshQuota()
     refreshLibrary()
   }, [refreshQuota, refreshLibrary])
+
+  // Arriving on a set: shown as opening it from the Library shows it. A set
+  // that is not stored — YouTube Music's Open in Sets, or one deleted since —
+  // is fetched as a pasted link is: shown, stored, its units counted, and a
+  // failure said in the Set tab. Late, it gives way to whatever the user
+  // fetched or opened meanwhile.
+  useEffect(() => {
+    if (!openVideoId) return
+    let live = true
+    const claim = shownSets.current
+    const current = () => live && shownSets.current === claim
+    // As show() does (it is not a dependency here).
+    const showSet = (raw: RawSet) => {
+      shownSets.current++
+      const parsed = analyse(raw.video, raw.comments)
+      setReanalysed(null)
+      setCurrentSet(raw)
+      setResult(parsed)
+      setTab('set')
+      return parsed
+    }
+
+    tauriApi
+      .getYouTubeSet(openVideoId)
+      .then((raw) => {
+        if (current()) showSet(raw)
+      })
+      .catch(async (err: unknown) => {
+        if (!current()) return
+        if (!isAppError(err) || err.kind !== 'NotFound') {
+          setError(getErrorMessage(err))
+          return
+        }
+        setLoading(true)
+        setError(null)
+        try {
+          const raw = await tauriApi.fetchYouTubeSet(openVideoId)
+          const parsed = current()
+            ? showSet(raw)
+            : analyse(raw.video, raw.comments)
+          // Kept for good, as a pasted link is: reopening it costs nothing.
+          await storeParsedSet(raw, parsed)
+          refreshLibrary()
+        } catch (fetchErr) {
+          if (current()) {
+            setError(getErrorMessage(fetchErr))
+            setResult(null)
+          }
+        } finally {
+          if (live) setLoading(false)
+          refreshQuota()
+        }
+      })
+    return () => {
+      live = false
+    }
+  }, [openVideoId, refreshLibrary, refreshQuota])
 
   // Reloaded whenever the set changes, and whenever the library of sets grows —
   // a record with nowhere to go today may have somewhere tomorrow.
@@ -671,6 +744,7 @@ export function SetsView({
   }
 
   function show(raw: RawSet): TracklistResult {
+    shownSets.current++
     const parsed = analyse(raw.video, raw.comments)
     setReanalysed(null)
     setCurrentSet(raw)
@@ -692,6 +766,7 @@ export function SetsView({
     setFound(null)
     try {
       const raw = await tauriApi.fetchYouTubeSet(input.trim())
+      shownSets.current++
       const parsed = analyse(raw.video, raw.comments)
       setCurrentSet(raw)
       setResult(parsed)
@@ -1392,7 +1467,26 @@ export function SetsView({
                     <h2 className="sets-result__title">{result.video.title}</h2>
                     <div className="sets-result__meta">
                       <span className="sets-dj__chip">
-                        {extractDjName(result.video.title, result.video.channel)}
+                        {onOpenDj
+                          ? billingParts(extractDjName(result.video.title, result.video.channel)).map(
+                              (part, i) =>
+                                part.dj ? (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    className="sets-dj__link"
+                                    onClick={() => onOpenDj(part.text, result.video.id)}
+                                    title={`Open ${part.text}'s page`}
+                                  >
+                                    {part.text}
+                                  </button>
+                                ) : (
+                                  <span key={i} className="sets-dj__sep">
+                                    {part.text}
+                                  </span>
+                                ),
+                            )
+                          : extractDjName(result.video.title, result.video.channel)}
                       </span>
                       <span>{result.video.channel}</span>
                       <span className={`sets-badge sets-badge--${badge!.kind}`}>{badge!.text}</span>

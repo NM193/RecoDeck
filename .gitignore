@@ -49,3 +49,6 @@ latest.json
 # so they stay out of the repository — see src/lib/tracklist/__fixtures__/*
 !src/lib/tracklist/__fixtures__/README.mdREADME.md
 src/lib/tracklist/__fixtures__/
+
+# Brainstorming companion: mockups and session state
+.superpowers/

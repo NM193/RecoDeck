@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { Icon } from '../Icon'
+import { useDjSearch } from '../dj/useDjSearch'
+import type { SpotifyData } from '../spotify/useSpotify'
 import type { Track, Playlist } from '../../types/track'
 import './SearchView.css'
 
@@ -22,15 +24,40 @@ function getPlaylistGradient(name: string): string {
   return gradients[Math.abs(hash) % gradients.length]
 }
 
+/** A DJ card without a photo: the mockup's gradient, turned to a hue of its own per name. */
+function djHue(name: string): number {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff
+  }
+  return Math.abs(hash) % 360
+}
+
 interface SearchViewProps {
   tracks: Track[]
   playlists: Playlist[]
   onTrackPlay: (track: Track, tracks: Track[], index: number) => void
   onPlaylistSelect: (id: number) => void
+  /** Held by App, so Back from a DJ page finds the same query and results. */
+  query: string
+  onQueryChange: (query: string) => void
+  /** Opens a DJ page from the DJs row; a Spotify card passes its artist id. */
+  onOpenDj: (name: string, spotifyArtistId: string | null) => void
+  /** App's Spotify data: whether to ask Spotify, and the index "you own N" is counted with. */
+  spotify: SpotifyData
 }
 
-export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }: SearchViewProps) {
-  const [query, setQuery] = useState('')
+export function SearchView({
+  tracks,
+  playlists,
+  onTrackPlay,
+  onPlaylistSelect,
+  query,
+  onQueryChange,
+  onOpenDj,
+  spotify,
+}: SearchViewProps) {
+  const djCards = useDjSearch(query, spotify)
 
   const filteredTracks = useMemo(() => {
     if (!query.trim()) return []
@@ -50,7 +77,7 @@ export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }:
     )
   }, [playlists, query])
 
-  const hasResults = filteredTracks.length > 0 || filteredPlaylists.length > 0
+  const hasResults = djCards.length > 0 || filteredTracks.length > 0 || filteredPlaylists.length > 0
   const hasQuery = query.trim().length > 0
 
   // Format duration from ms to MM:SS
@@ -75,11 +102,11 @@ export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }:
           className="search-view__input"
           placeholder="Search tracks, playlists, artists..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => onQueryChange(e.target.value)}
           autoFocus
         />
         {query && (
-          <button className="search-view__input-clear" onClick={() => setQuery('')} type="button">
+          <button className="search-view__input-clear" onClick={() => onQueryChange('')} type="button">
             <Icon name="X" size={16} />
           </button>
         )}
@@ -106,6 +133,39 @@ export function SearchView({ tracks, playlists, onTrackPlay, onPlaylistSelect }:
       {/* Results */}
       {hasQuery && hasResults && (
         <div className="search-view__results">
+
+          {/* DJs: the ones the user knows, then Spotify's — each opens a DJ page */}
+          {djCards.length > 0 && (
+            <div className="search-view__section">
+              <div className="search-view__section-header">
+                <h3 className="search-view__section-title">DJs</h3>
+                <span className="search-view__section-count">{djCards.length}</span>
+              </div>
+              <div className="search-view__dj-row">
+                {djCards.map((dj) => (
+                  <button
+                    key={dj.key}
+                    type="button"
+                    className="search-view__dj-card"
+                    onClick={() => onOpenDj(dj.name, dj.spotifyArtistId)}
+                  >
+                    <span
+                      className="search-view__dj-photo"
+                      style={dj.imageUrl ? undefined : { filter: `hue-rotate(${djHue(dj.name)}deg)` }}
+                    >
+                      {dj.imageUrl ? (
+                        <img src={dj.imageUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="search-view__dj-initial">{dj.name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </span>
+                    <span className="search-view__dj-name">{dj.name}</span>
+                    <span className="search-view__dj-subtitle">{dj.subtitle}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Tracks section */}
           {filteredTracks.length > 0 && (

@@ -44,7 +44,7 @@ export const ARTIST_TITLE = /^(.*?)\s+[-–—]\s+(.*)$/
 
 // Labels are conventionally in square brackets; parentheses usually hold
 // "(Original Mix)" style mix descriptors, which belong to the title.
-const LABEL_SUFFIX = /\s*\[([^\][]{2,40})\]\s*$/
+export const LABEL_SUFFIX = /\s*\[([^\][]{2,40})\]\s*$/
 
 // "(Todd Terje Remix)", "(edit)" — the version, which is part of the identity.
 const MIX_SUFFIX =
@@ -172,6 +172,18 @@ export function splitArtistTitle(rawText: string): ParsedName {
   return { artist, title, mix, label, note, uncertain, isUnknown }
 }
 
+/**
+ * "Kölsch" -> "Kolsch", "Âme" -> "Ame": letters without their accents.
+ *
+ * Kept apart from `normalise` on purpose. `normalise` builds the norms a set
+ * stores and compares with the standalone tool's output, and those must not
+ * change; the library matcher folds before normalising, where one source
+ * typing the accent and the other not must still agree.
+ */
+export function foldAccents(value: string): string {
+  return value.normalize('NFKD').replace(/\p{M}/gu, '')
+}
+
 /** Strips noise so the same track from two sources normalises to the same string. */
 export function normalise(value: string | null | undefined): string | null {
   if (!value) return null
@@ -195,16 +207,22 @@ export function tokenSet(norm: string | null | undefined): Set<string> {
   return new Set((norm ?? '').split(' ').filter(Boolean))
 }
 
-export function containment(
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number {
-  const A = tokenSet(a)
-  const B = tokenSet(b)
+/**
+ * `containment` on names already split into words. A loop that compares one
+ * name against thousands splits each name once and calls this.
+ */
+export function containmentOf(A: Set<string>, B: Set<string>): number {
   if (!A.size || !B.size) return 0
   let hits = 0
   for (const token of A) if (B.has(token)) hits += 1
   return hits / Math.min(A.size, B.size)
+}
+
+export function containment(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  return containmentOf(tokenSet(a), tokenSet(b))
 }
 
 export const sameTitle = (

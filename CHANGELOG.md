@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-03
+
+### Added
+- **Spotify** — connect your Spotify account and see every track in Liked Songs and your playlists marked Owned, Maybe or Missing against your library
+- New likes since you last looked are counted in the sidebar, so tracks liked in the car are not forgotten again
+- Each missing track is one click from SelectedRecs, a YouTube search, or your clipboard; play any track on your Spotify device
+- Answer Yes or No on a Maybe once, and RecoDeck remembers it
+- **YouTube Music** — sign in with your own Google client and see your Liked music checked against your library the same way
+- Add any YouTube or YouTube Music playlist by its link — yours, private ones included, or anyone else's — and remove it with a right-click
+- DJ sets among your likes are kept apart in a Sets group you open when you want, each one click from the Sets section
+- **DJ pages** — one page per DJ: where they play next (Resident Advisor), what they released (Spotify), what they keep playing in your saved sets, and which of it you still miss
+- Find DJs in Search, and open a DJ's page from any name in a set's lineup
+- A customizable Overview on every DJ page: choose and arrange its cards
+- **Show in sidebar** switches for Spotify and YouTube Music: hide a section without signing out
+- **Collapsible sidebar** — icons only by hand or by itself on a narrow window, with a colour per section so you always see where you are
+
+### Changed
+- Sets reads a tracklist typed in the YouTube app, and no longer guesses track IDs from remarks in the comments
+- Open in Sets fetches a set that was never stored, as a pasted link would
+
 ## [0.3.0] - 2026-09-08
 
 ### Added

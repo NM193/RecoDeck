@@ -67,6 +67,12 @@ pub fn run() {
             // Nothing is due until the user sets one, so this costs nothing
             // until it is asked for.
             commands::youtube::spawn_channel_watcher(app.handle().clone());
+            // Syncs Liked Songs and playlists on start and every ten minutes.
+            // Does nothing until a Spotify account is connected.
+            commands::spotify::spawn_spotify_sync_loop(app.handle().clone());
+            // Syncs Liked music and the added playlists on start and every 30
+            // minutes. Does nothing until a Google account is connected.
+            commands::youtube_music::spawn_youtube_music_sync_loop(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -399,6 +405,9 @@ pub fn run() {
         .manage(PlaybackState::new())
         .manage(WatcherState::new())
         .manage(CompanionState::new())
+        .manage(commands::spotify::SpotifyState::default())
+        .manage(commands::youtube_music::YouTubeMusicState::default())
+        .manage(commands::dj::DjState::default())
         .invoke_handler(tauri::generate_handler![
             // YouTube tracklist
             commands::youtube::set_youtube_api_key,
@@ -440,6 +449,40 @@ pub fn run() {
             commands::youtube::check_youtube_djs,
             commands::youtube::list_youtube_dj_finds,
             commands::youtube::mark_youtube_channel_seen,
+            // Spotify
+            commands::spotify::get_spotify_status,
+            commands::spotify::set_spotify_client_id,
+            commands::spotify::connect_spotify,
+            commands::spotify::disconnect_spotify,
+            commands::spotify::sync_spotify_now,
+            commands::spotify::get_spotify_library,
+            commands::spotify::mark_spotify_list_opened,
+            commands::spotify::set_spotify_verdict,
+            commands::spotify::play_spotify_track,
+            commands::spotify::set_spotify_show_in_sidebar,
+            // YouTube Music
+            commands::youtube_music::get_youtube_music_status,
+            commands::youtube_music::sync_youtube_music_now,
+            commands::youtube_music::get_youtube_music_library,
+            commands::youtube_music::mark_youtube_music_list_opened,
+            commands::youtube_music::set_youtube_music_verdict,
+            commands::youtube_music::set_youtube_music_client_file,
+            commands::youtube_music::connect_youtube_music,
+            commands::youtube_music::disconnect_youtube_music,
+            commands::youtube_music::add_youtube_music_playlist,
+            commands::youtube_music::remove_youtube_music_playlist,
+            commands::youtube_music::set_youtube_music_show_in_sidebar,
+            // DJ pages
+            commands::dj::get_dj_page,
+            commands::dj::refresh_dj_spotify,
+            commands::dj::load_older_dj_releases,
+            commands::dj::refresh_dj_gigs,
+            commands::dj::dj_artist_candidates,
+            commands::dj::set_dj_spotify_artist,
+            commands::dj::set_dj_ra_artist,
+            commands::dj::search_spotify_artists,
+            commands::dj::get_dj_cached_tracks,
+            commands::dj::get_yt_tracks_for_sets,
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,

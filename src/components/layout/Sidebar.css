@@ -127,6 +127,12 @@
   flex: 1;
 }
 
+.sidebar-section__trailing {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
 /* ===== Section body (animated) ===== */
 
 .sidebar-section__body {
@@ -192,7 +198,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 4px 0;
-  min-width: 160px;
+  min-width: 252px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -253,4 +259,303 @@
 .sidebar-drag-handle--dragging {
   background: var(--accent);
   opacity: 0.5;
+}
+
+/* ===== Collapse toggle — quiet until hovered ===== */
+
+.sidebar-top__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.sidebar-top__toggle:hover {
+  color: var(--text-primary);
+}
+
+/* ===== Flyout beside a rail icon ===== */
+
+.sidebar-flyout {
+  position: fixed;
+  z-index: 250;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 6px 0;
+  animation: sidebar-flyout-in 120ms ease-out;
+}
+
+/* Opacity only — see the note in SidebarFlyout.tsx. */
+@keyframes sidebar-flyout-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.sidebar-flyout__title {
+  padding: 4px 14px 6px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-flyout__body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ===== Icon rail (collapsed) ===== */
+
+.sidebar--rail {
+  align-items: center;
+}
+
+.sidebar-rail__top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 10px;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* There is no small logo asset; the wordmark is text. */
+.sidebar-rail__wordmark {
+  font-weight: 900;
+  font-size: 11px;
+  line-height: 0.92;
+  letter-spacing: -0.4px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.sidebar-rail__nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.sidebar-rail__item {
+  position: relative;
+  width: 40px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-rail__item:hover,
+.sidebar-rail__item--active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sidebar-rail__badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--accent-hover);
+  pointer-events: none;
+}
+
+.sidebar-rail__divider {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+.sidebar-rail__avatar {
+  margin: 10px 0 12px;
+}
+
+/* In the rail the toast would be 60px wide; float it beside the rail instead. */
+.sidebar-toast--rail {
+  position: fixed;
+  left: calc(var(--sidebar-width) + 12px);
+  right: auto;
+  bottom: 96px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+/* ===== Tooltip (rail) — fixed, so the sidebar's overflow cannot clip it ===== */
+
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 260;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: var(--text-xs, 11px);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ===== Colour block in the right-click menu ===== */
+
+.sidebar-colour-menu__title {
+  padding: 6px 12px 8px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar-colour-menu__swatches {
+  display: grid;
+  grid-template-columns: repeat(9, 20px);
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.sidebar-colour-menu__swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.sidebar-colour-menu__swatch--current {
+  border-color: var(--text-primary);
+  box-shadow: inset 0 0 0 2px var(--bg-tertiary);
+}
+
+/* Hidden but clickable through its label, which opens the system picker. */
+.sidebar-colour-menu__picker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-ctx-menu__sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ===== Spotify ===== */
+
+/* The new-likes number: plain, in the accent colour, where counts sit. */
+.sidebar-section__new {
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.spotify-list-row {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.spotify-list-row__icon {
+  margin-right: 6px;
+  color: var(--text-secondary);
+}
+
+.spotify-list-row__new {
+  margin-left: 6px;
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.folder-row.selected .spotify-list-row__icon,
+.folder-row.selected .spotify-list-row__new {
+  color: inherit;
+}
+
+/* ===== YouTube Music ===== */
+
+.ytm-list-row__gone {
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.ytm-add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 6px 28px;
+}
+
+.ytm-add__input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ytm-add__hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.ytm-add__error {
+  padding: 0 8px 6px 28px;
+  color: var(--color-danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Only one item: no need for the colour menu's width. */
+.sidebar-ctx-menu.ytm-list-menu {
+  min-width: 160px;
 }

@@ -40,6 +40,22 @@ import type {
   RecommendationResult,
   RecommendedOrder,
 } from '../types/ai'
+import type {
+  PlayOutcome,
+  SpotifyLibrary,
+  SpotifyStatus,
+  Verdict,
+} from '../types/spotify'
+import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
+import type {
+  ArtistCandidate,
+  DjCandidates,
+  DjPage,
+  DjRefresh,
+  DjSetTrack,
+  DjTrack,
+  RaPick,
+} from '../types/dj'
 // AppError, isAppError, getErrorMessage are exported from ../types/ai for use by UI components
 
 export const tauriApi = {
@@ -625,6 +641,171 @@ export const tauriApi = {
 
   async deleteSavedYouTubeTrack(videoId: string, cueMs: number, title: string): Promise<void> {
     return await invoke('delete_saved_youtube_track', { videoId, cueMs, title })
+  },
+
+  // Spotify. Read-only on Spotify's side. No Spotify command returns a token,
+  // but they sit in the settings table, so the generic get_setting /
+  // set_setting commands can read them — the same trust model as the YouTube
+  // and AI keys.
+  async getSpotifyStatus(): Promise<SpotifyStatus> {
+    return await invoke('get_spotify_status')
+  },
+
+  async setSpotifyClientId(clientId: string): Promise<SpotifyStatus> {
+    return await invoke('set_spotify_client_id', { clientId })
+  },
+
+  /** Resolves when the browser login is done (or fails); can take minutes. */
+  async connectSpotify(): Promise<SpotifyStatus> {
+    return await invoke('connect_spotify')
+  },
+
+  async disconnectSpotify(): Promise<SpotifyStatus> {
+    return await invoke('disconnect_spotify')
+  },
+
+  /** Show in sidebar. The sidebar learns it from the `spotify-synced` event this sends. */
+  async setSpotifyShowInSidebar(show: boolean): Promise<SpotifyStatus> {
+    return await invoke('set_spotify_show_in_sidebar', { show })
+  },
+
+  /** The result arrives as a `spotify-synced` event. */
+  async syncSpotifyNow(): Promise<void> {
+    return await invoke('sync_spotify_now')
+  },
+
+  async getSpotifyLibrary(): Promise<SpotifyLibrary> {
+    return await invoke('get_spotify_library')
+  },
+
+  /** Answers the lastOpenedAt it wrote (unix ms). `all` marks every list. */
+  async markSpotifyListOpened(listId: string): Promise<number> {
+    return await invoke('mark_spotify_list_opened', { listId })
+  },
+
+  async setSpotifyVerdict(spotifyId: string, libraryTrackId: number, verdict: Verdict): Promise<void> {
+    return await invoke('set_spotify_verdict', { spotifyId, libraryTrackId, verdict })
+  },
+
+  async playSpotifyTrack(spotifyId: string): Promise<PlayOutcome> {
+    return await invoke('play_spotify_track', { spotifyId })
+  },
+
+  // YouTube Music. Read-only on YouTube's side; the same trust model as Spotify's.
+  async getYouTubeMusicStatus(): Promise<YtmStatus> {
+    return await invoke('get_youtube_music_status')
+  },
+
+  /** Asks for the Desktop client's JSON. Null when the dialog was cancelled. */
+  async chooseYouTubeMusicClientFile(): Promise<string | null> {
+    const selected = await openDialog({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Google OAuth client', extensions: ['json'] }],
+    })
+    return typeof selected === 'string' ? selected : null
+  },
+
+  /** Rust reads the file and keeps its two values; the file is not kept. */
+  async setYouTubeMusicClientFile(path: string): Promise<YtmStatus> {
+    return await invoke('set_youtube_music_client_file', { path })
+  },
+
+  /** Resolves when the browser login is done (or fails); can take minutes. */
+  async connectYouTubeMusic(): Promise<YtmStatus> {
+    return await invoke('connect_youtube_music')
+  },
+
+  async disconnectYouTubeMusic(): Promise<YtmStatus> {
+    return await invoke('disconnect_youtube_music')
+  },
+
+  /** The sidebar learns it from the `youtube-music-synced` event this sends. */
+  async setYouTubeMusicShowInSidebar(show: boolean): Promise<YtmStatus> {
+    return await invoke('set_youtube_music_show_in_sidebar', { show })
+  },
+
+  /** The result arrives as a `youtube-music-synced` event. */
+  async syncYouTubeMusicNow(): Promise<void> {
+    return await invoke('sync_youtube_music_now')
+  },
+
+  async getYouTubeMusicLibrary(): Promise<YtmLibrary> {
+    return await invoke('get_youtube_music_library')
+  },
+
+  /** Answers the lastOpenedAt it wrote (unix ms). `all` marks every list. */
+  async markYouTubeMusicListOpened(listId: string): Promise<number> {
+    return await invoke('mark_youtube_music_list_opened', { listId })
+  },
+
+  async setYouTubeMusicVerdict(videoId: string, libraryTrackId: number, verdict: Verdict): Promise<void> {
+    return await invoke('set_youtube_music_verdict', { videoId, libraryTrackId, verdict })
+  },
+
+  /** Rejects with the line the field shows ("Not found — …"). The rows arrive by event. */
+  async addYouTubeMusicPlaylist(link: string): Promise<void> {
+    return await invoke('add_youtube_music_playlist', { link })
+  },
+
+  async removeYouTubeMusicPlaylist(listId: string): Promise<void> {
+    return await invoke('remove_youtube_music_playlist', { listId })
+  },
+
+  // DJ pages. Reads are cached in the database; the refreshes go to Spotify / RA.
+  /** What is cached for a DJ, by name; creates the profile on a first open. */
+  async getDjPage(name: string): Promise<DjPage> {
+    return await invoke('get_dj_page', { name })
+  },
+
+  /** Progress arrives as `dj-tracks-progress` events; the outcome says what happened. */
+  async refreshDjSpotify(name: string): Promise<DjRefresh> {
+    return await invoke('refresh_dj_spotify', { name })
+  },
+
+  /** The next 150 appears-on / compilation releases ("Load older releases"). */
+  async loadOlderDjReleases(name: string): Promise<DjRefresh> {
+    return await invoke('load_older_dj_releases', { name })
+  },
+
+  /** RA failures come back as `outcome: 'failed'`, never as a thrown error. */
+  async refreshDjGigs(name: string): Promise<DjRefresh> {
+    return await invoke('refresh_dj_gigs', { name })
+  },
+
+  /** "Not this artist?": the search results on each source for this name. */
+  async djArtistCandidates(name: string): Promise<DjCandidates> {
+    return await invoke('dj_artist_candidates', { name })
+  },
+
+  /** A manual pick; null means "none". Answers the page as it now reads (a different artist reads empty until the next refresh). */
+  async setDjSpotifyArtist(
+    name: string,
+    artistId: string | null,
+  ): Promise<DjPage> {
+    return await invoke('set_dj_spotify_artist', { name, artistId })
+  },
+
+  /** A manual pick; null means "none". Answers the page as it now reads. */
+  async setDjRaArtist(name: string, ra: RaPick | null): Promise<DjPage> {
+    return await invoke('set_dj_ra_artist', { name, ra })
+  },
+
+  /** Search's Spotify DJ cards (at most 10 results). */
+  async searchSpotifyArtists(query: string): Promise<ArtistCandidate[]> {
+    return await invoke('search_spotify_artists', { query })
+  },
+
+  /** Cached tracks per name key, duplicates collapsed; keys never opened are absent. */
+  async getDjCachedTracks(
+    nameKeys: string[],
+  ): Promise<Record<string, DjTrack[]>> {
+    return await invoke('get_dj_cached_tracks', { nameKeys })
+  },
+
+  /** The tracklist rows of these saved sets, for Plays. */
+  async getYtTracksForSets(videoIds: string[]): Promise<DjSetTrack[]> {
+    return await invoke('get_yt_tracks_for_sets', { videoIds })
   },
 
   // AI commands
