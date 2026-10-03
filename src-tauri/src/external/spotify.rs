@@ -41,6 +41,10 @@ impl std::fmt::Display for SpotifyError {
             Self::NotConnected => write!(f, "Spotify is not connected"),
             Self::Reconnect => write!(f, "Spotify needs you to sign in again"),
             Self::Network(message) => write!(f, "{message}"),
+            // A body that was not Spotify's JSON leaves only the status.
+            Self::Api { status, message, .. } if *message == generic_api_message(*status) => {
+                write!(f, "{message}")
+            }
             Self::Api { status, message, .. } => write!(f, "Spotify answered {status}: {message}"),
             Self::RateLimited { retry_after_secs } => write!(
                 f,
@@ -51,6 +55,31 @@ impl std::fmt::Display for SpotifyError {
 }
 
 impl std::error::Error for SpotifyError {}
+
+fn generic_api_message(status: u16) -> String {
+    format!("Spotify answered {status}")
+}
+
+/// The most pages one listing is read to: 50,000 tracks or playlists.
+pub const MAX_PAGES: usize = 1_000;
+
+/// The next page to read, after `pages_read` pages. Only a URL on the Web API
+/// is followed (the token goes with every request), and a listing that never
+/// ends is an error rather than a hang.
+fn next_page(next: Option<String>, pages_read: usize) -> Result<Option<String>, SpotifyError> {
+    let Some(next) = next else { return Ok(None) };
+    if !next.starts_with(&format!("{API_BASE}/")) {
+        return Err(SpotifyError::Network(
+            "Spotify pointed the next page somewhere other than its Web API".to_string(),
+        ));
+    }
+    if pages_read >= MAX_PAGES {
+        return Err(SpotifyError::Network(format!(
+            "A Spotify listing ran past {MAX_PAGES} pages"
+        )));
+    }
+    Ok(Some(next))
+}
 
 pub fn liked_url() -> String {
     format!("{API_BASE}/me/tracks?limit={PAGE_LIMIT}")
@@ -164,7 +193,8 @@ pub fn api_error(status: u16, body: &str) -> SpotifyError {
         .or_else(|| parsed.as_ref().and_then(|v| v.get("error_description")))
         .and_then(Value::as_str)
         .map(str::to_string)
-        .unwrap_or_else(|| body.chars().take(200).collect());
+        // Not Spotify's JSON (a proxy's HTML page, say): the body is not shown.
+        .unwrap_or_else(|| generic_api_message(status));
     let reason = nested.and_then(|e| text(e, "reason"));
     SpotifyError::Api { status, message, reason }
 }
@@ -223,11 +253,13 @@ async fn fetch_all<A: SpotifyApi + Sync>(
     let mut entries = Vec::new();
     let mut total = None;
     let mut url = Some(first_url);
+    let mut pages = 0;
     while let Some(current) = url {
         let page = parse_entry_page(&api.get_json(&current).await?);
+        pages += 1;
         total.get_or_insert(page.total);
         entries.extend(page.items);
-        url = page.next;
+        url = next_page(page.next, pages)?;
     }
     Ok((entries, total.unwrap_or(0)))
 }
@@ -245,8 +277,10 @@ async fn fetch_liked<A: SpotifyApi + Sync>(
     let mut total = None;
     let mut reached_known = false;
     let mut url = Some(liked_url());
+    let mut pages = 0;
     'pages: while let Some(current) = url.take() {
         let page = parse_entry_page(&api.get_json(&current).await?);
+        pages += 1;
         total.get_or_insert(page.total);
         for entry in page.items {
             if base.liked_known.contains(&entry.track.spotify_id) {
@@ -255,7 +289,7 @@ async fn fetch_liked<A: SpotifyApi + Sync>(
             }
             fresh.push(entry);
         }
-        url = page.next;
+        url = next_page(page.next, pages)?;
     }
     let total = total.unwrap_or(0);
 
@@ -285,10 +319,12 @@ pub async fn fetch_changes<A: SpotifyApi + Sync>(
 
     let mut listed = Vec::new();
     let mut url = Some(playlists_url());
+    let mut pages = 0;
     while let Some(current) = url {
         let page = parse_playlist_page(&api.get_json(&current).await?);
+        pages += 1;
         listed.extend(page.items);
-        url = page.next;
+        url = next_page(page.next, pages)?;
     }
 
     let mut playlists = Vec::new();
@@ -353,7 +389,7 @@ impl SpotifyApi for LiveApi {
     fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, SpotifyError>> + Send {
         let url = url.to_string();
         async move {
-            for _ in 0..MAX_ATTEMPTS {
+            for attempt in 1..=MAX_ATTEMPTS {
                 let response = self.http.get(&url).bearer_auth(&self.token).send().await.map_err(network)?;
                 let status = response.status().as_u16();
 
@@ -361,7 +397,8 @@ impl SpotifyApi for LiveApi {
                     let wait = retry_after_secs(
                         response.headers().get("retry-after").and_then(|v| v.to_str().ok()),
                     );
-                    if wait > MAX_RETRY_WAIT_SECS {
+                    // Waiting before giving up anyway would only delay the error.
+                    if wait > MAX_RETRY_WAIT_SECS || attempt == MAX_ATTEMPTS {
                         return Err(SpotifyError::RateLimited { retry_after_secs: wait });
                     }
                     tokio::time::sleep(Duration::from_secs(wait)).await;
@@ -525,8 +562,9 @@ mod tests {
         );
         assert_eq!(
             api_error(502, "<html>Bad gateway</html>"),
-            SpotifyError::Api { status: 502, message: "<html>Bad gateway</html>".to_string(), reason: None }
+            SpotifyError::Api { status: 502, message: "Spotify answered 502".to_string(), reason: None }
         );
+        assert_eq!(api_error(502, "<html>Bad gateway</html>").to_string(), "Spotify answered 502");
     }
 
     fn api(status: u16, reason: Option<&str>) -> SpotifyError {
@@ -782,5 +820,100 @@ mod tests {
             .fail(&playlist_items_url("p1"), broken.clone());
 
         assert_eq!(fetch_changes(&api, &known(&["a"], 1)).await, Err(broken));
+    }
+
+    #[tokio::test]
+    async fn a_refused_playlist_whose_snapshot_changed_is_asked_for_again() {
+        let mut base = known(&["a"], 1);
+        base.refused.insert("p1".to_string(), "s1".to_string());
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s2")]))
+            .page(&playlist_items_url("p1"), page(vec![playlist_item("x")], None, 1));
+
+        let changes = fetch_changes(&api, &base).await.unwrap();
+
+        assert!(api.calls().contains(&playlist_items_url("p1")));
+        assert!(changes.refused.is_empty());
+        assert_eq!(ids(&changes.refetched["p1"]), ["x"]);
+    }
+
+    #[tokio::test]
+    async fn a_404_for_a_playlist_is_a_refusal_too() {
+        let missing = SpotifyError::Api { status: 404, message: "Not found".into(), reason: None };
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+            .page(&playlists_url(), playlists(&[("p1", "s1"), ("p2", "s2")]))
+            .fail(&playlist_items_url("p1"), missing)
+            .page(&playlist_items_url("p2"), page(vec![playlist_item("y")], None, 1));
+
+        let changes = fetch_changes(&api, &known(&["a"], 1)).await.unwrap();
+
+        assert_eq!(changes.refused.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p1"]);
+        assert_eq!(changes.playlists.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p2"]);
+    }
+
+    #[tokio::test]
+    async fn new_likes_across_a_page_boundary_are_one_prepend() {
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("n1"), liked_item("n2")], Some(LIKED_PAGE_2), 5))
+            .page(LIKED_PAGE_2, page(vec![liked_item("n3"), liked_item("a"), liked_item("b")], None, 5))
+            .page(&playlists_url(), playlists(&[]));
+
+        let changes = fetch_changes(&api, &known(&["a", "b"], 2)).await.unwrap();
+
+        match &changes.liked {
+            LikedChange::Prepend { entries, total } => {
+                assert_eq!(ids(entries), ["n1", "n2", "n3"]);
+                assert_eq!(*total, 5);
+            }
+            other => panic!("expected a prepend, got {other:?}"),
+        }
+        assert_eq!(api.calls(), vec![liked_url(), LIKED_PAGE_2.to_string(), playlists_url()]);
+    }
+
+    #[tokio::test]
+    async fn no_known_track_in_all_of_liked_songs_is_a_full_read() {
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a"), liked_item("b")], None, 2))
+            .page(&playlists_url(), playlists(&[]));
+
+        let changes = fetch_changes(&api, &known(&["gone"], 1)).await.unwrap();
+
+        match &changes.liked {
+            LikedChange::Full { entries, total } => {
+                assert_eq!(ids(entries), ["a", "b"]);
+                assert_eq!(*total, 2);
+            }
+            other => panic!("expected a full read, got {other:?}"),
+        }
+        // What was read was all of it: no second read.
+        assert_eq!(api.calls(), vec![liked_url(), playlists_url()]);
+    }
+
+    #[tokio::test]
+    async fn a_next_page_off_the_web_api_is_not_followed() {
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], Some("https://example.com/steal"), 2))
+            .page(&playlists_url(), playlists(&[]));
+
+        assert!(matches!(
+            fetch_changes(&api, &SyncBaseline::default()).await,
+            Err(SpotifyError::Network(_))
+        ));
+        assert!(!api.calls().iter().any(|url| url.contains("example.com")));
+    }
+
+    #[tokio::test]
+    async fn a_listing_that_never_ends_stops_at_the_page_cap() {
+        // The first page points back at itself.
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("a")], Some(&liked_url()), 1))
+            .page(&playlists_url(), playlists(&[]));
+
+        let result = fetch_changes(&api, &SyncBaseline::default()).await;
+
+        assert!(matches!(result, Err(SpotifyError::Network(message)) if message.contains("1000")));
+        assert_eq!(api.calls().len(), MAX_PAGES);
     }
 }

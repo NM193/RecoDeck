@@ -66,7 +66,7 @@ pub fn authorize_url(client_id: &str, challenge: &str, state: &str) -> String {
     )
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct TokenSet {
     pub access_token: String,
     /// Seconds.
@@ -74,6 +74,17 @@ pub struct TokenSet {
     /// Present on a login. On a refresh only when Spotify rotates it — then
     /// the new one replaces the stored one.
     pub refresh_token: Option<String>,
+}
+
+/// Tokens never reach a log or an error message.
+impl std::fmt::Debug for TokenSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenSet")
+            .field("access_token", &"[redacted]")
+            .field("expires_in", &self.expires_in)
+            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
 }
 
 /// The token endpoint's answer. `invalid_grant` on a refresh means the
@@ -167,10 +178,12 @@ pub fn code_from_callback(params: &HashMap<String, String>, expected_state: &str
 /// How long a login waits for the browser.
 pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Shown for every answer — a refused or mismatched login too, and before the
+/// code is exchanged — so it claims nothing; RecoDeck says how it went.
 const CLOSE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>RecoDeck</title>\
 <body style=\"font-family:-apple-system,sans-serif;background:#121212;color:#fff;\
 display:grid;place-items:center;height:100vh;margin:0\">\
-<p>Signed in. You can close this tab and go back to RecoDeck.</p>";
+<p>You can close this tab and go back to RecoDeck.</p>";
 
 type Reply = Arc<Mutex<Option<oneshot::Sender<HashMap<String, String>>>>>;
 
@@ -204,7 +217,7 @@ pub async fn wait_for_callback(
     let (stop, stopped) = oneshot::channel::<()>();
 
     let app = Router::new().route("/callback", get(callback)).with_state(reply);
-    let server = tokio::spawn(async move {
+    let mut server = tokio::spawn(async move {
         let _ = axum::serve(listener, app)
             .with_graceful_shutdown(async {
                 let _ = stopped.await;
@@ -215,8 +228,11 @@ pub async fn wait_for_callback(
     let answer = tokio::time::timeout(timeout, receiver).await;
 
     let _ = stop.send(());
-    // Let the page reach the browser and the port close, but never hang on it.
-    let _ = tokio::time::timeout(Duration::from_secs(2), server).await;
+    // Let the page reach the browser and the port close, but never hang on
+    // it: a browser holding a keep-alive connection open is cut off.
+    if tokio::time::timeout(Duration::from_secs(2), &mut server).await.is_err() {
+        server.abort();
+    }
 
     match answer {
         Ok(Ok(params)) => Ok(params),
@@ -358,6 +374,52 @@ mod tests {
         let params = waiting.await.unwrap().unwrap();
         assert_eq!(params.get("code").map(String::as_str), Some("C"));
         assert_eq!(params.get("state").map(String::as_str), Some("S"));
+    }
+
+    #[tokio::test]
+    async fn a_favicon_request_does_not_use_up_the_reply() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5)));
+
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let icon = client.get(format!("http://127.0.0.1:{port}/favicon.ico")).send().await.unwrap();
+        assert_eq!(icon.status().as_u16(), 404);
+        assert!(!waiting.is_finished());
+
+        client
+            .get(format!("http://127.0.0.1:{port}/callback?code=C&state=S"))
+            .send()
+            .await
+            .unwrap();
+        let params = waiting.await.unwrap().unwrap();
+        assert_eq!(params.get("code").map(String::as_str), Some("C"));
+    }
+
+    #[tokio::test]
+    async fn the_port_is_free_again_once_the_login_is_over() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5)));
+
+        // A client that keeps its connection open, as a browser does.
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        client
+            .get(format!("http://127.0.0.1:{port}/callback?code=C&state=S"))
+            .send()
+            .await
+            .unwrap();
+        waiting.await.unwrap().unwrap();
+
+        assert!(bind_listener(port).await.is_ok());
+    }
+
+    #[test]
+    fn tokens_are_redacted_when_printed() {
+        let tokens = TokenSet { access_token: "AT-secret".into(), expires_in: 3600, refresh_token: Some("RT-secret".into()) };
+        let printed = format!("{tokens:?}");
+        assert!(!printed.contains("secret"), "{printed}");
+        assert!(printed.contains("3600"));
     }
 
     #[tokio::test]
