@@ -622,15 +622,10 @@ pub async fn set_youtube_music_client_file(
     path: String,
 ) -> Result<YouTubeMusicStatusDTO, AppError> {
     let client = read_client_file(Path::new(&path))?;
-    let different =
-        with_db(&state, |db| Ok(setting(db, CLIENT_ID_SETTING)?.as_deref() != Some(client.client_id.as_str())))?;
-    if different {
-        // A sign-in still waiting in the browser was for the old client.
-        cancel_pending_login(&ytm);
-    }
-    // A sync running now must not write over the sign-out.
-    let _running = if different { Some(ytm.sync_lock.lock().await) } else { None };
-    with_db(&state, |db| {
+    // A sync running now must not write over a sign-out.
+    let _running = ytm.sync_lock.lock().await;
+    let different = with_db(&state, |db| {
+        let different = setting(db, CLIENT_ID_SETTING)?.as_deref() != Some(client.client_id.as_str());
         db.set_setting(CLIENT_ID_SETTING, &client.client_id).map_err(db_err)?;
         db.set_setting(CLIENT_SECRET_SETTING, &client.client_secret).map_err(db_err)?;
         if different {
@@ -639,8 +634,12 @@ pub async fn set_youtube_music_client_file(
             }
             forget_access(&ytm);
         }
-        Ok(())
+        Ok(different)
     })?;
+    if different {
+        // A sign-in still waiting in the browser was for the old client.
+        cancel_pending_login(&ytm);
+    }
     if different {
         // The sidebar and the view go until the account is connected again.
         let _ = app.emit(SYNCED_EVENT, &SyncedPayload::cleared());
@@ -784,12 +783,18 @@ pub async fn add_youtube_music_playlist(
     // A loop run must not write this list at the same time; it only tries the
     // lock, so it skips this round.
     let _running = ytm.sync_lock.lock().await;
+    // Another add may have finished while this one waited.
+    if with_db(&state, |db| db.has_ytm_list(&id).map_err(db_err))? {
+        return Err(AppError::Validation("This playlist is already in the sidebar".to_string()));
+    }
+    // Read once, before the network, as a sync does.
     let now = now_ms();
+    let day = today();
     let known = with_db(&state, |db| db.ytm_known_ids().map_err(db_err))?;
     // Errors go the way a sync's do: a dead access token is refreshed and
-    // tried once more; a revoked grant (the refresh's invalid_grant) has
-    // the failure says needs-reconnect, and the bar shows; a used-up quota
-    // pauses the loop until the next Pacific day.
+    // tried once more; a revoked grant (the refresh answers invalid_grant)
+    // comes back as needs-reconnect and the bar shows; a used-up quota pauses
+    // the loop until the next Pacific day.
     let mut fetched = fetch_new_with_token(&state, &ytm, &id, &known, now).await;
     if matches!(&fetched, Ok(answer) if token_went_stale(answer)) {
         forget_access(&ytm);
@@ -807,7 +812,7 @@ pub async fn add_youtube_music_playlist(
     let found = match answer {
         Ok(found) => found,
         Err(err) => {
-            let _ = with_db(&state, |db| note_failed_call(db, &err, &today()));
+            let _ = with_db(&state, |db| note_failed_call(db, &err, &day));
             if err == YtmError::QuotaExceeded {
                 emit_status(&app, &state, false);
             }
@@ -1150,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dead_access_token_is_refreshed_and_tried_once_more() {
+    fn only_a_401_counts_as_a_stale_token() {
         let revoked: Result<(), YtmError> =
             Err(YtmError::Api { status: 401, message: String::new(), reason: None });
         assert!(token_went_stale(&revoked));
