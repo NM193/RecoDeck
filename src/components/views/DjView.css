@@ -59,16 +59,19 @@
    of a face. The photo stands whole beside the name; behind, the same photo
    blurred gives the band its colour. */
 .dj-hero--photo {
-  overflow: hidden;
   background: var(--bg-secondary);
 }
 
+/* Drawn 48px larger so the blur has no pale edges, then clipped back to the
+   band by its own clip-path: overflow on the hero would also cut off the ⋯
+   menu, which opens below it. */
 .dj-hero--photo::before {
   content: '';
   position: absolute;
   inset: -48px;
   background: var(--dj-photo) center / cover no-repeat;
   filter: blur(40px) brightness(0.55) saturate(1.2);
+  clip-path: inset(48px);
   pointer-events: none;
 }
 
