@@ -185,6 +185,38 @@ describe('matching a tracklist against the library', () => {
     expect(matchTracklist([sameMix], shelf).owned).toBe(1)
   })
 
+  it('takes the plain versions of a record for one another', () => {
+    // A tracklist writes "(Original Mix)", the file says "(Extended Mix)": the
+    // artist's own cut either way, not a different record.
+    const shelf: LibraryTrack[] = [lib(24, 'Clive & Deepower', 'Little Girl (Extended Mix)')]
+    const original: Track = {
+      ...parsed(1, 'Clive & Deepower', 'Little Girl'),
+      mix: 'Original Mix',
+      titleNorm: normalise('Little Girl Original Mix'),
+    }
+    const radio: Track = { ...original, index: 2, mix: 'Radio Edit', titleNorm: normalise('Little Girl Radio Edit') }
+    expect(matchTracklist([original, radio], shelf).owned).toBe(2)
+  })
+
+  it('still keeps a named remix apart from the plain versions', () => {
+    const shelf: LibraryTrack[] = [lib(25, 'John Summit', 'Witch Doctor (Original Mix)')]
+    const remix: Track = {
+      ...parsed(1, 'John Summit', 'Witch Doctor'),
+      mix: 'Hot Since 82 Remix',
+      titleNorm: normalise('Witch Doctor Hot Since 82 Remix'),
+    }
+    expect(matchTracklist([remix], shelf).owned).toBe(0)
+
+    // Plain words inside a named version do not make it plain.
+    const extendedShelf: LibraryTrack[] = [lib(26, 'John Summit', 'Witch Doctor (Extended Mix)')]
+    const namedExtended: Track = {
+      ...remix,
+      mix: 'Hot Since 82 Extended Mix',
+      titleNorm: normalise('Witch Doctor Hot Since 82 Extended Mix'),
+    }
+    expect(matchTracklist([namedExtended], extendedShelf).owned).toBe(0)
+  })
+
   it('handles an empty library without pretending', () => {
     const result = matchTracklist([parsed(1, 'MK', 'Burning')], [])
     expect(result.owned).toBe(0)

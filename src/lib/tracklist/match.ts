@@ -66,6 +66,49 @@ const MIN_SIZE_RATIO = 0.5
  */
 const MIN_VERSION_MATCH = 0.6
 
+/**
+ * The words a version may be made of and still be the artist's own cut.
+ *
+ * "Original Mix", "Extended Mix", "Radio Edit", "Club Mix", "Extended" — a
+ * store, Spotify and a tag each pick one of these for the same record, and a DJ
+ * owning the extended mix owns the record whose Spotify page says "Original
+ * Mix". Anything else in a version — a remixer's name, "dub", "instrumental",
+ * "remaster" — makes it a version of its own.
+ */
+const PLAIN_VERSION_WORDS = new Set([
+  'original',
+  'extended',
+  'radio',
+  'club',
+  'main',
+  'album',
+  'single',
+  'mix',
+  'edit',
+  'version',
+])
+
+/** A version made only of plain words: the record itself, not someone's take on it. */
+function isPlainVersion(tokens: Set<string>): boolean {
+  if (!tokens.size) return false
+  for (const token of tokens) if (!PLAIN_VERSION_WORDS.has(token)) return false
+  return true
+}
+
+/**
+ * Whether two named versions can be the same record.
+ *
+ * Two plain versions always can. A plain version and a named one never can,
+ * even when the name contains the plain words: "Hot Since 82 Extended Mix" is
+ * not the "Extended Mix". Two named versions have to agree on most words.
+ */
+function sameVersion(A: Set<string>, B: Set<string>): boolean {
+  const plainA = isPlainVersion(A)
+  const plainB = isPlainVersion(B)
+  if (plainA || plainB) return plainA && plainB
+  return containmentOf(A, B) >= MIN_VERSION_MATCH
+}
+
 /** Bracketed segments that name a version rather than describe the track. */
 const VERSION_WORDS =
   /\b(remix|mix|edit|version|bootleg|dub|rework|vip|remaster|instrumental|acapella|acappella)\b/i
@@ -201,11 +244,12 @@ export function matchOne(
   for (const entry of indexed) {
     if (!entry.titleNorm || !entry.artistNorm) continue
 
-    // When both sides name a version, they have to be the same version. When
+    // When both sides name a version, they have to be the same version (any
+    // two plain ones count as the same, see `sameVersion`). When
     // only one does, the title still decides — a tracklist naming the remix
     // while the tag says only "Horny" is the same record written two ways.
     if (versionTokens.size && entry.versionTokens.size) {
-      if (containmentOf(versionTokens, entry.versionTokens) < MIN_VERSION_MATCH) continue
+      if (!sameVersion(versionTokens, entry.versionTokens)) continue
     }
 
     let titleScore: number | null = null

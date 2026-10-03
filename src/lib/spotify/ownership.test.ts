@@ -46,6 +46,32 @@ describe('do I own this Spotify track?', () => {
     expect(result.get('d')?.kind).toBe('missing')
   })
 
+  it('takes Original Mix, Extended Mix and Radio Edit for the same record', () => {
+    const extended = [lib(6, 'Clive, Deepower', 'Little Girl (Extended Mix)')]
+    const original = [lib(7, 'Clive, Deepower', 'Little Girl (Original Mix)')]
+    const artists = 'Clive, Deepower'
+
+    expect(classify([sp('e', 'Little Girl - Original Mix', artists)], extended).get('e')).toEqual({
+      kind: 'owned',
+      file: extended[0],
+    })
+    expect(classify([sp('f', 'Little Girl - Extended Mix', artists)], original).get('f')).toEqual({
+      kind: 'owned',
+      file: original[0],
+    })
+    expect(classify([sp('g', 'Little Girl - Radio Edit', artists)], extended).get('g')).toEqual({
+      kind: 'owned',
+      file: extended[0],
+    })
+  })
+
+  it('does not take a named remix for the Original Mix', () => {
+    const original = [lib(8, 'Witchy', 'Witch Doctor (Original Mix)')]
+    expect(classify([sp('h', 'Witch Doctor - Hot Since 82 Remix', 'Witchy')], original).get('h')).toEqual({
+      kind: 'missing',
+    })
+  })
+
   it('is Owned after a Yes, whatever the matcher thinks', () => {
     const verdicts: SpotifyVerdict[] = [{ spotifyId: 'c', libraryTrackId: 2, verdict: 'yes' }]
     const result = classify([sp('c', 'Tell You', 'Prunk, Retrouve')], shelf, verdicts)
