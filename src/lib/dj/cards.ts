@@ -17,10 +17,8 @@ import type { DjProfile } from '../../types/dj'
 
 /** How many rows each card shows (spec: next 3, top 4, newest 3, 3 sets, last 3, newest 5 Missing). */
 export const CARD_ROWS = {
-  'upcoming-gigs': 3,
   plays: 4,
   sets: 3,
-  'past-gigs': 3,
   missing: 5,
 } as const
 

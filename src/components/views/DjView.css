@@ -712,10 +712,19 @@
   border-top: 0;
 }
 
-/* The Tracks card lists every track and scrolls past about ten. */
+/* The Tracks and Gigs cards list everything but keep their height: six
+   tracks or three gigs show, the rest scroll inside the card, and the wheel
+   stays in the card at either end instead of moving the page. */
 .dj-card__table--scroll {
-  max-height: 420px;
+  max-height: 192px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dj-gigs--scroll {
+  max-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* What they play: Track · bar + "4 of 6" · Status. */

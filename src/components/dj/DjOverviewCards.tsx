@@ -105,10 +105,8 @@ function GigsBody({
   if (state === 'link') return <RaLinkCard raUrl={data.raUrl} />
   if (state === 'searching') return <Note>Looking on Resident Advisor…</Note>
   if (state === 'none') return <Note>No gigs listed on Resident Advisor.</Note>
-  const shown =
-    kind === 'upcoming'
-      ? upcoming.slice(0, CARD_ROWS['upcoming-gigs'])
-      : past.slice(0, CARD_ROWS['past-gigs'])
+  // Every gig, in a box the height of three that scrolls.
+  const shown = kind === 'upcoming' ? upcoming : past
   if (shown.length === 0)
     return (
       <Note>
@@ -118,7 +116,7 @@ function GigsBody({
       </Note>
     )
   return (
-    <div className="dj-gigs">
+    <div className="dj-gigs dj-gigs--scroll">
       {shown.map((gig) => (
         <GigRow
           key={gig.raEventId}
@@ -175,7 +173,7 @@ function TracksBody({
   filter: StatusFilter
   /** The first rows only; without it, every row. */
   limit?: number
-  /** Every row, in a box that scrolls past about ten. */
+  /** Every row, in a box the height of six that scrolls. */
   scroll?: boolean
   data: OverviewData
   actions: OverviewActions
