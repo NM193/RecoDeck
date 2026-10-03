@@ -16,7 +16,10 @@ export interface NewCounts {
 }
 
 /** Strictly later: a list's first sync stamps both with the same time. */
-export function isNew(entry: SpotifyEntry, lastOpenedAt: number): boolean {
+export function isNew(
+  entry: Pick<SpotifyEntry, 'firstSeenAt'>,
+  lastOpenedAt: number,
+): boolean {
   return entry.firstSeenAt > lastOpenedAt
 }
 
