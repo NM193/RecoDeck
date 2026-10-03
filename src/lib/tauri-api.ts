@@ -40,6 +40,12 @@ import type {
   RecommendationResult,
   RecommendedOrder,
 } from '../types/ai'
+import type {
+  PlayOutcome,
+  SpotifyLibrary,
+  SpotifyStatus,
+  Verdict,
+} from '../types/spotify'
 // AppError, isAppError, getErrorMessage are exported from ../types/ai for use by UI components
 
 export const tauriApi = {
@@ -625,6 +631,46 @@ export const tauriApi = {
 
   async deleteSavedYouTubeTrack(videoId: string, cueMs: number, title: string): Promise<void> {
     return await invoke('delete_saved_youtube_track', { videoId, cueMs, title })
+  },
+
+  // Spotify. Read-only on Spotify's side; the tokens never reach the webview.
+  async getSpotifyStatus(): Promise<SpotifyStatus> {
+    return await invoke('get_spotify_status')
+  },
+
+  async setSpotifyClientId(clientId: string): Promise<SpotifyStatus> {
+    return await invoke('set_spotify_client_id', { clientId })
+  },
+
+  /** Resolves when the browser login is done (or fails); can take minutes. */
+  async connectSpotify(): Promise<SpotifyStatus> {
+    return await invoke('connect_spotify')
+  },
+
+  async disconnectSpotify(): Promise<SpotifyStatus> {
+    return await invoke('disconnect_spotify')
+  },
+
+  /** The result arrives as a `spotify-synced` event. */
+  async syncSpotifyNow(): Promise<void> {
+    return await invoke('sync_spotify_now')
+  },
+
+  async getSpotifyLibrary(): Promise<SpotifyLibrary> {
+    return await invoke('get_spotify_library')
+  },
+
+  /** Answers the lastOpenedAt it wrote (unix ms). `all` marks every list. */
+  async markSpotifyListOpened(listId: string): Promise<number> {
+    return await invoke('mark_spotify_list_opened', { listId })
+  },
+
+  async setSpotifyVerdict(spotifyId: string, libraryTrackId: number, verdict: Verdict): Promise<void> {
+    return await invoke('set_spotify_verdict', { spotifyId, libraryTrackId, verdict })
+  },
+
+  async playSpotifyTrack(spotifyId: string): Promise<PlayOutcome> {
+    return await invoke('play_spotify_track', { spotifyId })
   },
 
   // AI commands

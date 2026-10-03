@@ -92,6 +92,9 @@ export type AppErrorKind =
   | 'YtApiNotEnabled'
   | 'YtQuotaExceeded'
   | 'YtNetwork'
+  | 'SpotifyNotConnected'
+  | 'SpotifyReconnect'
+  | 'Spotify'
 
 export interface AppError {
   kind: AppErrorKind
@@ -152,6 +155,10 @@ export function getErrorMessage(e: unknown): string {
         return 'YouTube Data API v3 is not enabled for this key\'s Google Cloud project'
       case 'YtQuotaExceeded':
         return 'Daily YouTube quota is spent -- it resets at midnight Pacific time'
+      case 'SpotifyNotConnected':
+        return 'Spotify is not connected -- connect it in Settings'
+      case 'SpotifyReconnect':
+        return 'Spotify needs you to sign in again'
       default:
         return e.message ?? 'An unexpected error occurred'
     }
