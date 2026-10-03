@@ -1124,7 +1124,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 No snapshot id exists, so what a sync found per list is one of three things: unchanged (its first page matched), read in full, or gone (404). Durations come along for the videos not stored before. The rules:
 - a list's first full read is its baseline: `last_opened_at` = now, so nothing it already held is new;
 - a full read keeps each pair's `first_seen_at`, adds what is new, drops what left;
-- gone marks `unavailable_at` once and keeps the rows; the next full read clears it;
+- gone marks `unavailable_at` once and keeps the rows; the next successful read (full or unchanged) clears it;
 - a result for a playlist removed while the sync ran is dropped, not brought back;
 - a duration is only ever filled in.
 
