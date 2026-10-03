@@ -17,6 +17,8 @@ use crate::external::youtube::parse_iso_duration;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 pub const API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 /// The largest page `playlistItems` and `videos` give.
@@ -317,6 +319,61 @@ pub async fn fetch_new_playlist<A: YtmApi + Sync>(
         return Ok(None);
     }
     Ok(Some((name, changes)))
+}
+
+// --- the live client ----------------------------------------------------
+
+/// `playlistItems`, `playlists` and `videos` all cost 1 unit (`youtube::unit_cost`).
+const UNITS_PER_CALL: u32 = 1;
+
+fn network(e: reqwest::Error) -> YtmError {
+    if e.is_timeout() {
+        YtmError::Network("YouTube did not answer in 30 seconds".to_string())
+    } else {
+        YtmError::Network(format!("Could not reach YouTube: {e}"))
+    }
+}
+
+/// The Data API with the user's access token. Counts what it spends, so the
+/// caller can add it to the shared quota counter.
+pub struct LiveApi {
+    http: reqwest::Client,
+    token: String,
+    spent: AtomicU32,
+}
+
+impl LiveApi {
+    pub fn new(token: String) -> Result<Self, YtmError> {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| YtmError::Network(format!("Could not build HTTP client: {e}")))?;
+        Ok(Self { http, token, spent: AtomicU32::new(0) })
+    }
+
+    /// Units used so far. Google bills the attempt, so a call that failed counts.
+    pub fn spent(&self) -> u32 {
+        self.spent.load(Ordering::SeqCst)
+    }
+}
+
+impl YtmApi for LiveApi {
+    fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, YtmError>> + Send {
+        let url = url.to_string();
+        async move {
+            let response = self.http.get(&url).bearer_auth(&self.token).send().await;
+            // Counted before the answer is judged, as `youtube::call_api` does.
+            self.spent.fetch_add(UNITS_PER_CALL, Ordering::SeqCst);
+            let response = response.map_err(network)?;
+            let status = response.status().as_u16();
+            let body = response.text().await.map_err(network)?;
+            if !(200..300).contains(&status) {
+                return Err(api_error(status, &body));
+            }
+            serde_json::from_str(&body)
+                .map_err(|e| YtmError::Network(format!("YouTube sent unreadable JSON: {e}")))
+        }
+    }
 }
 
 #[cfg(test)]

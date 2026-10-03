@@ -8,5 +8,6 @@ pub mod youtube_time;
 pub mod spotify;
 pub mod spotify_auth;
 pub mod youtube_music;
+pub mod youtube_auth;
 pub mod resident_advisor;
 pub mod dj_releases;
