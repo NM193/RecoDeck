@@ -206,12 +206,23 @@ async fn callback(
     Html(CLOSE_PAGE)
 }
 
+/// Why no redirect came back.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CallbackError {
+    /// A newer login, or a Client ID change, took over. Nothing to report.
+    Cancelled,
+    /// Said to the user as is.
+    Failed(String),
+}
+
 /// Serves one redirect on `listener`, then stops listening. Answers with the
-/// query parameters Spotify sent back.
+/// query parameters Spotify sent back. Firing (or dropping) `cancel` ends the
+/// wait early; the port is free again by the time this returns.
 pub async fn wait_for_callback(
     listener: TcpListener,
     timeout: Duration,
-) -> Result<HashMap<String, String>, String> {
+    cancel: oneshot::Receiver<()>,
+) -> Result<HashMap<String, String>, CallbackError> {
     let (sender, receiver) = oneshot::channel();
     let reply: Reply = Arc::new(Mutex::new(Some(sender)));
     let (stop, stopped) = oneshot::channel::<()>();
@@ -225,7 +236,10 @@ pub async fn wait_for_callback(
             .await;
     });
 
-    let answer = tokio::time::timeout(timeout, receiver).await;
+    let answer = tokio::select! {
+        answer = tokio::time::timeout(timeout, receiver) => Some(answer),
+        _ = cancel => None,
+    };
 
     let _ = stop.send(());
     // Let the page reach the browser and the port close, but never hang on
@@ -235,9 +249,14 @@ pub async fn wait_for_callback(
     }
 
     match answer {
-        Ok(Ok(params)) => Ok(params),
-        Ok(Err(_)) => Err("The sign-in listener stopped unexpectedly — press Connect to try again".to_string()),
-        Err(_) => Err("No answer from the browser — press Connect to try again".to_string()),
+        None => Err(CallbackError::Cancelled),
+        Some(Ok(Ok(params))) => Ok(params),
+        Some(Ok(Err(_))) => Err(CallbackError::Failed(
+            "The sign-in listener stopped unexpectedly — press Connect to try again".to_string(),
+        )),
+        Some(Err(_)) => Err(CallbackError::Failed(
+            "No answer from the browser — press Connect to try again".to_string(),
+        )),
     }
 }
 
@@ -356,11 +375,30 @@ mod tests {
 
     use tokio::net::TcpListener;
 
+    /// A cancel that never fires: its sender is leaked, not dropped.
+    fn never() -> oneshot::Receiver<()> {
+        let (sender, receiver) = oneshot::channel();
+        std::mem::forget(sender);
+        receiver
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_login_stops_listening_and_frees_the_port() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (cancel, cancelled) = oneshot::channel();
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(60), cancelled));
+
+        cancel.send(()).unwrap();
+        assert_eq!(waiting.await.unwrap(), Err(CallbackError::Cancelled));
+        assert!(bind_listener(port).await.is_ok());
+    }
+
     #[tokio::test]
     async fn the_listener_hands_back_what_the_browser_brought() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5)));
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5), never()));
 
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let page = client
@@ -380,7 +418,7 @@ mod tests {
     async fn a_favicon_request_does_not_use_up_the_reply() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5)));
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5), never()));
 
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let icon = client.get(format!("http://127.0.0.1:{port}/favicon.ico")).send().await.unwrap();
@@ -400,7 +438,7 @@ mod tests {
     async fn the_port_is_free_again_once_the_login_is_over() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5)));
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5), never()));
 
         // A client that keeps its connection open, as a browser does.
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
@@ -425,8 +463,9 @@ mod tests {
     #[tokio::test]
     async fn the_listener_gives_up_after_the_timeout() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let err = wait_for_callback(listener, Duration::from_millis(50)).await.unwrap_err();
-        assert!(err.contains("No answer"));
+        let (_keep, cancel) = oneshot::channel();
+        let err = wait_for_callback(listener, Duration::from_millis(50), cancel).await.unwrap_err();
+        assert!(matches!(err, CallbackError::Failed(message) if message.contains("No answer")));
     }
 
     #[tokio::test]

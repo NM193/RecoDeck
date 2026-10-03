@@ -434,11 +434,26 @@ pub async fn play_track(token: &str, spotify_id: &str) -> Result<(), SpotifyErro
     Err(api_error(status, &body))
 }
 
-/// The connected account's name, for Settings.
-pub async fn fetch_profile_name(token: &str) -> Result<String, SpotifyError> {
+/// Who signed in: the Spotify user id, which never changes and tells one
+/// account from another, and the name Settings shows, which the user can edit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Profile {
+    pub id: String,
+    pub name: String,
+}
+
+pub fn parse_profile(me: &Value) -> Result<Profile, SpotifyError> {
+    let id = text(me, "id")
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| SpotifyError::Network("Spotify sent no account id".to_string()))?;
+    Ok(Profile { id, name: profile_name(me) })
+}
+
+/// The connected account, from `/v1/me`.
+pub async fn fetch_profile(token: &str) -> Result<Profile, SpotifyError> {
     let api = LiveApi::new(token.to_string())?;
     let me = api.get_json(&format!("{API_BASE}/me")).await?;
-    Ok(profile_name(&me))
+    parse_profile(&me)
 }
 
 impl From<SpotifyError> for crate::error::AppError {
@@ -590,6 +605,15 @@ mod tests {
         assert!(!should_open_app(&api(500, None)));
         assert!(!should_open_app(&api(401, None)));
         assert!(!should_open_app(&SpotifyError::Network("offline".into())));
+    }
+
+    #[test]
+    fn a_profile_carries_the_account_id_apart_from_the_name() {
+        assert_eq!(
+            parse_profile(&json!({ "id": "nmarj", "display_name": "Nemanja" })),
+            Ok(Profile { id: "nmarj".into(), name: "Nemanja".into() })
+        );
+        assert!(parse_profile(&json!({ "display_name": "Nemanja" })).is_err());
     }
 
     #[test]

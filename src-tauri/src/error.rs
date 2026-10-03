@@ -60,6 +60,11 @@ pub enum AppError {
     #[error("Spotify needs you to sign in again")]
     SpotifyReconnect,
 
+    /// A pending sign-in was replaced by a newer one or by a Client ID change.
+    /// The frontend ignores it.
+    #[error("The Spotify sign-in was replaced by a newer one")]
+    SpotifyLoginCancelled,
+
     #[error("{0}")]
     Spotify(String),
 }
