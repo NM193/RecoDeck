@@ -219,12 +219,22 @@ pub fn base64url_decode(text: &str) -> Option<Vec<u8>> {
 /// The address an `id_token` was issued for. Only shown in Settings, so the
 /// signature is not checked: the token came straight from Google over TLS.
 pub fn email_from_id_token(id_token: &str) -> Option<String> {
+    claim_from_id_token(id_token, "email")
+}
+
+/// Google's stable id for the account (`sub`); unlike the address it never
+/// changes, so it tells one account from another.
+pub fn account_id_from_id_token(id_token: &str) -> Option<String> {
+    claim_from_id_token(id_token, "sub")
+}
+
+fn claim_from_id_token(id_token: &str, claim: &str) -> Option<String> {
     let payload = id_token.split('.').nth(1)?;
     let claims: Value = serde_json::from_slice(&base64url_decode(payload)?).ok()?;
     claims
-        .get("email")
+        .get(claim)
         .and_then(Value::as_str)
-        .filter(|email| !email.is_empty())
+        .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
 
@@ -351,6 +361,17 @@ mod tests {
         assert_eq!(email_from_id_token("not-a-jwt"), None);
         let no_email = base64url(br#"{"sub":"1"}"#);
         assert_eq!(email_from_id_token(&format!("h.{no_email}.s")), None);
+    }
+
+    #[test]
+    fn the_account_id_comes_from_the_sub_claim() {
+        let claims = base64url(br#"{"sub":"1128734","email":"dj@example.com"}"#);
+        assert_eq!(account_id_from_id_token(&format!("h.{claims}.s")).as_deref(), Some("1128734"));
+        let none = base64url(br#"{"email":"dj@example.com"}"#);
+        assert_eq!(account_id_from_id_token(&format!("h.{none}.s")), None);
+        let empty = base64url(br#"{"sub":""}"#);
+        assert_eq!(account_id_from_id_token(&format!("h.{empty}.s")), None);
+        assert_eq!(account_id_from_id_token("not-a-jwt"), None);
     }
 
     #[test]

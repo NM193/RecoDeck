@@ -25,6 +25,8 @@ pub const API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 pub const PAGE_SIZE: usize = 50;
 /// The most pages one list is read to: 5,000 videos, YouTube's cap on a playlist.
 pub const MAX_PAGES: usize = 100;
+const PAGE_CAP_MESSAGE: &str = "This YouTube playlist has more than 5,000 videos, more than RecoDeck reads";
+const REPEATED_PAGE_MESSAGE: &str = "YouTube repeated a playlist page";
 /// A list last read in full this long ago is read in full again, whatever its
 /// first page says.
 pub const FULL_REFETCH_MS: i64 = 24 * 60 * 60 * 1000;
@@ -41,6 +43,8 @@ pub enum YtmError {
     Api { status: u16, message: String, reason: Option<String> },
     /// `quotaExceeded`: the day's units are used up until midnight Pacific.
     QuotaExceeded,
+    /// A limit of ours, not a connection problem: shown as is, not as "couldn't reach YouTube".
+    Other(String),
 }
 
 impl std::fmt::Display for YtmError {
@@ -48,7 +52,7 @@ impl std::fmt::Display for YtmError {
         match self {
             Self::NotConnected => write!(f, "YouTube Music is not connected"),
             Self::Reconnect => write!(f, "YouTube Music needs you to sign in again"),
-            Self::Network(message) => write!(f, "{message}"),
+            Self::Network(message) | Self::Other(message) => write!(f, "{message}"),
             // A body that was not Google's JSON leaves only the status.
             Self::Api { status, message, .. } if *message == generic_api_message(*status) => {
                 write!(f, "{message}")
@@ -239,8 +243,11 @@ async fn read_list<A: YtmApi + Sync>(api: &A, list: &ListBaseline, now_ms: i64) 
     let mut pages = 1;
     let mut seen: HashSet<String> = HashSet::new();
     while let Some(token) = next_page_token {
-        if pages >= MAX_PAGES || !seen.insert(token.clone()) {
-            return Err(YtmError::Network(format!("A YouTube playlist ran past {MAX_PAGES} pages")));
+        if !seen.insert(token.clone()) {
+            return Err(YtmError::Other(REPEATED_PAGE_MESSAGE.to_string()));
+        }
+        if pages >= MAX_PAGES {
+            return Err(YtmError::Other(PAGE_CAP_MESSAGE.to_string()));
         }
         let page = parse_items_page(&api.get_json(&items_url(&list.id, Some(&token))).await?);
         pages += 1;
@@ -782,7 +789,7 @@ mod tests {
             .page(items_url("LM", None), page_of(&["a"], 9, Some("P2")))
             .page(items_url("LM", Some("P2")), page_of(&["b"], 9, Some("P2")));
         let base = SyncBaseline { lists: vec![ListBaseline::new("LM")], known_ids: HashSet::new() };
-        assert!(matches!(fetch_changes(&api, &base, NOW).await, Err(YtmError::Network(_))));
+        assert!(matches!(fetch_changes(&api, &base, NOW).await, Err(YtmError::Other(m)) if m == REPEATED_PAGE_MESSAGE));
         assert_eq!(api.calls().len(), 2, "page one and P2 once, not again");
     }
 

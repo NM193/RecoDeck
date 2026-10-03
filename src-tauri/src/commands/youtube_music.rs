@@ -33,6 +33,8 @@ const CLIENT_SECRET_SETTING: &str = "youtube_music_client_secret";
 const REFRESH_TOKEN_SETTING: &str = "youtube_music_refresh_token";
 /// Who signed in, for showing only.
 const EMAIL_SETTING: &str = "youtube_music_email";
+/// Google's stable id (`sub`) of the signed-in account; the address can change.
+const ACCOUNT_ID_SETTING: &str = "youtube_music_account_id";
 /// "0" hides the section and pauses the loop. Absent, it shows.
 const SHOW_IN_SIDEBAR_SETTING: &str = "youtube_music_show_in_sidebar";
 const LAST_SYNCED_SETTING: &str = "youtube_music_last_synced_at";
@@ -188,6 +190,14 @@ fn should_sync(db: &Database, today: &str) -> bool {
         && matches!(setting(db, NEEDS_RECONNECT_SETTING), Ok(None))
         && shows_in_sidebar(db)
         && !matches!(setting(db, QUOTA_DAY_SETTING), Ok(Some(day)) if day == today)
+}
+
+/// Whether the account that just signed in is not the one whose lists are
+/// stored. Told apart by Google account id; with no id known on either side
+/// (rows stored before the id was kept, or an id_token without `sub`) it is
+/// not treated as another account.
+fn is_another_account(stored_id: Option<&str>, signed_in_id: Option<&str>) -> bool {
+    matches!((stored_id, signed_in_id), (Some(stored), Some(new)) if stored != new)
 }
 
 /// Both values of the chosen client file, or None until one was chosen.
@@ -453,6 +463,7 @@ fn forget_account(db: &Database) -> Result<(), AppError> {
     for key in [
         REFRESH_TOKEN_SETTING,
         EMAIL_SETTING,
+        ACCOUNT_ID_SETTING,
         LAST_SYNCED_SETTING,
         LAST_ERROR_SETTING,
         LAST_ERROR_KIND_SETTING,
@@ -716,6 +727,7 @@ pub async fn connect_youtube_music(
         .as_deref()
         .and_then(youtube_auth::email_from_id_token)
         .unwrap_or_else(|| "your Google account".to_string());
+    let account_id = tokens.id_token.as_deref().and_then(youtube_auth::account_id_from_id_token);
 
     {
         // As in disconnect: a sync running now must not write over this.
@@ -727,7 +739,15 @@ pub async fn connect_youtube_music(
             if !login_is_current(&ytm, generation) || !same_client {
                 return Err(AppError::YouTubeMusicLoginCancelled);
             }
+            // Another account's lists would make this one's whole library read as new.
+            let stored_id = setting(db, ACCOUNT_ID_SETTING)?;
+            if is_another_account(stored_id.as_deref(), account_id.as_deref()) {
+                db.clear_ytm_account().map_err(db_err)?;
+            }
             db.set_setting(REFRESH_TOKEN_SETTING, &refresh_token).map_err(db_err)?;
+            if let Some(id) = &account_id {
+                db.set_setting(ACCOUNT_ID_SETTING, id).map_err(db_err)?;
+            }
             db.set_setting(EMAIL_SETTING, &email).map_err(db_err)?;
             db.set_setting(NEEDS_RECONNECT_SETTING, "").map_err(db_err)?;
             db.set_setting(LAST_ERROR_SETTING, "").map_err(db_err)?;
@@ -735,6 +755,9 @@ pub async fn connect_youtube_music(
             Ok(())
         })?;
     }
+
+    // The section shows now, before the first sync finishes.
+    emit_status(&app, &state, false);
 
     // The first sync starts now, not in 30 minutes. It reports through the event.
     let handle = app.clone();
@@ -859,7 +882,9 @@ pub async fn set_youtube_music_show_in_sidebar(
         read_status(db, &today())
     })?;
     let _ = app.emit(SYNCED_EVENT, &SyncedPayload::from_status(&status, false));
-    if show && status.connected {
+    // Not on a day the quota is used up: the sync would only fail again.
+    let may_sync = with_db(&state, |db| Ok(should_sync(db, &today())))?;
+    if show && may_sync {
         let handle = app.clone();
         tauri::async_runtime::spawn(async move {
             let _ = run_sync(&handle).await;
@@ -1083,6 +1108,15 @@ mod tests {
     }
 
     #[test]
+    fn only_a_different_known_account_is_another_account() {
+        assert!(is_another_account(Some("1"), Some("2")));
+        assert!(!is_another_account(Some("1"), Some("1")));
+        assert!(!is_another_account(None, Some("1")), "nothing stored: first sign-in");
+        assert!(!is_another_account(Some("1"), None), "no id in the token: cannot tell");
+        assert!(!is_another_account(None, None));
+    }
+
+    #[test]
     fn disconnecting_keeps_the_client_the_playlists_and_the_switch() {
         let db = fresh();
         for (key, value) in [
@@ -1090,6 +1124,7 @@ mod tests {
             (CLIENT_SECRET_SETTING, "secret"),
             (REFRESH_TOKEN_SETTING, "rt"),
             (EMAIL_SETTING, "dj@example.com"),
+            (ACCOUNT_ID_SETTING, "1128734"),
             (LAST_SYNCED_SETTING, "1"),
             (QUOTA_DAY_SETTING, DAY),
             (SHOW_IN_SIDEBAR_SETTING, "0"),
@@ -1105,6 +1140,7 @@ mod tests {
         assert_eq!(status.email, None);
         assert_eq!(status.last_synced_at, None);
         assert!(!status.quota_used_up);
+        assert_eq!(setting(&db, ACCOUNT_ID_SETTING).unwrap(), None, "the next sign-in starts clean");
         assert!(status.has_client, "connecting again needs no new file");
         assert!(!status.show_in_sidebar, "a preference, not part of the account");
         assert!(db.has_ytm_list("PL1").unwrap(), "added playlists cannot come back on their own");
