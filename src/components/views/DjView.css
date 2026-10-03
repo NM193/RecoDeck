@@ -55,8 +55,30 @@
   background: var(--bg-elevated);
 }
 
+/* A square photo stretched across a 210px-high band only ever showed a slice
+   of a face. The photo stands whole beside the name; behind, the same photo
+   blurred gives the band its colour. */
 .dj-hero--photo {
-  background-color: var(--bg-secondary);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.dj-hero--photo::before {
+  content: '';
+  position: absolute;
+  inset: -48px;
+  background: var(--dj-photo) center / cover no-repeat;
+  filter: blur(40px) brightness(0.55) saturate(1.2);
+  pointer-events: none;
+}
+
+.dj-hero__portrait {
+  width: 140px;
+  height: 140px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
 .dj-hero__in {
@@ -586,6 +608,10 @@
 }
 
 .dj-play__bar {
+  /* The width too, not only the basis: WebKit leaves an empty flex item's
+     basis out of the cell's max-content, so the cell came out too narrow and
+     "1 of 2" ran under the status. */
+  width: 60px;
   flex: 0 0 60px;
   height: 6px;
   overflow: hidden;
@@ -686,9 +712,7 @@
 /* What they play: Track · bar + "4 of 6" · Status. */
 .dj-card-play {
   display: grid;
-  /* The bar and the status keep their width; the title gives way. With auto
-     tracks the bar (min-width: 0) was squeezed under the status. */
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   height: 32px;
   font-size: 13px;
