@@ -610,7 +610,7 @@ pub async fn connect_spotify(
         .ok_or_else(|| AppError::Validation("Paste your Client ID and save it first".to_string()))?;
 
     // Bound before the browser opens, so a taken port is reported at once.
-    let listener = spotify_auth::bind_listener(spotify_auth::REDIRECT_PORT)
+    let listener = spotify_auth::bind_listener(spotify_auth::REDIRECT_PORT, "Spotify")
         .await
         .map_err(AppError::Spotify)?;
     let verifier = spotify_auth::random_string(64);
@@ -630,7 +630,7 @@ pub async fn connect_spotify(
             CallbackError::Cancelled => AppError::SpotifyLoginCancelled,
             CallbackError::Failed(message) => AppError::Spotify(message),
         })?;
-    let code = spotify_auth::code_from_callback(&params, &login_state).map_err(AppError::Spotify)?;
+    let code = spotify_auth::code_from_callback(&params, &login_state, "Spotify").map_err(AppError::Spotify)?;
     let tokens = spotify_auth::exchange_code(&client_id, &code, &verifier).await?;
     let refresh_token = tokens.refresh_token.clone().ok_or_else(|| {
         AppError::Spotify("Spotify signed you in but sent no refresh token — try again".to_string())

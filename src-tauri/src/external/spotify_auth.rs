@@ -165,23 +165,28 @@ pub async fn refresh(client_id: &str, refresh_token: &str) -> Result<TokenSet, S
     .await
 }
 
-/// The code the browser brought back, if it belongs to this login.
-pub fn code_from_callback(params: &HashMap<String, String>, expected_state: &str) -> Result<String, String> {
+/// The code the browser brought back, if it belongs to this login. `service`
+/// is what the user signed in to: "Spotify", "YouTube Music".
+pub fn code_from_callback(
+    params: &HashMap<String, String>,
+    expected_state: &str,
+    service: &str,
+) -> Result<String, String> {
     if params.get("state").map(String::as_str) != Some(expected_state) {
         return Err("The sign-in answer did not match this login — press Connect to try again".to_string());
     }
     if let Some(error) = params.get("error") {
         return Err(if error == "access_denied" {
-            "Spotify sign-in was cancelled".to_string()
+            format!("{service} sign-in was cancelled")
         } else {
-            format!("Spotify refused the sign-in: {error}")
+            format!("{service} refused the sign-in: {error}")
         });
     }
     params
         .get("code")
         .filter(|code| !code.is_empty())
         .cloned()
-        .ok_or_else(|| "Spotify sent no sign-in code — press Connect to try again".to_string())
+        .ok_or_else(|| format!("{service} sent no sign-in code — press Connect to try again"))
 }
 
 // --- the loopback redirect --------------------------------------------
@@ -198,12 +203,17 @@ display:grid;place-items:center;height:100vh;margin:0\">\
 
 type Reply = Arc<Mutex<Option<oneshot::Sender<HashMap<String, String>>>>>;
 
-/// Binds the redirect port, or says in one line why it cannot.
-pub async fn bind_listener(port: u16) -> Result<TcpListener, String> {
+/// Binds the redirect port, or says in one line why it cannot. Port 0 takes
+/// whatever port the OS gives — read it back from `local_addr`.
+pub async fn bind_listener(port: u16, service: &str) -> Result<TcpListener, String> {
     TcpListener::bind(("127.0.0.1", port)).await.map_err(|_| {
-        format!(
-            "Port {port} is in use by another app, so Spotify cannot hand the login back — close that app and press Connect again"
-        )
+        if port == 0 {
+            format!("Could not open a local port for the {service} sign-in — press Connect again")
+        } else {
+            format!(
+                "Port {port} is in use by another app, so {service} cannot hand the login back — close that app and press Connect again"
+            )
+        }
     })
 }
 
@@ -375,26 +385,26 @@ mod tests {
 
     #[test]
     fn the_code_comes_back_with_this_logins_state() {
-        assert_eq!(code_from_callback(&params(&[("code", "C"), ("state", "S")]), "S"), Ok("C".into()));
+        assert_eq!(code_from_callback(&params(&[("code", "C"), ("state", "S")]), "S", "Spotify"), Ok("C".into()));
     }
 
     #[test]
     fn an_answer_for_another_login_is_refused() {
-        let err = code_from_callback(&params(&[("code", "C"), ("state", "X")]), "S").unwrap_err();
+        let err = code_from_callback(&params(&[("code", "C"), ("state", "X")]), "S", "Spotify").unwrap_err();
         assert!(err.contains("did not match"));
     }
 
     #[test]
     fn a_cancelled_sign_in_says_so() {
         assert_eq!(
-            code_from_callback(&params(&[("error", "access_denied"), ("state", "S")]), "S"),
+            code_from_callback(&params(&[("error", "access_denied"), ("state", "S")]), "S", "Spotify"),
             Err("Spotify sign-in was cancelled".into())
         );
     }
 
     #[test]
     fn no_code_is_an_error() {
-        assert!(code_from_callback(&params(&[("state", "S")]), "S").is_err());
+        assert!(code_from_callback(&params(&[("state", "S")]), "S", "Spotify").is_err());
     }
 
     use tokio::net::TcpListener;
@@ -415,7 +425,7 @@ mod tests {
 
         cancel.send(()).unwrap();
         assert_eq!(waiting.await.unwrap(), Err(CallbackError::Cancelled));
-        assert!(bind_listener(port).await.is_ok());
+        assert!(bind_listener(port, "Spotify").await.is_ok());
     }
 
     #[tokio::test]
@@ -473,7 +483,7 @@ mod tests {
             .unwrap();
         waiting.await.unwrap().unwrap();
 
-        assert!(bind_listener(port).await.is_ok());
+        assert!(bind_listener(port, "Spotify").await.is_ok());
     }
 
     #[test]
@@ -496,8 +506,47 @@ mod tests {
     async fn a_taken_port_is_said_in_one_line() {
         let holder = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = holder.local_addr().unwrap().port();
-        let err = bind_listener(port).await.unwrap_err();
+        let err = bind_listener(port, "Spotify").await.unwrap_err();
         assert!(err.contains(&port.to_string()));
         assert!(!err.contains('\n'));
+    }
+
+    #[tokio::test]
+    async fn port_zero_listens_on_whatever_port_the_os_gives_and_answers_on_callback() {
+        let listener = bind_listener(0, "YouTube Music").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert_ne!(port, 0);
+        let waiting = tokio::spawn(wait_for_callback(listener, Duration::from_secs(5), never()));
+
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        client
+            .get(format!("http://127.0.0.1:{port}/callback?code=C&state=S"))
+            .send()
+            .await
+            .unwrap();
+        let params = waiting.await.unwrap().unwrap();
+        assert_eq!(params.get("code").map(String::as_str), Some("C"));
+    }
+
+    #[tokio::test]
+    async fn a_taken_port_names_the_service_that_cannot_sign_in() {
+        let holder = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = holder.local_addr().unwrap().port();
+        let err = bind_listener(port, "YouTube Music").await.unwrap_err();
+        assert!(err.contains("YouTube Music"), "{err}");
+        assert!(!err.contains("Spotify"), "{err}");
+    }
+
+    #[test]
+    fn the_sign_in_answers_name_the_service() {
+        assert_eq!(
+            code_from_callback(&params(&[("error", "access_denied"), ("state", "S")]), "S", "YouTube Music"),
+            Err("YouTube Music sign-in was cancelled".into())
+        );
+        let refused = code_from_callback(&params(&[("error", "admin_policy_enforced"), ("state", "S")]), "S", "YouTube Music")
+            .unwrap_err();
+        assert_eq!(refused, "YouTube Music refused the sign-in: admin_policy_enforced");
+        let empty = code_from_callback(&params(&[("state", "S")]), "S", "YouTube Music").unwrap_err();
+        assert!(empty.starts_with("YouTube Music sent no sign-in code"), "{empty}");
     }
 }
