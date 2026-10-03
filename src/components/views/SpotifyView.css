@@ -145,3 +145,192 @@
   border-color: var(--accent);
   color: #fff;
 }
+
+/* ---- Toolbar ---- */
+
+.spotify-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 24px 12px;
+  flex-shrink: 0;
+}
+
+.spotify-search {
+  flex: 1;
+  max-width: 320px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+}
+
+.spotify-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.spotify-chip {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.spotify-chip small {
+  opacity: 0.6;
+  font-size: 11px;
+}
+
+.spotify-chip--on {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+}
+
+/* ---- Table: TrackTable's sizes — 36px header, 32px rows, 13px ---- */
+
+.spotify-table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.spotify-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1.7fr) minmax(0, 1.3fr) 72px 220px;
+  align-items: center;
+  height: 32px;
+  padding: 0 16px 0 8px;
+  font-size: 13px;
+}
+
+.spotify-row--lists {
+  grid-template-columns: 44px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1fr) 72px 220px;
+}
+
+.spotify-row--head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 36px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spotify-row--data:hover {
+  background: var(--bg-tertiary);
+}
+
+.spotify-cell--num {
+  color: var(--text-muted);
+  text-align: right;
+  padding-right: 14px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.spotify-cell--title,
+.spotify-cell--artist,
+.spotify-cell--lists {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 12px;
+}
+
+.spotify-cell--title {
+  color: var(--text-primary);
+}
+
+.spotify-cell--artist {
+  color: var(--text-secondary);
+}
+
+.spotify-cell--lists {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.spotify-cell--added {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spotify-cell--status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.spotify-new-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-hover);
+  margin-right: 7px;
+  vertical-align: 2px;
+}
+
+.spotify-status__owned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.spotify-status__missing {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-right: auto;
+}
+
+.spotify-status__maybe {
+  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.spotify-footer {
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+}
