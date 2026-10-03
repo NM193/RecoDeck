@@ -237,7 +237,7 @@ pub enum CallbackError {
 }
 
 /// Serves one redirect on `listener`, then stops listening. Answers with the
-/// query parameters Spotify sent back. Firing (or dropping) `cancel` ends the
+/// query parameters the service sent back. Firing (or dropping) `cancel` ends the
 /// wait early; the port is free again by the time this returns.
 pub async fn wait_for_callback(
     listener: TcpListener,
