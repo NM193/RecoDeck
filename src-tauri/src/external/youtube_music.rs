@@ -71,6 +71,8 @@ pub fn api_error(status: u16, body: &str) -> YtmError {
         .or_else(|| error.filter(|e| e.is_string()))
         .and_then(Value::as_str)
         .map(str::to_string);
+    // rateLimitExceeded / userRateLimitExceeded are deliberately a plain Api
+    // error (a short-term limit), not QuotaExceeded, which waits for the next Pacific day.
     if matches!(reason.as_deref(), Some("quotaExceeded" | "dailyLimitExceeded")) {
         return YtmError::QuotaExceeded;
     }
@@ -109,10 +111,11 @@ pub fn playlist_url(id: &str) -> String {
     format!("{API_BASE}/playlists?part=snippet&id={}", urlencoding::encode(id))
 }
 
-/// Lengths of up to 50 videos: 1 unit.
+/// Lengths of up to 50 videos: 1 unit. Callers chunk their ids by 50.
 pub fn videos_url(ids: &[&str]) -> String {
+    debug_assert!(ids.len() <= PAGE_SIZE);
     let ids: Vec<String> = ids.iter().map(|id| urlencoding::encode(id).into_owned()).collect();
-    format!("{API_BASE}/videos?part=contentDetails&maxResults={PAGE_SIZE}&id={}", ids.join(","))
+    format!("{API_BASE}/videos?part=contentDetails&id={}", ids.join(","))
 }
 
 /// One page of `playlistItems`.
@@ -356,7 +359,7 @@ mod tests {
         assert_eq!(playlist_url("PLx"), "https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=PLx");
         assert_eq!(
             videos_url(&["a", "b"]),
-            "https://www.googleapis.com/youtube/v3/videos?part=contentDetails&maxResults=50&id=a,b"
+            "https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=a,b"
         );
     }
 }
