@@ -2,7 +2,8 @@
 // What the folder tree has expanded and loaded, kept outside FolderTree so it
 // survives the component unmounting: collapsing the sidebar to the icon rail
 // unmounts the full-width trees, and every rail flyout mounts a fresh one.
-// Keyed by FolderTree's `section` prop, so every tree for a section shares it.
+// One store shared by every tree, split by data: `folders` (library roots and
+// their subfolders) and `playlists` (expanded playlist folders).
 import { create } from 'zustand'
 import { tauriApi } from '../lib/tauri-api'
 import type { FolderInfo } from '../types/track'
@@ -34,7 +35,8 @@ interface FolderTreeState {
   folders: FoldersState
   playlists: PlaylistsState
 
-  /** Loads the root counts, unless they are already known for this array. */
+  /** Loads the root counts, unless they are already known for this array.
+   *  A new array also drops what is cached for roots no longer in it. */
   loadRootCounts: (libraryFolders: string[]) => Promise<void>
   /** Expands or collapses a library root, loading its children the first time. */
   toggleRoot: (rootPath: string) => Promise<void>
@@ -43,6 +45,9 @@ interface FolderTreeState {
   /** Drops what is cached for the root containing `affectedPath` and reloads
    *  its children and track count from disk. */
   refreshRoot: (libraryFolders: string[], affectedPath: string) => Promise<void>
+  /** The library changed on disk (watcher, scan, import): reloads the root
+   *  counts and every root with loaded children, keeping what is expanded. */
+  invalidateAll: (libraryFolders: string[]) => Promise<void>
   togglePlaylistFolder: (folderId: number) => void
 }
 
@@ -87,6 +92,27 @@ async function toggleNodeRecursive(
   return null
 }
 
+/** Reloads the children of `path`, and again below every node that was
+ *  expanded in `previous`, so a reload keeps the user's drill-in. */
+async function reloadKeepingExpansion(
+  path: string,
+  previous: FolderNodeData[] | null,
+): Promise<FolderNodeData[]> {
+  const fresh = await loadSubdirectories(path)
+  const before = new Map((previous ?? []).map((n) => [n.info.path, n]))
+  return Promise.all(
+    fresh.map(async (node) => {
+      const old = before.get(node.info.path)
+      if (!old?.expanded) return node
+      return {
+        ...node,
+        expanded: true,
+        children: await reloadKeepingExpansion(node.info.path, old.children),
+      }
+    }),
+  )
+}
+
 export function initialFolderTreeState(): Pick<
   FolderTreeState,
   'folders' | 'playlists'
@@ -118,7 +144,13 @@ export const useFolderTreeStore = create<FolderTreeState>((set, get) => {
 
     loadRootCounts: async (libraryFolders) => {
       if (get().folders.countsFor === libraryFolders) return
-      setFolders(() => ({ countsFor: libraryFolders }))
+      const keep = (root: string) => libraryFolders.includes(root)
+      setFolders((f) => ({
+        countsFor: libraryFolders,
+        nodes: new Map([...f.nodes].filter(([root]) => keep(root))),
+        expandedRoots: new Set([...f.expandedRoots].filter(keep)),
+        rootCounts: new Map([...f.rootCounts].filter(([root]) => keep(root))),
+      }))
       if (libraryFolders.length === 0) return
       const counts = new Map<string, number>()
       for (const folder of libraryFolders) {
@@ -145,6 +177,9 @@ export const useFolderTreeStore = create<FolderTreeState>((set, get) => {
       }
     },
 
+    // Like the component code it came from, toggleNode, refreshRoot and
+    // invalidateAll write back a snapshot taken before their await, so one can
+    // overwrite another that finished in between (rare; left as it was).
     toggleNode: async (nodePath) => {
       for (const [rootPath, children] of get().folders.nodes.entries()) {
         if (!children) continue
@@ -172,6 +207,20 @@ export const useFolderTreeStore = create<FolderTreeState>((set, get) => {
       } catch {
         // ignore count refresh failures
       }
+    },
+
+    invalidateAll: async (libraryFolders) => {
+      // Captured before loadRootCounts prunes roots no longer in the library.
+      const loaded = [...get().folders.nodes].filter(([root]) =>
+        libraryFolders.includes(root),
+      )
+      setFolders(() => ({ countsFor: null }))
+      await Promise.all([
+        get().loadRootCounts(libraryFolders),
+        ...loaded.map(async ([root, previous]) =>
+          setRootNodes(root, await reloadKeepingExpansion(root, previous)),
+        ),
+      ])
     },
 
     togglePlaylistFolder: (folderId) =>

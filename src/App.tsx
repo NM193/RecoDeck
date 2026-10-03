@@ -35,6 +35,7 @@ import { MixPrepPanel } from './components/ai/MixPrepPanel'
 import { AppShell } from './components/layout/AppShell'
 import { Sidebar } from './components/layout/Sidebar'
 import { useSidebarPrefs } from './components/layout/useSidebarPrefs'
+import { useFolderTreeStore } from './store/folderTreeStore'
 import type { ActiveView } from './lib/sidebarPrefs'
 import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
@@ -588,6 +589,10 @@ function AppContent() {
       }
       // Reload tracks
       await loadTracksRef.current()
+      // New or removed folders and changed counts, in the sidebar's tree
+      void useFolderTreeStore
+        .getState()
+        .invalidateAll(libraryFoldersRef.current)
       // Rebuild AI context cache
       tauriApi.rebuildAIContext().catch(() => {})
     }).then((fn) => {
@@ -665,6 +670,8 @@ function AppContent() {
     try {
       folders = await tauriApi.getLibraryFolders()
       setLibraryFolders(folders)
+      // A scan or import may have added folders and tracks under the roots.
+      void useFolderTreeStore.getState().invalidateAll(folders)
     } catch {
       console.warn('Failed to refresh library folders')
     }

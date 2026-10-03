@@ -3,14 +3,7 @@
 //   1. Track Collection — scanned library folders with track counts
 //   2. Playlists — user-created playlists and folders
 
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  forwardRef,
-  useImperativeHandle,
-} from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Playlist } from '../types/track'
 import {
   useFolderTreeStore,
@@ -21,6 +14,7 @@ import './FolderTree.css'
 
 // --- Types ---
 
+/** The refresh handle Sidebar exposes (as `folderTreeRef`) for App. */
 export interface FolderTreeRef {
   /** Invalidate cached children for the library root containing `affectedPath`
    *  and re-fetch subdirectories from disk. */
@@ -153,35 +147,32 @@ function FolderNode({
 
 // --- Main FolderTree Component ---
 
-export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
-  function FolderTree(
-    {
-      libraryFolders,
-      playlists,
-      selectedFolder,
-      selectedPlaylistId,
-      totalTrackCount,
-      onFolderSelect,
-      onPlaylistSelect,
-      onAnalyzeFolder,
-      onAnalyzeAll,
-      onCreatePlaylist,
-      onCreateFolder,
-      onRenamePlaylist,
-      onDeletePlaylist,
-      onSharePlaylist,
-      onExportPlaylist,
-      onCreateSubfolder,
-      onRenameFolder,
-      onDeleteFolder,
-      section,
-    },
-    ref,
-  ) {
+export function FolderTree({
+  libraryFolders,
+  playlists,
+  selectedFolder,
+  selectedPlaylistId,
+  totalTrackCount,
+  onFolderSelect,
+  onPlaylistSelect,
+  onAnalyzeFolder,
+  onAnalyzeAll,
+  onCreatePlaylist,
+  onCreateFolder,
+  onRenamePlaylist,
+  onDeletePlaylist,
+  onSharePlaylist,
+  onExportPlaylist,
+  onCreateSubfolder,
+  onRenameFolder,
+  onDeleteFolder,
+  section,
+}: FolderTreeProps) {
   // ===== TRACK COLLECTION state =====
   // Expansion, loaded children and root counts live in a store shared by every
-  // tree for the section, so they survive collapsing the sidebar and the rail's
-  // flyouts (which mount a fresh tree each time).
+  // tree (split into `folders` and `playlists` data), so they survive
+  // collapsing the sidebar and the rail's flyouts (which mount a fresh tree
+  // each time). Refreshing is Sidebar's job: it is always mounted.
   const {
     expandedRoots: libraryExpandedRoots,
     nodes: libraryNodes,
@@ -190,7 +181,6 @@ export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
   const loadRootCounts = useFolderTreeStore((s) => s.loadRootCounts)
   const toggleLibraryRoot = useFolderTreeStore((s) => s.toggleRoot)
   const toggleLibraryNode = useFolderTreeStore((s) => s.toggleNode)
-  const refreshRoot = useFolderTreeStore((s) => s.refreshRoot)
   const [collectionExpanded, setCollectionExpanded] = useState(true)
 
   // ===== PLAYLISTS state =====
@@ -216,19 +206,6 @@ export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
   useEffect(() => {
     void loadRootCounts(libraryFolders)
   }, [libraryFolders, loadRootCounts])
-
-  // Invalidate cached children for the library root containing `affectedPath`
-  // and re-fetch them. Also refreshes the root's track count.
-  const refreshLibraryRoot = useCallback(
-    (affectedPath: string) => refreshRoot(libraryFolders, affectedPath),
-    [libraryFolders, refreshRoot],
-  )
-
-  useImperativeHandle(
-    ref,
-    () => ({ refreshLibraryRoot }),
-    [refreshLibraryRoot],
-  )
 
   // Context menu handlers
   const showContextMenu = (
@@ -1149,5 +1126,4 @@ export const FolderTree = forwardRef<FolderTreeRef, FolderTreeProps>(
       )}
     </div>
   )
-  },
-)
+}

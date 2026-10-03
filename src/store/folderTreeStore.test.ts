@@ -83,6 +83,74 @@ describe('folderTreeStore', () => {
     expect(listSubdirectories).not.toHaveBeenCalled()
   })
 
+  it('a slow count load for an older list does not overwrite a newer one', async () => {
+    let finishOld!: (n: number) => void
+    countTracksInFolder.mockImplementation((path: string) =>
+      path === '/old'
+        ? new Promise<number>((resolve) => (finishOld = resolve))
+        : Promise.resolve(5),
+    )
+    const slow = store().loadRootCounts(['/old'])
+    await store().loadRootCounts(['/new'])
+    finishOld(99)
+    await slow
+
+    const counts = store().folders.rootCounts
+    expect(counts.get('/new')).toBe(5)
+    expect(counts.has('/old')).toBe(false)
+  })
+
+  it('invalidateAll reloads the counts and every loaded root, keeping expansion', async () => {
+    const folders = ['/music']
+    await store().loadRootCounts(folders)
+    await store().toggleRoot('/music')
+    await store().toggleNode('/music/house')
+    vi.clearAllMocks()
+
+    // On disk: a new folder under the root, another under the drilled-in one.
+    listSubdirectories.mockImplementation(async (path: string) => {
+      if (path === '/music')
+        return [info('/music/house'), info('/music/techno'), info('/music/new')]
+      if (path === '/music/house')
+        return [
+          info('/music/house/deep', false),
+          info('/music/house/new', false),
+        ]
+      return []
+    })
+    countTracksInFolder.mockResolvedValue(50)
+    await store().invalidateAll(folders)
+
+    expect(countTracksInFolder).toHaveBeenCalledTimes(1)
+    expect(store().folders.rootCounts.get('/music')).toBe(50)
+    const children = store().folders.nodes.get('/music')!
+    expect(children.map((n) => n.info.path)).toEqual([
+      '/music/house',
+      '/music/techno',
+      '/music/new',
+    ])
+    const house = children.find((n) => n.info.path === '/music/house')!
+    expect(house.expanded).toBe(true)
+    expect(house.children?.map((c) => c.info.path)).toEqual([
+      '/music/house/deep',
+      '/music/house/new',
+    ])
+    expect(store().folders.expandedRoots.has('/music')).toBe(true)
+  })
+
+  it('a new list of folders drops what is cached for removed roots', async () => {
+    await store().loadRootCounts(['/music', '/gone'])
+    await store().toggleRoot('/music')
+    await store().toggleRoot('/gone')
+
+    await store().loadRootCounts(['/music'])
+
+    const { nodes, expandedRoots, rootCounts } = store().folders
+    expect([...nodes.keys()]).toEqual(['/music'])
+    expect([...expandedRoots]).toEqual(['/music'])
+    expect([...rootCounts.keys()]).toEqual(['/music'])
+  })
+
   it('toggles playlist folders', () => {
     store().togglePlaylistFolder(3)
     expect(store().playlists.expandedFolders.has(3)).toBe(true)
