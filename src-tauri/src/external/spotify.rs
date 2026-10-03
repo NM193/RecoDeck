@@ -330,6 +330,7 @@ pub async fn fetch_changes<A: SpotifyApi + Sync>(
     let mut playlists = Vec::new();
     let mut refetched = HashMap::new();
     let mut refused = Vec::new();
+    let mut unreadable = Vec::new();
     for meta in listed {
         if base.snapshots.get(&meta.id) == Some(&meta.snapshot_id) {
             playlists.push(meta);
@@ -345,11 +346,24 @@ pub async fn fetch_changes<A: SpotifyApi + Sync>(
                 playlists.push(meta);
             }
             Err(err) if is_refusal(&err) => refused.push(meta),
+            // One broken playlist must not stop the rest: it keeps its stored
+            // rows and snapshot (no refetch), so the next sync reads it again.
+            Err(err) if is_skippable(&err) => {
+                unreadable.push(meta.clone());
+                playlists.push(meta);
+            }
             Err(err) => return Err(err),
         }
     }
 
-    Ok(SyncChanges { liked, playlists, refetched, refused })
+    Ok(SyncChanges { liked, playlists, refetched, refused, unreadable })
+}
+
+/// A playlist whose items Spotify failed to send (a lasting 5xx, a 400) is
+/// skipped for this sync. A lost sign-in (401), a rate limit and a network
+/// failure still fail the whole sync: every other playlist would fail too.
+pub fn is_skippable(err: &SpotifyError) -> bool {
+    matches!(err, SpotifyError::Api { status, .. } if *status != 401 && *status != 429)
 }
 
 // --- the live client ----------------------------------------------------
@@ -836,14 +850,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn any_other_failure_fails_the_sync() {
+    async fn a_broken_playlist_is_skipped_and_the_rest_still_sync() {
         let broken = SpotifyError::Api { status: 500, message: "Server error".into(), reason: None };
+        let mut base = known(&["a"], 1);
+        base.snapshots.insert("p1".to_string(), "s1".to_string());
+        let api = FakeApi::default()
+            .page(&liked_url(), page(vec![liked_item("new"), liked_item("a")], None, 2))
+            .page(&playlists_url(), playlists(&[("p1", "s2"), ("p2", "s7")]))
+            .fail(&playlist_items_url("p1"), broken)
+            .page(&playlist_items_url("p2"), page(vec![playlist_item("x")], None, 1));
+
+        let changes = fetch_changes(&api, &base).await.unwrap();
+
+        // Liked Songs and p2 apply; p1 stays listed, unread, and is reported.
+        assert!(matches!(changes.liked, LikedChange::Prepend { .. }));
+        assert_eq!(changes.playlists.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p1", "p2"]);
+        assert_eq!(changes.refetched.keys().collect::<Vec<_>>(), ["p2"]);
+        assert_eq!(changes.unreadable.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["p1"]);
+        assert!(changes.refused.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_400_on_one_playlist_is_skipped_too() {
+        let bad = SpotifyError::Api { status: 400, message: "Bad request".into(), reason: None };
         let api = FakeApi::default()
             .page(&liked_url(), page(vec![liked_item("a")], None, 1))
             .page(&playlists_url(), playlists(&[("p1", "s1")]))
-            .fail(&playlist_items_url("p1"), broken.clone());
+            .fail(&playlist_items_url("p1"), bad);
 
-        assert_eq!(fetch_changes(&api, &known(&["a"], 1)).await, Err(broken));
+        let changes = fetch_changes(&api, &known(&["a"], 1)).await.unwrap();
+        assert_eq!(changes.unreadable.len(), 1);
+        assert!(changes.refetched.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_lost_sign_in_a_rate_limit_or_the_network_still_fail_the_sync() {
+        for err in [
+            SpotifyError::Api { status: 401, message: "Expired".into(), reason: None },
+            SpotifyError::RateLimited { retry_after_secs: 3600 },
+            SpotifyError::Network("offline".into()),
+        ] {
+            let api = FakeApi::default()
+                .page(&liked_url(), page(vec![liked_item("a")], None, 1))
+                .page(&playlists_url(), playlists(&[("p1", "s1")]))
+                .fail(&playlist_items_url("p1"), err.clone());
+            assert_eq!(fetch_changes(&api, &known(&["a"], 1)).await, Err(err));
+        }
     }
 
     #[tokio::test]

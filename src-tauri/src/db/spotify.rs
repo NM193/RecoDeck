@@ -18,6 +18,8 @@ pub const LIKED_LIST_NAME: &str = "Liked Songs";
 pub const ALL_LISTS_ID: &str = "all";
 /// The settings key holding the playlists Spotify would not share, as JSON.
 pub const REFUSED_SETTING: &str = "spotify_refused";
+/// The settings key holding the playlists the last sync could not read, as JSON.
+pub const UNREADABLE_SETTING: &str = "spotify_unreadable";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,6 +180,7 @@ impl Database {
              DELETE FROM spotify_match_verdicts;",
         )?;
         self.delete_setting(REFUSED_SETTING)?;
+        self.delete_setting(UNREADABLE_SETTING)?;
         tx.commit()
     }
 
@@ -238,6 +241,9 @@ pub struct SyncChanges {
     pub refetched: HashMap<String, Vec<ListEntry>>,
     /// Playlists Spotify would not share; listed by name in Settings.
     pub refused: Vec<PlaylistMeta>,
+    /// Playlists whose items failed this time. They are also in `playlists`
+    /// without a refetch, so their stored rows and snapshot stay.
+    pub unreadable: Vec<PlaylistMeta>,
 }
 
 /// What the last sync left behind: what the next one compares against.
@@ -322,6 +328,14 @@ impl Database {
     pub fn spotify_refused(&self) -> Result<Vec<PlaylistMeta>> {
         Ok(self
             .get_setting(REFUSED_SETTING)?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default())
+    }
+
+    /// The playlists the last sync could not read; it kept their old rows.
+    pub fn spotify_unreadable(&self) -> Result<Vec<PlaylistMeta>> {
+        Ok(self
+            .get_setting(UNREADABLE_SETTING)?
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default())
     }
@@ -431,6 +445,8 @@ impl Database {
 
         let refused = serde_json::to_string(&changes.refused).unwrap_or_else(|_| "[]".to_string());
         self.set_setting(REFUSED_SETTING, &refused)?;
+        let unreadable = serde_json::to_string(&changes.unreadable).unwrap_or_else(|_| "[]".to_string());
+        self.set_setting(UNREADABLE_SETTING, &unreadable)?;
 
         tx.commit()?;
         Ok(changed)
@@ -758,7 +774,7 @@ mod tests {
             }
             metas.push(m);
         }
-        SyncChanges { liked, playlists: metas, refetched, refused: Vec::new() }
+        SyncChanges { liked, playlists: metas, refetched, refused: Vec::new(), unreadable: Vec::new() }
     }
 
     /// The ids that would carry a dot: first seen later than the list's opening.
@@ -1076,6 +1092,27 @@ mod tests {
         assert_eq!(stored_snapshot(&db, "p2").as_deref(), Some("s7"));
         assert_eq!(ids_in(&db, "p2"), ["x", "y"]);
         assert!(new_ids(&db, "p2").is_empty(), "its first read is the baseline");
+    }
+
+    #[test]
+    fn an_unreadable_playlist_keeps_its_rows_and_snapshot_and_is_reported() {
+        let db = baseline_db();
+        let mut sync = changes(full(&["a", "b", "n"]), vec![(meta("p1", "s2", 3), None)]);
+        sync.unreadable = vec![meta("p1", "s2", 3)];
+        db.apply_spotify_sync(&sync, 2_000).unwrap();
+
+        assert_eq!(ids_in(&db, "p1"), ["b", "c"]);
+        assert_eq!(stored_snapshot(&db, "p1").as_deref(), Some("s1"));
+        assert_eq!(ids_in(&db, LIKED_LIST_ID), ["a", "b", "n"]);
+        assert_eq!(db.spotify_unreadable().unwrap().len(), 1);
+
+        // Read fine next time: the report clears.
+        db.apply_spotify_sync(
+            &changes(LikedChange::Unchanged { total: 3 }, vec![(meta("p1", "s2", 3), Some(entries(&["b", "c"])))]),
+            3_000,
+        )
+        .unwrap();
+        assert!(db.spotify_unreadable().unwrap().is_empty());
     }
 
     #[test]

@@ -89,6 +89,8 @@ impl std::fmt::Debug for TokenSet {
 
 /// The token endpoint's answer. `invalid_grant` on a refresh means the
 /// refresh token was revoked or expired: the user has to sign in again.
+/// `invalid_client` (the app deleted, or a wrong Client ID) comes back as an
+/// API error with that reason.
 pub fn parse_token_response(status: u16, body: &str) -> Result<TokenSet, SpotifyError> {
     if !(200..300).contains(&status) {
         let flat = serde_json::from_str::<Value>(body)
@@ -97,7 +99,11 @@ pub fn parse_token_response(status: u16, body: &str) -> Result<TokenSet, Spotify
         if flat.as_deref() == Some("invalid_grant") {
             return Err(SpotifyError::Reconnect);
         }
-        return Err(api_error(status, body));
+        // The OAuth error code (`invalid_client`, say) is kept as the reason.
+        return Err(match api_error(status, body) {
+            SpotifyError::Api { status, message, reason: None } => SpotifyError::Api { status, message, reason: flat },
+            other => other,
+        });
     }
 
     let value: Value = serde_json::from_str(body).map_err(|e| {
@@ -143,6 +149,11 @@ pub async fn exchange_code(client_id: &str, code: &str, verifier: &str) -> Resul
         ("code_verifier", verifier),
     ])
     .await
+}
+
+/// Whether a token error says Spotify does not know this app's Client ID.
+pub fn is_invalid_client(err: &SpotifyError) -> bool {
+    matches!(err, SpotifyError::Api { reason: Some(reason), .. } if reason == "invalid_client")
 }
 
 pub async fn refresh(client_id: &str, refresh_token: &str) -> Result<TokenSet, SpotifyError> {
@@ -341,8 +352,21 @@ mod tests {
         let body = r#"{"error":"invalid_client","error_description":"Invalid client"}"#;
         assert_eq!(
             parse_token_response(400, body),
-            Err(SpotifyError::Api { status: 400, message: "Invalid client".into(), reason: None })
+            Err(SpotifyError::Api {
+                status: 400,
+                message: "Invalid client".into(),
+                reason: Some("invalid_client".into())
+            })
         );
+    }
+
+    #[test]
+    fn an_unknown_client_id_is_told_apart() {
+        let body = r#"{"error":"invalid_client","error_description":"Invalid client"}"#;
+        assert!(is_invalid_client(&parse_token_response(400, body).unwrap_err()));
+        let other = r#"{"error":"invalid_request","error_description":"Bad"}"#;
+        assert!(!is_invalid_client(&parse_token_response(400, other).unwrap_err()));
+        assert!(!is_invalid_client(&SpotifyError::Reconnect));
     }
 
     fn params(pairs: &[(&str, &str)]) -> HashMap<String, String> {

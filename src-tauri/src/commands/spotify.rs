@@ -5,6 +5,7 @@
 //! and the refresh token live in the settings table, next to the YouTube key.
 //! Access tokens live only in memory, refreshed when they run out.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,8 @@ const CLIENT_ID_SETTING: &str = "spotify_client_id";
 const REFRESH_TOKEN_SETTING: &str = "spotify_refresh_token";
 const LAST_SYNCED_SETTING: &str = "spotify_last_synced_at";
 const LAST_ERROR_SETTING: &str = "spotify_last_error";
+/// What kind of failure the last error was, for the view's short line.
+const LAST_ERROR_KIND_SETTING: &str = "spotify_last_error_kind";
 const NEEDS_RECONNECT_SETTING: &str = "spotify_needs_reconnect";
 /// The display name, for showing only — the user can change it on Spotify.
 const ACCOUNT_SETTING: &str = "spotify_account_name";
@@ -58,6 +61,73 @@ pub struct SpotifyState {
     login: tokio::sync::Mutex<()>,
     /// Fired to cancel the sign-in waiting in the browser, if there is one.
     pending_login: Mutex<Option<oneshot::Sender<()>>>,
+    /// Bumped by every new login and every cancel (a newer Connect, a Client
+    /// ID change, Disconnect). A login saves only while its number is current,
+    /// so one already past the browser cannot sign back in after a cancel.
+    login_generation: AtomicU64,
+}
+
+/// Why a sync failed, in the few kinds the view words differently.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncErrorKind {
+    /// Spotify could not be reached.
+    Network,
+    /// Spotify asked to wait longer than a sync waits.
+    RateLimited,
+    /// 403 on the account's own library: the account is not on the app's
+    /// User Management list.
+    NotOnUserManagement,
+    Other,
+}
+
+impl SyncErrorKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::RateLimited => "rateLimited",
+            Self::NotOnUserManagement => "notOnUserManagement",
+            Self::Other => "other",
+        }
+    }
+
+    fn parse(raw: &str) -> Option<Self> {
+        [Self::Network, Self::RateLimited, Self::NotOnUserManagement, Self::Other]
+            .into_iter()
+            .find(|kind| kind.as_str() == raw)
+    }
+
+    fn of(err: &SpotifyError) -> Self {
+        match err {
+            SpotifyError::Network(_) => Self::Network,
+            SpotifyError::RateLimited { .. } => Self::RateLimited,
+            SpotifyError::Api { status: 403, .. } => Self::NotOnUserManagement,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// A failed sync step: the error, its kind, and whether the user has to sign
+/// in again.
+#[derive(Debug)]
+struct SyncFailure {
+    error: AppError,
+    kind: SyncErrorKind,
+    needs_reconnect: bool,
+}
+
+impl From<AppError> for SyncFailure {
+    fn from(error: AppError) -> Self {
+        let needs_reconnect = matches!(error, AppError::SpotifyReconnect);
+        Self { error, kind: SyncErrorKind::Other, needs_reconnect }
+    }
+}
+
+impl From<SpotifyError> for SyncFailure {
+    fn from(err: SpotifyError) -> Self {
+        let kind = SyncErrorKind::of(&err);
+        Self { kind, ..AppError::from(err).into() }
+    }
 }
 
 /// The `spotify-synced` payload.
@@ -68,7 +138,16 @@ pub struct SyncedPayload {
     /// Unix ms of the last successful sync — on a failure, the previous one.
     pub last_synced_at: Option<i64>,
     pub error: Option<String>,
+    /// Set with `error`.
+    pub error_kind: Option<SyncErrorKind>,
     pub needs_reconnect: bool,
+}
+
+impl SyncedPayload {
+    /// The account went or changed: the sidebar and the view reload.
+    fn cleared() -> Self {
+        Self { changed: true, last_synced_at: None, error: None, error_kind: None, needs_reconnect: false }
+    }
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -122,7 +201,7 @@ fn if_signed_in_with<T>(
 }
 
 /// A usable access token, refreshing it when it is about to run out.
-async fn access_token(app_state: &AppState, spotify: &SpotifyState) -> Result<String, AppError> {
+async fn access_token(app_state: &AppState, spotify: &SpotifyState) -> Result<String, SyncFailure> {
     if let Some(token) = cached_access(spotify) {
         return Ok(token);
     }
@@ -136,21 +215,21 @@ async fn access_token(app_state: &AppState, spotify: &SpotifyState) -> Result<St
         Ok((setting(db, CLIENT_ID_SETTING)?, setting(db, REFRESH_TOKEN_SETTING)?))
     })?;
     let (Some(client_id), Some(refresh_token)) = (client_id, refresh_token) else {
-        return Err(AppError::SpotifyNotConnected);
+        return Err(AppError::SpotifyNotConnected.into());
     };
 
     let tokens = match spotify_auth::refresh(&client_id, &refresh_token).await {
         Ok(tokens) => tokens,
         Err(err) => {
-            let err = AppError::from(err);
-            if matches!(err, AppError::SpotifyReconnect) {
+            let failure = refresh_failure(err);
+            if failure.needs_reconnect {
                 let _ = with_db(app_state, |db| {
                     if_signed_in_with(db, &refresh_token, |db| {
                         db.set_setting(NEEDS_RECONNECT_SETTING, "1").map_err(db_err)
                     })
                 });
             }
-            return Err(err);
+            return Err(failure);
         }
     };
 
@@ -167,14 +246,33 @@ async fn access_token(app_state: &AppState, spotify: &SpotifyState) -> Result<St
         })
     })?;
     if kept.is_none() {
-        return Err(AppError::SpotifyNotConnected);
+        return Err(AppError::SpotifyNotConnected.into());
     }
     Ok(tokens.access_token)
 }
 
+/// A failed refresh. `invalid_grant` (revoked) and `invalid_client` (the app
+/// deleted, or a wrong Client ID) both put up the Reconnect bar: signing in
+/// again, after fixing the Client ID if need be, is the way out.
+fn refresh_failure(err: SpotifyError) -> SyncFailure {
+    if spotify_auth::is_invalid_client(&err) {
+        return SyncFailure {
+            error: AppError::Spotify(
+                "Spotify does not know this app's Client ID any more — check it in Settings, then reconnect"
+                    .to_string(),
+            ),
+            kind: SyncErrorKind::Other,
+            needs_reconnect: true,
+        };
+    }
+    err.into()
+}
+
 /// Cancels the sign-in waiting in the browser, if any; its listener stops
-/// and frees the port.
+/// and frees the port. A login already past the browser is cancelled too: it
+/// will find its generation stale and save nothing.
 fn cancel_pending_login(spotify: &SpotifyState) {
+    spotify.login_generation.fetch_add(1, Ordering::SeqCst);
     if let Some(cancel) = spotify.pending_login.lock().ok().and_then(|mut slot| slot.take()) {
         let _ = cancel.send(());
     }
@@ -194,6 +292,16 @@ fn is_another_account(
     }
 }
 
+/// Starts a login: it now holds the newest generation.
+fn begin_login(spotify: &SpotifyState) -> u64 {
+    spotify.login_generation.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+/// No newer login, Client ID change or Disconnect came since `generation` began.
+fn login_is_current(spotify: &SpotifyState, generation: u64) -> bool {
+    spotify.login_generation.load(Ordering::SeqCst) == generation
+}
+
 fn forget_access(spotify: &SpotifyState) {
     if let Ok(mut slot) = spotify.access.lock() {
         *slot = None;
@@ -205,12 +313,12 @@ async fn fetch_with_token(
     app_state: &AppState,
     spotify: &SpotifyState,
     baseline: &crate::db::spotify::SyncBaseline,
-) -> Result<Result<crate::db::spotify::SyncChanges, web_api::SpotifyError>, AppError> {
+) -> Result<Result<crate::db::spotify::SyncChanges, web_api::SpotifyError>, SyncFailure> {
     let api = LiveApi::new(access_token(app_state, spotify).await?)?;
     Ok(web_api::fetch_changes(&api, baseline).await)
 }
 
-async fn sync_once(app_state: &AppState, spotify: &SpotifyState) -> Result<bool, AppError> {
+async fn sync_once(app_state: &AppState, spotify: &SpotifyState) -> Result<bool, SyncFailure> {
     let baseline = with_db(app_state, |db| db.spotify_baseline().map_err(db_err))?;
     let mut fetched = fetch_with_token(app_state, spotify, &baseline).await?;
     // An access token stops working before it expires when the app is revoked
@@ -220,7 +328,7 @@ async fn sync_once(app_state: &AppState, spotify: &SpotifyState) -> Result<bool,
         fetched = fetch_with_token(app_state, spotify, &baseline).await?;
     }
     let changes = fetched?;
-    with_db(app_state, |db| db.apply_spotify_sync(&changes, now_ms()).map_err(db_err))
+    Ok(with_db(app_state, |db| db.apply_spotify_sync(&changes, now_ms()).map_err(db_err))?)
 }
 
 /// One sync, shared by the loop, the "synced …" click and a fresh login.
@@ -255,15 +363,23 @@ async fn sync_and_report(app: &AppHandle) -> Option<SyncedPayload> {
             let _ = with_db(&app_state, |db| {
                 db.set_setting(LAST_SYNCED_SETTING, &now.to_string()).map_err(db_err)?;
                 db.set_setting(LAST_ERROR_SETTING, "").map_err(db_err)?;
+                db.set_setting(LAST_ERROR_KIND_SETTING, "").map_err(db_err)?;
                 db.set_setting(NEEDS_RECONNECT_SETTING, "").map_err(db_err)
             });
-            SyncedPayload { changed, last_synced_at: Some(now), error: None, needs_reconnect: false }
+            SyncedPayload {
+                changed,
+                last_synced_at: Some(now),
+                error: None,
+                error_kind: None,
+                needs_reconnect: false,
+            }
         }
-        Err(AppError::SpotifyNotConnected) => return None,
-        Err(err) => {
-            let message = err.to_string();
+        Err(SyncFailure { error: AppError::SpotifyNotConnected, .. }) => return None,
+        Err(failure) => {
+            let message = failure.error.to_string();
             let last_synced_at = with_db(&app_state, |db| {
                 db.set_setting(LAST_ERROR_SETTING, &message).map_err(db_err)?;
+                db.set_setting(LAST_ERROR_KIND_SETTING, failure.kind.as_str()).map_err(db_err)?;
                 Ok(setting(db, LAST_SYNCED_SETTING)?.and_then(|v| v.parse().ok()))
             })
             .ok()
@@ -272,7 +388,8 @@ async fn sync_and_report(app: &AppHandle) -> Option<SyncedPayload> {
                 changed: false,
                 last_synced_at,
                 error: Some(message),
-                needs_reconnect: matches!(err, AppError::SpotifyReconnect),
+                error_kind: Some(failure.kind),
+                needs_reconnect: failure.needs_reconnect,
             }
         }
     };
@@ -319,8 +436,12 @@ pub struct SpotifyStatusDTO {
     pub needs_reconnect: bool,
     pub last_synced_at: Option<i64>,
     pub last_error: Option<String>,
+    /// Set with `last_error`.
+    pub last_error_kind: Option<SyncErrorKind>,
     /// Names of the playlists Spotify would not share.
     pub refused: Vec<String>,
+    /// Names of the playlists the last sync could not read; their old rows stay.
+    pub unreadable: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
@@ -328,6 +449,8 @@ pub struct SpotifyStatusDTO {
 pub enum PlayOutcome {
     Played,
     OpenedApp,
+    /// The Spotify app would not open (not installed): the web player did.
+    OpenedWeb,
 }
 
 fn read_status(db: &Database) -> Result<SpotifyStatusDTO, AppError> {
@@ -338,8 +461,17 @@ fn read_status(db: &Database) -> Result<SpotifyStatusDTO, AppError> {
         needs_reconnect: setting(db, NEEDS_RECONNECT_SETTING)?.is_some(),
         last_synced_at: setting(db, LAST_SYNCED_SETTING)?.and_then(|v| v.parse().ok()),
         last_error: setting(db, LAST_ERROR_SETTING)?,
+        last_error_kind: setting(db, LAST_ERROR_SETTING)?
+            .and(setting(db, LAST_ERROR_KIND_SETTING)?)
+            .and_then(|raw| SyncErrorKind::parse(&raw)),
         refused: db
             .spotify_refused()
+            .map_err(db_err)?
+            .into_iter()
+            .map(|p| p.name)
+            .collect(),
+        unreadable: db
+            .spotify_unreadable()
             .map_err(db_err)?
             .into_iter()
             .map(|p| p.name)
@@ -355,6 +487,7 @@ fn forget_account(db: &Database) -> Result<(), AppError> {
         ACCOUNT_ID_SETTING,
         LAST_SYNCED_SETTING,
         LAST_ERROR_SETTING,
+        LAST_ERROR_KIND_SETTING,
         NEEDS_RECONNECT_SETTING,
     ] {
         db.delete_setting(key).map_err(db_err)?;
@@ -409,10 +542,7 @@ pub async fn set_spotify_client_id(
             Ok(())
         })?;
         // The sidebar and the view go until the account is connected again.
-        let _ = app.emit(
-            SYNCED_EVENT,
-            &SyncedPayload { changed: true, last_synced_at: None, error: None, needs_reconnect: false },
-        );
+        let _ = app.emit(SYNCED_EVENT, &SyncedPayload::cleared());
     }
     with_db(&state, read_status)
 }
@@ -431,6 +561,7 @@ pub async fn connect_spotify(
             let _ = previous.send(());
         }
     }
+    let generation = begin_login(&spotify);
     let _login = spotify.login.lock().await;
     let mut cancelled = cancelled;
     // An even newer Connect came while this one waited.
@@ -485,6 +616,13 @@ pub async fn connect_spotify(
         // below, which only tries the lock.
         let _running = spotify.sync_lock.lock().await;
         with_db(&state, |db| {
+            // A Client ID change or a Disconnect while this login was in the
+            // browser: the token belongs to an app or a choice that is gone.
+            if !login_is_current(&spotify, generation)
+                || setting(db, CLIENT_ID_SETTING)?.as_deref() != Some(client_id.as_str())
+            {
+                return Err(AppError::SpotifyLoginCancelled);
+            }
             // Another account's lists would make this one's whole library read as new.
             let stored_id = setting(db, ACCOUNT_ID_SETTING)?;
             let stored_name = setting(db, ACCOUNT_SETTING)?;
@@ -516,6 +654,8 @@ pub async fn disconnect_spotify(
     state: State<'_, AppState>,
     spotify: State<'_, SpotifyState>,
 ) -> Result<SpotifyStatusDTO, AppError> {
+    // A sign-in still waiting in the browser would connect the account again.
+    cancel_pending_login(&spotify);
     // A sync running now would write its rows back after the clear.
     let _running = spotify.sync_lock.lock().await;
     with_db(&state, |db| {
@@ -524,10 +664,7 @@ pub async fn disconnect_spotify(
         forget_access(&spotify);
         Ok(())
     })?;
-    let _ = app.emit(
-        SYNCED_EVENT,
-        &SyncedPayload { changed: true, last_synced_at: None, error: None, needs_reconnect: false },
-    );
+    let _ = app.emit(SYNCED_EVENT, &SyncedPayload::cleared());
     with_db(&state, read_status)
 }
 
@@ -602,10 +739,14 @@ pub async fn play_spotify_track(
         // after a fresh token included: the Spotify app can still play it. No
         // error is shown for this.
         Err(err) if web_api::should_open_app(&err) || matches!(err, SpotifyError::Api { status: 401, .. }) => {
+            if app.opener().open_url(format!("spotify:track:{spotify_id}"), None::<&str>).is_ok() {
+                return Ok(PlayOutcome::OpenedApp);
+            }
+            // No Spotify app to open the URI: the web player in the browser.
             app.opener()
-                .open_url(format!("spotify:track:{spotify_id}"), None::<&str>)
+                .open_url(format!("https://open.spotify.com/track/{spotify_id}"), None::<&str>)
                 .map_err(|e| AppError::Internal(format!("Could not open Spotify: {e}")))?;
-            Ok(PlayOutcome::OpenedApp)
+            Ok(PlayOutcome::OpenedWeb)
         }
         Err(err) => Err(err.into()),
     }
@@ -627,12 +768,21 @@ mod tests {
             changed: true,
             last_synced_at: Some(5),
             error: None,
+            error_kind: None,
             needs_reconnect: false,
         };
         assert_eq!(
             serde_json::to_value(payload).unwrap(),
-            serde_json::json!({ "changed": true, "lastSyncedAt": 5, "error": null, "needsReconnect": false })
+            serde_json::json!({
+                "changed": true, "lastSyncedAt": 5, "error": null, "errorKind": null, "needsReconnect": false
+            })
         );
+        let failed = SyncedPayload {
+            error: Some("x".into()),
+            error_kind: Some(SyncErrorKind::NotOnUserManagement),
+            ..SyncedPayload::cleared()
+        };
+        assert_eq!(serde_json::to_value(failed).unwrap()["errorKind"], "notOnUserManagement");
     }
 
     #[test]
@@ -683,7 +833,9 @@ mod tests {
                 needs_reconnect: false,
                 last_synced_at: None,
                 last_error: None,
+                last_error_kind: None,
                 refused: vec![],
+                unreadable: vec![],
             }
         );
     }
@@ -711,6 +863,72 @@ mod tests {
         assert_eq!(status.last_synced_at, Some(1_700_000_000_000));
         assert_eq!(status.last_error, None);
         assert_eq!(status.refused, vec!["Discover Weekly".to_string()]);
+        assert_eq!(status.last_error_kind, None);
+        assert!(status.unreadable.is_empty());
+    }
+
+    #[test]
+    fn the_status_carries_the_kind_of_the_last_error_and_the_unread_playlists() {
+        let db = fresh();
+        db.set_setting(LAST_ERROR_SETTING, "Spotify asked to wait").unwrap();
+        db.set_setting(LAST_ERROR_KIND_SETTING, "rateLimited").unwrap();
+        db.set_setting(
+            crate::db::spotify::UNREADABLE_SETTING,
+            r#"[{"id":"p1","name":"Broken","snapshotId":"s","total":3}]"#,
+        )
+        .unwrap();
+        let status = read_status(&db).unwrap();
+        assert_eq!(status.last_error_kind, Some(SyncErrorKind::RateLimited));
+        assert_eq!(status.unreadable, vec!["Broken".to_string()]);
+
+        // No error, no kind — even if a stale kind were left behind.
+        db.set_setting(LAST_ERROR_SETTING, "").unwrap();
+        assert_eq!(read_status(&db).unwrap().last_error_kind, None);
+
+        forget_account(&db).unwrap();
+        assert_eq!(setting(&db, LAST_ERROR_KIND_SETTING).unwrap(), None);
+    }
+
+    #[test]
+    fn sync_failures_are_sorted_into_the_kinds_the_view_words() {
+        let api = |status| SpotifyError::Api { status, message: String::new(), reason: None };
+        assert_eq!(SyncErrorKind::of(&SpotifyError::Network("offline".into())), SyncErrorKind::Network);
+        assert_eq!(
+            SyncErrorKind::of(&SpotifyError::RateLimited { retry_after_secs: 600 }),
+            SyncErrorKind::RateLimited
+        );
+        assert_eq!(SyncErrorKind::of(&api(403)), SyncErrorKind::NotOnUserManagement);
+        assert_eq!(SyncErrorKind::of(&api(500)), SyncErrorKind::Other);
+        for kind in [
+            SyncErrorKind::Network,
+            SyncErrorKind::RateLimited,
+            SyncErrorKind::NotOnUserManagement,
+            SyncErrorKind::Other,
+        ] {
+            assert_eq!(SyncErrorKind::parse(kind.as_str()), Some(kind));
+            assert_eq!(serde_json::to_value(kind).unwrap(), kind.as_str());
+        }
+        let failure = SyncFailure::from(SpotifyError::Network("offline".into()));
+        assert_eq!(failure.kind, SyncErrorKind::Network);
+        assert!(!failure.needs_reconnect);
+    }
+
+    #[test]
+    fn an_unknown_client_id_on_refresh_asks_to_reconnect_like_a_revoked_token() {
+        let revoked = refresh_failure(SpotifyError::Reconnect);
+        assert!(revoked.needs_reconnect);
+        assert!(matches!(revoked.error, AppError::SpotifyReconnect));
+
+        let deleted = refresh_failure(SpotifyError::Api {
+            status: 400,
+            message: "Invalid client".into(),
+            reason: Some("invalid_client".into()),
+        });
+        assert!(deleted.needs_reconnect);
+        assert!(deleted.error.to_string().contains("Client ID"));
+
+        let other = refresh_failure(SpotifyError::Api { status: 500, message: "x".into(), reason: None });
+        assert!(!other.needs_reconnect);
     }
 
     #[test]
@@ -784,6 +1002,26 @@ mod tests {
     }
 
     #[test]
+    fn a_disconnect_cancels_a_login_even_one_already_past_the_browser() {
+        let spotify = SpotifyState::default();
+        let first = begin_login(&spotify);
+        assert!(login_is_current(&spotify, first));
+
+        // A newer Connect makes the first stale.
+        let second = begin_login(&spotify);
+        assert!(!login_is_current(&spotify, first));
+        assert!(login_is_current(&spotify, second));
+
+        // Disconnect (and a Client ID change) cancel through the same helper:
+        // the waiting listener is told, and the login can no longer save.
+        let (cancel, mut cancelled) = oneshot::channel();
+        *spotify.pending_login.lock().unwrap() = Some(cancel);
+        cancel_pending_login(&spotify);
+        assert_eq!(cancelled.try_recv(), Ok(()));
+        assert!(!login_is_current(&spotify, second));
+    }
+
+    #[test]
     fn disconnecting_forgets_the_account_id_too() {
         let db = fresh();
         db.set_setting(ACCOUNT_ID_SETTING, "nmarj").unwrap();
@@ -806,5 +1044,6 @@ mod tests {
     fn play_outcomes_read_the_same_in_typescript() {
         assert_eq!(serde_json::to_value(PlayOutcome::Played).unwrap(), serde_json::json!("played"));
         assert_eq!(serde_json::to_value(PlayOutcome::OpenedApp).unwrap(), serde_json::json!("openedApp"));
+        assert_eq!(serde_json::to_value(PlayOutcome::OpenedWeb).unwrap(), serde_json::json!("openedWeb"));
     }
 }
