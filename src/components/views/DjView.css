@@ -328,23 +328,6 @@
   color: var(--color-danger);
 }
 
-.dj-editbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid rgba(var(--accent-rgb), 0.35);
-  border-radius: var(--radius-md);
-  background: rgba(var(--accent-rgb), 0.12);
-  color: #c7d2fe;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.dj-editbar__gap {
-  flex: 1;
-}
-
 /* ---- Sets ---- */
 
 .dj-sets {
@@ -608,4 +591,277 @@
   display: block;
   height: 100%;
   background: var(--accent-hover);
+}
+
+/* ---- Overview: cards in two columns (packOverview), natural height ---- */
+
+.dj-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.dj-card {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.dj-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dj-card__title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  white-space: nowrap;
+}
+
+.dj-card__title--link,
+.dj-card__more {
+  cursor: pointer;
+}
+
+.dj-card__title--link:hover {
+  color: var(--text-primary);
+}
+
+.dj-card__more {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.dj-card__more:hover {
+  color: var(--text-primary);
+}
+
+/* The mockup's smaller chips, after the Tracks card's title. */
+.dj-card__chips {
+  display: flex;
+  gap: 6px;
+  margin-left: 6px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dj-card__chips .spotify-chip {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+/* A card's rows have no header row: no line above the first. */
+.dj-card__table {
+  border-top: 0;
+}
+
+/* What they play: Track · bar + "4 of 6" · Status. */
+.dj-card-play {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  height: 32px;
+  font-size: 13px;
+}
+
+.dj-card-play__text {
+  overflow: hidden;
+  padding-right: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dj-sets--card {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dj-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.dj-photo {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  aspect-ratio: 1;
+}
+
+.dj-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dj-photo figcaption {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* A lineup name: a link to that DJ's page. */
+.dj-gig__dj {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dj-gig__dj:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* ---- Customizing the overview ---- */
+
+/* Full width under the tabs, as in the mockup: out of the body's padding. */
+.dj-editbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -16px -24px 0;
+  padding: 8px 24px;
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: #c7d2fe;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dj-editbar__gap {
+  flex: 1;
+}
+
+.dj-editbar .dj-btn {
+  height: 26px;
+}
+
+.dj-overview-grid {
+  min-width: 0;
+}
+
+.dj-overview-grid .react-grid-placeholder {
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  background: rgba(var(--accent-rgb), 0.15);
+  opacity: 1;
+}
+
+.dj-card--edit {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px dashed #4b4b6b;
+}
+
+.dj-card__grip {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.dj-card__grip:active {
+  cursor: grabbing;
+}
+
+.dj-card__remove {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dj-card__remove:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* The rows, ghosted: they show what the card is, nothing in them reacts. */
+.dj-card__ghost {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.dj-addc {
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+}
+
+.dj-addc b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dj-addc__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dj-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dj-pill:hover {
+  background: var(--bg-elevated);
 }

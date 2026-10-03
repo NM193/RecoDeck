@@ -181,6 +181,8 @@ interface DjTracksTabProps {
   onPlayFiles: (queue: LibraryTrack[], index: number) => void
   /** Settings, with its Spotify section open. */
   onOpenSettings: () => void
+  /** The chip the tab opens on (read when it mounts): Missing from the overview's Missing card. */
+  initialFilter?: StatusFilter
 }
 
 export function DjTracksTab({
@@ -195,8 +197,9 @@ export function DjTracksTab({
   onVerdict,
   onPlayFiles,
   onOpenSettings,
+  initialFilter = 'all',
 }: DjTracksTabProps) {
-  const [filter, setFilter] = useState<StatusFilter>('all')
+  const [filter, setFilter] = useState<StatusFilter>(initialFilter)
   const [query, setQuery] = useState('')
   const counts = useMemo(() => countByStatus(rows), [rows])
   const shown = useMemo(

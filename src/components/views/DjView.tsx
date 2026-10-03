@@ -12,13 +12,21 @@ import { DjSetsTab } from '../dj/DjSetsTab'
 import { DjGigsTab } from '../dj/DjGigsTab'
 import { DjTracksTab } from '../dj/DjTracksTab'
 import { DjPlaysTab } from '../dj/DjPlaysTab'
+import { DjOverview } from '../dj/DjOverview'
+import { useOverviewLayout } from '../dj/useOverviewLayout'
 import { classifyTracks } from '../../lib/spotify/ownership'
 import { asSpotifyTrack, djRows, ownedCount } from '../../lib/dj/tracks'
 import { playOwnership } from '../../lib/dj/plays'
 import { gigLabel, heroMetaParts, localDay, splitGigs } from '../../lib/dj/gigs'
 import { djTabs, gigsState, spotifyArtistUrl } from '../../lib/dj/page'
+import { tracksEmptyText, tracksTabState } from '../../lib/dj/tabs'
+import { djPhotos } from '../../lib/dj/cards'
+import {
+  countByStatus,
+  type SpotifyRow,
+  type StatusFilter,
+} from '../../lib/spotify/rows'
 import type { DjTab } from '../../lib/dj/overview'
-import type { SpotifyRow } from '../../lib/spotify/rows'
 import type { LibraryTrack } from '../../lib/tracklist/match'
 import type { SpotifyData } from '../spotify/useSpotify'
 import type { Track } from '../../types/track'
@@ -39,7 +47,7 @@ interface DjViewProps {
     openVideoId: string | null
     initialQuery: string
   }) => void
-  /** Another DJ's page (Task 16's rows); Back still returns to the first one's origin. */
+  /** Another DJ's page (a gig's lineup); Back still returns to the first one's origin. */
   onOpenDj: (name: string, spotifyArtistId: string | null) => void
   /** Settings, with its Spotify section open ("Connect Spotify"). */
   onOpenSettings: () => void
@@ -53,13 +61,17 @@ export function DjView({
   spotify,
   onBack,
   onOpenSets,
+  onOpenDj,
   onOpenSettings,
   onPlayTrack,
 }: DjViewProps) {
   const dj = useDjPage(name, spotifyArtistId)
+  const overview = useOverviewLayout()
   const [tab, setTab] = useState<DjTab>('overview')
-  /** The overview's editing mode (Task 17), switched on by the sliders button. */
+  /** The overview's editing mode, switched on by the sliders button. */
   const [customizing, setCustomizing] = useState(false)
+  /** The chip the Tracks tab opens on: Missing from the overview's Missing card. */
+  const [tracksFilter, setTracksFilter] = useState<StatusFilter>('all')
 
   // Gigs are upcoming or past by the local day; the clock is read in a timer.
   const now = useNow(60_000)
@@ -91,6 +103,7 @@ export function DjView({
     trackRows.length > 0 && spotify.index.entries.length > 0
       ? ownedCount(trackRows)
       : null
+  const trackCounts = useMemo(() => countByStatus(trackRows), [trackRows])
   // Plays: the same matcher, no verdicts (they are keyed by Spotify track id).
   const playsOwnership = useMemo(
     () =>
@@ -102,6 +115,12 @@ export function DjView({
       ),
     [dj.plays, spotify.index],
   )
+  // The Gigs tab and the overview's gig cards; null until the page and the day are known.
+  const gigList =
+    page && today
+      ? { state: gigsState(dj.ra, page.gigs.length), ...gigs }
+      : null
+  const connected = spotify.status === null ? null : spotify.connected
   const answer = (row: SpotifyRow, verdict: Verdict) =>
     row.ownership.file
       ? spotify.setVerdict(row.track.spotifyId, row.ownership.file.id, verdict)
@@ -140,6 +159,18 @@ export function DjView({
   })
 
   const photo = profile?.spotifyImageUrl ?? null
+  const displayName = profile?.displayName ?? name
+
+  // A tab, or a card title leading to one. Leaving the overview ends customizing (unsaved).
+  const openTab = (next: DjTab, filter: StatusFilter = 'all') => {
+    setTab(next)
+    setTracksFilter(filter)
+    if (next !== 'overview') setCustomizing(false)
+  }
+  const openSet = (videoId: string) =>
+    onOpenSets({ openVideoId: videoId, initialQuery: '' })
+  // A lineup name: that DJ's page, matched on Spotify by name as from a Sets chip.
+  const openDj = (other: string) => onOpenDj(other, null)
 
   return (
     <div className="dj-view">
@@ -159,7 +190,7 @@ export function DjView({
         <div className="dj-hero__in">
           <div className="dj-hero__text">
             <div className="dj-hero__kicker">DJ · Producer</div>
-            <h1 className="dj-hero__name">{profile?.displayName ?? name}</h1>
+            <h1 className="dj-hero__name">{displayName}</h1>
             {meta.length > 0 && (
               <div className="dj-hero__meta">
                 {meta.map((part, i) => (
@@ -238,7 +269,7 @@ export function DjView({
             key={item.id}
             aria-selected={tab === item.id}
             className={`dj-tab${tab === item.id ? ' dj-tab--on' : ''}`}
-            onClick={() => setTab(item.id)}
+            onClick={() => openTab(item.id)}
           >
             {item.label}
             {item.count !== null && <small>{item.count}</small>}
@@ -262,27 +293,49 @@ export function DjView({
       {dj.loadError && <p className="dj-note dj-note--error">{dj.loadError}</p>}
 
       <div className="dj-body">
-        {/* Overview: Task 17 replaces this placeholder with <DjOverview>. */}
-        {tab === 'overview' &&
-          (customizing ? (
-            <div className="dj-editbar">
-              <Icon name="SlidersHorizontal" size={14} />
-              Customizing the overview · applies to every DJ page
-              <span className="dj-editbar__gap" />
-              <button
-                type="button"
-                className="dj-btn dj-btn--primary"
-                onClick={() => setCustomizing(false)}
-              >
-                Done
-              </button>
-            </div>
-          ) : (
-            <p className="dj-note">The overview&apos;s cards come here.</p>
-          ))}
+        {tab === 'overview' && (
+          <DjOverview
+            ids={overview.ids}
+            customizing={customizing}
+            onDone={(ids) => {
+              overview.save(ids)
+              setCustomizing(false)
+            }}
+            data={{
+              name: displayName,
+              gigs: gigList,
+              raUrl: profile?.raUrl ?? null,
+              tracksState: tracksTabState({
+                connected,
+                loaded: page !== null,
+                tracks: trackRows.length,
+                spotify: dj.spotify,
+              }),
+              tracksEmpty: tracksEmptyText(
+                dj.spotify,
+                Boolean(profile?.spotifyArtistId),
+              ),
+              rows: trackRows,
+              trackCounts,
+              sets: dj.sets,
+              plays: dj.plays,
+              playsOwnership,
+              photos: djPhotos(profile),
+              checking,
+            }}
+            actions={{
+              onVerdict: answer,
+              onPlayFiles: playFiles,
+              onOpenSettings,
+              onOpenSet: openSet,
+              onOpenDj: openDj,
+            }}
+            onOpenTab={openTab}
+          />
+        )}
         {tab === 'tracks' && (
           <DjTracksTab
-            connected={spotify.status === null ? null : spotify.connected}
+            connected={connected}
             page={page}
             rows={trackRows}
             spotify={dj.spotify}
@@ -293,11 +346,12 @@ export function DjView({
             onVerdict={answer}
             onPlayFiles={playFiles}
             onOpenSettings={onOpenSettings}
+            initialFilter={tracksFilter}
           />
         )}
         {tab === 'plays' && (
           <DjPlaysTab
-            name={profile?.displayName ?? name}
+            name={displayName}
             sets={dj.sets?.length ?? null}
             plays={dj.plays}
             ownership={playsOwnership}
@@ -307,23 +361,22 @@ export function DjView({
         )}
         {tab === 'sets' && (
           <DjSetsTab
-            name={profile?.displayName ?? name}
+            name={displayName}
             sets={dj.sets}
-            onOpenSet={(videoId) =>
-              onOpenSets({ openVideoId: videoId, initialQuery: '' })
-            }
+            onOpenSet={openSet}
             onFindMore={() =>
               onOpenSets({ openVideoId: null, initialQuery: name })
             }
           />
         )}
         {tab === 'gigs' &&
-          (page && today ? (
+          (gigList ? (
             <DjGigsTab
-              state={gigsState(dj.ra, page.gigs.length)}
-              upcoming={gigs.upcoming}
-              past={gigs.past}
+              state={gigList.state}
+              upcoming={gigList.upcoming}
+              past={gigList.past}
               raUrl={profile?.raUrl ?? null}
+              onOpenDj={openDj}
             />
           ) : (
             <p className="dj-note">Reading the gigs…</p>

@@ -5,6 +5,39 @@ import { Icon } from '../Icon'
 import { setMeta, setThumbnail } from '../../lib/dj/page'
 import type { YtSetSummary } from '../../types/youtube'
 
+/** One saved set: its YouTube thumbnail, title and "1 h 52 min · 24 tracks". The overview's Sets card shows these too. */
+export function SetCard({
+  set,
+  onOpen,
+}: {
+  set: YtSetSummary
+  onOpen: (videoId: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      className="dj-set"
+      onClick={() => onOpen(set.video_id)}
+    >
+      <span className="dj-set__thumb">
+        <img
+          src={setThumbnail(set.video_id)}
+          alt=""
+          loading="lazy"
+          // No thumbnail (a removed video): the grey box stays.
+          onError={(event) => {
+            event.currentTarget.style.visibility = 'hidden'
+          }}
+        />
+      </span>
+      <span className="dj-set__text">
+        <b>{set.title}</b>
+        <span>{setMeta(set)}</span>
+      </span>
+    </button>
+  )
+}
+
 interface DjSetsTabProps {
   name: string
   /** Null while the library of sets is read. */
@@ -27,28 +60,7 @@ export function DjSetsTab({
       )}
       <div className="dj-sets">
         {sets.map((set) => (
-          <button
-            type="button"
-            key={set.video_id}
-            className="dj-set"
-            onClick={() => onOpenSet(set.video_id)}
-          >
-            <span className="dj-set__thumb">
-              <img
-                src={setThumbnail(set.video_id)}
-                alt=""
-                loading="lazy"
-                // No thumbnail (a removed video): the grey box stays.
-                onError={(event) => {
-                  event.currentTarget.style.visibility = 'hidden'
-                }}
-              />
-            </span>
-            <span className="dj-set__text">
-              <b>{set.title}</b>
-              <span>{setMeta(set)}</span>
-            </span>
-          </button>
+          <SetCard key={set.video_id} set={set} onOpen={onOpenSet} />
         ))}
         <button
           type="button"
