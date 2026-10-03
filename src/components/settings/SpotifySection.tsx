@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { tauriApi } from '../../lib/tauri-api'
-import { getErrorMessage } from '../../types/ai'
+import { getErrorMessage, isAppError } from '../../types/ai'
 import { SPOTIFY_SYNCED_EVENT, type SpotifyStatus } from '../../types/spotify'
 
 const REDIRECT_URI = 'http://127.0.0.1:47816/callback'
@@ -52,7 +52,11 @@ export function SpotifySection() {
     setError(null)
     action()
       .then(setStatus)
-      .catch((e: unknown) => setError(getErrorMessage(e)))
+      .catch((e: unknown) => {
+        // A newer Connect or a Client ID change cancelled this login on purpose.
+        if (isAppError(e) && e.kind === 'SpotifyLoginCancelled') return
+        setError(getErrorMessage(e))
+      })
       .finally(() => setBusy(null))
   }
 

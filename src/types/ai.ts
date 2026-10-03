@@ -94,6 +94,7 @@ export type AppErrorKind =
   | 'YtNetwork'
   | 'SpotifyNotConnected'
   | 'SpotifyReconnect'
+  | 'SpotifyLoginCancelled'
   | 'Spotify'
 
 export interface AppError {
@@ -159,6 +160,8 @@ export function getErrorMessage(e: unknown): string {
         return 'Spotify is not connected -- connect it in Settings'
       case 'SpotifyReconnect':
         return 'Spotify needs you to sign in again'
+      case 'SpotifyLoginCancelled':
+        return 'The Spotify sign-in was cancelled'
       default:
         return e.message ?? 'An unexpected error occurred'
     }
