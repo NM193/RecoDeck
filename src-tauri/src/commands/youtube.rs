@@ -1077,8 +1077,8 @@ pub struct WatchedDjDTO {
     pub auto_import: bool,
 }
 
-/// "Solomun" and "solomun" are the same DJ.
-fn dj_key(name: &str) -> String {
+/// "Solomun" and "solomun" are the same DJ. DJ pages use the same key.
+pub(crate) fn dj_key(name: &str) -> String {
     name.trim().to_lowercase()
 }
 

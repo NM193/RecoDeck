@@ -403,6 +403,7 @@ pub fn run() {
         .manage(WatcherState::new())
         .manage(CompanionState::new())
         .manage(commands::spotify::SpotifyState::default())
+        .manage(commands::dj::DjState::default())
         .invoke_handler(tauri::generate_handler![
             // YouTube tracklist
             commands::youtube::set_youtube_api_key,
@@ -454,6 +455,17 @@ pub fn run() {
             commands::spotify::mark_spotify_list_opened,
             commands::spotify::set_spotify_verdict,
             commands::spotify::play_spotify_track,
+            // DJ pages
+            commands::dj::get_dj_page,
+            commands::dj::refresh_dj_spotify,
+            commands::dj::load_older_dj_releases,
+            commands::dj::refresh_dj_gigs,
+            commands::dj::dj_artist_candidates,
+            commands::dj::set_dj_spotify_artist,
+            commands::dj::set_dj_ra_artist,
+            commands::dj::search_spotify_artists,
+            commands::dj::get_dj_cached_tracks,
+            commands::dj::get_yt_tracks_for_sets,
             // Library commands
             commands::library::init_database,
             commands::library::get_all_tracks,

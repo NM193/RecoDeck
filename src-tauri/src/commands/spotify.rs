@@ -251,6 +251,17 @@ async fn access_token(app_state: &AppState, spotify: &SpotifyState) -> Result<St
     Ok(tokens.access_token)
 }
 
+/// `access_token` for callers outside the sync (DJ pages): the failure as the
+/// plain `AppError` it carries.
+pub(crate) async fn spotify_token(app_state: &AppState, spotify: &SpotifyState) -> Result<String, AppError> {
+    access_token(app_state, spotify).await.map_err(|failure| failure.error)
+}
+
+/// Whether an account is signed in (a refresh token is stored).
+pub(crate) fn has_account(db: &Database) -> bool {
+    matches!(setting(db, REFRESH_TOKEN_SETTING), Ok(Some(_)))
+}
+
 /// A failed refresh. `invalid_grant` (revoked) and `invalid_client` (the app
 /// deleted, or a wrong Client ID) both put up the Reconnect bar: signing in
 /// again, after fixing the Client ID if need be, is the way out.
@@ -302,7 +313,7 @@ fn login_is_current(spotify: &SpotifyState, generation: u64) -> bool {
     spotify.login_generation.load(Ordering::SeqCst) == generation
 }
 
-fn forget_access(spotify: &SpotifyState) {
+pub(crate) fn forget_access(spotify: &SpotifyState) {
     if let Ok(mut slot) = spotify.access.lock() {
         *slot = None;
     }
@@ -479,7 +490,8 @@ fn read_status(db: &Database) -> Result<SpotifyStatusDTO, AppError> {
     })
 }
 
-/// Everything about the account, and every synced row. The Client ID stays.
+/// Everything about the account, and every synced row — DJ pages' Spotify
+/// side included. The Client ID stays, and so does RA data.
 fn forget_account(db: &Database) -> Result<(), AppError> {
     for key in [
         REFRESH_TOKEN_SETTING,
@@ -492,6 +504,7 @@ fn forget_account(db: &Database) -> Result<(), AppError> {
     ] {
         db.delete_setting(key).map_err(db_err)?;
     }
+    db.clear_dj_spotify().map_err(db_err)?;
     db.clear_spotify().map_err(db_err)
 }
 
@@ -628,6 +641,7 @@ pub async fn connect_spotify(
             let stored_name = setting(db, ACCOUNT_SETTING)?;
             if is_another_account(stored_id.as_deref(), stored_name.as_deref(), &profile) {
                 db.clear_spotify().map_err(db_err)?;
+                db.clear_dj_spotify().map_err(db_err)?;
             }
             db.set_setting(REFRESH_TOKEN_SETTING, &refresh_token).map_err(db_err)?;
             db.set_setting(ACCOUNT_ID_SETTING, &profile.id).map_err(db_err)?;
@@ -1027,6 +1041,34 @@ mod tests {
         db.set_setting(ACCOUNT_ID_SETTING, "nmarj").unwrap();
         forget_account(&db).unwrap();
         assert_eq!(setting(&db, ACCOUNT_ID_SETTING).unwrap(), None);
+    }
+
+    #[test]
+    fn disconnecting_forgets_the_spotify_side_of_dj_pages_too() {
+        let db = fresh();
+        db.ensure_dj_profile("luciano", "Luciano").unwrap();
+        db.set_dj_spotify_manual("luciano", Some("4mo")).unwrap();
+        db.write_dj_track_batch(
+            "luciano",
+            &[],
+            &[crate::db::dj::DjTrack {
+                spotify_id: "t1".into(),
+                title: "Sunday Jams".into(),
+                artists: "Luciano".into(),
+                album: None,
+                release_date: None,
+                isrc: None,
+                duration_ms: None,
+            }],
+        )
+        .unwrap();
+
+        forget_account(&db).unwrap();
+
+        let profile = db.get_dj_profile("luciano").unwrap().unwrap();
+        assert_eq!(profile.spotify_artist_id, None);
+        assert!(!profile.spotify_manual);
+        assert!(db.dj_tracks("luciano").unwrap().is_empty());
     }
 
     #[test]
