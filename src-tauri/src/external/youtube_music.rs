@@ -376,6 +376,20 @@ impl YtmApi for LiveApi {
     }
 }
 
+impl From<YtmError> for crate::error::AppError {
+    fn from(err: YtmError) -> Self {
+        use crate::error::AppError;
+        match err {
+            YtmError::NotConnected => AppError::YouTubeMusicNotConnected,
+            YtmError::Reconnect => AppError::YouTubeMusicReconnect,
+            // The same kind Sets uses: the frontend already words it.
+            YtmError::QuotaExceeded => AppError::YtQuotaExceeded,
+            other => AppError::YouTubeMusic(other.to_string()),
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

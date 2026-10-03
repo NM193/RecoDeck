@@ -70,6 +70,9 @@ pub fn run() {
             // Syncs Liked Songs and playlists on start and every ten minutes.
             // Does nothing until a Spotify account is connected.
             commands::spotify::spawn_spotify_sync_loop(app.handle().clone());
+            // Syncs Liked music and the added playlists on start and every 30
+            // minutes. Does nothing until a Google account is connected.
+            commands::youtube_music::spawn_youtube_music_sync_loop(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -403,6 +406,7 @@ pub fn run() {
         .manage(WatcherState::new())
         .manage(CompanionState::new())
         .manage(commands::spotify::SpotifyState::default())
+        .manage(commands::youtube_music::YouTubeMusicState::default())
         .manage(commands::dj::DjState::default())
         .invoke_handler(tauri::generate_handler![
             // YouTube tracklist
@@ -456,6 +460,12 @@ pub fn run() {
             commands::spotify::set_spotify_verdict,
             commands::spotify::play_spotify_track,
             commands::spotify::set_spotify_show_in_sidebar,
+            // YouTube Music
+            commands::youtube_music::get_youtube_music_status,
+            commands::youtube_music::sync_youtube_music_now,
+            commands::youtube_music::get_youtube_music_library,
+            commands::youtube_music::mark_youtube_music_list_opened,
+            commands::youtube_music::set_youtube_music_verdict,
             // DJ pages
             commands::dj::get_dj_page,
             commands::dj::refresh_dj_spotify,

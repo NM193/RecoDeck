@@ -117,7 +117,7 @@ fn spend_units(db: &Database, units: u32, now: i64) -> Result<QuotaStatus, AppEr
 }
 
 /// Add what a call cost. Called after the network work, never during it.
-fn record_spend(state: &AppState, units: u32) -> Result<QuotaStatus, AppError> {
+pub(crate) fn record_spend(state: &AppState, units: u32) -> Result<QuotaStatus, AppError> {
     let now = now_unix();
     with_db(state, |db| spend_units(db, units, now))
 }
