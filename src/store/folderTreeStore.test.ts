@@ -44,9 +44,13 @@ describe('folderTreeStore', () => {
     expect(listSubdirectories).toHaveBeenCalledTimes(2) // /music, /music/house
     const { expandedRoots, nodes } = store().folders
     expect(expandedRoots.has('/music')).toBe(true)
-    const house = nodes.get('/music')!.find((n) => n.info.path === '/music/house')!
+    const house = nodes
+      .get('/music')!
+      .find((n) => n.info.path === '/music/house')!
     expect(house.expanded).toBe(true)
-    expect(house.children?.map((c) => c.info.path)).toEqual(['/music/house/deep'])
+    expect(house.children?.map((c) => c.info.path)).toEqual([
+      '/music/house/deep',
+    ])
   })
 
   it('loads the root counts once per list of folders', async () => {

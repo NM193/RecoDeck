@@ -13,6 +13,7 @@ import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import { SidebarRail } from './SidebarRail'
 import { SidebarColourMenu } from './SidebarColourMenu'
+import type { NavItem } from './sidebarTypes'
 import { useFolderTreeStore } from '../../store/folderTreeStore'
 import {
   COLLAPSED_WIDTH,
@@ -55,6 +56,9 @@ interface SectionProps {
   onToggle: () => void
   iconStyle?: React.CSSProperties
   onContextMenu?: (e: React.MouseEvent) => void
+  /** Shown right-aligned in the header. It sits inside the header button, so
+   *  it must not be interactive itself. */
+  trailing?: React.ReactNode
   children: React.ReactNode
 }
 
@@ -65,6 +69,7 @@ function Section({
   onToggle,
   iconStyle,
   onContextMenu,
+  trailing,
   children,
 }: SectionProps) {
   return (
@@ -82,6 +87,9 @@ function Section({
         </span>
         <Icon name={iconName} size={14} style={iconStyle} />
         <span className="sidebar-section__title">{title}</span>
+        {trailing != null && (
+          <span className="sidebar-section__trailing">{trailing}</span>
+        )}
       </button>
 
       <AnimatePresence initial={false}>
@@ -103,14 +111,6 @@ function Section({
 }
 
 // --- Sidebar props ---
-
-export interface NavItem {
-  section: SidebarSection
-  label: string
-  icon: IconName
-  onClick: () => void
-  count?: number
-}
 
 interface SidebarProps {
   libraryFolders: string[]
@@ -193,9 +193,7 @@ export function Sidebar({
     folderTreeRef,
     () => ({
       refreshLibraryRoot: (affectedPath: string) =>
-        useFolderTreeStore
-          .getState()
-          .refreshRoot(libraryFolders, affectedPath),
+        useFolderTreeStore.getState().refreshRoot(libraryFolders, affectedPath),
     }),
     [libraryFolders],
   )
@@ -284,7 +282,11 @@ export function Sidebar({
       isDragging.current = false
       setDragging(false)
       const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, ev.clientX))
-      localStorage.setItem(STORAGE_KEY, String(newWidth))
+      try {
+        localStorage.setItem(STORAGE_KEY, String(newWidth))
+      } catch {
+        // Storage can be unavailable; the width still applies for this session.
+      }
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
     }
@@ -294,11 +296,20 @@ export function Sidebar({
   }, [])
 
   const activeSection = sectionForView(activeView)
-  const iconStyle = (section: SidebarSection): React.CSSProperties | undefined =>
-    activeSection === section ? { color: colourFor(section, colours) } : undefined
+  const iconStyle = (
+    section: SidebarSection,
+  ): React.CSSProperties | undefined =>
+    activeSection === section
+      ? { color: colourFor(section, colours) }
+      : undefined
 
   const navItems: NavItem[] = [
-    { section: 'home', label: SECTION_LABELS.home, icon: 'House', onClick: onNavigateHome },
+    {
+      section: 'home',
+      label: SECTION_LABELS.home,
+      icon: 'House',
+      onClick: onNavigateHome,
+    },
     ...(onNavigateSets
       ? [
           {
@@ -319,7 +330,12 @@ export function Sidebar({
       onClick: onShowAllTracks,
       count: totalTrackCount,
     },
-    { section: 'search', label: SECTION_LABELS.search, icon: 'Search', onClick: () => onSearch?.() },
+    {
+      section: 'search',
+      label: SECTION_LABELS.search,
+      icon: 'Search',
+      onClick: () => onSearch?.(),
+    },
     ...(onNavigateAIChat
       ? [
           {
@@ -506,7 +522,11 @@ export function Sidebar({
               onContextMenu={openColourMenu(item.section)}
               type="button"
             >
-              <Icon name={item.icon} size={16} style={iconStyle(item.section)} />
+              <Icon
+                name={item.icon}
+                size={16}
+                style={iconStyle(item.section)}
+              />
               <span>{item.label}</span>
               {item.count != null && item.count > 0 && (
                 <span className="sidebar-nav-item__count">({item.count})</span>

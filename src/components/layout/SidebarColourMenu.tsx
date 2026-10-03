@@ -45,7 +45,11 @@ export function SidebarColourMenu({
           onChange={(e) => onCustom(e.target.value)}
         />
       </label>
-      <button type="button" className="sidebar-ctx-menu__item" onClick={onReset}>
+      <button
+        type="button"
+        className="sidebar-ctx-menu__item"
+        onClick={onReset}
+      >
         <Icon name="RotateCcw" size={14} />
         Reset to default
       </button>

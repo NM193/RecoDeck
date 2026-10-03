@@ -16,7 +16,10 @@ export const COLLAPSED_WIDTH = 60
 export const COLLAPSED_KEY = 'sidebar_collapsed'
 
 /** Collapsed state at start-up: the stored choice, but a narrow window always starts collapsed. */
-export function initialCollapsed(stored: string | null, windowWidth: number): boolean {
+export function initialCollapsed(
+  stored: string | null,
+  windowWidth: number,
+): boolean {
   if (windowWidth < COLLAPSE_BELOW) return true
   return stored === 'true'
 }
@@ -28,7 +31,10 @@ export function initialCollapsed(stored: string | null, windowWidth: number): bo
  * so a manual toggle stands until the next crossing. Returns the new state, or
  * null when there is nothing to change.
  */
-export function collapseOnResize(prevWidth: number, nextWidth: number): boolean | null {
+export function collapseOnResize(
+  prevWidth: number,
+  nextWidth: number,
+): boolean | null {
   const wasNarrow = prevWidth < COLLAPSE_BELOW
   const isNarrow = nextWidth < COLLAPSE_BELOW
   return wasNarrow === isNarrow ? null : isNarrow
@@ -117,7 +123,10 @@ export function parseColours(raw: string | null): ColourOverrides {
   return overrides
 }
 
-export function colourFor(section: SidebarSection, overrides: ColourOverrides): string {
+export function colourFor(
+  section: SidebarSection,
+  overrides: ColourOverrides,
+): string {
   return overrides[section] ?? DEFAULT_COLOURS[section]
 }
 

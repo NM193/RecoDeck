@@ -2,19 +2,20 @@
 // The sidebar collapsed to icons: nav items, Folders and Playlists as icons
 // that open flyouts, tooltips after a short hover, the profile at the bottom.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Icon } from '../Icon'
+import { Icon, type IconName } from '../Icon'
 import { SECTION_LABELS, type SidebarSection } from '../../lib/sidebarPrefs'
-import type { NavItem } from './Sidebar'
+import type { FlyoutSection, NavItem } from './sidebarTypes'
 import { SidebarFlyout } from './SidebarFlyout'
-
-type FlyoutSection = 'folders' | 'playlists'
 
 interface SidebarRailProps {
   navItems: NavItem[]
   activeSection: SidebarSection | null
   iconStyle: (section: SidebarSection) => React.CSSProperties | undefined
   /** Right-click handler factory; `withCreate` adds Create Playlist / Folder. */
-  onColourMenu: (section: SidebarSection, withCreate?: boolean) => (e: React.MouseEvent) => void
+  onColourMenu: (
+    section: SidebarSection,
+    withCreate?: boolean,
+  ) => (e: React.MouseEvent) => void
   onToggleCollapsed: () => void
   onOpenSettings: () => void
   settingsActive: boolean
@@ -35,14 +36,23 @@ export function SidebarRail({
   renderSection,
 }: SidebarRailProps) {
   // --- Tooltip ---
-  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(null)
+  const [tip, setTip] = useState<{
+    label: string
+    top: number
+    left: number
+  } | null>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const showTip = (label: string) => (e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     clearTimeout(tipTimer.current)
     tipTimer.current = setTimeout(
-      () => setTip({ label, top: rect.top + rect.height / 2, left: rect.right + 8 }),
+      () =>
+        setTip({
+          label,
+          top: rect.top + rect.height / 2,
+          left: rect.right + 8,
+        }),
       TOOLTIP_DELAY_MS,
     )
   }
@@ -61,19 +71,29 @@ export function SidebarRail({
   } | null>(null)
   const closeFlyout = useCallback(() => setFlyout(null), [])
 
-  const toggleFlyout = (section: FlyoutSection) => (e: React.MouseEvent<HTMLElement>) => {
-    hideTip()
-    if (flyout?.section === section) {
-      setFlyout(null)
-      return
+  const toggleFlyout =
+    (section: FlyoutSection) => (e: React.MouseEvent<HTMLElement>) => {
+      hideTip()
+      if (flyout?.section === section) {
+        setFlyout(null)
+        return
+      }
+      const rect = e.currentTarget.getBoundingClientRect()
+      setFlyout({
+        section,
+        top: Math.max(8, Math.min(rect.top, window.innerHeight - 320)),
+        left: rect.right + 6,
+        anchor: e.currentTarget,
+      })
     }
-    const rect = e.currentTarget.getBoundingClientRect()
-    setFlyout({
-      section,
-      top: Math.max(8, Math.min(rect.top, window.innerHeight - 320)), left: rect.right + 6, anchor: e.currentTarget })
-  }
 
-  const sectionButton = (section: FlyoutSection, label: string, icon: 'Disc3' | 'ListMusic') => (
+  /** `badge`, when above zero, is a small number at the icon's top-right. */
+  const sectionButton = (
+    section: FlyoutSection,
+    label: string,
+    icon: IconName,
+    badge?: number,
+  ) => (
     <button
       className={`sidebar-rail__item ${activeSection === section || flyout?.section === section ? 'sidebar-rail__item--active' : ''}`}
       onClick={toggleFlyout(section)}
@@ -86,13 +106,22 @@ export function SidebarRail({
       type="button"
     >
       <Icon name={icon} size={16} style={iconStyle(section)} />
+      {badge != null && badge > 0 && (
+        <span className="sidebar-rail__badge" aria-hidden="true">
+          {badge}
+        </span>
+      )}
     </button>
   )
 
   return (
     <div className="sidebar sidebar--rail">
       <div className="sidebar-rail__top">
-        <span className="sidebar-rail__wordmark" role="img" aria-label="RecoDeck">
+        <span
+          className="sidebar-rail__wordmark"
+          role="img"
+          aria-label="RecoDeck"
+        >
           RECO
           <br />
           DECK
@@ -131,7 +160,7 @@ export function SidebarRail({
       <button
         className={`sidebar-top__avatar sidebar-rail__avatar ${settingsActive ? 'sidebar-top__avatar--active' : ''}`}
         onClick={onOpenSettings}
-        onMouseEnter={showTip('Settings')}
+        onMouseEnter={flyout ? undefined : showTip('Settings')}
         onMouseLeave={hideTip}
         aria-label="Settings"
         type="button"
@@ -140,7 +169,10 @@ export function SidebarRail({
       </button>
 
       {tip && (
-        <div className="sidebar-tooltip" style={{ top: tip.top, left: tip.left }}>
+        <div
+          className="sidebar-tooltip"
+          style={{ top: tip.top, left: tip.left }}
+        >
           {tip.label}
         </div>
       )}

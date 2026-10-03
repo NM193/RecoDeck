@@ -106,7 +106,9 @@ describe('section colours', () => {
 
 describe('section labels', () => {
   it('has a non-empty label for every section', () => {
-    for (const section of Object.keys(DEFAULT_COLOURS) as (keyof typeof DEFAULT_COLOURS)[]) {
+    for (const section of Object.keys(
+      DEFAULT_COLOURS,
+    ) as (keyof typeof DEFAULT_COLOURS)[]) {
       expect(SECTION_LABELS[section]).toBeTruthy()
     }
   })

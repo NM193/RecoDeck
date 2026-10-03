@@ -46,7 +46,9 @@ interface FolderTreeState {
   togglePlaylistFolder: (folderId: number) => void
 }
 
-async function loadSubdirectories(folderPath: string): Promise<FolderNodeData[]> {
+async function loadSubdirectories(
+  folderPath: string,
+): Promise<FolderNodeData[]> {
   try {
     const folders = await tauriApi.listSubdirectories(folderPath)
     return folders.map((info) => ({ info, children: null, expanded: false }))
@@ -85,7 +87,10 @@ async function toggleNodeRecursive(
   return null
 }
 
-export function initialFolderTreeState(): Pick<FolderTreeState, 'folders' | 'playlists'> {
+export function initialFolderTreeState(): Pick<
+  FolderTreeState,
+  'folders' | 'playlists'
+> {
   return {
     folders: {
       expandedRoots: new Set(),

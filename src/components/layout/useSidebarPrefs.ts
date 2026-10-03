@@ -42,7 +42,9 @@ interface SidebarPrefsOptions {
   dbReady: boolean
 }
 
-export function useSidebarPrefs({ dbReady }: SidebarPrefsOptions): SidebarPrefs {
+export function useSidebarPrefs({
+  dbReady,
+}: SidebarPrefsOptions): SidebarPrefs {
   const [collapsed, setCollapsedState] = useState(() =>
     initialCollapsed(readStored(), window.innerWidth),
   )
@@ -73,7 +75,14 @@ export function useSidebarPrefs({ dbReady }: SidebarPrefsOptions): SidebarPrefs 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Held down, the key repeats; one press is one toggle.
-      if (e.repeat || e.key !== '\\' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      if (
+        e.repeat ||
+        e.key !== '\\' ||
+        !(e.metaKey || e.ctrlKey) ||
+        e.altKey ||
+        e.shiftKey
+      )
+        return
       e.preventDefault()
       toggleCollapsed()
     }
