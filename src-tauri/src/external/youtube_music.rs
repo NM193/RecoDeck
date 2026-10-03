@@ -389,7 +389,6 @@ impl From<YtmError> for crate::error::AppError {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

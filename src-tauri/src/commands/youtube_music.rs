@@ -299,8 +299,7 @@ async fn fetch_with_token(
     Ok(fetched)
 }
 
-async fn sync_once(app_state: &AppState, ytm: &YouTubeMusicState) -> Result<bool, SyncFailure> {
-    let now = now_ms();
+async fn sync_once(app_state: &AppState, ytm: &YouTubeMusicState, now: i64) -> Result<bool, SyncFailure> {
     let baseline = with_db(app_state, |db| db.ytm_baseline().map_err(db_err))?;
     let mut fetched = fetch_with_token(app_state, ytm, &baseline, now).await?;
     // A revoked grant kills the access token before it expires: drop it and
@@ -355,16 +354,19 @@ async fn sync_and_report(app: &AppHandle) -> Option<SyncedPayload> {
     let app_state = app.state::<AppState>();
     let ytm = app.state::<YouTubeMusicState>();
 
-    let payload = match sync_once(&app_state, &ytm).await {
+    // Read once, before the network: a sync that starts at 23:59 Pacific and
+    // fails after midnight still stamps the day it started.
+    let now = now_ms();
+    let day = today();
+    let payload = match sync_once(&app_state, &ytm, now).await {
         Ok(changed) => {
-            let now = now_ms();
             let _ = with_db(&app_state, |db| record_success(db, now));
             SyncedPayload { changed, last_synced_at: Some(now), error: None, error_kind: None, needs_reconnect: false }
         }
         Err(SyncFailure { error: AppError::YouTubeMusicNotConnected, .. }) => return None,
         Err(failure) => {
             let message = failure.error.to_string();
-            let last_synced_at = with_db(&app_state, |db| record_failure(db, &message, failure.kind, &today()))
+            let last_synced_at = with_db(&app_state, |db| record_failure(db, &message, failure.kind, &day))
                 .ok()
                 .flatten();
             SyncedPayload {
