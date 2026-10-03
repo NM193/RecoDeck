@@ -44,7 +44,7 @@ export const ARTIST_TITLE = /^(.*?)\s+[-–—]\s+(.*)$/
 
 // Labels are conventionally in square brackets; parentheses usually hold
 // "(Original Mix)" style mix descriptors, which belong to the title.
-const LABEL_SUFFIX = /\s*\[([^\][]{2,40})\]\s*$/
+export const LABEL_SUFFIX = /\s*\[([^\][]{2,40})\]\s*$/
 
 // "(Todd Terje Remix)", "(edit)" — the version, which is part of the identity.
 const MIX_SUFFIX =

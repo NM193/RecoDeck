@@ -156,6 +156,40 @@ describe('the patterns', () => {
   })
 })
 
+describe('Topic channels, labels and version spellings', () => {
+  it('reads a dash version on a Topic channel, not as artist - title', () => {
+    expect(parseYouTubeTitle('Come Get Up - Extended Mix', 'Butch - Topic')).toEqual({
+      artist: 'Butch',
+      title: 'Come Get Up',
+      mix: 'Extended Mix',
+      bare: 'Come Get Up',
+    })
+    expect(
+      parseYouTubeTitle('Tell You - Hot Since 82 Remix', 'Prunk - Topic'),
+    ).toMatchObject({ artist: 'Prunk', title: 'Tell You', mix: 'Hot Since 82 Remix' })
+  })
+
+  it('does not let a trailing [Label] hide the mix', () => {
+    const t = video('Joseph Capriati - Control (Original Mix) [Drumcode]')
+    expect(parseYouTubeTitle(t.title, 'Label').mix).toBe('Original Mix')
+    expect(copyText(t)).toBe('Joseph Capriati - Control (Original Mix)')
+    expect(selectedRecsUrl(t)).toBe(
+      'https://srv.selectedrecs.com/#/search?text=Joseph%20Capriati%20-%20Control',
+    )
+  })
+
+  it('drops (Official Video HD) and its kin', () => {
+    expect(parseYouTubeTitle('Bicep - Glue (Official Video HD)', 'Label').title).toBe('Glue')
+    expect(parseYouTubeTitle('Bicep - Glue (Official Video 4K)', 'Label').title).toBe('Glue')
+  })
+
+  it('reads a dash remix after the first dash', () => {
+    expect(
+      parseYouTubeTitle('Artist - Title - Remix Artist Remix', 'Label'),
+    ).toMatchObject({ artist: 'Artist', title: 'Title', mix: 'Remix Artist Remix' })
+  })
+})
+
 describe('what the matcher, Copy and SelectedRecs get', () => {
   it('gives the matcher folded, normalised names', () => {
     expect(toParsed(video('Soulva - Odyssey (Original Mix)'))).toEqual({
