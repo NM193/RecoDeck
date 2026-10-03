@@ -466,6 +466,12 @@ pub fn run() {
             commands::youtube_music::get_youtube_music_library,
             commands::youtube_music::mark_youtube_music_list_opened,
             commands::youtube_music::set_youtube_music_verdict,
+            commands::youtube_music::set_youtube_music_client_file,
+            commands::youtube_music::connect_youtube_music,
+            commands::youtube_music::disconnect_youtube_music,
+            commands::youtube_music::add_youtube_music_playlist,
+            commands::youtube_music::remove_youtube_music_playlist,
+            commands::youtube_music::set_youtube_music_show_in_sidebar,
             // DJ pages
             commands::dj::get_dj_page,
             commands::dj::refresh_dj_spotify,
