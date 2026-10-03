@@ -4,8 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { SpotifyGlyph } from './SpotifyGlyph'
+import { YouTubeGlyph } from './YouTubeGlyph'
 import { tauriApi } from '../../lib/tauri-api'
-import { copyText, selectedRecsUrl } from '../../lib/spotify/title'
+import {
+  copyText,
+  selectedRecsUrl,
+  youtubeSearchUrl,
+} from '../../lib/spotify/title'
 import type { SpotifyRow } from '../../lib/spotify/rows'
 import type { Verdict } from '../../types/spotify'
 
@@ -20,8 +25,9 @@ interface SpotifyRowActionsProps {
 const COPIED_MS = 1500
 
 /**
- * Copy, then "Copied" for 1.5 s; every click restarts that time. Also the
- * DJ page's Plays rows' Copy (DjPlaysTab's PlayStatus).
+ * An icon like SelectedRecs' ↗, then a green ✓ for 1.5 s; every click
+ * restarts that time. Also the DJ page's Plays rows' Copy (DjPlaysTab's
+ * PlayStatus).
  */
 export function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
@@ -45,12 +51,32 @@ export function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className={`spotify-mini ${copied ? 'spotify-mini--copied' : 'spotify-mini--primary'}`}
-      title={text}
+      className={`spotify-mini spotify-mini--icon${copied ? ' spotify-mini--copied' : ''}`}
+      title={copied ? 'Copied' : `Copy “${text}”`}
+      aria-label={copied ? 'Copied' : 'Copy artist and title'}
       onClick={copy}
     >
       <Icon name={copied ? 'Check' : 'Copy'} size={12} />
-      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
+}
+
+/**
+ * Opens YouTube's search for the track — a listen for what Spotify cannot
+ * play or the library does not have. Also the DJ page's Plays rows.
+ */
+export function YouTubeButton({ text }: { text: string }) {
+  return (
+    <button
+      type="button"
+      className="spotify-mini spotify-mini--icon spotify-mini--youtube"
+      title={`Search YouTube for “${text}”`}
+      aria-label="Search on YouTube"
+      onClick={() => {
+        openUrl(youtubeSearchUrl(text)).catch(() => {})
+      }}
+    >
+      <YouTubeGlyph size={12} />
     </button>
   )
 }
@@ -122,6 +148,7 @@ export function SpotifyRowActions({
       <span className="spotify-status">
         <span className="spotify-status__maybe">Maybe</span>
         {play}
+        <YouTubeButton text={copyText(row.track)} />
         {answerFailed && (
           <span className="spotify-status__error" role="status">
             Not saved
@@ -155,6 +182,7 @@ export function SpotifyRowActions({
     <span className="spotify-status">
       <span className="spotify-status__missing">Missing</span>
       {play}
+      <YouTubeButton text={copyText(row.track)} />
       <button
         type="button"
         className="spotify-mini spotify-mini--icon"

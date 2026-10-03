@@ -4,7 +4,7 @@
 // Its own status cell: no Yes / No, since verdicts are keyed by Spotify id.
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
-import { CopyButton } from '../spotify/SpotifyRowActions'
+import { CopyButton, YouTubeButton } from '../spotify/SpotifyRowActions'
 import { fileName } from '../../lib/spotify/rows'
 import { playSearchUrl, playText, type Play } from '../../lib/dj/plays'
 import { inSets, ownedQueue, playShare } from '../../lib/dj/tabs'
@@ -12,7 +12,7 @@ import type { Ownership } from '../../lib/spotify/ownership'
 import type { LibraryTrack } from '../../lib/tracklist/match'
 import '../views/SpotifyView.css'
 
-/** Owned ✓, or Maybe / Missing with SelectedRecs ↗ and Copy. */
+/** Owned ✓, or Maybe / Missing with YouTube, SelectedRecs ↗ and Copy. */
 export function PlayStatus({
   play,
   ownership,
@@ -50,6 +50,7 @@ export function PlayStatus({
       ) : (
         <span className="spotify-status__missing">Missing</span>
       )}
+      <YouTubeButton text={playText(play)} />
       <button
         type="button"
         className="spotify-mini spotify-mini--icon"

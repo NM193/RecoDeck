@@ -108,3 +108,13 @@ export function selectedRecsUrl(track: SpotifyTrack): string {
   const text = credit(track.artists, bare)
   return selectedRecsSearchUrl(text)
 }
+
+const YOUTUBE_SEARCH = 'https://www.youtube.com/results?search_query='
+
+/**
+ * YouTube's search for the Copy text. The mix stays: a remix is a different
+ * upload, and YouTube ranks the right one first with it.
+ */
+export function youtubeSearchUrl(text: string): string {
+  return YOUTUBE_SEARCH + encodeURIComponent(text)
+}

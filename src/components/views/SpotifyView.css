@@ -376,6 +376,11 @@
   color: #1ed760;
 }
 
+/* YouTube's own red, likewise. */
+.spotify-mini--youtube {
+  color: #ff0033;
+}
+
 .spotify-mini--copied {
   color: var(--color-success);
   border-color: var(--color-success);

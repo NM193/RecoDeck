@@ -6,6 +6,7 @@ import {
   selectedRecsUrl,
   splitSpotifyTitle,
   toParsed,
+  youtubeSearchUrl,
 } from './title'
 import type { SpotifyTrack } from '../../types/spotify'
 
@@ -150,6 +151,18 @@ describe('searching SelectedRecs for any text', () => {
   it('is the link a Spotify row gets for its text', () => {
     expect(selectedRecsUrl(track('Jingo - Dr Packer Rework', 'Candido'))).toBe(
       selectedRecsSearchUrl('Candido - Jingo'),
+    )
+  })
+})
+
+describe('searching YouTube', () => {
+  it('searches for the Copy text, mix included', () => {
+    expect(
+      youtubeSearchUrl(
+        copyText(track('300 Cash - Extended Mix', 'Moreno & Prieto, Sortech')),
+      ),
+    ).toBe(
+      'https://www.youtube.com/results?search_query=Moreno%20%26%20Prieto%2C%20Sortech%20-%20300%20Cash%20(Extended%20Mix)',
     )
   })
 })
