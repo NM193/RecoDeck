@@ -95,7 +95,7 @@ export function rowsFor(
 }
 
 export function countByStatus(
-  rows: SpotifyRow[],
+  rows: { ownership: Ownership }[],
 ): Record<StatusFilter, number> {
   const counts: Record<StatusFilter, number> = {
     all: rows.length,
@@ -112,21 +112,37 @@ function fold(text: string): string {
   return text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
 }
 
+/**
+ * Status first, then every typed word must appear in what `text` gives for the
+ * row. Any service's rows: Spotify's give title, artists and album.
+ */
+export function filterRowsBy<R extends { ownership: Ownership }>(
+  rows: R[],
+  filter: StatusFilter,
+  query: string,
+  text: (row: R) => string,
+): R[] {
+  const words = fold(query).split(/\s+/).filter(Boolean)
+  return rows.filter((row) => {
+    if (filter !== 'all' && row.ownership.kind !== filter) return false
+    if (!words.length) return true
+    const haystack = fold(text(row))
+    return words.every((word) => haystack.includes(word))
+  })
+}
+
 /** Status first, then every typed word must appear in title, artists or album. */
 export function filterRows(
   rows: SpotifyRow[],
   filter: StatusFilter,
   query: string,
 ): SpotifyRow[] {
-  const words = fold(query).split(/\s+/).filter(Boolean)
-  return rows.filter((row) => {
-    if (filter !== 'all' && row.ownership.kind !== filter) return false
-    if (!words.length) return true
-    const haystack = fold(
-      `${row.track.title} ${row.track.artists} ${row.track.album ?? ''}`,
-    )
-    return words.every((word) => haystack.includes(word))
-  })
+  return filterRowsBy(rows, filter, query, spotifySearchText)
+}
+
+/** What a Spotify row's search looks through. */
+export function spotifySearchText(row: SpotifyRow): string {
+  return `${row.track.title} ${row.track.artists} ${row.track.album ?? ''}`
 }
 
 /** Rows behind each sidebar item: per list, and every track for All playlists. */

@@ -4,6 +4,7 @@ import {
   countByStatus,
   fileName,
   filterRows,
+  filterRowsBy,
   formatAdded,
   formatSynced,
   listCounts,
@@ -199,5 +200,18 @@ describe('syncErrorText', () => {
     expect(syncErrorText('other')).toBe('sync failed — see Settings → Spotify')
     // A status saved before kinds were kept.
     expect(syncErrorText(null)).toBe('sync failed — see Settings → Spotify')
+  })
+})
+
+describe('filtering any service’s rows', () => {
+  it('filters by status, then by the words it is given for each row', () => {
+    const rows = [
+      { ownership: { kind: 'missing' as const }, text: 'Nina Kraviz Tarde' },
+      { ownership: { kind: 'owned' as const }, text: 'Soulva Odyssey' },
+    ]
+    const text = (row: (typeof rows)[number]) => row.text
+    expect(filterRowsBy(rows, 'all', 'kraviz', text)).toEqual([rows[0]])
+    expect(filterRowsBy(rows, 'owned', '', text)).toEqual([rows[1]])
+    expect(filterRowsBy(rows, 'missing', 'odyssey', text)).toEqual([])
   })
 })

@@ -81,11 +81,16 @@ export function YouTubeButton({ text }: { text: string }) {
   )
 }
 
-export function SpotifyRowActions({
-  row,
+/**
+ * Yes / No on a Maybe row, and "Not saved" when the answer did not stick.
+ * Also YouTube Music's Maybe rows.
+ */
+export function VerdictButtons({
   onVerdict,
-  checking = false,
-}: SpotifyRowActionsProps) {
+}: {
+  /** Rejects when the answer could not be saved. */
+  onVerdict: (verdict: Verdict) => Promise<void>
+}) {
   /** The answer being saved; the buttons wait for it. */
   const [pending, setPending] = useState<Verdict | null>(null)
   const [answerFailed, setAnswerFailed] = useState(false)
@@ -98,6 +103,42 @@ export function SpotifyRowActions({
       .finally(() => setPending(null))
   }
 
+  return (
+    <>
+      {answerFailed && (
+        <span className="spotify-status__error" role="status">
+          Not saved
+        </span>
+      )}
+      <button
+        type="button"
+        className="spotify-mini"
+        disabled={pending !== null}
+        aria-busy={pending === 'yes'}
+        onClick={() => answer('yes')}
+        title="This is the file"
+      >
+        {pending === 'yes' ? '…' : 'Yes'}
+      </button>
+      <button
+        type="button"
+        className="spotify-mini"
+        disabled={pending !== null}
+        aria-busy={pending === 'no'}
+        onClick={() => answer('no')}
+        title="Not this file"
+      >
+        {pending === 'no' ? '…' : 'No'}
+      </button>
+    </>
+  )
+}
+
+export function SpotifyRowActions({
+  row,
+  onVerdict,
+  checking = false,
+}: SpotifyRowActionsProps) {
   if (checking) {
     return (
       <span className="spotify-status">
@@ -149,31 +190,7 @@ export function SpotifyRowActions({
         <span className="spotify-status__maybe">Maybe</span>
         {play}
         <YouTubeButton text={copyText(row.track)} />
-        {answerFailed && (
-          <span className="spotify-status__error" role="status">
-            Not saved
-          </span>
-        )}
-        <button
-          type="button"
-          className="spotify-mini"
-          disabled={pending !== null}
-          aria-busy={pending === 'yes'}
-          onClick={() => answer('yes')}
-          title="This is the file"
-        >
-          {pending === 'yes' ? '…' : 'Yes'}
-        </button>
-        <button
-          type="button"
-          className="spotify-mini"
-          disabled={pending !== null}
-          aria-busy={pending === 'no'}
-          onClick={() => answer('no')}
-          title="Not this file"
-        >
-          {pending === 'no' ? '…' : 'No'}
-        </button>
+        <VerdictButtons onVerdict={onVerdict} />
       </span>
     )
   }

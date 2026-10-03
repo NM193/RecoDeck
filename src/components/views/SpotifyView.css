@@ -99,6 +99,11 @@
   color: var(--text-muted);
 }
 
+/* "no longer available": a playlist YouTube stopped showing. */
+.spotify-header__notice {
+  color: var(--color-danger);
+}
+
 .spotify-header__sync {
   display: inline-flex;
   align-items: center;
