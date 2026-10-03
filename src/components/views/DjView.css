@@ -712,6 +712,12 @@
   border-top: 0;
 }
 
+/* The Tracks card lists every track and scrolls past about ten. */
+.dj-card__table--scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
 /* What they play: Track · bar + "4 of 6" · Status. */
 .dj-card-play {
   display: grid;

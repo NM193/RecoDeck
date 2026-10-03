@@ -19,7 +19,6 @@ import type { DjProfile } from '../../types/dj'
 export const CARD_ROWS = {
   'upcoming-gigs': 3,
   plays: 4,
-  tracks: 3,
   sets: 3,
   'past-gigs': 3,
   missing: 5,

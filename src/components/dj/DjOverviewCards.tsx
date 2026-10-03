@@ -168,11 +168,15 @@ function PlaysBody({ data }: { data: OverviewData }) {
 function TracksBody({
   filter,
   limit,
+  scroll = false,
   data,
   actions,
 }: {
   filter: StatusFilter
-  limit: number
+  /** The first rows only; without it, every row. */
+  limit?: number
+  /** Every row, in a box that scrolls past about ten. */
+  scroll?: boolean
   data: OverviewData
   actions: OverviewActions
 }) {
@@ -211,7 +215,10 @@ function TracksBody({
     if (start) actions.onPlayFiles(start.queue, start.index)
   }
   return (
-    <div className="spotify-table dj-table dj-card__table" role="table">
+    <div
+      className={`spotify-table dj-table dj-card__table${scroll ? ' dj-card__table--scroll' : ''}`}
+      role="table"
+    >
       {shown.map((row, index) => (
         <DjTrackRow
           key={row.track.spotifyId}
@@ -287,12 +294,7 @@ function CardBody({
       return <PlaysBody data={data} />
     case 'tracks':
       return (
-        <TracksBody
-          filter={filter}
-          limit={CARD_ROWS.tracks}
-          data={data}
-          actions={actions}
-        />
+        <TracksBody filter={filter} scroll data={data} actions={actions} />
       )
     case 'missing':
       return (
