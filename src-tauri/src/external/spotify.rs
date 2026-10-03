@@ -15,6 +15,7 @@ use crate::db::spotify::{LikedChange, ListEntry, PlaylistMeta, SpotifyTrack, Syn
 use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::Duration;
 
 pub const API_BASE: &str = "https://api.spotify.com/v1";
 /// Spotify's largest page on every endpoint used here.
@@ -313,6 +314,94 @@ pub async fn fetch_changes<A: SpotifyApi + Sync>(
     }
 
     Ok(SyncChanges { liked, playlists, refetched, refused })
+}
+
+// --- the live client ----------------------------------------------------
+
+/// The longest Retry-After a sync waits out. A development-mode quota can ask
+/// for hours; then this sync gives up and the next 10-minute run tries again.
+pub const MAX_RETRY_WAIT_SECS: u64 = 60;
+const MAX_ATTEMPTS: usize = 4;
+
+fn http_client() -> Result<reqwest::Client, SpotifyError> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| SpotifyError::Network(format!("Could not build HTTP client: {e}")))
+}
+
+fn network(e: reqwest::Error) -> SpotifyError {
+    if e.is_timeout() {
+        SpotifyError::Network("Spotify did not answer in 30 seconds".to_string())
+    } else {
+        SpotifyError::Network(format!("Could not reach Spotify: {e}"))
+    }
+}
+
+pub struct LiveApi {
+    http: reqwest::Client,
+    token: String,
+}
+
+impl LiveApi {
+    pub fn new(token: String) -> Result<Self, SpotifyError> {
+        Ok(Self { http: http_client()?, token })
+    }
+}
+
+impl SpotifyApi for LiveApi {
+    fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, SpotifyError>> + Send {
+        let url = url.to_string();
+        async move {
+            for _ in 0..MAX_ATTEMPTS {
+                let response = self.http.get(&url).bearer_auth(&self.token).send().await.map_err(network)?;
+                let status = response.status().as_u16();
+
+                if status == 429 {
+                    let wait = retry_after_secs(
+                        response.headers().get("retry-after").and_then(|v| v.to_str().ok()),
+                    );
+                    if wait > MAX_RETRY_WAIT_SECS {
+                        return Err(SpotifyError::RateLimited { retry_after_secs: wait });
+                    }
+                    tokio::time::sleep(Duration::from_secs(wait)).await;
+                    continue;
+                }
+
+                let body = response.text().await.map_err(network)?;
+                if !(200..300).contains(&status) {
+                    return Err(api_error(status, &body));
+                }
+                return serde_json::from_str(&body)
+                    .map_err(|e| SpotifyError::Network(format!("Spotify sent unreadable JSON: {e}")));
+            }
+            Err(SpotifyError::RateLimited { retry_after_secs: MAX_RETRY_WAIT_SECS })
+        }
+    }
+}
+
+/// Plays one track on the user's active device. 204 is success.
+pub async fn play_track(token: &str, spotify_id: &str) -> Result<(), SpotifyError> {
+    let response = http_client()?
+        .put(format!("{API_BASE}/me/player/play"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "uris": [format!("spotify:track:{spotify_id}")] }))
+        .send()
+        .await
+        .map_err(network)?;
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        return Ok(());
+    }
+    let body = response.text().await.unwrap_or_default();
+    Err(api_error(status, &body))
+}
+
+/// The connected account's name, for Settings.
+pub async fn fetch_profile_name(token: &str) -> Result<String, SpotifyError> {
+    let api = LiveApi::new(token.to_string())?;
+    let me = api.get_json(&format!("{API_BASE}/me")).await?;
+    Ok(profile_name(&me))
 }
 
 #[cfg(test)]

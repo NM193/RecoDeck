@@ -6,3 +6,4 @@
 pub mod youtube;
 pub mod youtube_time;
 pub mod spotify;
+pub mod spotify_auth;
