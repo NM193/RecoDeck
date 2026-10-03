@@ -14,21 +14,46 @@ are built once and used in both places.
 
 ## Sections
 
-Each section is one component that reads only local data — no network, no
-quota — and renders nothing when it has nothing to show.
+Each section is one component that reads only local data (no network, no
+quota). On Search a section with nothing to show is not rendered; as a Home
+widget it shows one line of empty text instead, so the grid has no blank cell.
 
 | Section | Shows | Click | Data |
 |---|---|---|---|
 | **Recent searches** | the last 10 searches as chips, each with ×; "Clear" | runs that search again | `localStorage['search_recent']`, this machine only |
-| **Recently played** | 6 tiles (cover or gradient, title, artist), play button on hover; "Show all" | plays the track; Show all opens the full list | `play_history` joined to `tracks`, newest first, one tile per track |
-| **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line: next gig, else sets saved, else tracks owned | opens the DJ page | `dj_profiles` ∪ `yt_watched_djs`, most recently opened first |
-| **Your library by genre** | tiles for the 6 biggest genres with track counts, plus **Recently added** (last 30 days) and **Never played** | opens All Tracks filtered to that genre or group | `tracks.genre`, `date_added`, `play_count` |
-| **Recently added** | 6 rows (title, artist, "today" / "2 days ago") | plays the track | `tracks.date_added` |
-| **Sets you saved lately** | 3 rows (DJ · set, owned count) | opens the set in Sets | `yt_sets` |
+| **Recently played** | 6 tiles: artwork when `tracks.artwork_path` is set, else a gradient from the title; title, artist; play button on hover | plays the track | new `get_recently_played_tracks(limit)` |
+| **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line | opens the DJ page | new `get_known_djs()` + `localStorage['dj_recent']` |
+| **Your library by genre** | tiles for the 6 biggest genres with counts, plus **Recently added** and **Never played** with counts | opens All Tracks with that filter | new `get_library_groups()` |
+| **Recently added** | 6 rows (title, artist, "today" / "2 days ago") | plays the track | existing `get_recently_added(limit)` |
+| **Sets you saved lately** | 3 rows (title, channel, date saved) | opens the set in Sets | existing `listYouTubeSets()`, newest first |
 
-A search is remembered when its results are shown and the user acts on one
-(opens, plays) or the query sits unchanged for 2 seconds. Duplicates move to
-the front; the list keeps 10.
+**Recent searches.** A query is remembered when, trimmed, it is non-empty and
+either the user opens or plays one of its results, or it stays unchanged for 2
+seconds after the last keystroke while it has results. Comparison is
+case-insensitive; a repeat moves to the front; the list keeps 10.
+
+**Your DJs.** `get_known_djs()` returns one row per name key, merging
+`dj_profiles` and `yt_watched_djs`: `nameKey`, `displayName`, `imageUrl`
+(`spotify_image_url`, else `ra_image_url`), `nextGig` (the earliest
+`dj_gigs` date on or after today, with its venue), `watched`. The one line
+is the next gig ("next gig Sat, Oct 3"), else "watching for sets" when
+watched, else nothing. Order: the DJ pages opened most recently first — the
+frontend keeps `localStorage['dj_recent']` (name keys, newest first, max 20),
+written when a DJ page opens — then the rest by name. No migration.
+
+**Library groups.** `get_library_groups()` returns the genres with counts
+(`genre IS NOT NULL`, biggest first, top 6), the count added in the last 30
+days (`date_added` is `YYYY-MM-DD HH:MM:SS` text in local time, compared with
+`datetime('now', 'localtime', '-30 days')`), and the count never played. **Never
+played** means no row in `play_history` for the track — `tracks.play_count`
+is not kept up to date (it is 0 on every track while the history holds 441
+distinct tracks), so it is not used.
+
+**Recently played.** `get_recently_played_tracks(limit)` returns distinct
+tracks by their latest play (`MAX(played_at)`), joined to `tracks` with an
+inner join so deleted files drop out, newest first, as full `Track` rows. The
+existing `get_recently_played` (one row per play, used by Home's Recently
+Played widget) stays as it is.
 
 ## Search
 
@@ -37,48 +62,61 @@ the front; the list keeps 10.
   clearing the field brings them back.
 - Default: Recent searches, Recently played, Your DJs, Your library by genre.
   Recently added and Sets you saved lately are available but off.
-- **Customize** — a sliders button at the right of the search field opens an
-  edit mode like the DJ page's Overview: each section gets a switch and a drag
-  handle; **Done** saves. Stored in `localStorage['search_sections']` as an
-  ordered list of enabled ids; unknown ids are dropped, and a section added in
-  a later version starts off.
-- Empty library and no history: only the current "Search your library" text,
-  as today.
+- **Customize** — a sliders button at the right of the search field turns the
+  sections into a plain list: each row has a switch, and ▲ / ▼ buttons to move
+  it. No grid and no drag library (the DJ Overview's packed grid is not
+  reused). **Done** saves. Stored in `localStorage['search_sections']` as an
+  ordered list of `{ id, on }`; unknown ids are dropped, and a section added in
+  a later version is appended, off.
+- With an empty library and no history: only the current "Search your
+  library" text, as today.
+
+## All Tracks filter (new)
+
+All Tracks has only a text search today. It gains a starting filter:
+
+- App state `allTracksFilter: { kind: 'genre'; genre: string } | { kind:
+  'recent' } | { kind: 'never-played' } | null`, set by a genre tile and
+  cleared whenever another view opens.
+- Applied in App to the tracks passed to the table: genre equality,
+  `date_added` within 30 days, or not in the set of played track ids (new
+  `get_played_track_ids()`, read when this filter is chosen).
+- Shown as a chip above the table — "Genre: Tech House ×", "Added in the last
+  30 days ×", "Never played ×" — whose × clears it. The text search still
+  works within the filtered tracks.
 
 ## Home
 
-Home's widget registry (`src/components/views/widgets/widgetRegistry.ts`)
-gains three widgets that wrap the same components: **Your DJs**, **Library by
-genre** and **Sets you saved lately**. They are added from Home's existing
-widget catalog; the default Home layout does not change. Home's existing
-Recently Played and Recently Added widgets stay as they are.
+Home's widget registry gains three widgets wrapping the same components:
+
+| Widget | Default w×h | Min | Max |
+|---|---|---|---|
+| Your DJs | 4×1 | 2×1 | 4×2 |
+| Library by genre | 4×2 | 2×1 | 4×3 |
+| Sets you saved lately | 2×1 | 2×1 | 4×2 |
+
+(In Home's 4-column grid, the units `widgetRegistry.ts` already uses.) They are added from Home's existing widget catalog; the default
+layout does not change. HomeView gains the props the sections need —
+`onOpenDj(name)`, `onOpenSet(videoId)`, `onOpenAllTracks(filter)` — passed by
+App. Home's existing Recently Played and Recently Added widgets stay.
 
 ## Navigation
 
-The sections need callbacks App already has: play a track (`onPlayTrack`),
-open a DJ page (`openDjPage`), open Sets on a set (`openSets`), open All Tracks
-with a filter. The last one is new: All Tracks gains an optional starting
-filter (`genre`, `recent`, `never-played`) that App passes when a genre tile
-is clicked; the existing filter UI shows it and can clear it.
+Play a track uses App's existing play handler; a DJ page uses `openDjPage`;
+a set uses `openSets({ openVideoId })`; a genre tile sets `allTracksFilter`
+and opens All Tracks.
 
-## Data
+## Plan split
 
-Rust gains read commands for what the frontend cannot already see:
-
-- `get_recently_played(limit)` — distinct tracks from `play_history`, newest
-  play first.
-- `get_genre_counts(limit)` — `genre, COUNT(*)` from `tracks`, biggest first.
-- `get_known_djs(limit)` — DJ profiles and watched DJs merged by name key,
-  with image URL, next gig date, saved set count and owned track count.
-
-Recently added, never played and saved sets can use data the frontend already
-loads (the library and the Sets library); the plan decides per section.
+One spec, two plans: **1. Search sections and the All Tracks filter**,
+**2. the Home widgets**.
 
 ## Testing
 
-- Rust: each new query on an in-memory database — distinct and ordered plays,
-  genre counts ignoring NULL, DJ merge by name key with the right one-line
-  fact.
+- Rust: each new query on an in-memory database — distinct plays ordered by
+  latest play with deleted tracks left out; genre counts ignoring NULL; the
+  30-day and never-played counts; the DJ merge by name key and the next gig
+  only from today on.
 - TypeScript: recent-searches list rules (dedupe to front, cap 10, clear), the
   section-order storage (unknown ids dropped, new ids off), the "one line" for
   a DJ.
