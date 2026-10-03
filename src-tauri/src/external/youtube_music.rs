@@ -10,14 +10,22 @@
 //! (`youtube::unit_cost`) — charged to the OAuth client's Google Cloud
 //! project, which is the API key's: this section and Sets share the day.
 
-use crate::db::youtube_music::{YtmEntry, YtmTrack};
+use crate::db::youtube_music::{
+    ListBaseline, ListChange, SyncBaseline, SyncChanges, YtmEntry, YtmTrack,
+};
 use crate::external::youtube::parse_iso_duration;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
 
 pub const API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 /// The largest page `playlistItems` and `videos` give.
 pub const PAGE_SIZE: usize = 50;
+/// The most pages one list is read to: 10,000 videos.
+pub const MAX_PAGES: usize = 200;
+/// A list last read in full this long ago is read in full again, whatever its
+/// first page says.
+pub const FULL_REFETCH_MS: i64 = 24 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum YtmError {
@@ -201,6 +209,115 @@ pub fn playlist_id_from_link(input: &str) -> Option<String> {
     valid.then(|| candidate.to_string())
 }
 
+// --- what a sync fetches ----------------------------------------------
+
+/// One GET against the Data API, answering with the JSON body. The live client
+/// adds the token and counts the unit; tests replay hand-written pages.
+pub trait YtmApi {
+    fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, YtmError>> + Send;
+}
+
+/// Never read in full, or last read in full a day or more ago.
+pub fn full_read_due(list: &ListBaseline, now_ms: i64) -> bool {
+    list.full_synced_at.is_none_or(|at| now_ms - at >= FULL_REFETCH_MS)
+}
+
+/// One list: its first page, then — unless that page matches what is stored
+/// and no full read is due — every other page.
+async fn read_list<A: YtmApi + Sync>(api: &A, list: &ListBaseline, now_ms: i64) -> Result<ListChange, YtmError> {
+    let first = parse_items_page(&api.get_json(&items_url(&list.id, None)).await?);
+    if !full_read_due(list, now_ms)
+        && list.total_results == Some(first.total_results)
+        && list.first_page_ids.as_ref() == Some(&first.ids)
+    {
+        return Ok(ListChange::Unchanged);
+    }
+
+    let ItemsPage { ids: first_page_ids, mut entries, mut next_page_token, total_results } = first;
+    let mut pages = 1;
+    while let Some(token) = next_page_token {
+        if pages >= MAX_PAGES {
+            return Err(YtmError::Network(format!("A YouTube playlist ran past {MAX_PAGES} pages")));
+        }
+        let page = parse_items_page(&api.get_json(&items_url(&list.id, Some(&token))).await?);
+        pages += 1;
+        entries.extend(page.entries);
+        next_page_token = page.next_page_token;
+    }
+    Ok(ListChange::Full { entries, total_results, first_page_ids })
+}
+
+/// Lengths of the videos read in full whose length is not stored — new ones,
+/// and ones stored without a length — each once, 50 to a call.
+async fn fetch_durations<A: YtmApi + Sync>(
+    api: &A,
+    lists: &[(String, ListChange)],
+    known: &HashSet<String>,
+) -> Result<HashMap<String, i64>, YtmError> {
+    let mut unseen: Vec<&str> = Vec::new();
+    let mut queued: HashSet<&str> = HashSet::new();
+    for (_, change) in lists {
+        if let ListChange::Full { entries, .. } = change {
+            for entry in entries {
+                let id = entry.track.video_id.as_str();
+                if !known.contains(id) && queued.insert(id) {
+                    unseen.push(id);
+                }
+            }
+        }
+    }
+
+    let mut durations = HashMap::new();
+    for chunk in unseen.chunks(PAGE_SIZE) {
+        durations.extend(parse_durations(&api.get_json(&videos_url(chunk)).await?));
+    }
+    Ok(durations)
+}
+
+/// Every list in `base`, Liked music first. A list YouTube no longer shows is
+/// `Gone`; any other failure fails the sync, which the next run tries again.
+pub async fn fetch_changes<A: YtmApi + Sync>(
+    api: &A,
+    base: &SyncBaseline,
+    now_ms: i64,
+) -> Result<SyncChanges, YtmError> {
+    let mut lists = Vec::new();
+    for list in &base.lists {
+        let change = match read_list(api, list, now_ms).await {
+            Ok(change) => change,
+            Err(err) if is_gone(&err) => ListChange::Gone,
+            Err(err) => return Err(err),
+        };
+        lists.push((list.id.clone(), change));
+    }
+    let durations = fetch_durations(api, &lists, &base.known_ids).await?;
+    Ok(SyncChanges { lists, durations })
+}
+
+/// A playlist being added by link: its name (1 unit), then a full read, which
+/// is its "new" baseline. None when YouTube shows this account no such
+/// playlist — deleted, or private to another account.
+pub async fn fetch_new_playlist<A: YtmApi + Sync>(
+    api: &A,
+    id: &str,
+    known: &HashSet<String>,
+    now_ms: i64,
+) -> Result<Option<(String, SyncChanges)>, YtmError> {
+    let name = match api.get_json(&playlist_url(id)).await {
+        Ok(body) => parse_playlist_name(&body),
+        Err(err) if is_gone(&err) => None,
+        Err(err) => return Err(err),
+    };
+    let Some(name) = name else { return Ok(None) };
+
+    let base = SyncBaseline { lists: vec![ListBaseline::new(id)], known_ids: known.clone() };
+    let changes = fetch_changes(api, &base, now_ms).await?;
+    if matches!(changes.lists.as_slice(), [(_, ListChange::Gone)]) {
+        return Ok(None);
+    }
+    Ok(Some((name, changes)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,5 +478,230 @@ mod tests {
             videos_url(&["a", "b"]),
             "https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=a,b"
         );
+    }
+
+    // --- what a sync fetches ------------------------------------------
+
+    use crate::db::youtube_music::{ListBaseline, ListChange, SyncBaseline};
+    use std::collections::HashSet;
+    use std::future::Future;
+    use std::sync::Mutex;
+
+    /// Replays hand-written pages by URL and records what was asked for.
+    #[derive(Default)]
+    struct FakeApi {
+        pages: HashMap<String, Result<Value, YtmError>>,
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl FakeApi {
+        fn page(mut self, url: String, body: Value) -> Self {
+            self.pages.insert(url, Ok(body));
+            self
+        }
+
+        fn fail(mut self, url: String, err: YtmError) -> Self {
+            self.pages.insert(url, Err(err));
+            self
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl YtmApi for FakeApi {
+        fn get_json(&self, url: &str) -> impl Future<Output = Result<Value, YtmError>> + Send {
+            self.calls.lock().unwrap().push(url.to_string());
+            let answer = self
+                .pages
+                .get(url)
+                .cloned()
+                .unwrap_or_else(|| Err(YtmError::Network(format!("no page for {url}"))));
+            async move { answer }
+        }
+    }
+
+    fn page_of(ids: &[&str], total: i64, next: Option<&str>) -> Value {
+        json!({
+            "nextPageToken": next,
+            "pageInfo": { "totalResults": total },
+            "items": ids.iter().map(|id| item(id, &format!("Artist - {id}"), Some("Label"))).collect::<Vec<_>>()
+        })
+    }
+
+    fn lengths(pairs: &[(&str, &str)]) -> Value {
+        json!({ "items": pairs.iter().map(|(id, d)| json!({ "id": id, "contentDetails": { "duration": d } })).collect::<Vec<_>>() })
+    }
+
+    fn stored(id: &str, total: i64, first: &[&str], full_at: i64) -> ListBaseline {
+        ListBaseline {
+            id: id.to_string(),
+            total_results: Some(total),
+            first_page_ids: Some(first.iter().map(|s| s.to_string()).collect()),
+            full_synced_at: Some(full_at),
+        }
+    }
+
+    fn known(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    const NOW: i64 = 10 * FULL_REFETCH_MS;
+    const HOUR: i64 = 60 * 60 * 1000;
+
+    /// Liked music, two pages: [a, b] then [c]; totalResults 3.
+    fn two_pages() -> FakeApi {
+        FakeApi::default()
+            .page(items_url("LM", None), page_of(&["a", "b"], 3, Some("P2")))
+            .page(items_url("LM", Some("P2")), page_of(&["c"], 3, None))
+    }
+
+    #[tokio::test]
+    async fn a_first_sync_reads_every_page_and_asks_lengths_only_for_unseen_videos() {
+        let api = two_pages().page(videos_url(&["a", "c"]), lengths(&[("a", "PT5M"), ("c", "PT1H5M")]));
+        let base = SyncBaseline { lists: vec![ListBaseline::new("LM")], known_ids: known(&["b"]) };
+
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+
+        match changes.lists.as_slice() {
+            [(id, ListChange::Full { entries, total_results, first_page_ids })] => {
+                assert_eq!(id, "LM");
+                assert_eq!(entries.iter().map(|e| e.track.video_id.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
+                assert_eq!(*total_results, 3);
+                assert_eq!(first_page_ids, &["a", "b"]);
+            }
+            other => panic!("expected one full read, got {other:?}"),
+        }
+        assert_eq!(changes.durations, HashMap::from([("a".to_string(), 300_000), ("c".to_string(), 3_900_000)]));
+        assert_eq!(api.calls().len(), 3, "two pages and one videos call: 3 units");
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_first_page_skips_the_list_for_one_unit() {
+        let api = two_pages();
+        let base = SyncBaseline { lists: vec![stored("LM", 3, &["a", "b"], NOW - HOUR)], known_ids: HashSet::new() };
+
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+
+        assert_eq!(changes.lists, vec![("LM".to_string(), ListChange::Unchanged)]);
+        assert!(changes.durations.is_empty());
+        assert_eq!(api.calls(), [items_url("LM", None)]);
+    }
+
+    #[tokio::test]
+    async fn a_new_total_or_a_new_first_page_reads_the_list_again() {
+        for list in [stored("LM", 2, &["a", "b"], NOW - HOUR), stored("LM", 3, &["x", "b"], NOW - HOUR)] {
+            let api = two_pages();
+            let base = SyncBaseline { lists: vec![list], known_ids: known(&["a", "b", "c"]) };
+            let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+            assert!(matches!(changes.lists[0].1, ListChange::Full { .. }));
+            assert_eq!(api.calls().len(), 2, "every page, and no videos call: all known");
+        }
+    }
+
+    #[tokio::test]
+    async fn once_a_day_a_list_is_read_in_full_whatever_its_first_page_says() {
+        let api = two_pages();
+        let base = SyncBaseline {
+            lists: vec![stored("LM", 3, &["a", "b"], NOW - FULL_REFETCH_MS)],
+            known_ids: known(&["a", "b", "c"]),
+        };
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+        assert!(matches!(changes.lists[0].1, ListChange::Full { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_playlist_that_disappeared_is_marked_and_the_rest_still_sync() {
+        let gone = YtmError::Api { status: 404, message: "x".into(), reason: Some("playlistNotFound".into()) };
+        let api = FakeApi::default()
+            .page(items_url("LM", None), page_of(&["a"], 1, None))
+            .fail(items_url("PLgone", None), gone)
+            .page(items_url("PL2", None), page_of(&["b"], 1, None));
+        let base = SyncBaseline {
+            lists: vec![ListBaseline::new("LM"), ListBaseline::new("PLgone"), ListBaseline::new("PL2")],
+            known_ids: known(&["a", "b"]),
+        };
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+        assert_eq!(changes.lists[1], ("PLgone".to_string(), ListChange::Gone));
+        assert!(matches!(changes.lists[2].1, ListChange::Full { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_used_up_quota_fails_the_whole_sync() {
+        let api = FakeApi::default().fail(items_url("LM", None), YtmError::QuotaExceeded);
+        let base = SyncBaseline { lists: vec![ListBaseline::new("LM")], known_ids: HashSet::new() };
+        assert_eq!(fetch_changes(&api, &base, NOW).await, Err(YtmError::QuotaExceeded));
+    }
+
+    #[tokio::test]
+    async fn lengths_are_asked_for_fifty_videos_at_a_time() {
+        let ids: Vec<String> = (0..51).map(|i| format!("v{i:02}")).collect();
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let api = FakeApi::default()
+            .page(items_url("LM", None), page_of(&ids[..50], 51, Some("P2")))
+            .page(items_url("LM", Some("P2")), page_of(&ids[50..], 51, None))
+            .page(videos_url(&ids[..50]), json!({ "items": [] }))
+            .page(videos_url(&ids[50..]), json!({ "items": [] }));
+        let base = SyncBaseline { lists: vec![ListBaseline::new("LM")], known_ids: HashSet::new() };
+        fetch_changes(&api, &base, NOW).await.unwrap();
+        assert_eq!(api.calls().len(), 4, "2 pages, then 2 videos calls for 51 new videos");
+    }
+
+    #[tokio::test]
+    async fn a_new_video_in_two_lists_is_asked_for_once() {
+        let api = FakeApi::default()
+            .page(items_url("LM", None), page_of(&["a"], 1, None))
+            .page(items_url("PL1", None), page_of(&["a"], 1, None))
+            .page(videos_url(&["a"]), lengths(&[("a", "PT4M")]));
+        let base = SyncBaseline {
+            lists: vec![ListBaseline::new("LM"), ListBaseline::new("PL1")],
+            known_ids: HashSet::new(),
+        };
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+        assert_eq!(changes.durations, HashMap::from([("a".to_string(), 240_000)]));
+        assert_eq!(api.calls().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_stored_video_without_a_length_is_asked_again_at_a_full_read() {
+        // b is stored but YouTube had no length for it (a premiere); a and c
+        // have theirs.
+        let api = two_pages().page(videos_url(&["b"]), lengths(&[("b", "PT6M")]));
+        let base = SyncBaseline {
+            lists: vec![stored("LM", 2, &["a", "b"], NOW - HOUR)],
+            known_ids: known(&["a", "c"]),
+        };
+        let changes = fetch_changes(&api, &base, NOW).await.unwrap();
+        assert_eq!(changes.durations, HashMap::from([("b".to_string(), 360_000)]));
+        assert_eq!(api.calls().len(), 3, "two pages, then b alone: 1 unit");
+    }
+
+    #[tokio::test]
+    async fn a_playlist_added_by_link_is_named_then_read_in_full() {
+        let api = FakeApi::default()
+            .page(playlist_url("PLx"), json!({ "items": [{ "snippet": { "title": "Deep Cuts" } }] }))
+            .page(items_url("PLx", None), page_of(&["a"], 1, None))
+            .page(videos_url(&["a"]), lengths(&[("a", "PT7M")]));
+        let (name, changes) = fetch_new_playlist(&api, "PLx", &HashSet::new(), NOW).await.unwrap().unwrap();
+        assert_eq!(name, "Deep Cuts");
+        assert!(matches!(changes.lists.as_slice(), [(_, ListChange::Full { .. })]));
+        assert_eq!(api.calls().len(), 3, "1 unit for the name, then the read");
+    }
+
+    #[tokio::test]
+    async fn a_playlist_youtube_does_not_show_is_not_found() {
+        let api = FakeApi::default().page(playlist_url("PLprivate"), json!({ "items": [] }));
+        assert_eq!(fetch_new_playlist(&api, "PLprivate", &HashSet::new(), NOW).await, Ok(None));
+        assert_eq!(api.calls().len(), 1, "nothing read past the name");
+
+        let gone = YtmError::Api { status: 404, message: "x".into(), reason: None };
+        let api = FakeApi::default()
+            .page(playlist_url("PLy"), json!({ "items": [{ "snippet": { "title": "Y" } }] }))
+            .fail(items_url("PLy", None), gone.clone());
+        assert_eq!(fetch_new_playlist(&api, "PLy", &HashSet::new(), NOW).await, Ok(None));
+
+        let api = FakeApi::default().fail(playlist_url("PLz"), gone);
+        assert_eq!(fetch_new_playlist(&api, "PLz", &HashSet::new(), NOW).await, Ok(None));
     }
 }
