@@ -1,0 +1,51 @@
+/* src/components/views/YouTubeMusicView.css */
+/* StreamingListView's look (SpotifyView.css), in YouTube's red, plus the Sets group. */
+
+.spotify-header__cover--youtube-music {
+  background: linear-gradient(135deg, #ff0033, #8c1023);
+}
+
+.ytm-sets {
+  margin: 20px 16px 0;
+}
+
+.ytm-sets__title {
+  margin: 0 0 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ytm-sets__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.3fr) 64px auto;
+  gap: 12px;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.ytm-sets__row:hover {
+  background: var(--bg-tertiary);
+}
+
+.ytm-sets__name,
+.ytm-sets__channel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ytm-sets__channel,
+.ytm-sets__length {
+  color: var(--text-secondary);
+}
+
+.ytm-sets__length {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
