@@ -231,7 +231,8 @@ export function SpotifyView({
             onClick={() => spotify.setFilter(key)}
           >
             {/* Until the library is known only the total is. */}
-            {label} <small>{checking && key !== 'all' ? '…' : counts[key]}</small>
+            {label}{' '}
+            <small>{checking && key !== 'all' ? '…' : counts[key]}</small>
           </button>
         ))}
       </div>
@@ -307,7 +308,11 @@ export function SpotifyView({
             {row.ownership.kind === 'maybe' && row.ownership.file && (
               <div className="spotify-row spotify-row--sub" role="row">
                 <span role="cell" />
-                <span className="spotify-hint" role="cell" aria-colspan={showLists ? 5 : 4}>
+                <span
+                  className="spotify-hint"
+                  role="cell"
+                  aria-colspan={showLists ? 5 : 4}
+                >
                   In library:{' '}
                   <code title={row.ownership.file.file_path}>
                     {fileName(row.ownership.file.file_path)}

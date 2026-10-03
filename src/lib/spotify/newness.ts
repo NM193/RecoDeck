@@ -20,8 +20,13 @@ export function isNew(entry: SpotifyEntry, lastOpenedAt: number): boolean {
   return entry.firstSeenAt > lastOpenedAt
 }
 
-export function newAndMissing(library: SpotifyLibrary, ownership: Map<string, Ownership>): NewCounts {
-  const opened = new Map(library.lists.map((list) => [list.id, list.lastOpenedAt]))
+export function newAndMissing(
+  library: SpotifyLibrary,
+  ownership: Map<string, Ownership>,
+): NewCounts {
+  const opened = new Map(
+    library.lists.map((list) => [list.id, list.lastOpenedAt]),
+  )
   const distinct = new Set<string>()
   const byList = new Map<string, number>()
 

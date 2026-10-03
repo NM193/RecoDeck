@@ -14,18 +14,63 @@ import type { SpotifyLibrary } from '../../types/spotify'
 
 const library: SpotifyLibrary = {
   lists: [
-    { id: 'liked', name: 'Liked Songs', position: 0, trackCount: 2, lastOpenedAt: 1000 },
-    { id: 'p1', name: 'Tech House', position: 1, trackCount: 2, lastOpenedAt: 1000 },
+    {
+      id: 'liked',
+      name: 'Liked Songs',
+      position: 0,
+      trackCount: 2,
+      lastOpenedAt: 1000,
+    },
+    {
+      id: 'p1',
+      name: 'Tech House',
+      position: 1,
+      trackCount: 2,
+      lastOpenedAt: 1000,
+    },
   ],
   tracks: [
-    { spotifyId: 't1', title: 'Control', artists: 'Joseph Capriati', album: 'Control EP', durationMs: null },
-    { spotifyId: 't2', title: 'Reverse Things', artists: 'Makèz, Toman', album: null, durationMs: null },
-    { spotifyId: 't3', title: 'Come Get Up', artists: 'Butch', album: null, durationMs: null },
+    {
+      spotifyId: 't1',
+      title: 'Control',
+      artists: 'Joseph Capriati',
+      album: 'Control EP',
+      durationMs: null,
+    },
+    {
+      spotifyId: 't2',
+      title: 'Reverse Things',
+      artists: 'Makèz, Toman',
+      album: null,
+      durationMs: null,
+    },
+    {
+      spotifyId: 't3',
+      title: 'Come Get Up',
+      artists: 'Butch',
+      album: null,
+      durationMs: null,
+    },
   ],
   entries: [
-    { listId: 'p1', spotifyId: 't1', addedAt: '2026-09-20T10:00:00Z', firstSeenAt: 1000 },
-    { listId: 'liked', spotifyId: 't1', addedAt: '2026-09-01T10:00:00Z', firstSeenAt: 1000 },
-    { listId: 'liked', spotifyId: 't2', addedAt: '2026-09-10T10:00:00Z', firstSeenAt: 2000 },
+    {
+      listId: 'p1',
+      spotifyId: 't1',
+      addedAt: '2026-09-20T10:00:00Z',
+      firstSeenAt: 1000,
+    },
+    {
+      listId: 'liked',
+      spotifyId: 't1',
+      addedAt: '2026-09-01T10:00:00Z',
+      firstSeenAt: 1000,
+    },
+    {
+      listId: 'liked',
+      spotifyId: 't2',
+      addedAt: '2026-09-10T10:00:00Z',
+      firstSeenAt: 2000,
+    },
     { listId: 'p1', spotifyId: 't3', addedAt: null, firstSeenAt: 2000 },
   ],
   verdicts: [],
@@ -62,19 +107,39 @@ describe('the rows of a list', () => {
   })
 
   it('compares with the opening captured when the view was opened, not the one just written', () => {
-    const rows = rowsFor('liked', library, ownership, new Map([['liked', 2500]]))
+    const rows = rowsFor(
+      'liked',
+      library,
+      ownership,
+      new Map([['liked', 2500]]),
+    )
     expect(rows.find((r) => r.track.spotifyId === 't2')?.isNew).toBe(false)
   })
 
   it('counts each status, and filters by status and by words', () => {
     const rows = rowsFor('all', library, ownership, new Map())
-    expect(countByStatus(rows)).toEqual({ all: 3, owned: 1, missing: 1, maybe: 1 })
-    expect(filterRows(rows, 'missing', '').map((r) => r.track.spotifyId)).toEqual(['t1'])
+    expect(countByStatus(rows)).toEqual({
+      all: 3,
+      owned: 1,
+      missing: 1,
+      maybe: 1,
+    })
+    expect(
+      filterRows(rows, 'missing', '').map((r) => r.track.spotifyId),
+    ).toEqual(['t1'])
     // Accents are folded on both sides: typing without them still finds them.
-    expect(filterRows(rows, 'all', 'makez').map((r) => r.track.spotifyId)).toEqual(['t2'])
-    expect(filterRows(rows, 'all', 'MAKÈZ').map((r) => r.track.spotifyId)).toEqual(['t2'])
-    expect(filterRows(rows, 'all', 'toman reverse').map((r) => r.track.spotifyId)).toEqual(['t2'])
-    expect(filterRows(rows, 'all', 'control ep').map((r) => r.track.spotifyId)).toEqual(['t1'])
+    expect(
+      filterRows(rows, 'all', 'makez').map((r) => r.track.spotifyId),
+    ).toEqual(['t2'])
+    expect(
+      filterRows(rows, 'all', 'MAKÈZ').map((r) => r.track.spotifyId),
+    ).toEqual(['t2'])
+    expect(
+      filterRows(rows, 'all', 'toman reverse').map((r) => r.track.spotifyId),
+    ).toEqual(['t2'])
+    expect(
+      filterRows(rows, 'all', 'control ep').map((r) => r.track.spotifyId),
+    ).toEqual(['t1'])
   })
 
   it('counts the rows behind each sidebar item', () => {
@@ -89,10 +154,18 @@ describe('how times read', () => {
   const now = new Date(2026, 9, 3, 12, 0)
 
   it('says today, yesterday, a date, or a date with the year', () => {
-    expect(formatAdded(new Date(2026, 9, 3, 8).toISOString(), now)).toBe('today')
-    expect(formatAdded(new Date(2026, 9, 2, 23).toISOString(), now)).toBe('yesterday')
-    expect(formatAdded(new Date(2026, 8, 28, 10).toISOString(), now)).toBe('Sep 28')
-    expect(formatAdded(new Date(2024, 8, 28, 10).toISOString(), now)).toBe('Sep 28, 2024')
+    expect(formatAdded(new Date(2026, 9, 3, 8).toISOString(), now)).toBe(
+      'today',
+    )
+    expect(formatAdded(new Date(2026, 9, 2, 23).toISOString(), now)).toBe(
+      'yesterday',
+    )
+    expect(formatAdded(new Date(2026, 8, 28, 10).toISOString(), now)).toBe(
+      'Sep 28',
+    )
+    expect(formatAdded(new Date(2024, 8, 28, 10).toISOString(), now)).toBe(
+      'Sep 28, 2024',
+    )
     expect(formatAdded(null, now)).toBe('')
   })
 
@@ -106,7 +179,9 @@ describe('how times read', () => {
   })
 
   it('shows only the file name of a library path', () => {
-    expect(fileName('/music/Butch & Santos - Come Get Up.mp3')).toBe('Butch & Santos - Come Get Up.mp3')
+    expect(fileName('/music/Butch & Santos - Come Get Up.mp3')).toBe(
+      'Butch & Santos - Come Get Up.mp3',
+    )
     expect(fileName('C:\\Music\\Track.flac')).toBe('Track.flac')
   })
 })

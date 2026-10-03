@@ -237,10 +237,9 @@
 }
 
 .spotify-row--lists {
-  grid-template-columns: 44px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(
-      0,
-      1fr
-    ) 72px 220px;
+  grid-template-columns:
+    44px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1fr)
+    72px 220px;
 }
 
 .spotify-row--head {

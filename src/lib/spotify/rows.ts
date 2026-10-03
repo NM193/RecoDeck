@@ -6,7 +6,11 @@
  */
 import { isNew } from './newness'
 import type { Ownership, OwnershipKind } from './ownership'
-import { ALL_LISTS, type SpotifyLibrary, type SpotifyTrack } from '../../types/spotify'
+import {
+  ALL_LISTS,
+  type SpotifyLibrary,
+  type SpotifyTrack,
+} from '../../types/spotify'
 
 export interface SpotifyRow {
   track: SpotifyTrack
@@ -33,18 +37,31 @@ export function rowsFor(
   seenBefore: Map<string, number>,
 ): SpotifyRow[] {
   const lists = new Map(library.lists.map((list) => [list.id, list]))
-  const tracks = new Map(library.tracks.map((track) => [track.spotifyId, track]))
-  const byTrack = new Map<string, { addedAt: string | null; listIds: Set<string>; isNew: boolean }>()
+  const tracks = new Map(
+    library.tracks.map((track) => [track.spotifyId, track]),
+  )
+  const byTrack = new Map<
+    string,
+    { addedAt: string | null; listIds: Set<string>; isNew: boolean }
+  >()
 
   for (const entry of library.entries) {
     if (listId !== ALL_LISTS && entry.listId !== listId) continue
     const list = lists.get(entry.listId)
     if (!list) continue
 
-    const row = byTrack.get(entry.spotifyId) ?? { addedAt: null, listIds: new Set<string>(), isNew: false }
-    if (entry.addedAt && (!row.addedAt || entry.addedAt > row.addedAt)) row.addedAt = entry.addedAt
+    const row = byTrack.get(entry.spotifyId) ?? {
+      addedAt: null,
+      listIds: new Set<string>(),
+      isNew: false,
+    }
+    if (entry.addedAt && (!row.addedAt || entry.addedAt > row.addedAt))
+      row.addedAt = entry.addedAt
     row.listIds.add(entry.listId)
-    row.isNew ||= isNew(entry, seenBefore.get(entry.listId) ?? list.lastOpenedAt)
+    row.isNew ||= isNew(
+      entry,
+      seenBefore.get(entry.listId) ?? list.lastOpenedAt,
+    )
     byTrack.set(entry.spotifyId, row)
   }
 
@@ -76,8 +93,15 @@ export function rowsFor(
   })
 }
 
-export function countByStatus(rows: SpotifyRow[]): Record<StatusFilter, number> {
-  const counts: Record<StatusFilter, number> = { all: rows.length, owned: 0, missing: 0, maybe: 0 }
+export function countByStatus(
+  rows: SpotifyRow[],
+): Record<StatusFilter, number> {
+  const counts: Record<StatusFilter, number> = {
+    all: rows.length,
+    owned: 0,
+    missing: 0,
+    maybe: 0,
+  }
   for (const row of rows) counts[row.ownership.kind] += 1
   return counts
 }
@@ -88,12 +112,18 @@ function fold(text: string): string {
 }
 
 /** Status first, then every typed word must appear in title, artists or album. */
-export function filterRows(rows: SpotifyRow[], filter: StatusFilter, query: string): SpotifyRow[] {
+export function filterRows(
+  rows: SpotifyRow[],
+  filter: StatusFilter,
+  query: string,
+): SpotifyRow[] {
   const words = fold(query).split(/\s+/).filter(Boolean)
   return rows.filter((row) => {
     if (filter !== 'all' && row.ownership.kind !== filter) return false
     if (!words.length) return true
-    const haystack = fold(`${row.track.title} ${row.track.artists} ${row.track.album ?? ''}`)
+    const haystack = fold(
+      `${row.track.title} ${row.track.artists} ${row.track.album ?? ''}`,
+    )
     return words.every((word) => haystack.includes(word))
   })
 }
@@ -101,7 +131,8 @@ export function filterRows(rows: SpotifyRow[], filter: StatusFilter, query: stri
 /** Rows behind each sidebar item: per list, and every track for All playlists. */
 export function listCounts(library: SpotifyLibrary): Map<string, number> {
   const counts = new Map<string, number>([[ALL_LISTS, library.tracks.length]])
-  for (const entry of library.entries) counts.set(entry.listId, (counts.get(entry.listId) ?? 0) + 1)
+  for (const entry of library.entries)
+    counts.set(entry.listId, (counts.get(entry.listId) ?? 0) + 1)
   return counts
 }
 
@@ -112,7 +143,8 @@ export function formatAdded(iso: string | null, now: Date): string {
   if (!iso) return ''
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ''
-  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const day = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   // Rounded, so a 23- or 25-hour day around a clock change is still one day.
   const days = Math.round((day(now) - day(date)) / DAY_MS)
   if (days === 0) return 'today'

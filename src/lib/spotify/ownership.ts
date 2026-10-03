@@ -50,7 +50,11 @@ export function buildOwnershipIndex(library: LibraryTrack[]): OwnershipIndex {
       else byToken.set(token, [position])
     }
   })
-  return { entries, byId: new Map(library.map((track) => [track.id, track])), byToken }
+  return {
+    entries,
+    byId: new Map(library.map((track) => [track.id, track])),
+    byToken,
+  }
 }
 
 /** Files sharing a title word with the track, in library order, minus those answered No. */
@@ -62,7 +66,8 @@ function candidates(
   const positions = new Set<number>()
   for (const form of titleFormsOf(parsed)) {
     for (const token of tokenSet(form)) {
-      for (const position of index.byToken.get(token) ?? []) positions.add(position)
+      for (const position of index.byToken.get(token) ?? [])
+        positions.add(position)
     }
   }
   return [...positions]
@@ -72,13 +77,16 @@ function candidates(
 }
 
 /** Why a Maybe is unsure, in the words the sub-row shows. */
-export function maybeReason(match: Pick<LibraryMatch, 'titleScore' | 'artistScore'>): string {
+export function maybeReason(
+  match: Pick<LibraryMatch, 'titleScore' | 'artistScore'>,
+): string {
   const title = match.titleScore >= 1 ? 'same title' : 'similar title'
   // A match is Maybe only when it is not `strong`, and `strong` means an
   // artistScore of 0.8 or more, so a Maybe's artist never fully agrees: in
   // practice this always reads "artist partly matches". The "same artist"
   // branch only matters if what counts as `strong` ever changes.
-  const artist = match.artistScore >= 1 ? 'same artist' : 'artist partly matches'
+  const artist =
+    match.artistScore >= 1 ? 'same artist' : 'artist partly matches'
   return `${title}, ${artist}`
 }
 
@@ -105,18 +113,28 @@ export function classifyTracks(
   for (const track of tracks) {
     const confirmed = yes.get(track.spotifyId)
     if (confirmed !== undefined) {
-      result.set(track.spotifyId, { kind: 'owned', file: index.byId.get(confirmed) })
+      result.set(track.spotifyId, {
+        kind: 'owned',
+        file: index.byId.get(confirmed),
+      })
       continue
     }
 
     const parsed = toParsed(track)
-    const match = matchOne(parsed, candidates(index, parsed, no.get(track.spotifyId)))
+    const match = matchOne(
+      parsed,
+      candidates(index, parsed, no.get(track.spotifyId)),
+    )
     if (!match) {
       result.set(track.spotifyId, { kind: 'missing' })
     } else if (match.strong) {
       result.set(track.spotifyId, { kind: 'owned', file: match.track })
     } else {
-      result.set(track.spotifyId, { kind: 'maybe', file: match.track, reason: maybeReason(match) })
+      result.set(track.spotifyId, {
+        kind: 'maybe',
+        file: match.track,
+        reason: maybeReason(match),
+      })
     }
   }
   return result

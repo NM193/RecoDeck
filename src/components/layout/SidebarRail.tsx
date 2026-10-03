@@ -104,9 +104,7 @@ export function SidebarRail({
       onContextMenu={onColourMenu(section, section === 'playlists')}
       onMouseEnter={flyout ? undefined : showTip(label)}
       onMouseLeave={hideTip}
-      aria-label={
-        badge != null && badge > 0 ? `${label}, ${badge} new` : label
-      }
+      aria-label={badge != null && badge > 0 ? `${label}, ${badge} new` : label}
       aria-haspopup="dialog"
       aria-expanded={flyout?.section === section}
       type="button"

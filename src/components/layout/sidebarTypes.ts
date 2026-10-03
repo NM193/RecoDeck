@@ -15,7 +15,10 @@ export interface NavItem {
 
 /** The sections the rail shows as an icon that opens a flyout. A section
  *  joins by adding its SidebarSection name here. */
-export type FlyoutSection = Extract<SidebarSection, 'folders' | 'playlists' | 'spotify'>
+export type FlyoutSection = Extract<
+  SidebarSection,
+  'folders' | 'playlists' | 'spotify'
+>
 
 /** What the SPOTIFY section shows. Absent while no account is connected. */
 export interface SidebarSpotify {
