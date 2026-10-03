@@ -11,6 +11,7 @@
 //! and a playlist's count is `items.total` (formerly `tracks.total`). Both
 //! spellings are read.
 
+use crate::db::dj::DjRelease;
 use crate::db::spotify::{LikedChange, ListEntry, PlaylistMeta, SpotifyTrack, SyncBaseline, SyncChanges};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -66,7 +67,7 @@ pub const MAX_PAGES: usize = 1_000;
 /// The next page to read, after `pages_read` pages. Only a URL on the Web API
 /// is followed (the token goes with every request), and a listing that never
 /// ends is an error rather than a hang.
-fn next_page(next: Option<String>, pages_read: usize) -> Result<Option<String>, SpotifyError> {
+pub(crate) fn next_page(next: Option<String>, pages_read: usize) -> Result<Option<String>, SpotifyError> {
     let Some(next) = next else { return Ok(None) };
     if !next.starts_with(&format!("{API_BASE}/")) {
         return Err(SpotifyError::Network(
@@ -235,6 +236,139 @@ pub fn profile_name(me: &Value) -> String {
         .filter(|name| !name.trim().is_empty())
         .or_else(|| text(me, "id"))
         .unwrap_or_else(|| "your Spotify account".to_string())
+}
+
+// --- artists and their releases, for DJ pages --------------------------
+//
+// Development-mode apps get at most 10 per page from search and from an
+// artist's album listing (a larger `limit` is a 400), and no batched
+// several-albums call (403). Album tracks carry no ISRC — only
+// `GET /tracks/{id}` does, one request per track — so `isrc` is read when
+// present and is usually None.
+
+/// The largest page of artist search and of an artist's releases.
+pub const ARTIST_PAGE_LIMIT: u32 = 10;
+
+pub fn artist_url(artist_id: &str) -> String {
+    format!("{API_BASE}/artists/{artist_id}")
+}
+
+/// One group of an artist's releases — `album`, `single`, `appears_on` or
+/// `compilation` — newest first (observed, not documented).
+pub fn artist_albums_url(artist_id: &str, group: &str) -> String {
+    format!("{API_BASE}/artists/{artist_id}/albums?include_groups={group}&limit={ARTIST_PAGE_LIMIT}")
+}
+
+pub fn album_tracks_url(album_id: &str) -> String {
+    format!("{API_BASE}/albums/{album_id}/tracks?limit={PAGE_LIMIT}")
+}
+
+pub fn artist_search_url(query: &str) -> String {
+    format!(
+        "{API_BASE}/search?q={}&type=artist&limit={ARTIST_PAGE_LIMIT}",
+        urlencoding::encode(query.trim())
+    )
+}
+
+/// An artist, from search or from `GET /artists/{id}`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtistInfo {
+    pub id: String,
+    pub name: String,
+    /// The first (widest) image.
+    pub image_url: Option<String>,
+    /// Usually None: Spotify stopped sending followers to personal apps.
+    pub followers: Option<i64>,
+    /// Deprecated by Spotify and often empty.
+    pub genres: Vec<String>,
+}
+
+/// A track on a release. Kept for a DJ page only when the DJ's artist id is
+/// in `artist_ids` — the track's artists, not the release's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlbumTrack {
+    pub id: String,
+    pub name: String,
+    pub artist_ids: Vec<String>,
+    /// Artists joined with ", ".
+    pub artists: String,
+    pub duration_ms: Option<i64>,
+    pub isrc: Option<String>,
+}
+
+pub fn parse_artist(artist: &Value) -> Option<ArtistInfo> {
+    Some(ArtistInfo {
+        id: text(artist, "id").filter(|id| !id.is_empty())?,
+        name: text(artist, "name")?,
+        image_url: artist.pointer("/images/0/url").and_then(Value::as_str).map(str::to_string),
+        followers: artist.pointer("/followers/total").and_then(Value::as_i64),
+        genres: artist
+            .get("genres")
+            .and_then(Value::as_array)
+            .map(|genres| genres.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default(),
+    })
+}
+
+/// `GET /search?type=artist` answers `{"artists": <paging object>}`.
+pub fn parse_artist_search(body: &Value) -> Vec<ArtistInfo> {
+    body.get("artists")
+        .map(|page| page_of(page, parse_artist).items)
+        .unwrap_or_default()
+}
+
+fn parse_release(item: &Value) -> Option<DjRelease> {
+    Some(DjRelease {
+        id: text(item, "id").filter(|id| !id.is_empty())?,
+        name: text(item, "name").unwrap_or_default(),
+        release_date: text(item, "release_date"),
+    })
+}
+
+pub fn parse_release_page(page: &Value) -> Page<DjRelease> {
+    page_of(page, parse_release)
+}
+
+fn parse_album_track(item: &Value) -> Option<AlbumTrack> {
+    if item.get("is_local").and_then(Value::as_bool).unwrap_or(false) {
+        return None;
+    }
+    let artists = item.get("artists").and_then(Value::as_array);
+    let all = || artists.into_iter().flatten();
+    Some(AlbumTrack {
+        id: text(item, "id").filter(|id| !id.is_empty())?,
+        name: text(item, "name").unwrap_or_default(),
+        artist_ids: all().filter_map(|a| text(a, "id")).collect(),
+        artists: all()
+            .filter_map(|a| a.get("name").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join(", "),
+        duration_ms: item.get("duration_ms").and_then(Value::as_i64),
+        isrc: item
+            .pointer("/external_ids/isrc")
+            .and_then(Value::as_str)
+            .filter(|isrc| !isrc.trim().is_empty())
+            .map(str::to_string),
+    })
+}
+
+pub fn parse_album_track_page(page: &Value) -> Page<AlbumTrack> {
+    page_of(page, parse_album_track)
+}
+
+/// The search result that is this DJ: its name equals the DJ name, ignoring
+/// case. Among several, the one with the most followers when Spotify sent any,
+/// otherwise the first.
+pub fn pick_artist<'a>(name: &str, candidates: &'a [ArtistInfo]) -> Option<&'a ArtistInfo> {
+    let wanted = name.trim().to_lowercase();
+    let mut best: Option<&ArtistInfo> = None;
+    for candidate in candidates.iter().filter(|c| c.name.trim().to_lowercase() == wanted) {
+        best = match best {
+            Some(current) if candidate.followers.unwrap_or(-1) <= current.followers.unwrap_or(-1) => Some(current),
+            _ => Some(candidate),
+        };
+    }
+    best
 }
 
 // --- what a sync fetches ----------------------------------------------
@@ -991,5 +1125,129 @@ mod tests {
 
         assert!(matches!(result, Err(SpotifyError::Network(message)) if message.contains("1000")));
         assert_eq!(api.calls().len(), MAX_PAGES);
+    }
+}
+
+#[cfg(test)]
+mod dj_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn artist(id: &str, name: &str, followers: Option<i64>) -> ArtistInfo {
+        ArtistInfo { id: id.into(), name: name.into(), image_url: None, followers, genres: vec![] }
+    }
+
+    #[test]
+    fn builds_the_artist_and_release_urls() {
+        assert_eq!(artist_url("a1"), "https://api.spotify.com/v1/artists/a1");
+        assert_eq!(
+            artist_albums_url("a1", "appears_on"),
+            "https://api.spotify.com/v1/artists/a1/albums?include_groups=appears_on&limit=10"
+        );
+        assert_eq!(album_tracks_url("r1"), "https://api.spotify.com/v1/albums/r1/tracks?limit=50");
+        assert_eq!(
+            artist_search_url(" Seth Troxler & Co "),
+            "https://api.spotify.com/v1/search?q=Seth%20Troxler%20%26%20Co&type=artist&limit=10"
+        );
+    }
+
+    #[test]
+    fn reads_an_artist_as_development_mode_apps_get_it() {
+        let body = json!({
+            "id": "4mo", "name": "Marco Carola", "type": "artist", "followers": null, "popularity": null,
+            "genres": [], "external_urls": { "spotify": "https://open.spotify.com/artist/4mo" },
+            "images": [{ "url": "https://i.scdn.co/640.jpg", "width": 640 }, { "url": "https://i.scdn.co/160.jpg", "width": 160 }]
+        });
+        assert_eq!(
+            parse_artist(&body),
+            Some(ArtistInfo {
+                id: "4mo".into(),
+                name: "Marco Carola".into(),
+                image_url: Some("https://i.scdn.co/640.jpg".into()),
+                followers: None,
+                genres: vec![],
+            })
+        );
+        let older = json!({ "id": "x", "name": "X", "followers": { "total": 12 }, "genres": ["techno", 3] });
+        let parsed = parse_artist(&older).unwrap();
+        assert_eq!((parsed.followers, parsed.genres), (Some(12), vec!["techno".to_string()]));
+        assert_eq!(parse_artist(&json!({ "name": "No id" })), None);
+    }
+
+    #[test]
+    fn reads_artist_search_results() {
+        let body = json!({ "artists": { "total": 2, "next": null, "items": [
+            { "id": "a1", "name": "Luciano", "images": [] },
+            { "id": "a2", "name": "Luciano Pavarotti" },
+            { "name": "broken" }
+        ]}});
+        let found = parse_artist_search(&body);
+        assert_eq!(found.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["a1", "a2"]);
+        assert!(parse_artist_search(&json!({ "tracks": {} })).is_empty());
+    }
+
+    #[test]
+    fn reads_a_page_of_releases() {
+        let page = json!({
+            "total": 31, "limit": 10, "offset": 0,
+            "next": "https://api.spotify.com/v1/artists/a1/albums?offset=10&limit=10&include_groups=single",
+            "items": [
+                { "id": "r1", "name": "Play It Loud", "release_date": "2024-03-01", "release_date_precision": "day",
+                  "album_type": "single", "total_tracks": 2, "artists": [{ "id": "a1", "name": "Marco Carola" }] },
+                { "id": "r2", "release_date": "2009" },
+                { "name": "No id" }
+            ]
+        });
+        let parsed = parse_release_page(&page);
+        assert_eq!(parsed.total, 31);
+        assert!(parsed.next.is_some());
+        assert_eq!(
+            parsed.items,
+            vec![
+                DjRelease { id: "r1".into(), name: "Play It Loud".into(), release_date: Some("2024-03-01".into()) },
+                DjRelease { id: "r2".into(), name: String::new(), release_date: Some("2009".into()) },
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_album_tracks_with_every_artist_id() {
+        let page = json!({ "total": 3, "next": null, "items": [
+            { "id": "t1", "name": "Sunday Jams - Luciano Remix", "duration_ms": 401000,
+              "artists": [{ "id": "a9", "name": "Ricardo Villalobos" }, { "id": "a1", "name": "Luciano" }] },
+            { "id": "t2", "name": "With ISRC", "artists": [], "external_ids": { "isrc": "ITX001" } },
+            { "id": null, "name": "Local", "is_local": true }
+        ]});
+        assert_eq!(
+            parse_album_track_page(&page).items,
+            vec![
+                AlbumTrack {
+                    id: "t1".into(),
+                    name: "Sunday Jams - Luciano Remix".into(),
+                    artist_ids: vec!["a9".into(), "a1".into()],
+                    artists: "Ricardo Villalobos, Luciano".into(),
+                    duration_ms: Some(401000),
+                    isrc: None,
+                },
+                AlbumTrack {
+                    id: "t2".into(),
+                    name: "With ISRC".into(),
+                    artist_ids: vec![],
+                    artists: String::new(),
+                    duration_ms: None,
+                    isrc: Some("ITX001".into()),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn picks_the_artist_named_exactly_like_the_dj() {
+        let found = [artist("a1", "Luciano Pavarotti", None), artist("a2", "luciano", None), artist("a3", "Luciano", None)];
+        assert_eq!(pick_artist(" Luciano ", &found).map(|a| a.id.as_str()), Some("a2"), "the first, without followers");
+        assert_eq!(pick_artist("Loco Dice", &found), None);
+
+        let counted = [artist("a1", "Luciano", Some(10)), artist("a2", "Luciano", Some(900)), artist("a3", "Luciano", None)];
+        assert_eq!(pick_artist("Luciano", &counted).map(|a| a.id.as_str()), Some("a2"), "the most followers");
     }
 }
