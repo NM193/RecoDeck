@@ -1555,7 +1555,11 @@ function AppContent() {
               onRemovePlaylist: (listId) =>
                 youtubeMusic.removePlaylist(listId).then(() => {
                   // The open list was removed: back to the default view.
-                  if (shownYouTubeMusicList === listId) setStreamList(null)
+                  setStreamList((p) =>
+                    p?.service === 'youtube-music' && p.listId === listId
+                      ? null
+                      : p,
+                  )
                 }),
             }
           : undefined

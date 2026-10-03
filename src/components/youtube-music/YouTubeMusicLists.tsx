@@ -151,9 +151,13 @@ export function YouTubeMusicLists({
             placeholder="Playlist link or id"
             aria-label="YouTube playlist link or id"
             value={link}
-            disabled={busy}
+            readOnly={busy}
+            aria-busy={busy}
             spellCheck={false}
-            onChange={(e) => setLink(e.target.value)}
+            onChange={(e) => {
+              setLink(e.target.value)
+              setError(null)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') submit()
               if (e.key === 'Escape') closeField()
