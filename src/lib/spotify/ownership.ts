@@ -57,10 +57,13 @@ export function buildOwnershipIndex(library: LibraryTrack[]): OwnershipIndex {
   }
 }
 
+/** What the matcher reads of a row: a Spotify track through `toParsed`, or a set's row as it is. */
+export type MatchInput = ReturnType<typeof toParsed>
+
 /** Files sharing a title word with the track, in library order, minus those answered No. */
 function candidates(
   index: OwnershipIndex,
-  parsed: ReturnType<typeof toParsed>,
+  parsed: MatchInput,
   excluded: Set<number> | undefined,
 ): Indexed[] {
   const positions = new Set<number>()
@@ -88,6 +91,21 @@ export function maybeReason(
   const artist =
     match.artistScore >= 1 ? 'same artist' : 'artist partly matches'
   return `${title}, ${artist}`
+}
+
+/**
+ * Owned / Maybe / Missing for one row, by the library match alone: no verdicts.
+ * `excluded` holds files already answered No for this row.
+ */
+export function ownershipOf(
+  parsed: MatchInput,
+  index: OwnershipIndex,
+  excluded?: Set<number>,
+): Ownership {
+  const match = matchOne(parsed, candidates(index, parsed, excluded))
+  if (!match) return { kind: 'missing' }
+  if (match.strong) return { kind: 'owned', file: match.track }
+  return { kind: 'maybe', file: match.track, reason: maybeReason(match) }
 }
 
 export function classifyTracks(
@@ -120,22 +138,10 @@ export function classifyTracks(
       continue
     }
 
-    const parsed = toParsed(track)
-    const match = matchOne(
-      parsed,
-      candidates(index, parsed, no.get(track.spotifyId)),
+    result.set(
+      track.spotifyId,
+      ownershipOf(toParsed(track), index, no.get(track.spotifyId)),
     )
-    if (!match) {
-      result.set(track.spotifyId, { kind: 'missing' })
-    } else if (match.strong) {
-      result.set(track.spotifyId, { kind: 'owned', file: match.track })
-    } else {
-      result.set(track.spotifyId, {
-        kind: 'maybe',
-        file: match.track,
-        reason: maybeReason(match),
-      })
-    }
   }
   return result
 }

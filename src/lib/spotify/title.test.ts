@@ -1,6 +1,12 @@
 // src/lib/spotify/title.test.ts
 import { describe, expect, it } from 'vitest'
-import { copyText, selectedRecsUrl, splitSpotifyTitle, toParsed } from './title'
+import {
+  copyText,
+  selectedRecsSearchUrl,
+  selectedRecsUrl,
+  splitSpotifyTitle,
+  toParsed,
+} from './title'
 import type { SpotifyTrack } from '../../types/spotify'
 
 function track(title: string, artists: string): SpotifyTrack {
@@ -130,6 +136,20 @@ describe('what Copy and SelectedRecs get', () => {
       ),
     ).toBe(
       'https://srv.selectedrecs.com/#/search?text=Moreno%20%26%20Prieto%2C%20Sortech%20-%20300%20Cash',
+    )
+  })
+})
+
+describe('searching SelectedRecs for any text', () => {
+  it('encodes the text into the search link', () => {
+    expect(selectedRecsSearchUrl('Candido - Jingo')).toBe(
+      'https://srv.selectedrecs.com/#/search?text=Candido%20-%20Jingo',
+    )
+  })
+
+  it('is the link a Spotify row gets for its text', () => {
+    expect(selectedRecsUrl(track('Jingo - Dr Packer Rework', 'Candido'))).toBe(
+      selectedRecsSearchUrl('Candido - Jingo'),
     )
   })
 })

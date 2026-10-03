@@ -4,6 +4,7 @@ import {
   buildOwnershipIndex,
   classifyTracks,
   maybeReason,
+  ownershipOf,
   type Ownership,
 } from './ownership'
 import { indexLibrary, matchOne, type LibraryTrack } from '../tracklist/match'
@@ -254,5 +255,63 @@ describe('the title-word pre-filter', () => {
     expect(new Set([...result.values()].map((o) => o.kind))).toEqual(
       new Set(['owned', 'maybe', 'missing']),
     )
+  })
+})
+
+describe('ownership of a row that is not a Spotify track', () => {
+  // A saved set's row, as the tracklist parser shapes it: the version in its own
+  // field, and folded into titleNorm.
+  const shelf = [
+    lib(1, 'Butch', 'Come Get Up (Extended Mix)'),
+    lib(2, 'Moreno, Prieto, Ortega, Lopez', '300 Cash'),
+  ]
+  const index = buildOwnershipIndex(shelf)
+  const comeGetUp = {
+    artist: 'Butch',
+    title: 'Come Get Up',
+    mix: 'Extended Mix',
+    artistNorm: 'butch',
+    titleNorm: 'come get up extended mix',
+  }
+
+  it('is Owned, Maybe or Missing by the same rules as a Spotify track', () => {
+    expect(ownershipOf(comeGetUp, index)).toEqual({
+      kind: 'owned',
+      file: shelf[0],
+    })
+    expect(
+      ownershipOf(
+        {
+          artist: 'Moreno & Prieto, Sortech',
+          title: '300 Cash',
+          mix: null,
+          artistNorm: 'moreno prieto sortech',
+          titleNorm: '300 cash',
+        },
+        index,
+      ),
+    ).toEqual({
+      kind: 'maybe',
+      file: shelf[1],
+      reason: 'same title, artist partly matches',
+    })
+    expect(
+      ownershipOf(
+        {
+          artist: 'Prunk',
+          title: 'Tell You',
+          mix: null,
+          artistNorm: 'prunk',
+          titleNorm: 'tell you',
+        },
+        index,
+      ),
+    ).toEqual({ kind: 'missing' })
+  })
+
+  it('skips the files it is told to', () => {
+    expect(ownershipOf(comeGetUp, index, new Set([1]))).toEqual({
+      kind: 'missing',
+    })
   })
 })

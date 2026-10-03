@@ -94,6 +94,11 @@ function credit(artists: string, name: string): string {
 
 const SELECTED_RECS_SEARCH = 'https://srv.selectedrecs.com/#/search?text='
 
+/** SelectedRecs' search page for any text — a Spotify row's, or a set's row's. */
+export function selectedRecsSearchUrl(text: string): string {
+  return SELECTED_RECS_SEARCH + encodeURIComponent(text)
+}
+
 /**
  * The same text as Copy, without the mix: the store lists every version of a
  * release, and the mix only narrows the search to nothing.
@@ -101,5 +106,5 @@ const SELECTED_RECS_SEARCH = 'https://srv.selectedrecs.com/#/search?text='
 export function selectedRecsUrl(track: SpotifyTrack): string {
   const { bare } = splitSpotifyTitle(track.title)
   const text = credit(track.artists, bare)
-  return SELECTED_RECS_SEARCH + encodeURIComponent(text)
+  return selectedRecsSearchUrl(text)
 }
