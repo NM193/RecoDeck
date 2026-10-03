@@ -48,7 +48,7 @@ pub struct QuotaStatus {
 /// It takes `&AppState` rather than `&State<AppState>` so the automatic check,
 /// which has an `AppHandle` and no command state, can use the same path.
 /// Command call sites are unchanged — `State` derefs to it.
-fn with_db<T>(
+pub(crate) fn with_db<T>(
     state: &AppState,
     f: impl FnOnce(&Database) -> Result<T, AppError>,
 ) -> Result<T, AppError> {

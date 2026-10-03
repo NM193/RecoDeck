@@ -404,6 +404,17 @@ pub async fn fetch_profile_name(token: &str) -> Result<String, SpotifyError> {
     Ok(profile_name(&me))
 }
 
+impl From<SpotifyError> for crate::error::AppError {
+    fn from(err: SpotifyError) -> Self {
+        use crate::error::AppError;
+        match err {
+            SpotifyError::NotConnected => AppError::SpotifyNotConnected,
+            SpotifyError::Reconnect => AppError::SpotifyReconnect,
+            other => AppError::Spotify(other.to_string()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

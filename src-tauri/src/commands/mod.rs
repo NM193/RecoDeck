@@ -10,6 +10,7 @@ pub mod playback;
 pub mod playlists;
 pub mod server;
 pub mod settings;
+pub mod spotify;
 pub mod watcher;
 pub mod youtube;
 

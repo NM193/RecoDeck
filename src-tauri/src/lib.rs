@@ -67,6 +67,9 @@ pub fn run() {
             // Nothing is due until the user sets one, so this costs nothing
             // until it is asked for.
             commands::youtube::spawn_channel_watcher(app.handle().clone());
+            // Syncs Liked Songs and playlists on start and every ten minutes.
+            // Does nothing until a Spotify account is connected.
+            commands::spotify::spawn_spotify_sync_loop(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -399,6 +402,7 @@ pub fn run() {
         .manage(PlaybackState::new())
         .manage(WatcherState::new())
         .manage(CompanionState::new())
+        .manage(commands::spotify::SpotifyState::default())
         .invoke_handler(tauri::generate_handler![
             // YouTube tracklist
             commands::youtube::set_youtube_api_key,

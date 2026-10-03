@@ -53,4 +53,13 @@ pub enum AppError {
 
     #[error("{0}")]
     YtNetwork(String),
+
+    #[error("Spotify is not connected -- connect it in Settings")]
+    SpotifyNotConnected,
+
+    #[error("Spotify needs you to sign in again")]
+    SpotifyReconnect,
+
+    #[error("{0}")]
+    Spotify(String),
 }
