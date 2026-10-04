@@ -32,7 +32,10 @@
   pointer-events: auto;
 }
 
+/* On the first line's middle, also when the detail opens under it. */
 .toast__dot {
+  align-self: flex-start;
+  margin-top: 5px;
   flex: 0 0 8px;
   width: 8px;
   height: 8px;
@@ -52,12 +55,31 @@
   background: var(--color-danger);
 }
 
-.toast__message {
+.toast__text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+}
+
+.toast__message {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The detail (why tracks were skipped): under the message, while hovered. */
+.toast__detail {
+  display: none;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.toast:hover .toast__detail {
+  display: block;
 }
 
 /* Undo: the accent drawn toward the text colour, so it reads on light themes. */

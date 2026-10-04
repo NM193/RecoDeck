@@ -1,8 +1,8 @@
 // src/components/Toaster.tsx
 // Shows the toasts (src/lib/toast.ts) bottom-centre over the main area, just
 // above the player: they slide in from 8px below (slow) and fade out (base).
-// Under the mouse a toast waits; its action (Undo) runs and closes it; an
-// error has ✕, as it stays until closed.
+// Under the mouse a toast waits and shows its detail; its action (Undo) runs
+// and closes it; an error has ✕, as it stays until closed.
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import {
   dismissToast,
@@ -39,7 +39,10 @@ export function Toaster() {
             onPointerLeave={() => releaseToast(t.id)}
           >
             <span className="toast__dot" aria-hidden="true" />
-            <span className="toast__message">{t.message}</span>
+            <span className="toast__text">
+              <span className="toast__message">{t.message}</span>
+              {t.detail && <span className="toast__detail">{t.detail}</span>}
+            </span>
             {t.action && (
               <button type="button" className="toast__action" onClick={() => runToastAction(t.id)}>
                 {t.action.label}

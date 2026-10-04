@@ -2,8 +2,9 @@
 // Toasts (Interactions spec, Feedback): `toast(message, { kind, action })`
 // from anywhere; the Toaster shows them. success and info leave after 4s,
 // warning after 6s, error stays until closed, and a toast under the mouse
-// waits. At most 3 at a time: a fourth pushes the oldest out. An action
-// (Undo, Open, Try again) runs and closes its toast.
+// waits and shows its detail (e.g. why tracks were skipped). At most 3 at a
+// time: a fourth pushes the oldest out. An action (Undo, Open, Try again)
+// runs and closes its toast.
 import { useSyncExternalStore } from 'react'
 
 export type ToastKind = 'success' | 'info' | 'warning' | 'error'
@@ -17,6 +18,8 @@ export interface ToastOptions {
   /** success when absent. */
   kind?: ToastKind
   action?: ToastAction
+  /** Shown under the message while the mouse is over the toast. */
+  detail?: string
 }
 
 export interface Toast {
@@ -24,6 +27,7 @@ export interface Toast {
   message: string
   kind: ToastKind
   action?: ToastAction
+  detail?: string
 }
 
 export const TOAST_LIMIT = 3
@@ -70,7 +74,7 @@ function stopTimer(id: number) {
 export function toast(message: string, options: ToastOptions = {}): number {
   const id = nextId++
   const kind = options.kind ?? 'success'
-  let next = [...toasts, { id, message, kind, action: options.action }]
+  let next = [...toasts, { id, message, kind, action: options.action, detail: options.detail }]
   while (next.length > TOAST_LIMIT) {
     stopTimer(next[0].id)
     next = next.slice(1)

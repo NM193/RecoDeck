@@ -63,6 +63,11 @@ describe('toasts', () => {
     expect(messages()).toEqual([])
   })
 
+  it('keeps a detail for the mouse to show', () => {
+    toast('Moved 2 · 1 skipped', { kind: 'warning', detail: "Juz Listen' — playing now" })
+    expect(getToasts()[0].detail).toBe("Juz Listen' — playing now")
+  })
+
   it('an action runs and closes its toast', () => {
     const run = vi.fn()
     const id = toast('Added 3 tracks to Peak Time', { action: { label: 'Undo', run } })

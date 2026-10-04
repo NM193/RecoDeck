@@ -41,6 +41,13 @@ export class ThumbnailCache {
     }
   }
 
+  /** Forgets a thumbnail, and frees its URL. */
+  delete(id: number): void {
+    const thumb = this.entries.get(id)
+    this.entries.delete(id)
+    if (thumb) this.release(thumb)
+  }
+
   get size(): number {
     return this.entries.size
   }
@@ -60,6 +67,14 @@ export class ThumbnailQueue {
   /** The thumbnail if it is known, without asking for it. */
   cached(id: number): Thumb | undefined {
     return this.cache.get(id)
+  }
+
+  /**
+   * Forgets a track's thumbnail, so the next row asks again: its file moved,
+   * and a folder's cover.jpg may now be another one.
+   */
+  forget(id: number): void {
+    this.cache.delete(id)
   }
 
   /**

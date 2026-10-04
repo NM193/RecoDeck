@@ -105,6 +105,19 @@ describe('the thumbnail queue', () => {
     expect(queue.cached(1)).toBe('blob:1')
   })
 
+  it('forgets a thumbnail, freeing its URL, and reads it again when asked', async () => {
+    const release = vi.fn()
+    const { load, answer } = controlledLoad()
+    const queue = new ThumbnailQueue(new ThumbnailCache(100, release), load, 4)
+    queue.request(1, vi.fn())
+    await answer(1, 'blob:1')
+    queue.forget(1)
+    expect(release).toHaveBeenCalledWith('blob:1')
+    expect(queue.cached(1)).toBeUndefined()
+    queue.request(1, vi.fn())
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps a failed read as "no artwork"', async () => {
     const { load, fail } = controlledLoad()
     const queue = new ThumbnailQueue(new ThumbnailCache(100, vi.fn()), load, 4)
