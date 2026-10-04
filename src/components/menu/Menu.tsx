@@ -6,6 +6,7 @@
 // items are red. The menu and each open submenu register with useOverlay, so
 // Esc closes the innermost first. It opens with a fade, a 4px drop and a
 // scale from 0.98, and closes at once (a choice should not wait for a fade).
+// A searchable submenu has a box at its top: typing narrows its items.
 import {
   useEffect,
   useLayoutEffect,
@@ -41,6 +42,8 @@ export interface MenuSubmenu {
   hint?: string
   disabled?: boolean
   entries: MenuEntry[]
+  /** A box at the top narrows a long list as you type (Move to folder ▸). */
+  search?: { placeholder: string; empty: string }
 }
 
 export interface MenuSeparator {
@@ -117,6 +120,14 @@ interface MenuPanelProps {
   takeFocus?: boolean
   /** A submenu opened from the keyboard starts on its first item. */
   startActive?: boolean
+  search?: MenuSubmenu['search']
+}
+
+/** The items whose labels hold every typed letter run; separators go while narrowing. */
+function narrow(entries: MenuEntry[], query: string): MenuEntry[] {
+  const words = query.trim().toLowerCase()
+  if (!words) return entries
+  return entries.filter((e) => e.kind !== 'separator' && e.label.toLowerCase().includes(words))
 }
 
 interface OpenSubmenu {
@@ -136,14 +147,29 @@ function MenuPanel({
   onBack,
   takeFocus = false,
   startActive = false,
+  search,
 }: MenuPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const [query, setQuery] = useState('')
+  const shown = search ? narrow(entries, query) : entries
   const [active, setActive] = useState(() => (startActive ? stepIndex(entries, -1, 1) : -1))
   const [open, setOpen] = useState<OpenSubmenu | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Placed once its size is known: inside the window, flipped when needed.
+  // Items that change under the highlight (a fresh folder list) drop it:
+  // Enter must not choose whatever now sits in its place.
+  const labels = entries.map((e) => (e.kind === 'separator' ? '' : e.label)).join('\n')
+  const [seenLabels, setSeenLabels] = useState(labels)
+  if (labels !== seenLabels) {
+    setSeenLabels(labels)
+    setActive(-1)
+    setOpen(null)
+  }
+
+  // Placed once its size is known, and again when its items come or change
+  // (a list read as it opens): inside the window, flipped when needed.
   useLayoutEffect(() => {
     const panel = panelRef.current
     if (!panel) return
@@ -157,11 +183,13 @@ function MenuPanel({
     panel.style.left = `${left}px`
     panel.style.top = `${top}px`
     panel.style.visibility = 'visible'
-  }, [x, flipX, y])
+  }, [x, flipX, y, labels])
 
+  // A searchable list takes the keys at once, so typing narrows it.
   useEffect(() => {
-    if (takeFocus) panelRef.current?.focus({ preventScroll: true })
-  }, [takeFocus])
+    if (search) searchRef.current?.focus({ preventScroll: true })
+    else if (takeFocus) panelRef.current?.focus({ preventScroll: true })
+  }, [takeFocus, search])
 
   useEffect(() => {
     if (active >= 0) itemRefs.current[active]?.scrollIntoView({ block: 'nearest' })
@@ -194,8 +222,8 @@ function MenuPanel({
   }
 
   const enter = (index: number, fromKeyboard: boolean) => {
-    const entry = entries[index]
-    if (entry.kind === 'separator' || entry.disabled) return
+    const entry = shown[index]
+    if (!entry || entry.kind === 'separator' || entry.disabled) return
     if (entry.kind === 'action') onChoose(entry)
     else openSubmenu(index, fromKeyboard)
   }
@@ -207,10 +235,10 @@ function MenuPanel({
       event.preventDefault()
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
-      setActive((index) => stepIndex(entries, index, event.key === 'ArrowDown' ? 1 : -1))
+      setActive((index) => stepIndex(shown, index, event.key === 'ArrowDown' ? 1 : -1))
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
-      if (active >= 0 && entries[active].kind === 'submenu') enter(active, true)
+      if (shown[active]?.kind === 'submenu') enter(active, true)
     } else if (event.key === 'ArrowLeft' && onBack) {
       event.preventDefault()
       onBack()
@@ -220,7 +248,24 @@ function MenuPanel({
     }
   }
 
-  const submenu = open !== null ? entries[open.index] : null
+  // The search box's keys: ↑ ↓ move through the list, Enter chooses (the
+  // only match, when none is active), ← on an empty box goes back.
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActive((index) => stepIndex(shown, index, event.key === 'ArrowDown' ? 1 : -1))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const only = stepIndex(shown, -1, 1)
+      if (active >= 0) enter(active, true)
+      else if (only !== -1 && stepIndex(shown, only, 1) === only) enter(only, true)
+    } else if (event.key === 'ArrowLeft' && !query && onBack) {
+      event.preventDefault()
+      onBack()
+    }
+  }
+
+  const submenu = open !== null ? shown[open.index] : null
 
   return (
     <>
@@ -229,64 +274,82 @@ function MenuPanel({
         role="menu"
         aria-label={label}
         tabIndex={-1}
-        className="menu"
+        className={search ? 'menu menu--search' : 'menu'}
         onKeyDown={onKeyDown}
         onContextMenu={(event) => event.preventDefault()}
       >
-        {entries.map((entry, index) => {
-          if (entry.kind === 'separator') {
-            return <div key={index} role="separator" className="menu__separator" />
-          }
-          const classes = ['menu__item']
-          if (index === active) classes.push('menu__item--active')
-          if (entry.kind === 'action' && entry.danger) classes.push('menu__item--danger')
-          return (
-            <div
-              key={index}
-              ref={(el) => {
-                itemRefs.current[index] = el
-              }}
-              role="menuitem"
-              aria-disabled={entry.disabled || undefined}
-              aria-haspopup={entry.kind === 'submenu' ? 'menu' : undefined}
-              aria-expanded={entry.kind === 'submenu' ? open?.index === index : undefined}
-              className={classes.join(' ')}
-              onPointerEnter={() => {
-                setActive(entry.disabled ? -1 : index)
-                if (entry.kind === 'submenu' && !entry.disabled) {
-                  if (open?.index !== index) openSubmenu(index, false)
-                  else cancelClose()
-                } else if (open !== null) {
-                  // Moving towards the submenu may cross other items: wait a moment.
-                  cancelClose()
-                  closeTimer.current = setTimeout(closeSubmenu, SUBMENU_GRACE_MS)
-                }
-              }}
-              onClick={() => enter(index, false)}
-            >
-              <span className="menu__icon">
-                {entry.kind === 'action' && entry.swatch ? (
-                  <span className="menu__swatch" style={{ background: entry.swatch }} />
-                ) : (
-                  entry.icon && <Icon name={entry.icon} size={16} />
+        {search && (
+          <input
+            ref={searchRef}
+            className="menu__search"
+            placeholder={search.placeholder}
+            aria-label={search.placeholder}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setActive(-1)
+            }}
+            onKeyDown={onSearchKeyDown}
+          />
+        )}
+        {search && shown.length === 0 && <div className="menu__empty">{search.empty}</div>}
+        <div className={search ? 'menu__list' : undefined}>
+          {shown.map((entry, index) => {
+            if (entry.kind === 'separator') {
+              return <div key={index} role="separator" className="menu__separator" />
+            }
+            const classes = ['menu__item']
+            if (index === active) classes.push('menu__item--active')
+            if (entry.kind === 'action' && entry.danger) classes.push('menu__item--danger')
+            return (
+              <div
+                key={index}
+                ref={(el) => {
+                  itemRefs.current[index] = el
+                }}
+                role="menuitem"
+                aria-disabled={entry.disabled || undefined}
+                aria-haspopup={entry.kind === 'submenu' ? 'menu' : undefined}
+                aria-expanded={entry.kind === 'submenu' ? open?.index === index : undefined}
+                className={classes.join(' ')}
+                onPointerEnter={() => {
+                  setActive(entry.disabled ? -1 : index)
+                  if (entry.kind === 'submenu' && !entry.disabled) {
+                    if (open?.index !== index) openSubmenu(index, false)
+                    else cancelClose()
+                  } else if (open !== null) {
+                    // Moving towards the submenu may cross other items: wait a moment.
+                    cancelClose()
+                    closeTimer.current = setTimeout(closeSubmenu, SUBMENU_GRACE_MS)
+                  }
+                }}
+                onClick={() => enter(index, false)}
+              >
+                <span className="menu__icon">
+                  {entry.kind === 'action' && entry.swatch ? (
+                    <span className="menu__swatch" style={{ background: entry.swatch }} />
+                  ) : (
+                    entry.icon && <Icon name={entry.icon} size={16} />
+                  )}
+                </span>
+                <span className="menu__label">{entry.label}</span>
+                {entry.hint && <span className="menu__hint">{entry.hint}</span>}
+                {entry.kind === 'action' && entry.checked && (
+                  <Icon name="Check" size={14} className="menu__check" />
                 )}
-              </span>
-              <span className="menu__label">{entry.label}</span>
-              {entry.hint && <span className="menu__hint">{entry.hint}</span>}
-              {entry.kind === 'action' && entry.checked && (
-                <Icon name="Check" size={14} className="menu__check" />
-              )}
-              {entry.kind === 'submenu' && (
-                <Icon name="ChevronRight" size={14} className="menu__chevron" />
-              )}
-            </div>
-          )
-        })}
+                {entry.kind === 'submenu' && (
+                  <Icon name="ChevronRight" size={14} className="menu__chevron" />
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
       {submenu?.kind === 'submenu' && open && (
         <Submenu
           key={open.index}
           entries={submenu.entries}
+          search={submenu.search}
           rect={open.rect}
           label={submenu.label}
           fromKeyboard={open.fromKeyboard}
@@ -305,6 +368,7 @@ function MenuPanel({
 // A submenu: a panel beside its item, an overlay of its own while open.
 function Submenu({
   entries,
+  search,
   rect,
   label,
   fromKeyboard,
@@ -313,6 +377,7 @@ function Submenu({
   onPointerEnter,
 }: {
   entries: MenuEntry[]
+  search?: MenuSubmenu['search']
   rect: DOMRect
   label: string
   fromKeyboard: boolean
@@ -333,6 +398,7 @@ function Submenu({
         onBack={onBack}
         takeFocus={fromKeyboard}
         startActive={fromKeyboard}
+        search={search}
       />
     </div>
   )
