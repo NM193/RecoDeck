@@ -292,6 +292,9 @@
 
 .data-row--playing {
   --row-bg: color-mix(in srgb, var(--bg-primary), var(--accent) 12%);
+  /* The accent, drawn toward the text colour: lighter on dark themes, darker
+     on light ones, so it reads on both. */
+  --row-accent: color-mix(in srgb, var(--accent), var(--text-primary) 25%);
 }
 
 .data-row--selected:hover,
@@ -335,30 +338,69 @@
 }
 
 .data-row--playing .cell-index {
-  color: var(--accent-hover);
+  color: var(--row-accent);
 }
 
-/* Default state: show number, hide play icon */
-.row-number { display: flex; align-items: center; }
-.row-play   { display: none; color: var(--text-primary); align-items: center; }
-.row-playing { color: var(--accent); display: flex; align-items: center; }
+/* The number, or the equalizer on the row playing; under the mouse, the
+   button (▶, or pause / play on the row playing) takes their place. */
+.row-action {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+}
 
-/* Hover: hide number, show play icon */
-.data-row:hover .row-number { display: none; }
-.data-row:hover .row-play   { display: flex; }
+.row-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
-/* Playing: always show speaker, regardless of hover */
-.data-row--playing .row-number { display: none; }
-.data-row--playing .row-play   { display: none; }
-.data-row--playing .cell-index .row-playing { display: flex; }
+.data-row:hover .row-number,
+.data-row:hover .equalizer {
+  display: none;
+}
+
+.data-row:hover .row-action {
+  display: flex;
+}
 
 .tt-cover {
   display: block;
   width: 36px;
   height: 36px;
+  overflow: hidden;
   border-radius: var(--radius-sm);
-  background-position: center;
-  background-size: cover;
+  background: var(--bg-tertiary);
+}
+
+.tt-cover__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Only a cover that has just arrived fades in; one read before shows at once. */
+.tt-cover__img--in {
+  animation: tt-cover-in var(--motion-slow) var(--ease);
+}
+
+@keyframes tt-cover-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-cover__img--in {
+    animation-duration: var(--motion-fast);
+  }
 }
 
 /* Title & artist: two lines */
@@ -381,7 +423,13 @@
 }
 
 .data-row--playing .cell-title__name {
-  color: var(--accent-hover);
+  color: var(--row-accent);
+}
+
+/* Under the mouse, the playing row's title takes the text colour, as its
+   pause / play button does (the mockup). */
+.data-row--playing:hover .cell-title__name {
+  color: var(--text-primary);
 }
 
 .cell--end {

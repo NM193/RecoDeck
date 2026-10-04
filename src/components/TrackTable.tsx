@@ -15,7 +15,10 @@ import {
 } from 'react'
 import type { Track, Playlist } from '../types/track'
 import { usePlayerStore } from '../store/playerStore'
+import { audioPlayer } from '../lib/audioPlayer'
 import { Icon } from './Icon'
+import { Equalizer } from './Equalizer'
+import { TrackCover } from './track-table/TrackCover'
 import {
   applyTrackFilter,
   isEmptyFilter,
@@ -29,7 +32,6 @@ import { ColumnsButton } from './track-table/ColumnsButton'
 import { TableHead } from './track-table/TableHead'
 import { TrackCell } from './track-table/TrackCell'
 import { gridTemplate, shownColumns } from '../lib/trackTable/columns'
-import { titleGradient } from '../lib/trackTable/cells'
 import {
   DEFAULT_SORT,
   nextSort,
@@ -118,6 +120,18 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
 
     // Player store subscription for current track
     const currentTrack = usePlayerStore((state) => state.currentTrack)
+    const isPlaying = usePlayerStore((state) => state.isPlaying)
+
+    // The playing row's button: pause, or play on from where it stopped.
+    const togglePlayback = () => {
+      if (usePlayerStore.getState().isPlaying) {
+        audioPlayer.pause()
+      } else {
+        audioPlayer
+          .resume()
+          .catch((err) => usePlayerStore.getState().setError(`Playback error: ${err}`))
+      }
+    }
 
     // Row selection state
     const [selectedRowId, setSelectedRowId] = useState<number | null>(null)
@@ -561,26 +575,34 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   >
                     <div className="tt-cell cell-index">
                       {isPlayingTrack ? (
-                        <span className="row-playing">
-                          <Icon name="Volume2" size={14} />
-                        </span>
+                        <Equalizer playing={isPlaying} />
                       ) : (
-                        <>
-                          <span className="row-number">
-                            {playlistMode ? virtualRow.index + 1 : virtualRow.index + 1}
-                          </span>
-                          <span className="row-play">
-                            <Icon name="Play" size={14} />
-                          </span>
-                        </>
+                        <span className="row-number">
+                          {playlistMode ? virtualRow.index + 1 : virtualRow.index + 1}
+                        </span>
                       )}
+                      {/* Under the mouse: ▶ plays the row (as a double click);
+                          on the row playing, pause or play on. */}
+                      <button
+                        type="button"
+                        className="row-action"
+                        aria-label={
+                          isPlayingTrack ? (isPlaying ? 'Pause' : 'Play') : `Play ${track.title || 'track'}`
+                        }
+                        onClick={(e) => {
+                          // The second click of a double click: the first did it.
+                          if (e.detail > 1) return
+                          if (isPlayingTrack) togglePlayback()
+                          else onTrackDoubleClick?.(track, sortedTracks, virtualRow.index)
+                        }}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        <Icon name={isPlayingTrack && isPlaying ? 'Pause' : 'Play'} size={14} />
+                      </button>
                     </div>
                     {layout.artwork && (
                       <div className="tt-cell cell-art">
-                        <span
-                          className="tt-cover"
-                          style={{ background: titleGradient(track.title) }}
-                        />
+                        <TrackCover key={track.id} track={track} />
                       </div>
                     )}
                     {columns.map((column) => (
