@@ -77,17 +77,19 @@ Recently Played widget (Home spec).
 
 ## All Tracks filter (new)
 
-All Tracks has only a text search today. It gains a starting filter:
+All Tracks has only a text search today. It gains a filter: the `TrackFilter`
+object of the track table spec
+([`2026-10-04-track-table-design.md`](./2026-10-04-track-table-design.md)),
+which also defines its panel and how it shows.
 
-- App state `allTracksFilter: { kind: 'genre'; genre: string } | { kind:
-  'recent' } | { kind: 'never-played' } | null`, set by a genre tile and
+- App state `allTracksFilter: TrackFilter | null`, set by a genre tile and
   cleared whenever another view opens.
-- Applied in App to the tracks passed to the table: genre equality,
-  `date_added` within 30 days, or not in the set of played track ids (new
-  `get_played_track_ids()`, read when this filter is chosen).
-- Shown as a chip above the table — "Genre: Tech House ×", "Added in the last
-  30 days ×", "Never played ×" — whose × clears it. The text search still
-  works within the filtered tracks.
+- A genre tile sets `{ genre }`; **Recently added** `{ added: 30 }`; **Never
+  played** `{ played: 'never' }` (played ids from new `get_played_track_ids()`,
+  read when this filter is chosen).
+- It shows in the table's **Filter** button ("Genre: Tech House ✕" becomes
+  "Tech House ✕"), not as a chip; ✕ clears it. The text search still works
+  within the filtered tracks.
 
 ## Home
 

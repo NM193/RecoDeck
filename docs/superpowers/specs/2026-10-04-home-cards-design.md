@@ -99,8 +99,12 @@ over artist, BPM, key, and a last column — the time played ("22:39" today,
 "yesterday", else "Oct 2"), the date added (same rule), or the length (Last
 playlist). Missing BPM or key shows "—". Hovering a row turns its number into
 ▶; clicking ▶, or double-clicking the row, plays. The track playing now shows
-▮▮ and its title in the accent colour; clicking ▮▮ pauses, as the player's
-button does. The queue is the card's list as it was when you pressed play:
+an **equalizer** in place of its number — three thin bars in the accent colour
+that move while it plays and stand still while it is paused — and its title in
+the accent colour. Hovering that row shows a pause icon there (lucide `Pause`,
+not a text glyph); clicking it pauses, as the player's button does. The same
+indicator is used in All Tracks and in a set's track list (their specs). The
+mockup's ▮▮ is replaced by it. The queue is the card's list as it was when you pressed play:
 Recently played then re-reads and the track moves to the top, but the queue
 keeps its order.
 
@@ -145,9 +149,10 @@ not stored until Sets checks them, so they are not on Home.
 2×1 and wider: tracks, playlists and folders, with "N added lately · N never
 played" under them.
 
-**BPM & key.** BPM bars are half-open ranges, `[min, max)`: `< 115`
-(`min 0, max 115`), `115–119` (`115, 120`), `120–124`, `125–129`, `130–134`,
-`135+` (`135, none`). Tracks without BPM are not counted. Key: the count per
+**BPM & key.** BPM bars are half-open ranges and set the `TrackFilter` of
+the track table spec: `< 115` (`{ bpmMax: 115 }`), `115–119`
+(`{ bpmMin: 115, bpmMax: 120 }`), `120–124`, `125–129`, `130–134`, `135+`
+(`{ bpmMin: 135 }`). Tracks without BPM are not counted. Key: the count per
 key as stored (`track_analysis.musical_key`), biggest first. Today the key is
 known for 97 of 8,583 tracks, so the card says "key known for 97 tracks" under
 the key counts. A bar or a key opens All Tracks with that filter; a bar's count
@@ -259,11 +264,11 @@ The Search spec's plan builds `get_recently_played_tracks`,
 do not exist yet when it is written**, so it can be built before or after
 Search part 1.
 
-This spec extends the All Tracks filter with
-`{ kind: 'bpm'; min: number; max: number | null }` (half-open, as above) and
-`{ kind: 'key'; key: string }`, shown as chips "BPM 125–129 ×", "Key 6A ×".
-If the All Tracks redesign (its own spec, after Sets) moves where the filter
-shows, the filter's kinds stay as written here.
+The filter itself is the `TrackFilter` object of the track table spec
+([`2026-10-04-track-table-design.md`](./2026-10-04-track-table-design.md)):
+Home's tiles and bars set one field of it (genre, `added: 30`,
+`played: 'never'`, a BPM range, a key), and the table's Filter button shows it
+("125–129 BPM ✕"), with no chips.
 
 The plan groups its tasks: backend queries, then App wiring, then the cards,
 then Customize.

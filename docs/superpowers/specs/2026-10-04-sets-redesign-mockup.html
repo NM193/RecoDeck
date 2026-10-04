@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sets Redesign Mockup</title>
+<style>
+body{margin:0;padding:24px 32px 64px;background:#1d1d1f;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+h1{margin:0 0 4px;font-size:22px}
+h2{margin:40px 0 4px;font-size:18px}
+.cap{color:#86868b;font-size:13px;margin:0 0 14px;max-width:900px;line-height:1.5}
+.rd{max-width:1180px}
+</style>
+<style>
+.rd{--bg:#121212;--bg2:#181818;--bg3:#282828;--el:#2a2a2a;--t1:#fff;--t2:#b3b3b3;--tm:#6a6a6a;--acc:#6366f1;--acch:#818cf8;--ok:#1ed760;--sets:#fb923c;--bds:#2a2a2a;
+  font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;background:var(--bg);color:var(--t1);border-radius:12px;overflow:hidden;border:1px solid #000;box-shadow:0 20px 50px rgba(0,0,0,.35);font-size:13px;-webkit-font-smoothing:antialiased;display:flex;margin:12px 0 40px;line-height:1.35;height:720px}
+.rd *{box-sizing:border-box}
+.rd .rail{width:60px;flex:0 0 60px;background:#000;display:flex;flex-direction:column;align-items:center;gap:18px;padding-top:18px}
+.rd .rail i{width:20px;height:20px;border-radius:5px;background:#333;display:block}
+.rd .rail i.on{background:#fb923c}
+.rd .main{flex:1;min-width:0;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.rd .pad{padding:20px 24px}
+.rd .bar{display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border:1px solid #333;border-radius:6px;background:#1b1b1b;color:var(--tm);font-size:13.5px}
+.rd .bar .k{margin-left:auto;font-size:11px;color:var(--tm)}
+.rd .tabs{display:flex;gap:6px;margin:14px 0 16px;align-items:center}
+.rd .tab{height:28px;padding:0 12px;border-radius:6px;background:var(--el);color:var(--t2);font-size:12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.rd .tab.on{background:#fff;color:#000;font-weight:600}
+.rd .tab.on2{background:#3a3a3a;color:#fff}
+.rd .tab .b{background:var(--sets);color:#000;border-radius:4px;padding:0 5px;font-size:10.5px;font-weight:700}
+.rd .sh{display:flex;align-items:baseline;justify-content:space-between;margin:4px 0 10px}
+.rd .sh b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)}
+.rd .sh a{font-size:12px;color:var(--tm)}
+.rd .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.rd .sc .th{aspect-ratio:16/9;border-radius:8px;background:#222 center/cover;position:relative}
+.rd .du{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.8);font-size:10.5px;padding:1px 5px;border-radius:3px}
+.rd .sc .t{margin-top:7px;font-size:12.5px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rd .sc .s{color:var(--tm);font-size:11.5px;margin-top:2px}
+.rd .new{display:flex;gap:12px}
+.rd .nc{flex:1;display:flex;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--bds);border-radius:8px;padding:8px;min-width:0}
+.rd .nc .th{width:96px;flex:0 0 96px;aspect-ratio:16/9;border-radius:5px;background:#222 center/cover}
+.rd .nc .c{font-size:10.5px;color:var(--tm);margin-top:2px}
+.rd .tag{font-size:10px;font-weight:700;color:var(--sets);text-transform:uppercase;letter-spacing:.05em}
+/* split */
+.rd .md{display:grid;grid-template-columns:300px 1fr;flex:1;min-height:0}
+.rd .left{border-right:1px solid var(--bds);padding:14px 12px;overflow:hidden;background:#141414}
+.rd .back{font-size:12px;color:var(--t2);margin:0 4px 10px;display:flex;align-items:center;gap:6px}
+.rd .li{display:flex;gap:10px;padding:6px;border-radius:6px;align-items:center}
+.rd .li.on{background:var(--bg3)}
+.rd .li .th{width:80px;flex:0 0 80px;aspect-ratio:16/9;border-radius:4px;background:#222 center/cover;position:relative}
+.rd .li .t{font-size:12px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rd .li .s{font-size:11px;color:var(--tm)}
+.rd .eq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);border-radius:4px;color:var(--acch);font-size:13px}
+.rd .grp{font-size:10.5px;color:var(--t2);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 4px 6px;display:flex;justify-content:space-between;padding-right:6px}
+.rd .right{overflow:hidden;min-width:0}
+.rd .hero{display:flex;gap:20px;align-items:flex-end;padding:18px 22px 14px;background:linear-gradient(180deg,#2a1a0e,#121212)}
+.rd .hero .vid{width:300px;flex:0 0 300px;aspect-ratio:16/9;border-radius:8px;background:#222 center/cover;position:relative;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.rd .hero.playing .vid{width:440px;flex-basis:440px}
+.rd .live{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.75);font-size:10.5px;padding:2px 6px;border-radius:4px;color:#fff}
+.rd .hero h1{margin:2px 0 6px;font-size:21px;font-weight:800;line-height:1.15}
+.rd .chip{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:12.5px;font-weight:700}
+.rd .chip a{color:#fff;text-decoration:underline;text-decoration-color:#555;text-underline-offset:3px}
+.rd .chip span{color:var(--tm);font-weight:500}
+.rd .stat{display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--t2);flex-wrap:wrap}
+.rd .stat b{color:#fff;font-size:15px}
+.rd .acts{display:flex;align-items:center;gap:8px;margin-top:12px}
+.rd .pbtn{height:34px;padding:0 16px;border-radius:6px;background:var(--acc);color:#fff;display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:12.5px}
+.rd .ibtn{height:34px;min-width:34px;padding:0 10px;border-radius:6px;background:var(--el);display:inline-flex;align-items:center;justify-content:center;gap:6px;color:var(--t2);font-size:12px}
+.rd .menu{position:absolute;background:#232323;border:1px solid #333;border-radius:8px;padding:5px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px;width:230px;z-index:2}
+.rd .menu div{padding:7px 10px;border-radius:5px;display:flex;justify-content:space-between}
+.rd .menu div:hover,.rd .menu .h{background:#333}
+.rd .menu small{color:var(--tm)}
+.rd .strip{display:flex;height:20px;gap:2px;margin:0 22px 10px}
+.rd .strip i{flex:1;border-radius:2px;background:#3f3f46}
+.rd .strip i.h{background:var(--ok)}
+.rd .strip i.u{background:#27272a}
+.rd .strip i.p{outline:2px solid #fff;outline-offset:1px}
+.rd .chips{display:flex;gap:6px;margin:0 22px 6px}
+.rd .tbl{margin:0 22px}
+.rd .tr{display:grid;grid-template-columns:26px 54px 1fr 40px 92px 30px;align-items:center;gap:8px;height:36px;padding:0 8px;border-radius:6px;font-size:12.5px}
+.rd .tr.hd{height:26px;color:var(--tm);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--bds);border-radius:0}
+.rd .tr .no{color:var(--tm);text-align:center}
+.rd .tr .cue{color:var(--t2);font-variant-numeric:tabular-nums}
+.rd .tr .nm{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .tr .nm em{font-style:normal;color:var(--tm)}
+.rd .tr .vt{color:var(--tm);font-size:11px;text-align:center}
+.rd .have{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:6px;background:rgba(30,215,96,.15);color:var(--ok);font-size:11px;font-weight:700}
+.rd .miss{color:var(--tm);font-size:11px}
+.rd .tr.hov{background:var(--bg3)}
+.rd .tr.hov .no{color:#fff}
+.rd .tr.now{background:rgba(99,102,241,.14)}
+.rd .tr.now .nm,.rd .tr.now .no,.rd .tr.now .cue{color:var(--acch)}
+.rd .heart{color:var(--tm);font-size:13px;text-align:center}
+.rd .stores{color:var(--tm);font-size:10.5px;letter-spacing:.02em}
+.rd .mini{height:54px;background:#0b0b0b;border-top:1px solid #222;display:flex;align-items:center;gap:12px;padding:0 14px;flex:0 0 54px}
+.rd .mini .th{width:84px;aspect-ratio:16/9;border-radius:4px;background:#222 center/cover;position:relative}
+.rd .mini .x{flex:1;min-width:0}
+.rd .mini .x div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .player{height:64px;background:#000;border-top:1px solid #1c1c1c;display:flex;align-items:center;justify-content:center;color:#444;font-size:11px;flex:0 0 64px}
+</style></head><body>
+
+<h1>Sets, redesigned (approved: A)</h1>
+<p class="cap">The library's real sets, YouTube thumbnails and lengths; the tracklist of Marco Carola b2b Luciano. "Have it" is estimated here; the app's matching decides it. The new finds are real unopened finds. Every button has a 6px radius. In the app, the playing row shows the equalizer (Home spec), not ♪.</p>
+
+<!-- ============ 1. Sets home ============ -->
+<h2>1 · Sets opens on the library</h2>
+<div class="rd" style="height:640px">
+  <div class="rail"><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+  <div class="main pad">
+    <div class="bar">⌕ Paste a set link, or type a DJ's name<span class="k">a set costs 5–7 units · reopening one costs nothing</span></div>
+    <div class="tabs"><span class="tab on">Library 29</span><span class="tab">Saved tracks</span><span class="tab">Following <span class="b">3</span></span><span class="tab">Stats</span><span style="flex:1"></span><span class="tab">By DJ</span><span class="tab on2">Newest</span></div>
+    <div class="sh"><b>New from DJs you watch</b><a>All</a></div>
+    <div class="new" style="margin-bottom:18px">
+      <div class="nc"><span class="th" style="background-image:url(https://i.ytimg.com/vi/LEa9aqvHU7Q/mqdefault.jpg)"></span><div style="min-width:0"><div class="tag">Joseph Capriati</div><div style="font-size:12px">Live Napoli 2026 · 20 Years on Tour</div><div class="c">not saved · opening costs 5–7</div></div></div>
+      <div class="nc"><span class="th" style="background-image:url(https://i.ytimg.com/vi/TdMjAZ1znCQ/mqdefault.jpg)"></span><div style="min-width:0"><div class="tag">Hot Since 82</div><div style="font-size:12px">Afro House Mix 2026 in Medellín</div><div class="c">not saved · opening costs 5–7</div></div></div>
+      <div class="nc"><span class="th" style="background-image:url(https://i.ytimg.com/vi/hLGQxtQbQtY/mqdefault.jpg)"></span><div style="min-width:0"><div class="tag">Hot Since 82</div><div style="font-size:12px">Brussels 2026: Solomun - Hot Since 82 - CamelPhat</div><div class="c">not saved · opening costs 5–7</div></div></div>
+    </div>
+    <div class="sh"><b>Your sets</b><a>29</a></div>
+    <div class="grid">
+      <div class="sc"><div class="th" style="background-image:url(https://i.ytimg.com/vi/WhEF8cTxy6I/mqdefault.jpg)"><span class="du">2:24:00</span></div><div class="t">Dan Ghenacia | Live Vinyl DJ Set | Micas Garten</div><div class="s">UNDRSTND · no tracklist yet</div></div>
+      <div class="sc"><div class="th" style="background-image:url(https://i.ytimg.com/vi/nUbOCmRr0u0/mqdefault.jpg)"><span class="du">1:31:00</span></div><div class="t">Deep House Sessions — Hot Since 82, Dusky, Ben Pearce &amp; More</div><div class="s">Phil Arnold · 21 tracks</div></div>
+      <div class="sc"><div class="th" style="background-image:url(https://i.ytimg.com/vi/AvoifrdCfFM/mqdefault.jpg)"><span class="du">3:39:00</span></div><div class="t">Marco Carola b2b Luciano - KEEZY 2022 Opening</div><div class="s">Kiesgrube Open Air · 41 tracks</div></div>
+      <div class="sc"><div class="th" style="background-image:url(https://i.ytimg.com/vi/nj1vZRkUfWg/mqdefault.jpg)"><span class="du">4:59:00</span></div><div class="t">Joseph Capriati - 5 HS SUNRISE Dj set at The Terrace</div><div class="s">Club Space · 71 tracks</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. Open set ============ -->
+<h2>2 · A set opens on a page of its own, full width</h2>
+<p class="cap">"‹ Sets" returns to the library. On the page: the thumbnail, the DJs as links, the numbers, Play set, ⋯ (drawn open), the strip, the filter and the tracks. Hovering a row turns its number into ▶ (play the set from there) and shows the store links. The hero's ♡ is dropped in the spec.</p>
+<div class="rd">
+  <div class="rail"><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+  <div class="main">
+    <div class="md" style="grid-template-columns:1fr">
+      <div class="right" style="position:relative">
+        <div class="hero">
+          <div class="vid" style="background-image:url(https://i.ytimg.com/vi/AvoifrdCfFM/hqdefault.jpg)"><span class="du">3:39:00</span></div>
+          <div style="min-width:0">
+            <div style="font-size:12px;color:var(--t2);margin-bottom:6px">‹ Sets</div>
+            <h1>Marco Carola b2b Luciano — KEEZY 2022 Opening</h1>
+            <div class="chip"><a>Marco Carola</a><span>b2b</span><a>Luciano</a><span>· Kiesgrube Open Air · saved Sep 27</span></div>
+            <div class="stat"><span><b>41</b> tracks</span><span><b>3</b> lists</span><span style="color:var(--ok)"><b style="color:var(--ok)">3</b> you own</span><span><b>37</b> missing</span><span><b>1</b> ID</span></div>
+            <div class="acts"><span class="pbtn">▶ Play set</span><span class="ibtn">♡</span><span class="ibtn" style="background:#3a3a3a;color:#fff">⋯</span></div>
+          </div>
+        </div>
+        <div class="menu" style="left:470px;top:212px">
+          <div class="h">Open on YouTube <small>↗</small></div>
+          <div>Look again for a tracklist <small>5–7 units</small></div>
+          <div>Copy missing tracks <small>37</small></div>
+          <div style="color:#f87171">Remove from library</div>
+        </div>
+        <div class="strip"><i></i><i></i><i></i><i class="h"></i><i></i><i></i><i class="h"></i><i></i><i class="u"></i><i></i><i></i><i class="h"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="chips"><span class="tab on">All 41</span><span class="tab">You own 3</span><span class="tab">Missing 37</span><span class="tab">IDs 1</span></div>
+        <div class="tbl">
+          <div class="tr hd"><span>#</span><span>Time</span><span>Track</span><span>Lists</span><span></span><span></span></div>
+          <div class="tr"><span class="no">1</span><span class="cue">1:00</span><span class="nm">Alexis Cabrera &amp; Ignacio Morales — Zehn <em>(Traumer Remix)</em></span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr hov"><span class="no">▶</span><span class="cue">7:00</span><span class="nm">Tuccillo — Imagination Engine <span class="stores">&nbsp; Beatport · Discogs · Bandcamp · Spotify</span></span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">3</span><span class="cue">12:00</span><span class="nm">Charlie Banks — Dweck's Dungeon</span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">4</span><span class="cue">17:00</span><span class="nm">Raw Instinct — De La Bass <em>(Mousse T House Mix)</em></span><span class="vt">2/3</span><span class="have">▶ have it</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">5</span><span class="cue">21:00</span><span class="nm">HRDY &amp; Paulo Maria — Connected</span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">6</span><span class="cue">26:00</span><span class="nm">Oliver Moldan — Babe <em>(UES Remix)</em></span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">7</span><span class="cue">31:00</span><span class="nm">Bobby Shann ft. Nicole Dash Jones — Hard Feelings</span><span class="vt">2/3</span><span class="have">▶ have it</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">8</span><span class="cue">35:00</span><span class="nm">Mihai Popoviciu — Breath Control</span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">9</span><span class="cue">41:00</span><span class="nm">Unknown Artist — Activator</span><span class="vt">1/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3. Playing ============ -->
+<h2>3 · While a set plays</h2>
+<p class="cap">Play set (or ▶ on a row) plays the video where the thumbnail was, a little larger. The row playing is coloured and the strip shows where you are. Leave the page and the video moves into a bar above the player, with the set's previous and next track; clicking the bar returns to the set.</p>
+<div class="rd" style="height:600px">
+  <div class="rail"><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+  <div class="main">
+    <div class="md" style="grid-template-columns:1fr">
+      <div class="right">
+        <div class="hero playing">
+          <div class="vid" style="background-image:url(https://i.ytimg.com/vi/AvoifrdCfFM/maxresdefault.jpg)"><span class="live">▶ 17:42 / 3:39:00</span></div>
+          <div style="min-width:0">
+            <div style="font-size:12px;color:var(--t2);margin-bottom:6px">‹ Sets</div>
+            <h1 style="font-size:18px">Marco Carola b2b Luciano — KEEZY 2022 Opening</h1>
+            <div class="chip"><a>Marco Carola</a><span>b2b</span><a>Luciano</a></div>
+            <div class="acts"><span class="pbtn">▮▮ Pause</span><span class="ibtn">⏮</span><span class="ibtn">⏭</span><span class="ibtn">♡</span><span class="ibtn">⋯</span></div>
+          </div>
+        </div>
+        <div class="strip"><i></i><i></i><i></i><i class="h p"></i><i></i><i></i><i class="h"></i><i></i><i class="u"></i><i></i><i></i><i class="h"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="tbl">
+          <div class="tr"><span class="no">3</span><span class="cue">12:00</span><span class="nm">Charlie Banks — Dweck's Dungeon</span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+          <div class="tr now"><span class="no">♪</span><span class="cue">17:00</span><span class="nm">Raw Instinct — De La Bass <em>(Mousse T House Mix)</em></span><span class="vt">2/3</span><span class="have">▶ have it</span><span class="heart">♡</span></div>
+          <div class="tr"><span class="no">5</span><span class="cue">21:00</span><span class="nm">HRDY &amp; Paulo Maria — Connected</span><span class="vt">2/3</span><span class="miss">missing</span><span class="heart">♡</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mini"><span class="th" style="background-image:url(https://i.ytimg.com/vi/AvoifrdCfFM/mqdefault.jpg)"></span><div class="x"><div style="font-size:12px"><b>17:00</b> Raw Instinct — De La Bass</div><div style="font-size:11px;color:var(--tm)">Marco Carola b2b Luciano — KEEZY 2022 Opening</div></div><span class="ibtn" style="height:30px">⏮</span><span class="ibtn" style="height:30px">▮▮</span><span class="ibtn" style="height:30px">⏭</span><span class="ibtn" style="height:30px">✕</span></div>
+    <div class="player">(the player for your own files, as today)</div>
+  </div>
+</div>
+<p class="cap">The bar above the player shows only while a set plays and you are not on its page; it is drawn here together with the page to show both.</p>
+
+</body></html>
