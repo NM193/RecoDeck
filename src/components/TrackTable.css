@@ -140,11 +140,16 @@
   box-shadow: inset 0 -1px 0 var(--border);
 }
 
-/* Scroll area: heads and rows scroll together, sideways too */
+/* Scroll area: heads and rows scroll together, sideways too. It takes the
+   keys when a row is clicked; the selected rows show it, not a ring. */
 .track-table-scroll-area {
   position: relative;
   min-height: 0;
   min-width: 0;
+}
+
+.track-table-scroll-area:focus {
+  outline: none;
 }
 
 /* As wide as the area, or as the columns (--tt-min) when they need more: the
@@ -598,7 +603,8 @@
   cursor: not-allowed;
 }
 
-/* Context menu improvements (track table uses same classes as FolderTree) */
+/* The sidebar's menus (FolderTree) still use these until the Interactions
+   plan moves them to the shared Menu; the track table's menu is Menu. */
 .context-menu-item-active {
   background: var(--bg-tertiary);
   font-weight: 500;
@@ -608,11 +614,6 @@
   margin-left: auto;
   color: var(--accent);
   font-weight: bold;
-}
-
-/* Ensure context menu and button items are readable (no white-on-white) */
-.track-table-container .context-menu {
-  background: var(--bg-secondary);
 }
 
 button.context-menu-item {

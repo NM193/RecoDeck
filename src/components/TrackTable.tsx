@@ -12,19 +12,33 @@ import {
   useImperativeHandle,
   forwardRef,
   type CSSProperties,
+  type KeyboardEvent,
 } from 'react'
 import type { Track, Playlist } from '../types/track'
 import { usePlayerStore } from '../store/playerStore'
 import { audioPlayer } from '../lib/audioPlayer'
 import { Icon } from './Icon'
 import { Equalizer } from './Equalizer'
+import { Menu } from './menu/Menu'
 import { TrackCover } from './track-table/TrackCover'
+import { trackMenuEntries } from './track-table/trackMenuEntries'
+import { isOverlayOpen, useOverlay } from '../lib/overlays'
+import {
+  NO_SELECTION,
+  clickRow,
+  moveCursor,
+  selectAll,
+  selectOnly,
+  selectedTracks,
+  trimSelection,
+} from '../lib/trackTable/selection'
 import {
   applyTrackFilter,
   isEmptyFilter,
   type TrackFilter,
 } from '../lib/trackTable/filter'
 import { trackCountLabel } from '../lib/trackTable/count'
+import { tracksSubject } from '../lib/trackTable/bulkMessages'
 import { FilterButton } from './track-table/FilterButton'
 import { usePlayedTrackIds } from './track-table/usePlayedTrackIds'
 import { usePlayCounts } from './track-table/usePlayCounts'
@@ -42,6 +56,10 @@ import {
 } from '../lib/trackTable/sort'
 import { useTrackTableLayout } from '../store/trackTableLayoutStore'
 
+// ⌘ selects on macOS, Ctrl elsewhere (Interactions spec); on macOS a
+// Ctrl-click is a right-click.
+const IS_MAC = navigator.platform.startsWith('Mac')
+
 // --- Component ---
 
 interface TrackTableProps {
@@ -55,11 +73,12 @@ interface TrackTableProps {
     sortedTracks: Track[],
     trackIndex: number,
   ) => void
-  onAnalyzeTrack?: (track: Track) => void
-  onAddToPlaylist?: (track: Track, playlistId: number) => void
-  onRemoveFromPlaylist?: (track: Track) => void
-  onSetGenre?: (track: Track, genre: string) => void
-  onClearGenre?: (track: Track) => void
+  // The right-click menu's actions: each takes every selected track at once.
+  onAnalyzeTracks?: (tracks: Track[]) => void
+  onAddToPlaylist?: (tracks: Track[], playlistId: number) => void
+  onRemoveFromPlaylist?: (tracks: Track[]) => void
+  onSetGenre?: (tracks: Track[], genre: string) => void
+  onClearGenre?: (tracks: Track[]) => void
   onUpdateTrack?: (track: Track) => void
   genreDefinitions?: Array<{ id: number; name: string; color?: string }>
   onGenerateAIPlaylist?: (track: Track) => void
@@ -94,7 +113,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       playlistMode = false,
       onTrackClick,
       onTrackDoubleClick,
-      onAnalyzeTrack,
+      onAnalyzeTracks,
       onAddToPlaylist,
       onRemoveFromPlaylist,
       onSetGenre,
@@ -113,10 +132,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     ref,
   ) {
     const parentRef = useRef<HTMLDivElement>(null)
-    const contextMenuRef = useRef<HTMLDivElement>(null)
-    const playlistSubmenuTimeout = useRef<number | null>(null)
-    const genreSubmenuTimeout = useRef<number | null>(null)
-    const analyzeSubmenuTimeout = useRef<number | null>(null)
 
     // Player store subscription for current track
     const currentTrack = usePlayerStore((state) => state.currentTrack)
@@ -133,8 +148,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       }
     }
 
-    // Row selection state
-    const [selectedRowId, setSelectedRowId] = useState<number | null>(null)
+    // The rows selected (track table spec, Selecting several)
+    const [selection, setSelection] = useState(NO_SELECTION)
 
     // Search state
     const [searchQuery, setSearchQuery] = useState('')
@@ -159,40 +174,15 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       }
     }, [])
 
-    // Context menu (right-click on track row)
-    const [contextMenu, setContextMenu] = useState<{
-      track: Track
-      x: number
-      y: number
-    } | null>(null)
+    // The right-click menu, at the pointer; it acts on the selection.
+    const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
+    const closeMenu = useCallback(() => setMenuAt(null), [])
 
-    // Submenu for "Add to Playlist"
-    const [playlistSubmenu, setPlaylistSubmenu] = useState<{
-      visible: boolean
-      x: number
-      y: number
-    }>({ visible: false, x: 0, y: 0 })
-
-    // Submenu for "Set Genre"
-    const [genreSubmenu, setGenreSubmenu] = useState<{
-      visible: boolean
-      x: number
-      y: number
-    }>({ visible: false, x: 0, y: 0 })
-
-    // Submenu for "Analyze"
-    const [, setAnalyzeSubmenu] = useState<{
-      visible: boolean
-      x: number
-      y: number
-    }>({ visible: false, x: 0, y: 0 })
-
-    // Custom genre input state
+    // Set Genre ▸ Custom…: a name for the selected tracks
     const [customGenreInput, setCustomGenreInput] = useState<{
-      visible: boolean
-      track: Track | null
+      tracks: Track[]
       value: string
-    }>({ visible: false, track: null, value: '' })
+    } | null>(null)
 
     // Comment editor state
     const [commentInput, setCommentInput] = useState<{
@@ -201,72 +191,27 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       value: string
     }>({ visible: false, track: null, value: '' })
 
-    // Get only actual playlists (not folders) for the submenu
+    // The dialogs are overlays (Esc closes them), and give the table its keys
+    // back when they close.
+    const closeCustomGenre = () => {
+      setCustomGenreInput(null)
+      parentRef.current?.focus({ preventScroll: true })
+    }
+    const closeComment = () => {
+      setCommentInput({ visible: false, track: null, value: '' })
+      parentRef.current?.focus({ preventScroll: true })
+    }
+    useOverlay(customGenreInput !== null, closeCustomGenre)
+    useOverlay(commentInput.visible, closeComment)
+
+    // The playlists to add to: no folders, and not the one shown
     const actualPlaylists = useMemo(
-      () => playlists.filter((p) => p.playlist_type !== 'folder'),
-      [playlists],
+      () =>
+        playlists.filter(
+          (p) => p.playlist_type !== 'folder' && p.id !== selectedPlaylistId,
+        ),
+      [playlists, selectedPlaylistId],
     )
-
-    useEffect(() => {
-      function handleClickOutside(e: MouseEvent) {
-        if (!contextMenu || !contextMenuRef.current) return
-        const target = e.target as Node
-        // Don't close if clicking inside main menu, any submenu, or custom genre modal
-        const isInsideMenu =
-          target instanceof Element &&
-          (target.closest('.context-menu') !== null ||
-            target.closest('.context-submenu') !== null ||
-            target.closest('.modal-overlay') !== null)
-        if (!isInsideMenu) {
-          setContextMenu(null)
-          setPlaylistSubmenu({ visible: false, x: 0, y: 0 })
-          setGenreSubmenu({ visible: false, x: 0, y: 0 })
-          setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-        }
-      }
-      if (contextMenu) {
-        document.addEventListener('mousedown', handleClickOutside)
-        return () =>
-          document.removeEventListener('mousedown', handleClickOutside)
-      }
-    }, [contextMenu])
-
-    // Close submenus when context menu closes
-    useEffect(() => {
-      if (!contextMenu) {
-        // Clear any pending timeouts
-        if (playlistSubmenuTimeout.current) {
-          clearTimeout(playlistSubmenuTimeout.current)
-          playlistSubmenuTimeout.current = null
-        }
-        if (genreSubmenuTimeout.current) {
-          clearTimeout(genreSubmenuTimeout.current)
-          genreSubmenuTimeout.current = null
-        }
-        if (analyzeSubmenuTimeout.current) {
-          clearTimeout(analyzeSubmenuTimeout.current)
-          analyzeSubmenuTimeout.current = null
-        }
-        setPlaylistSubmenu({ visible: false, x: 0, y: 0 })
-        setGenreSubmenu({ visible: false, x: 0, y: 0 })
-        setAnalyzeSubmenu({ visible: false, x: 0, y: 0 })
-      }
-    }, [contextMenu])
-
-    // Cleanup timeouts on unmount
-    useEffect(() => {
-      return () => {
-        if (playlistSubmenuTimeout.current) {
-          clearTimeout(playlistSubmenuTimeout.current)
-        }
-        if (genreSubmenuTimeout.current) {
-          clearTimeout(genreSubmenuTimeout.current)
-        }
-        if (analyzeSubmenuTimeout.current) {
-          clearTimeout(analyzeSubmenuTimeout.current)
-        }
-      }
-    }, [])
 
     // Sort state — default: sort by title ascending
     const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
@@ -324,6 +269,21 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     )
     const handleSort = (column: SortColumn) => setSort(nextSort(shownSort, column))
 
+    // Rows no longer shown leave the selection: adjusted while rendering, when
+    // the rows shown change (search, filter, sort, a reload).
+    const shownIds = useMemo(() => sortedTracks.map((t) => t.id), [sortedTracks])
+    const [selectionRows, setSelectionRows] = useState(shownIds)
+    if (selectionRows !== shownIds) {
+      setSelectionRows(shownIds)
+      setSelection((current) => trimSelection(current, shownIds))
+    }
+    const menuTracks = useMemo(
+      () => (menuAt ? selectedTracks(selection, sortedTracks) : []),
+      [menuAt, selection, sortedTracks],
+    )
+    // Its tracks left the view (a reload): the menu closes for good.
+    if (menuAt && menuTracks.length === 0) setMenuAt(null)
+
     const HEADER_HEIGHT = 30
 
     const virtualizer = useVirtualizer({
@@ -332,7 +292,36 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       estimateSize: () => 46,
       overscan: 10,
       scrollMargin: HEADER_HEIGHT,
+      // A row moved to with the keys stays out from under the column heads.
+      scrollPaddingStart: HEADER_HEIGHT,
     })
+
+    // The focused table's keys (Interactions spec, Keyboard): ↑ ↓ move the
+    // selection (Shift extends it), Enter plays, ⌘A selects every row shown,
+    // Esc clears. Not while a menu, popover or dialog is open (Esc is
+    // theirs), nor from a control inside a row.
+    const handleTableKeys = (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.target !== event.currentTarget || isOverlayOpen()) return
+      const key = event.key
+      if ((IS_MAC ? event.metaKey : event.ctrlKey) && key.toLowerCase() === 'a') {
+        event.preventDefault()
+        setSelection((current) => selectAll(current, shownIds))
+      } else if (key === 'Escape' && selection.ids.size > 0) {
+        event.preventDefault()
+        setSelection(NO_SELECTION)
+      } else if (key === 'ArrowDown' || key === 'ArrowUp') {
+        event.preventDefault()
+        const next = moveCursor(selection, shownIds, key === 'ArrowDown' ? 1 : -1, event.shiftKey)
+        setSelection(next)
+        const index = next.cursor === null ? -1 : shownIds.indexOf(next.cursor)
+        if (index !== -1) virtualizer.scrollToIndex(index, { align: 'auto' })
+      } else if (key === 'Enter' && !event.repeat) {
+        const index = selection.cursor === null ? -1 : shownIds.indexOf(selection.cursor)
+        if (index === -1) return
+        event.preventDefault()
+        onTrackDoubleClick?.(sortedTracks[index], sortedTracks, index)
+      }
+    }
 
     // Expose scroll to current track method via ref
     useImperativeHandle(
@@ -394,6 +383,20 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     const rate = onUpdateTrack
       ? (track: Track, rating: number) => onUpdateTrack({ ...track, rating })
       : undefined
+
+    const saveCustomGenre = () => {
+      const genre = customGenreInput?.value.trim()
+      if (!customGenreInput || !genre || !onSetGenre) return
+      onSetGenre(customGenreInput.tracks, genre)
+      closeCustomGenre()
+    }
+
+    const saveComment = () => {
+      if (!commentInput.track || !onUpdateTrack) return
+      const trimmed = commentInput.value.trim()
+      onUpdateTrack({ ...commentInput.track, comment: trimmed ? trimmed : undefined })
+      closeComment()
+    }
 
     return (
       <div className="track-table-container">
@@ -479,6 +482,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               sortedTracks.length,
               totalCount ?? tracks.length,
               narrowed,
+              selection.ids.size,
             )}
           </span>
         </div>
@@ -487,6 +491,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
         <div
           ref={parentRef}
           className="track-table-scroll-area"
+          tabIndex={0}
+          onKeyDown={handleTableKeys}
           style={{
             flex: 1,
             overflow: 'auto',
@@ -530,7 +536,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   <div
                     key={virtualRow.key}
                     data-index={virtualRow.index}
-                    className={`track-table-row data-row ${isPlayingTrack ? 'data-row--playing' : ''} ${selectedRowId === track.id ? 'data-row--selected' : ''}`}
+                    className={`track-table-row data-row ${isPlayingTrack ? 'data-row--playing' : ''} ${selection.ids.has(track.id) ? 'data-row--selected' : ''}`}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -541,8 +547,22 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       // included (scrollMargin); the body already sits under it.
                       transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                     }}
-                    onClick={() => {
-                      setSelectedRowId(track.id)
+                    // Shift-click selects rows, not the text in them.
+                    onMouseDown={(e) => {
+                      if (e.shiftKey) e.preventDefault()
+                    }}
+                    onClick={(e) => {
+                      if (IS_MAC && e.ctrlKey) return // a right-click: the menu has it
+                      setSelection((current) =>
+                        clickRow(
+                          current,
+                          track.id,
+                          { toggle: IS_MAC ? e.metaKey : e.ctrlKey, range: e.shiftKey },
+                          shownIds,
+                        ),
+                      )
+                      // The table takes the keys (↑ ↓, ⌘A, Esc, Enter).
+                      parentRef.current?.focus({ preventScroll: true })
                       onTrackClick?.(track)
                     }}
                     onDoubleClick={(e) => {
@@ -566,11 +586,10 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault()
-                      setContextMenu({
-                        track,
-                        x: e.clientX,
-                        y: e.clientY,
-                      })
+                      // On a row not selected, it selects that row alone first.
+                      if (!selection.ids.has(track.id)) setSelection(selectOnly(track.id))
+                      parentRef.current?.focus({ preventScroll: true })
+                      setMenuAt({ x: e.clientX, y: e.clientY })
                     }}
                   >
                     <div className="tt-cell cell-index">
@@ -640,368 +659,52 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
           </div>
         </div>
 
-        {/* Right-click context menu */}
-        {contextMenu && (
-          <div
-            ref={contextMenuRef}
-            className="context-menu"
-            style={{
-              position: 'fixed',
-              top: contextMenu.y,
-              left: contextMenu.x,
-              zIndex: 9999,
-            }}
-          >
-            {/* Delete from Playlist — only when viewing a playlist */}
-            {selectedPlaylistId != null && onRemoveFromPlaylist && (
-              <button
-                type="button"
-                className="context-menu-item context-menu-item-danger"
-                onClick={() => {
-                  onRemoveFromPlaylist(contextMenu.track)
-                  setContextMenu(null)
-                }}
-              >
-                <Icon name="Trash2" size={16} className="context-menu-icon" />
-                Delete from playlist
-              </button>
-            )}
-
-            {/* Add to Playlist option */}
-            {onAddToPlaylist && actualPlaylists.length > 0 && (
-              <div
-                className="context-menu-item context-menu-item-submenu"
-                onMouseEnter={(e) => {
-                  // Cancel any pending close timeout
-                  if (playlistSubmenuTimeout.current) {
-                    clearTimeout(playlistSubmenuTimeout.current)
-                    playlistSubmenuTimeout.current = null
-                  }
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setPlaylistSubmenu({
-                    visible: true,
-                    x: rect.right,
-                    y: rect.top,
-                  })
-                }}
-                onMouseLeave={() => {
-                  // Small delay to allow moving to submenu
-                  playlistSubmenuTimeout.current = setTimeout(() => {
-                    setPlaylistSubmenu({ visible: false, x: 0, y: 0 })
-                  }, 150)
-                }}
-              >
-                <Icon name="ListPlus" size={16} className="context-menu-icon" />
-                Add to Playlist
-                <Icon
-                  name="ChevronRight"
-                  size={14}
-                  className="context-menu-arrow"
-                />
-              </div>
-            )}
-
-            {onAddToPlaylist && actualPlaylists.length === 0 && (
-              <div className="context-menu-item context-menu-item-disabled">
-                <Icon name="ListPlus" size={16} className="context-menu-icon" />
-                Add to Playlist
-                <span className="context-menu-hint">(no playlists)</span>
-              </div>
-            )}
-
-            {onAnalyzeTrack && (
-              <button
-                type="button"
-                className="context-menu-item"
-                onClick={() => {
-                  onAnalyzeTrack(contextMenu.track)
-                  setContextMenu(null)
-                }}
-              >
-                <Icon name="Zap" size={16} className="context-menu-icon" />
-                Analyze BPM & Key
-              </button>
-            )}
-
-            {/* Set Genre option */}
-            {onSetGenre && (
-              <div
-                className="context-menu-item context-menu-item-submenu"
-                onMouseEnter={(e) => {
-                  // Cancel any pending close timeout
-                  if (genreSubmenuTimeout.current) {
-                    clearTimeout(genreSubmenuTimeout.current)
-                    genreSubmenuTimeout.current = null
-                  }
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  setGenreSubmenu({
-                    visible: true,
-                    x: rect.right,
-                    y: rect.top,
-                  })
-                }}
-                onMouseLeave={() => {
-                  genreSubmenuTimeout.current = setTimeout(() => {
-                    setGenreSubmenu({ visible: false, x: 0, y: 0 })
-                  }, 150)
-                }}
-              >
-                <Icon name="Tag" size={16} className="context-menu-icon" />
-                Set Genre
-                {contextMenu.track.genre && (
-                  <span className="context-menu-hint">
-                    ({contextMenu.track.genre})
-                  </span>
-                )}
-                <Icon
-                  name="ChevronRight"
-                  size={14}
-                  className="context-menu-arrow"
-                />
-              </div>
-            )}
-
-            {/* Clear Genre option */}
-            {onClearGenre && contextMenu.track.genre && (
-              <button
-                type="button"
-                className="context-menu-item"
-                onClick={() => {
-                  onClearGenre(contextMenu.track)
-                  setContextMenu(null)
-                }}
-              >
-                <Icon name="X" size={16} className="context-menu-icon" />
-                Clear Genre
-              </button>
-            )}
-
-            {/* Add / Edit Comment option */}
-            {onUpdateTrack && (
-              <button
-                type="button"
-                className="context-menu-item"
-                onClick={() => {
-                  setCommentInput({
-                    visible: true,
-                    track: contextMenu.track,
-                    value: contextMenu.track.comment || '',
-                  })
-                  setContextMenu(null)
-                }}
-              >
-                <Icon
-                  name="MessageSquare"
-                  size={16}
-                  className="context-menu-icon"
-                />
-                {contextMenu.track.comment ? 'Edit Comment' : 'Add Comment'}
-              </button>
-            )}
-
-            {/* Generate AI Playlist */}
-            {onGenerateAIPlaylist && (
-              <>
-                <div className="context-menu-separator" />
-                <button
-                  type="button"
-                  className="context-menu-item"
-                  onClick={() => {
-                    onGenerateAIPlaylist(contextMenu.track)
-                    setContextMenu(null)
-                  }}
-                >
-                  <Icon
-                    name="Sparkles"
-                    size={16}
-                    className="context-menu-icon"
-                  />
-                  Generate AI Playlist
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Playlist submenu */}
-        {contextMenu &&
-          playlistSubmenu.visible &&
-          actualPlaylists.length > 0 && (
-            <div
-              className="context-menu context-submenu"
-              style={{
-                position: 'fixed',
-                top: playlistSubmenu.y,
-                left: playlistSubmenu.x,
-                zIndex: 10000,
-              }}
-              onMouseEnter={() => {
-                // Cancel any pending close timeout
-                if (playlistSubmenuTimeout.current) {
-                  clearTimeout(playlistSubmenuTimeout.current)
-                  playlistSubmenuTimeout.current = null
-                }
-                setPlaylistSubmenu((prev) => ({ ...prev, visible: true }))
-              }}
-              onMouseLeave={() =>
-                setPlaylistSubmenu({ visible: false, x: 0, y: 0 })
-              }
-            >
-              {actualPlaylists.map((playlist) => (
-                <button
-                  key={playlist.id}
-                  type="button"
-                  className="context-menu-item"
-                  onClick={() => {
-                    onAddToPlaylist?.(contextMenu.track, playlist.id)
-                    setContextMenu(null)
-                    setPlaylistSubmenu({ visible: false, x: 0, y: 0 })
-                  }}
-                >
-                  <Icon
-                    name="ListMusic"
-                    size={16}
-                    className="context-menu-icon"
-                  />
-                  {playlist.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-        {/* Genre submenu */}
-        {contextMenu && genreSubmenu.visible && onSetGenre && (
-          <div
-            className="context-menu context-submenu"
-            style={{
-              position: 'fixed',
-              top: genreSubmenu.y,
-              left: genreSubmenu.x,
-              zIndex: 10000,
-            }}
-            onMouseEnter={() => {
-              // Cancel any pending close timeout
-              if (genreSubmenuTimeout.current) {
-                clearTimeout(genreSubmenuTimeout.current)
-                genreSubmenuTimeout.current = null
-              }
-              setGenreSubmenu((prev) => ({ ...prev, visible: true }))
-            }}
-            onMouseLeave={() => setGenreSubmenu({ visible: false, x: 0, y: 0 })}
-          >
-            {genreDefinitions.length === 0 && (
-              <div className="context-menu-item context-menu-item-disabled">
-                <Icon name="Music" size={16} className="context-menu-icon" />
-                No genres defined
-                <span className="context-menu-hint">(use Custom)</span>
-              </div>
-            )}
-
-            {genreDefinitions.map((genre) => {
-              const isSelected = contextMenu.track.genre === genre.name
-              return (
-                <button
-                  key={genre.id}
-                  type="button"
-                  className={`context-menu-item ${isSelected ? 'context-menu-item-active' : ''}`}
-                  onClick={() => {
-                    onSetGenre(contextMenu.track, genre.name)
-                    setContextMenu(null)
-                    setGenreSubmenu({ visible: false, x: 0, y: 0 })
-                  }}
-                >
-                  {genre.color ? (
-                    <span
-                      className="context-menu-icon"
-                      style={{ color: genre.color }}
-                    >
-                      ●
-                    </span>
-                  ) : (
-                    <Icon
-                      name="Music"
-                      size={16}
-                      className="context-menu-icon"
-                    />
-                  )}
-                  {genre.name}
-                  {isSelected && (
-                    <Icon
-                      name="Check"
-                      size={14}
-                      className="context-menu-checkmark"
-                    />
-                  )}
-                </button>
-              )
-            })}
-
-            {genreDefinitions.length > 0 && (
-              <div className="context-menu-separator" />
-            )}
-
-            <button
-              type="button"
-              className="context-menu-item"
-              onClick={() => {
+        {/* The right-click menu: acts on every selected track */}
+        {menuAt && menuTracks.length > 0 && (
+          <Menu
+            at={menuAt}
+            label={menuTracks.length === 1 ? 'Track' : `${menuTracks.length} tracks`}
+            onClose={closeMenu}
+            entries={trackMenuEntries({
+              tracks: menuTracks,
+              playlists: actualPlaylists,
+              genres: genreDefinitions,
+              onAddToPlaylist,
+              onAnalyze: onAnalyzeTracks,
+              onSetGenre,
+              onCustomGenre: (selected) =>
                 setCustomGenreInput({
-                  visible: true,
-                  track: contextMenu.track,
-                  value: contextMenu.track.genre || '',
-                })
-                setContextMenu(null)
-                setGenreSubmenu({ visible: false, x: 0, y: 0 })
-              }}
-            >
-              <Icon name="Pencil" size={16} className="context-menu-icon" />
-              Custom...
-            </button>
-          </div>
+                  tracks: selected,
+                  value:
+                    selected.every((t) => t.genre === selected[0].genre)
+                      ? selected[0].genre || ''
+                      : '',
+                }),
+              onClearGenre,
+              onRemoveFromPlaylist:
+                selectedPlaylistId != null ? onRemoveFromPlaylist : undefined,
+              onEditComment: editComment,
+              onGenerateAIPlaylist,
+            })}
+          />
         )}
 
-
-        {/* Custom Genre Input Modal */}
-        {customGenreInput.visible && customGenreInput.track && onSetGenre && (
-          <div
-            className="modal-overlay"
-            onClick={() =>
-              setCustomGenreInput({ visible: false, track: null, value: '' })
-            }
-          >
+        {/* Set Genre ▸ Custom…: a name for the selected tracks */}
+        {customGenreInput && onSetGenre && (
+          <div className="modal-overlay" onClick={closeCustomGenre}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <h3>Set Genre</h3>
-              <p className="modal-subtitle">
-                {customGenreInput.track.title || 'Untitled'}
-              </p>
+              <p className="modal-subtitle">{tracksSubject(customGenreInput.tracks)}</p>
               <input
                 type="text"
                 className="modal-input"
                 placeholder="Enter genre name..."
                 value={customGenreInput.value}
                 onChange={(e) =>
-                  setCustomGenreInput((prev) => ({
-                    ...prev,
-                    value: e.target.value,
-                  }))
+                  setCustomGenreInput({ ...customGenreInput, value: e.target.value })
                 }
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && customGenreInput.value.trim()) {
-                    onSetGenre(
-                      customGenreInput.track!,
-                      customGenreInput.value.trim(),
-                    )
-                    setCustomGenreInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
-                  } else if (e.key === 'Escape') {
-                    setCustomGenreInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
-                  }
+                  if (e.key === 'Enter') saveCustomGenre()
                 }}
                 autoFocus
               />
@@ -1009,32 +712,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                 <button
                   type="button"
                   className="modal-button modal-button-secondary"
-                  onClick={() =>
-                    setCustomGenreInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
-                  }
+                  onClick={closeCustomGenre}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   className="modal-button modal-button-primary"
-                  onClick={() => {
-                    if (customGenreInput.value.trim()) {
-                      onSetGenre(
-                        customGenreInput.track!,
-                        customGenreInput.value.trim(),
-                      )
-                      setCustomGenreInput({
-                        visible: false,
-                        track: null,
-                        value: '',
-                      })
-                    }
-                  }}
+                  onClick={saveCustomGenre}
                   disabled={!customGenreInput.value.trim()}
                 >
                   Set Genre
@@ -1046,12 +731,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
 
         {/* Comment Editor Modal */}
         {commentInput.visible && commentInput.track && onUpdateTrack && (
-          <div
-            className="modal-overlay"
-            onClick={() =>
-              setCommentInput({ visible: false, track: null, value: '' })
-            }
-          >
+          <div className="modal-overlay" onClick={closeComment}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <h3>
                 {commentInput.track.comment ? 'Edit Comment' : 'Add Comment'}
@@ -1072,22 +752,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    const trimmed = commentInput.value.trim()
-                    onUpdateTrack({
-                      ...commentInput.track!,
-                      comment: trimmed ? trimmed : undefined,
-                    })
-                    setCommentInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
-                  } else if (e.key === 'Escape') {
-                    setCommentInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
+                    saveComment()
                   }
                 }}
                 autoFocus
@@ -1096,31 +761,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                 <button
                   type="button"
                   className="modal-button modal-button-secondary"
-                  onClick={() =>
-                    setCommentInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
-                  }
+                  onClick={closeComment}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   className="modal-button modal-button-primary"
-                  onClick={() => {
-                    const trimmed = commentInput.value.trim()
-                    onUpdateTrack({
-                      ...commentInput.track!,
-                      comment: trimmed ? trimmed : undefined,
-                    })
-                    setCommentInput({
-                      visible: false,
-                      track: null,
-                      value: '',
-                    })
-                  }}
+                  onClick={saveComment}
                 >
                   Save
                 </button>

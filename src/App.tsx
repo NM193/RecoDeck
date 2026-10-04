@@ -53,6 +53,15 @@ import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
+import { toast } from './lib/toast'
+import {
+  addedMessage,
+  alreadyMessage,
+  genreClearedMessage,
+  genreSetMessage,
+  genreSnapshot,
+  removedMessage,
+} from './lib/trackTable/bulkMessages'
 import type {
   Track,
   Playlist,
@@ -918,23 +927,32 @@ function AppContent() {
     }
   }
 
-  // Analyze a single track (BPM + Key) — uses batch for decode-once benefit
-  async function handleAnalyzeTrack(track: Track) {
+  // Analyze the selected tracks (BPM + Key) in one batch — decoded once each
+  async function handleAnalyzeTracks(selected: Track[]) {
+    // One analysis at a time: a second would reset the first one's cancel flag.
+    if (analyzing) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
+    const first = selected[0]
     try {
       setAnalyzing(true)
       setError(null)
       analysisStartTimeRef.current = Date.now()
       setAnalysisProgress({
         currentIndex: 0,
-        totalTracks: 1,
+        totalTracks: selected.length,
         currentTrackName:
-          track.title || track.file_path.split('/').pop() || 'Unknown',
+          first.title || first.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: 0,
         totalSizeBytes: 0,
         startTime: Date.now(),
       })
       await new Promise((r) => setTimeout(r, 0))
-      await tauriApi.analyzeTracksBatch([track.id], true)
+      await tauriApi.analyzeTracksBatch(
+        selected.map((t) => t.id),
+        true,
+      )
     } catch (err) {
       setAnalyzing(false)
       setAnalysisProgress(null)
@@ -1117,71 +1135,106 @@ function AppContent() {
     }
   }
 
-  // Add track to playlist
-  async function handleAddToPlaylist(track: Track, playlistId: number) {
+  // The track table's right-click menu acts on its selection at once: one
+  // call, one toast — with Undo, which puts back exactly what it changed —
+  // and one reload of the view.
+  const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+  // An Undo: put it back, then reload the view shown by then.
+  function undoing(putBack: () => Promise<unknown>) {
+    return {
+      label: 'Undo',
+      run: () => {
+        putBack()
+          .then(() => loadTracksRef.current())
+          .catch((err) => toast(`Couldn't undo: ${errorText(err)}`, { kind: 'error' }))
+      },
+    }
+  }
+
+  async function handleAddToPlaylist(selected: Track[], playlistId: number) {
+    const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
     try {
-      const added = await tauriApi.addTrackToPlaylist(playlistId, track.id)
+      const { added, already } = await tauriApi.addTracksToPlaylist(
+        playlistId,
+        selected.map((t) => t.id),
+      )
       await loadPlaylists()
-      const playlistName =
-        playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
-      if (added) {
-        setHeaderNotification(`Added to ${playlistName}`)
-      } else {
-        setNotification({
-          message: `Track is already in ${playlistName}`,
-          type: 'warning',
-        })
+      if (added.length === 0) {
+        toast(alreadyMessage(selected, name), { kind: 'warning' })
+        return
       }
-    } catch (err) {
-      setNotification({
-        message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
+      const addedTracks = selected.filter((t) => added.includes(t.id))
+      toast(addedMessage(addedTracks, already.length, name), {
+        action: undoing(async () => {
+          await tauriApi.removeTracksFromPlaylist(playlistId, added)
+          await loadPlaylists()
+        }),
       })
+    } catch (err) {
+      toast(`Couldn't add to ${name}: ${errorText(err)}`, { kind: 'error' })
     }
   }
 
-  // Remove track from playlist (when viewing a playlist)
-  async function handleRemoveFromPlaylist(track: Track) {
+  // Delete from the playlist shown; Undo adds them back in their old places.
+  async function handleRemoveFromPlaylist(selected: Track[]) {
     if (selectedPlaylistId == null) return
+    const playlistId = selectedPlaylistId
+    const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
+    const ids = selected.map((t) => t.id)
     try {
-      await tauriApi.removeTrackFromPlaylist(selectedPlaylistId, track.id)
-      await loadTracks(null, selectedPlaylistId) // Refresh playlist tracks
-      await loadPlaylists() // Refresh playlist counts
-      setHeaderNotification(`Removed from playlist`)
-    } catch (err) {
-      setNotification({
-        message: `Failed to remove: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
+      // The playlist's own order, not the table's sorted view.
+      const before = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+      await tauriApi.removeTracksFromPlaylist(playlistId, ids)
+      await loadTracks(null, playlistId)
+      await loadPlaylists()
+      toast(removedMessage(selected, name), {
+        action: undoing(async () => {
+          await tauriApi.addTracksToPlaylist(playlistId, ids)
+          // The old order first; tracks added since keep their places after it.
+          const now = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+          const old = new Set(before)
+          await tauriApi.reorderPlaylistTracks(playlistId, [
+            ...before,
+            ...now.filter((id) => !old.has(id)),
+          ])
+          await loadPlaylists()
+        }),
       })
+    } catch (err) {
+      toast(`Couldn't remove from ${name}: ${errorText(err)}`, { kind: 'error' })
     }
   }
 
-  // Set genre for track
-  async function handleSetGenre(track: Track, genre: string) {
+  async function handleSetGenre(selected: Track[], genre: string) {
+    const before = genreSnapshot(selected)
     try {
-      await tauriApi.setTrackGenre(track.id, genre)
-      await loadTracks() // Refresh tracks to show updated genre
-      await loadGenreDefinitions() // Refresh in case it's a new genre
-      setNotification({
-        message: `Genre set to "${genre}" for ${track.title || 'track'}`,
-        type: 'success',
+      await tauriApi.bulkSetGenre(
+        selected.map((t) => t.id),
+        genre,
+      )
+      await loadTracks()
+      await loadGenreDefinitions() // in case it is a new genre
+      toast(genreSetMessage(selected, genre), {
+        action: undoing(() => tauriApi.restoreTrackGenres(before)),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      toast(`Couldn't set the genre: ${errorText(err)}`, { kind: 'error' })
     }
   }
 
-  // Clear genre for track
-  async function handleClearGenre(track: Track) {
+  async function handleClearGenre(selected: Track[]) {
+    const withGenre = selected.filter((t) => t.genre)
+    const before = genreSnapshot(withGenre)
     try {
-      await tauriApi.clearTrackGenre(track.id)
-      await loadTracks() // Refresh tracks to show cleared genre
-      setNotification({
-        message: `Genre cleared for ${track.title || 'track'}`,
-        type: 'info',
+      await tauriApi.bulkClearGenre(withGenre.map((t) => t.id))
+      await loadTracks()
+      toast(genreClearedMessage(withGenre), {
+        kind: 'info',
+        action: undoing(() => tauriApi.restoreTrackGenres(before)),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      toast(`Couldn't clear the genre: ${errorText(err)}`, { kind: 'error' })
     }
   }
 
@@ -1836,7 +1889,7 @@ function AppContent() {
                     selectedPlaylistId={selectedPlaylistId}
                     onTrackClick={handleTrackClick}
                     onTrackDoubleClick={handlePlayTrack}
-                    onAnalyzeTrack={handleAnalyzeTrack}
+                    onAnalyzeTracks={handleAnalyzeTracks}
                     onAddToPlaylist={handleAddToPlaylist}
                     onRemoveFromPlaylist={handleRemoveFromPlaylist}
                     onSetGenre={handleSetGenre}
