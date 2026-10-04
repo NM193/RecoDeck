@@ -30,6 +30,8 @@ import type {
   GenreDefinition,
   DuplicateGroup,
   TrackGenre,
+  LibraryFolder,
+  MoveReport,
 } from '../types/track'
 import type {
   ChatMessage,
@@ -312,6 +314,16 @@ export const tauriApi = {
   /** Removes several tracks at once; answers how many the playlist held. */
   async removeTracksFromPlaylist(playlistId: number, trackIds: number[]): Promise<number> {
     return await invoke('remove_tracks_from_playlist', { playlistId, trackIds })
+  },
+
+  /** Every folder of the library, the roots included (Move to folder ▸). */
+  async listLibraryFolders(): Promise<LibraryFolder[]> {
+    return await invoke('list_library_folders')
+  },
+
+  /** Moves the tracks' files into `folder`; answers what moved and what was skipped. */
+  async moveTracksToFolder(trackIds: number[], folder: string): Promise<MoveReport> {
+    return await invoke('move_tracks_to_folder', { trackIds, folder })
   },
 
   async reorderPlaylistTracks(
