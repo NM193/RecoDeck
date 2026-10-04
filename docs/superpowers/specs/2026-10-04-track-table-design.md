@@ -172,8 +172,13 @@ clears it. ⌘A and Escape act on rows only while the table has focus and no
 menu, panel or modal is open, never while typing.
 
 The right-click menu acts on the selection (a right-click on an unselected row
-selects it alone first). Dragging the selection to a playlist or a folder in
-the sidebar is the Interactions spec's.
+selects it alone first).
+
+**Dragging** is built by this plan, by the Interactions spec's drag-and-drop
+rules: the selection to a playlist (added) or a library folder in the Folders
+section (moved) in the sidebar, and reordering inside a playlist's own table
+(only with no sort, search or filter) — each with its Undo from that spec's
+table.
 
 ## Right-click menu
 
@@ -239,6 +244,7 @@ freeze the window; the folder must be inside a library folder; it answers
 | Folders for Move to folder | new `list_library_folders()` |
 | Moving | new `move_tracks_to_folder(track_ids, folder)` |
 | Clear genre for many | new `bulk_clear_genre(track_ids)` |
+| Dragging | the Interactions plan's drag layer (`useTrackDrag`, `data-drop-*` targets), wired here |
 
 ## Testing
 

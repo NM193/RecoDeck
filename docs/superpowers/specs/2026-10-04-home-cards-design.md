@@ -237,7 +237,7 @@ All local: Home makes no network request and spends no YouTube quota.
 | Sets you saved lately | existing `listYouTubeSets()` (newest first) |
 | Your DJs | `get_known_djs(today)` and `localStorage['dj_recent']` — from the Search spec |
 | Needs you, New likes | App's `spotify.newCounts` and YouTube Music's `newCounts`, as the sidebar shows them |
-| New sets | new `get_new_dj_finds(limit)`: distinct unseen finds, newest first, each with the DJ's name and whether it is in `yt_sets`, plus the total count; new `mark_dj_finds_seen(video_ids)` and `mark_all_dj_finds_seen()` |
+| New sets | new `get_new_dj_finds(limit)`: distinct unseen finds, newest first, each with the DJ's name and whether it is in `yt_sets`, plus the total count; new `mark_dj_finds_seen(video_ids)`, `mark_all_dj_finds_seen()` (answers the `(name_key, video_id)` rows it changed) and `mark_dj_finds_unseen(rows)` for its Undo (Interactions spec) |
 | Your DJs play next | new `get_upcoming_gigs(today, limit)`: gigs on or after `today` (the local day, as `splitGigs` uses it) of every DJ in `dj_profiles`, soonest first, with the DJ's name |
 | Library stats | App's counts, plus `get_library_groups()` — from the Search spec |
 | Library by genre | `get_library_groups()` — from the Search spec |
@@ -258,6 +258,9 @@ HomeView gains the props the cards act through, passed by App:
 Spotify and YouTube Music new counts and lists.
 
 ## Depends on
+
+Home's track rows are a drag source (Interactions spec: a drag carries the one
+row), wired by this plan.
 
 The Search spec's plan builds `get_recently_played_tracks`,
 `get_recently_added_tracks`, `get_known_djs`, `get_library_groups`,
