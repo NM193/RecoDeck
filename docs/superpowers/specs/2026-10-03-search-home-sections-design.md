@@ -9,22 +9,23 @@ there is plenty to show there. Mockup:
 — the approved direction is **A + B**: A's rows (recent searches, recently
 played, your DJs) with B's genre tiles, and the page can be customized.
 
-The same sections are useful on Home, which already has a widget grid. They
-are built once and used in both places.
+Home is redesigned in its own spec
+([`2026-10-04-home-cards-design.md`](./2026-10-04-home-cards-design.md)). Only
+the queries and the All Tracks filter are shared with it; the sections below
+are built for Search alone.
 
 ## Sections
 
 Each section is one component that reads only local data (no network, no
-quota). On Search a section with nothing to show is not rendered; as a Home
-widget it shows one line of empty text instead, so the grid has no blank cell.
+quota). A section with nothing to show is not rendered.
 
 | Section | Shows | Click | Data |
 |---|---|---|---|
 | **Recent searches** | the last 10 searches as chips, each with ×; "Clear" | runs that search again | `localStorage['search_recent']`, this machine only |
 | **Recently played** | 6 tiles: artwork when `tracks.artwork_path` is set, else a gradient from the title; title, artist; play button on hover | plays the track | new `get_recently_played_tracks(limit)` |
-| **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line | opens the DJ page | new `get_known_djs()` + `localStorage['dj_recent']` |
+| **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line | opens the DJ page | new `get_known_djs(today)` + `localStorage['dj_recent']` |
 | **Your library by genre** | tiles for the 6 biggest genres with counts, plus **Recently added** and **Never played** with counts | opens All Tracks with that filter | new `get_library_groups()` |
-| **Recently added** | 6 rows (title, artist, "today" / "2 days ago") | plays the track | existing `get_recently_added(limit)` |
+| **Recently added** | 6 rows (title, artist, "today" / "2 days ago") | plays the track | new `get_recently_added_tracks(limit)` (full track rows, shared with Home; the old `get_recently_added` returns five fields and cannot be played) |
 | **Sets you saved lately** | 3 rows (title, channel, date saved) | opens the set in Sets | existing `listYouTubeSets()`, newest first |
 
 **Recent searches.** A query is remembered when, trimmed, it is non-empty and
@@ -32,10 +33,11 @@ either the user opens or plays one of its results, or it stays unchanged for 2
 seconds after the last keystroke while it has results. Comparison is
 case-insensitive; a repeat moves to the front; the list keeps 10.
 
-**Your DJs.** `get_known_djs()` returns one row per name key, merging
+**Your DJs.** `get_known_djs(today)` returns one row per name key, merging
 `dj_profiles` and `yt_watched_djs`: `nameKey`, `displayName`, `imageUrl`
 (`spotify_image_url`, else `ra_image_url`), `nextGig` (the earliest
-`dj_gigs` date on or after today, with its venue), `watched`. The one line
+`dj_gigs` date on or after `today` — the local day, "2026-10-04", passed by the
+frontend as `splitGigs` uses it — with its venue), `watched`. The one line
 is the next gig ("next gig Sat, Oct 3"), else "watching for sets" when
 watched, else nothing. Order: the DJ pages opened most recently first — the
 frontend keeps `localStorage['dj_recent']` (name keys, newest first, max 20),
@@ -43,17 +45,19 @@ written when a DJ page opens — then the rest by name. No migration.
 
 **Library groups.** `get_library_groups()` returns the genres with counts
 (`genre IS NOT NULL`, biggest first, top 6), the count added in the last 30
-days (`date_added` is `YYYY-MM-DD HH:MM:SS` text in local time, compared with
-`datetime('now', 'localtime', '-30 days')`), and the count never played. **Never
+days (`date_added` is SQLite's `datetime('now')`, `YYYY-MM-DD HH:MM:SS` in
+**UTC**, compared with `datetime('now', '-30 days')`), and the count never played. **Never
 played** means no row in `play_history` for the track — `tracks.play_count`
 is not kept up to date (it is 0 on every track while the history holds 441
 distinct tracks), so it is not used.
 
 **Recently played.** `get_recently_played_tracks(limit)` returns distinct
 tracks by their latest play (`MAX(played_at)`), joined to `tracks` with an
-inner join so deleted files drop out, newest first, as full `Track` rows. The
-existing `get_recently_played` (one row per play, used by Home's Recently
-Played widget) stays as it is.
+inner join so deleted files drop out, newest first, as full `Track` rows with
+their analysis (BPM, key) and that latest `played_at` (Home's Recently played
+shows the time). The
+existing `get_recently_played` (one row per play) is removed with Home's old
+Recently Played widget (Home spec).
 
 ## Search
 
@@ -87,18 +91,9 @@ All Tracks has only a text search today. It gains a starting filter:
 
 ## Home
 
-Home's widget registry gains three widgets wrapping the same components:
-
-| Widget | Default w×h | Min | Max |
-|---|---|---|---|
-| Your DJs | 4×1 | 2×1 | 4×2 |
-| Library by genre | 4×2 | 2×1 | 4×3 |
-| Sets you saved lately | 2×1 | 2×1 | 4×2 |
-
-(In Home's 4-column grid, the units `widgetRegistry.ts` already uses.) They are added from Home's existing widget catalog; the default
-layout does not change. HomeView gains the props the sections need —
-`onOpenDj(name)`, `onOpenSet(videoId)`, `onOpenAllTracks(filter)` — passed by
-App. Home's existing Recently Played and Recently Added widgets stay.
+**Superseded** by [`2026-10-04-home-cards-design.md`](./2026-10-04-home-cards-design.md):
+Home becomes a grid of 15 cards, and the three widgets planned here are among
+them. This spec's plan 2 is replaced by that spec's plan.
 
 ## Navigation
 
@@ -108,8 +103,8 @@ and opens All Tracks.
 
 ## Plan split
 
-One spec, two plans: **1. Search sections and the All Tracks filter**,
-**2. the Home widgets**.
+One spec, one plan here: **Search sections and the All Tracks filter**. The
+Home widgets moved to the Home cards spec.
 
 ## Testing
 
@@ -121,8 +116,7 @@ One spec, two plans: **1. Search sections and the All Tracks filter**,
   section-order storage (unknown ids dropped, new ids off), the "one line" for
   a DJ.
 - By hand: empty query shows the sections; typing hides them; customize,
-  restart, order kept; a genre tile opens All Tracks filtered; the three Home
-  widgets can be added.
+  restart, order kept; a genre tile opens All Tracks filtered.
 
 ## Out of scope
 

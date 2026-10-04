@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Home Cards Mockup</title>
+<style>
+body{margin:0;padding:24px 32px 64px;background:#1d1d1f;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+h1{margin:0 0 4px;font-size:22px}
+h2{margin:40px 0 4px;font-size:18px}
+.cap{color:#86868b;font-size:13px;margin:0 0 14px;max-width:900px;line-height:1.5}
+.rd{max-width:1180px}
+</style></head><body>
+<style>
+.rd{--bg:#121212;--bg2:#181818;--bg3:#282828;--el:#2a2a2a;--t1:#fff;--t2:#b3b3b3;--tm:#6a6a6a;--acc:#6366f1;--acch:#818cf8;--ok:#1ed760;--yt:#ff4e45;--sets:#fb923c;--bds:#2a2a2a;
+  font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;background:var(--bg);color:var(--t1);border-radius:12px;overflow:hidden;border:1px solid #000;box-shadow:0 20px 50px rgba(0,0,0,.35);font-size:13px;-webkit-font-smoothing:antialiased;display:flex;margin:12px 0 40px;line-height:1.35}
+.rd *{box-sizing:border-box}
+.rd .rail{width:60px;flex:0 0 60px;background:#000;display:flex;flex-direction:column;align-items:center;gap:18px;padding-top:18px}
+.rd .rail i{width:20px;height:20px;border-radius:5px;background:#333;display:block}
+.rd .rail i.on{background:#60a5fa}
+.rd .main{flex:1;min-width:0;padding:22px 26px 26px}
+.rd .top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px}
+.rd .top h1{font-size:24px;margin:0;font-weight:800}
+.rd .top .d{color:var(--tm);font-size:12px;margin-top:2px}
+.rd .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:6px;background:var(--el);color:var(--t2);font-size:12px;white-space:nowrap}
+.rd .grid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:120px;gap:12px}
+.rd .card{background:var(--bg2);border:1px solid var(--bds);border-radius:10px;padding:12px 14px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.rd .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex:0 0 auto}
+.rd .ch b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)}
+.rd .ch a{font-size:11.5px;color:var(--tm)}
+.rd .li{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--bds)}
+.rd .li:last-child{border-bottom:0}
+.rd .li .x{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .li .m{font-size:11px;color:var(--tm);white-space:nowrap}
+.rd .n{font-size:17px;font-weight:800;min-width:38px}
+.rd .ts{color:var(--tm);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .gig{display:grid;grid-template-columns:38px 1fr;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bds)}
+.rd .gig:last-child{border-bottom:0}
+.rd .gig .dd{font-weight:800;font-size:15px;line-height:1;text-align:center}
+.rd .gig .dd small{display:block;font-size:9.5px;color:var(--tm);font-weight:700;margin-top:2px}
+.rd .gn{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1}
+.rd .g{border-radius:7px;padding:8px 10px;font-weight:800;font-size:12px;overflow:hidden}
+.rd .g span{display:block;font-weight:500;font-size:11px;opacity:.85;margin-top:2px}
+.rd .pls{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.rd .pl{display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:6px;padding:6px;overflow:hidden;position:relative}
+.rd .pl .cv{width:44px;height:44px;border-radius:4px;flex:0 0 44px;position:relative}
+.rd .pl.hov{background:#333}
+.rd .pl.hov .cv::after{content:'▶';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);border-radius:4px;font-size:13px}
+.rd .tt{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .big{font-size:26px;font-weight:800;line-height:1.1}
+.rd .qa{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rd .q{background:var(--bg3);border-radius:8px;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11.5px;color:var(--t2)}
+.rd .q i{font-style:normal;font-size:15px;color:var(--t1)}
+/* track rows */
+.rd .tr{display:grid;grid-template-columns:22px 1fr 34px 30px 62px;align-items:center;gap:8px;height:38px;padding:0 6px;margin:0 -6px;border-radius:6px}
+.rd .tr .no{color:var(--tm);font-size:11.5px;text-align:center;font-variant-numeric:tabular-nums}
+.rd .tr .ti{min-width:0}
+.rd .tr .ti div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd .tr .ti .a{color:var(--tm);font-size:11px}
+.rd .tr .c{color:var(--t2);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums}
+.rd .tr .w{color:var(--tm);font-size:11px;text-align:right}
+.rd .tr.hov{background:var(--bg3)}
+.rd .tr.hov .no{color:var(--t1)}
+.rd .tr.now .ti div:first-child{color:var(--acch)}
+.rd .tr.now .no{color:var(--acch)}
+.rd .pbtn{width:30px;height:30px;border-radius:6px;background:var(--acc);display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+.rd .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:start}
+.note{color:var(--text-secondary);font-size:13px}
+</style>
+
+<h1>Home — a grid of cards (approved)</h1>
+<p class="cap">Option B (a grid of cards) in the quiet style, with the default layout. Tracks, BPM, playlists, genres and gigs come from the library; the numbers of new likes and new sets are examples. A key shows "—" where analysis found none.</p>
+
+<div class="rd">
+  <div class="rail"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="main">
+    <div class="top"><div><h1>Good evening</h1><div class="d">Sunday, October 4</div></div><span class="btn">⚙ Customize</span></div>
+    <div class="grid">
+      <div class="card" style="grid-column:1/span 2;grid-row:1/span 2">
+        <div class="ch"><b>Needs you</b></div>
+        <div class="li"><span class="n" style="color:var(--ok)">3</span><div class="x">New Spotify likes you don't own</div><span class="m">Liked Songs ›</span></div>
+        <div class="li"><span class="n" style="color:var(--yt)">1</span><div class="x">New YouTube Music like</div><span class="m">Liked music ›</span></div>
+        <div class="li"><span class="n" style="color:var(--sets)">2</span><div class="x">New sets by Hot Since 82</div><span class="m">Sets ›</span></div>
+        <div class="li"><span class="n" style="color:var(--acch)">223</span><div class="x">Tracks not analyzed</div><span class="m">Analyze all ›</span></div>
+        <div class="li"><span class="n" style="color:#facc15;font-size:13px">Tue</span><div class="x">Traumer plays Hï Ibiza</div><span class="m">Oct 6 ›</span></div>
+      </div>
+      <div class="card" style="grid-column:3/span 2;grid-row:1/span 2">
+        <div class="ch"><b>Recently played</b><a>Show all</a></div>
+        <div class="tr now"><span class="no">▮▮</span><div class="ti"><div>Doubler (Original Mix)</div><div class="a">Tuccillo</div></div><span class="c">125</span><span class="c">—</span><span class="w">22:39</span></div>
+        <div class="tr hov"><span class="no">▶</span><div class="ti"><div>Aquatic Journey (Original Mix)</div><div class="a">Helly Larson</div></div><span class="c">121</span><span class="c">—</span><span class="w">21:53</span></div>
+        <div class="tr"><span class="no">3</span><div class="ti"><div>Alone (Original Mix)</div><div class="a">Mihai Popoviciu</div></div><span class="c">128</span><span class="c">—</span><span class="w">21:50</span></div>
+        <div class="tr"><span class="no">4</span><div class="ti"><div>Satisfaction</div><div class="a">Fiberroot</div></div><span class="c">—</span><span class="c">—</span><span class="w">21:42</span></div>
+        <div class="tr"><span class="no">5</span><div class="ti"><div>More Than Love (Him Self Her Remix)</div><div class="a">Raffa Fl</div></div><span class="c">—</span><span class="c">—</span><span class="w">21:40</span></div>
+      </div>
+      <div class="card" style="grid-column:1/span 2;grid-row:3/span 2">
+        <div class="ch"><b>Your DJs play next</b><a>Resident Advisor</a></div>
+        <div class="gig"><div class="dd">06<small>OCT</small></div><div><div>Traumer · Hï Ibiza</div><div class="ts">Ibiza, ES</div></div></div>
+        <div class="gig"><div class="dd">10<small>OCT</small></div><div><div>Hot Since 82 · Ushuaïa Ibiza</div><div class="ts">Ibiza, ES</div></div></div>
+        <div class="gig"><div class="dd">10<small>OCT</small></div><div><div>Joseph Capriati · Auditorio Málaga</div><div class="ts">Málaga, ES</div></div></div>
+        <div class="gig"><div class="dd">11<small>OCT</small></div><div><div>Hot Since 82 · Seaseaclub Barcelona</div><div class="ts">Barcelona, ES</div></div></div>
+      </div>
+      <div class="card" style="grid-column:3/span 2;grid-row:3/span 2">
+        <div class="ch"><b>Your library by genre</b><a>8,583 tracks</a></div>
+        <div class="gn">
+          <div class="g" style="background:#7c3aed">Tech House<span>1,581</span></div>
+          <div class="g" style="background:#0e7490">House<span>792</span></div>
+          <div class="g" style="background:#be185d">Deep House<span>721</span></div>
+          <div class="g" style="background:#c2410c">Minimal / Deep Tech<span>451</span></div>
+          <div class="g" style="background:#4338ca">Melodic H&amp;T<span>349</span></div>
+          <div class="g" style="background:#15803d">Afro House<span>332</span></div>
+          <div class="g" style="background:#334155">Added lately<span>359</span></div>
+          <div class="g" style="background:#3f3f46">Never played<span>8,142</span></div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1/span 4;grid-row:5">
+        <div class="ch"><b>Your playlists</b><a>All</a></div>
+        <div class="pls">
+          <div class="pl hov"><span class="cv" style="background:linear-gradient(135deg,#db2777,#3b0764)"></span><div style="min-width:0"><div class="tt">Organic House SET</div><div class="ts">20 tracks</div></div></div>
+          <div class="pl"><span class="cv" style="background:linear-gradient(135deg,#f59e0b,#7c2d12)"></span><div style="min-width:0"><div class="tt">Mica Rodj</div><div class="ts">40 tracks</div></div></div>
+          <div class="pl"><span class="cv" style="background:linear-gradient(135deg,#22c55e,#14532d)"></span><div style="min-width:0"><div class="tt">U što pesma</div><div class="ts">17 tracks</div></div></div>
+          <div class="pl"><span class="cv" style="background:linear-gradient(135deg,#0ea5e9,#0c4a6e)"></span><div style="min-width:0"><div class="tt">Techno Mix 15</div><div class="ts">15 tracks</div></div></div>
+          <div class="pl"><span class="cv" style="background:linear-gradient(135deg,#14b8a6,#134e4a)"></span><div style="min-width:0"><div class="tt">Deep House Vibes</div><div class="ts">10 tracks</div></div></div>
+          <div class="pl"><span class="cv" style="background:linear-gradient(135deg,#a855f7,#4c1d95)"></span><div style="min-width:0"><div class="tt">Afro Kidalica</div><div class="ts">5 tracks</div></div></div>
+        </div>
+      </div>
+      <div class="card" style="grid-column:1;grid-row:6">
+        <div class="ch"><b>Library</b></div>
+        <div class="big">8,583</div><div class="ts">tracks · 359 added lately</div>
+      </div>
+      <div class="card" style="grid-column:2;grid-row:6">
+        <div class="ch"><b>Not analyzed</b><a style="color:var(--acch)">Analyze all</a></div>
+        <div class="big" style="color:var(--acch)">223</div><div class="ts">no BPM or key yet</div>
+      </div>
+      <div class="card" style="grid-column:3/span 2;grid-row:6">
+        <div class="ch"><b>Quick actions</b></div>
+        <div class="qa"><div class="q"><i>＋</i>Import folder</div><div class="q"><i>∿</i>Analyze all</div><div class="q"><i>▷</i>Open Sets</div><div class="q"><i>≡</i>New playlist</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Playing from Home, in every card with tracks</h2>
+<p class="cap">Hovering a row turns its number into ▶. ▶ or a double click plays the track in the player at the bottom, with the card's list as the queue. The track playing now is in the accent colour with ▮▮. On a playlist, ▶ over the cover plays the whole playlist from the start.</p>
+<div class="rd">
+  <div class="main">
+    <div class="row3">
+      <div class="card">
+        <div class="ch"><b>Recently played</b><a>Show all</a></div>
+        <div class="tr now"><span class="no">▮▮</span><div class="ti"><div>Doubler (Original Mix)</div><div class="a">Tuccillo</div></div><span class="c">125</span><span class="c">—</span><span class="w">22:39</span></div>
+        <div class="tr hov"><span class="no">▶</span><div class="ti"><div>Aquatic Journey (Original Mix)</div><div class="a">Helly Larson</div></div><span class="c">121</span><span class="c">—</span><span class="w">21:53</span></div>
+        <div class="tr"><span class="no">3</span><div class="ti"><div>Alone (Original Mix)</div><div class="a">Mihai Popoviciu</div></div><span class="c">128</span><span class="c">—</span><span class="w">21:50</span></div>
+        <div class="tr"><span class="no">4</span><div class="ti"><div>Us Two (Extended Mix)</div><div class="a">Soniks</div></div><span class="c">129</span><span class="c">6A</span><span class="w">21:40</span></div>
+      </div>
+      <div class="card">
+        <div class="ch"><b>Recently added</b><a>All Tracks</a></div>
+        <div class="tr"><span class="no">1</span><div class="ti"><div>Technik (Original Mix)</div><div class="a">Joe Vanditti, Jeky Saviro</div></div><span class="c">130</span><span class="c">—</span><span class="w">yesterday</span></div>
+        <div class="tr hov"><span class="no">▶</span><div class="ti"><div>Selecta (Traumer Remix)</div><div class="a">Job De Jong</div></div><span class="c">130</span><span class="c">—</span><span class="w">yesterday</span></div>
+        <div class="tr"><span class="no">3</span><div class="ti"><div>She's A Replicant (Afriqua Remix)</div><div class="a">Ben Rau, Afriqua</div></div><span class="c">126</span><span class="c">—</span><span class="w">yesterday</span></div>
+        <div class="tr"><span class="no">4</span><div class="ti"><div>Taff (Traumer Edit)</div><div class="a">Leonidas (CH)</div></div><span class="c">127</span><span class="c">—</span><span class="w">yesterday</span></div>
+      </div>
+      <div class="card">
+        <div class="ch"><b>Last playlist</b><a>Open</a></div>
+        <div style="display:flex;align-items:center;gap:12px;margin:2px 0 8px">
+          <span style="width:52px;height:52px;border-radius:6px;background:linear-gradient(135deg,#14b8a6,#134e4a);flex:0 0 52px"></span>
+          <div style="flex:1;min-width:0"><div style="font-weight:700">Deep House Vibes</div><div class="ts">10 tracks · played Oct 2</div></div>
+          <span class="pbtn">▶</span>
+        </div>
+        <div class="tr"><span class="no">1</span><div class="ti"><div>A Landscape Onomatopeya</div><div class="a">Felipe Gordon</div></div><span class="c">118</span><span class="c">—</span><span class="w">5:11</span></div>
+        <div class="tr"><span class="no">2</span><div class="ti"><div>Ascending (feat. Moana)</div><div class="a">Donald Leicester &amp; Joey Coco</div></div><span class="c">118</span><span class="c">—</span><span class="w">5:13</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body></html>
