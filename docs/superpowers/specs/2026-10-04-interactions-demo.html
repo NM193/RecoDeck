@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Interactions Demo</title>
+<style>
+body{margin:0;padding:24px 32px 64px;background:#1d1d1f;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+h1{margin:0 0 4px;font-size:22px}
+.cap{color:#86868b;font-size:13px;margin:0 0 14px;max-width:900px;line-height:1.5}
+.ix{max-width:1180px}
+</style>
+<style>
+.ix{--bg:#121212;--bg2:#181818;--bg3:#282828;--el:#2a2a2a;--el2:#333;--t1:#fff;--t2:#b3b3b3;--tm:#6a6a6a;--acc:#6366f1;--acch:#818cf8;--ok:#1ed760;--err:#f87171;--bds:#2a2a2a;
+  --fast:120ms;--base:180ms;--slow:240ms;--ease:cubic-bezier(.2,0,0,1);
+  font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;background:var(--bg);color:var(--t1);border-radius:12px;border:1px solid #000;box-shadow:0 20px 50px rgba(0,0,0,.35);font-size:13px;-webkit-font-smoothing:antialiased;line-height:1.4;padding:20px 22px;margin:10px 0 30px;position:relative}
+.ix *{box-sizing:border-box}
+.ix h4{margin:0 0 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)}
+.ix .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.ix .card{background:var(--bg2);border:1px solid var(--bds);border-radius:10px;padding:14px}
+.ix .note{color:var(--tm);font-size:11.5px;margin-top:8px}
+/* buttons */
+.ix .b{height:32px;padding:0 14px;border-radius:6px;border:0;background:var(--el);color:var(--t2);font:inherit;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  transition:background var(--fast) var(--ease),color var(--fast) var(--ease),transform var(--fast) var(--ease),box-shadow var(--fast) var(--ease)}
+.ix .b:hover{background:var(--el2);color:#fff}
+.ix .b:active{transform:scale(.97);background:#3a3a3a}
+.ix .b:focus-visible{outline:none;box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--acc)}
+.ix .b.pri{background:var(--acc);color:#fff}
+.ix .b.pri:hover{background:#7173f3}
+.ix .b.pri:active{background:#5558e3}
+.ix .b.icon{width:32px;padding:0;justify-content:center}
+.ix .b[disabled]{opacity:.4;pointer-events:none}
+.ix .b .spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* rows */
+.ix .row{display:grid;grid-template-columns:30px 34px 1fr 56px;align-items:center;gap:10px;height:44px;padding:0 10px;border-radius:6px;cursor:default;user-select:none;
+  transition:background var(--fast) var(--ease)}
+.ix .row:hover{background:var(--bg3)}
+.ix .row.sel{background:#2f2f3a}
+.ix .row.sel:hover{background:#363645}
+.ix .row.now .t{color:var(--acch)}
+.ix .row .no{color:var(--tm);text-align:center;font-size:12px;display:flex;justify-content:center}
+.ix .row:hover .no .n{display:none}.ix .row .no .p{display:none;color:#fff}.ix .row:hover .no .p{display:inline-flex}
+.ix .row.now .no .n,.ix .row.now:hover .no .p{display:none}
+.ix .row.now .no .eqw{display:inline-flex}.ix .row .no .eqw{display:none;color:var(--acch)}
+.ix .row.now:hover .no .eqw{display:none}.ix .row.now:hover .no .pz{display:inline-flex}.ix .row .no .pz{display:none;color:#fff}
+.ix .row .cv{width:32px;height:32px;border-radius:4px}
+.ix .row .a{color:var(--tm);font-size:11.5px}
+.ix .row .c{color:var(--t2);font-size:12px;text-align:right}
+.ix .row.dragging{opacity:.45}
+.eq{display:inline-flex;align-items:flex-end;gap:2px;height:13px}
+.eq i{width:3px;border-radius:1px;background:currentColor;transform-origin:bottom;animation:eq .9s ease-in-out infinite}
+.eq i:nth-child(1){height:60%;animation-delay:-.2s}.eq i:nth-child(2){height:100%;animation-delay:-.5s}.eq i:nth-child(3){height:40%;animation-delay:-.8s}
+.eq.paused i{animation-play-state:paused}
+@keyframes eq{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+/* menu */
+.ix .mwrap{position:relative;display:inline-block}
+.ix .menu{position:absolute;top:38px;left:0;width:220px;background:#232323;border:1px solid #383838;border-radius:8px;padding:5px;box-shadow:0 16px 40px rgba(0,0,0,.55);z-index:5;
+  opacity:0;transform:translateY(-4px) scale(.98);transform-origin:top left;pointer-events:none;transition:opacity var(--base) var(--ease),transform var(--base) var(--ease)}
+.ix .menu.open{opacity:1;transform:none;pointer-events:auto}
+.ix .menu div{padding:7px 10px;border-radius:5px;display:flex;justify-content:space-between;cursor:default;transition:background var(--fast) var(--ease)}
+.ix .menu div:hover{background:#333}
+.ix .menu small{color:var(--tm)}
+/* collapse */
+.ix .sec-h{display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 4px;border-radius:6px;color:var(--t2);font-size:11px;letter-spacing:.06em;text-transform:uppercase;transition:background var(--fast) var(--ease)}
+.ix .sec-h:hover{background:#202020;color:#fff}
+.ix .chev{display:inline-block;transition:transform var(--base) var(--ease)}
+.ix .sec.closed .chev{transform:rotate(-90deg)}
+.ix .sec-b{display:grid;grid-template-rows:1fr;transition:grid-template-rows var(--base) var(--ease),opacity var(--base) var(--ease)}
+.ix .sec.closed .sec-b{grid-template-rows:0fr;opacity:0}
+.ix .sec-b>div{overflow:hidden}
+.ix .pl{padding:6px 10px;border-radius:6px;display:flex;justify-content:space-between;transition:background var(--fast) var(--ease),box-shadow var(--fast) var(--ease)}
+.ix .pl:hover{background:#202020}
+.ix .pl.drop{background:rgba(99,102,241,.18);box-shadow:inset 0 0 0 1px var(--acc)}
+.ix .pl small{color:var(--tm)}
+/* skeleton */
+.ix .sk{height:44px;border-radius:6px;margin-bottom:4px;background:linear-gradient(90deg,#1e1e1e 0%,#262626 40%,#1e1e1e 80%);background-size:300% 100%;animation:sh 1.2s ease-in-out infinite}
+@keyframes sh{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.ix .fade-in{animation:fi var(--slow) var(--ease)}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+/* toast */
+.ix .toasts{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;align-items:center;z-index:9;pointer-events:none}
+.ix .toast{pointer-events:auto;min-width:300px;display:flex;align-items:center;gap:12px;background:#2a2a2a;border:1px solid #3a3a3a;border-radius:8px;padding:10px 12px;box-shadow:0 14px 34px rgba(0,0,0,.5);font-size:12.5px;
+  animation:ti var(--slow) var(--ease)}
+.ix .toast.out{animation:to var(--base) var(--ease) forwards}
+.ix .toast .d{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:0 0 8px}
+.ix .toast .d.err{background:var(--err)}
+.ix .toast .u{margin-left:auto;color:var(--acch);font-weight:600;cursor:pointer}
+@keyframes ti{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes to{to{opacity:0;transform:translateY(6px)}}
+/* keyboard */
+.ix kbd{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:5px;background:#2a2a2a;border:1px solid #3a3a3a;border-bottom-width:2px;font:11px -apple-system,sans-serif;color:#ddd}
+.ix .keys{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:center;font-size:12.5px;color:var(--t2)}
+.ix .ghost{position:fixed;pointer-events:none;z-index:99;background:var(--acc);color:#fff;font-size:12px;font-weight:600;padding:5px 10px;border-radius:6px;box-shadow:0 10px 24px rgba(0,0,0,.5);display:none}
+.ix .live{color:var(--acch);font-size:11.5px;min-height:16px;margin-top:6px}
+</style></head><body>
+
+<h1>Interactions — try them</h1>
+<p class="cap">Everything here works: hover, click, hold, use the keyboard, drag. One tempo everywhere: fast 120ms (hover, press), base 180ms (menus, sections), slow 240ms (panels, pages, toasts). Every button 6px.</p>
+
+<div class="ix" id="ix">
+  <div class="grid2">
+    <div class="card">
+      <h4>1 · Hover, press, focus</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="b pri">▶ Play set</button>
+        <button class="b">⚲ Filter</button>
+        <button class="b icon" title="More">⋯</button>
+        <button class="b" id="anBtn">∿ Analyze 223</button>
+        <button class="b" disabled>Disabled</button>
+      </div>
+      <div class="note">Hover: lighter. Hold the click: the button presses in slightly. Tab from the keyboard: a blue ring (keyboard only, not the mouse). "Analyze": a spinner and "Analyzing…" while it works, then a confirmation.</div>
+    </div>
+    <div class="card">
+      <h4>2 · Menu and section</h4>
+      <div class="mwrap"><button class="b" id="mBtn">⋯ Actions</button>
+        <div class="menu" id="menu"><div>Open on YouTube <small>↗</small></div><div>Look again <small>5–7 units</small></div><div>Copy missing tracks <small>37</small></div><div style="color:var(--err)">Remove from library</div></div>
+      </div>
+      <div class="sec" id="sec" style="margin-top:12px">
+        <div class="sec-h" id="secH"><span class="chev">▾</span>Playlists</div>
+        <div class="sec-b"><div>
+          <div class="pl" data-pl="Organic House SET">Organic House SET <small>20</small></div>
+          <div class="pl" data-pl="Mica Rodj">Mica Rodj <small>40</small></div>
+          <div class="pl" data-pl="Deep House Vibes">Deep House Vibes <small>10</small></div>
+          <div class="pl" data-pl="House" style="color:var(--t2)">📁 House <small>folder · move</small></div>
+        </div></div>
+      </div>
+      <div class="note">The menu opens with a short drop and a fade (180ms) and closes on a click outside or Esc. The section collapses smoothly and its arrow turns.</div>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:22px">
+    <div class="card">
+      <h4>3 · Rows, selection, keyboard, drag</h4>
+      <div id="rows" tabindex="0" style="outline:none">
+        <div class="row" draggable="true" data-i="0"><span class="no"><span class="n">1</span><span class="p"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg></span><span class="eqw"><span class="eq"><i></i><i></i><i></i></span></span><span class="pz"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg></span></span><span class="cv" style="background:linear-gradient(135deg,#f97316,#7c2d12)"></span><div><div class="t">Fuego Fuego (Daniel Orpi Remix)</div><div class="a">Alberto Dimeo</div></div><span class="c">128.00</span></div>
+        <div class="row now" draggable="true" data-i="1"><span class="no"><span class="n">2</span><span class="p"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg></span><span class="eqw"><span class="eq" id="eq"><i></i><i></i><i></i></span></span><span class="pz"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg></span></span><span class="cv" style="background:linear-gradient(135deg,#6366f1,#1e1b4b)"></span><div><div class="t">Juz Listen'</div><div class="a">Discip &amp; The BeatBoy's</div></div><span class="c">128.00</span></div>
+        <div class="row" draggable="true" data-i="2"><span class="no"><span class="n">3</span><span class="p"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg></span><span class="eqw"><span class="eq"><i></i><i></i><i></i></span></span><span class="pz"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg></span></span><span class="cv" style="background:linear-gradient(135deg,#14b8a6,#134e4a)"></span><div><div class="t">Voayeur (Original Mix)</div><div class="a">Hector Couto</div></div><span class="c">126.00</span></div>
+        <div class="row" draggable="true" data-i="3"><span class="no"><span class="n">4</span><span class="p"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg></span><span class="eqw"><span class="eq"><i></i><i></i><i></i></span></span><span class="pz"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg></span></span><span class="cv" style="background:linear-gradient(135deg,#ec4899,#4c0519)"></span><div><div class="t">Hush (Catz 'n Dogz Remix)</div><div class="a">Thomas Schumacher</div></div><span class="c">125.00</span></div>
+        <div class="row" draggable="true" data-i="4"><span class="no"><span class="n">5</span><span class="p"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg></span><span class="eqw"><span class="eq"><i></i><i></i><i></i></span></span><span class="pz"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg></span></span><span class="cv" style="background:linear-gradient(135deg,#eab308,#713f12)"></span><div><div class="t">The Beat (Original Mix)</div><div class="a">Cameron Jack</div></div><span class="c">127.00</span></div>
+      </div>
+      <div class="live" id="live"></div>
+      <div class="note">Click selects, ⌘-click adds, Shift-click selects a range. Click into the list, then ↑ ↓ to move, Enter plays, Space pauses / plays (the equalizer stops). Drag the selected tracks onto a playlist or the folder in card 2: the target lights up, then a toast with Undo.</div>
+    </div>
+    <div class="card">
+      <h4>4 · Loading and feedback</h4>
+      <div style="display:flex;gap:8px;margin-bottom:10px"><button class="b" id="ldBtn">↻ Load the table again</button><button class="b" id="errBtn">Show an error</button></div>
+      <div id="ld"></div>
+      <div class="note">Nothing is blank while it reads: grey row shapes shimmer, then the rows fade in (240ms). After every action a short confirmation, bottom-centre above the player, with Undo where it can be put back. An error stays until closed.</div>
+      <h4 style="margin-top:16px">Shortcuts (⌘/ shows them anywhere)</h4>
+      <div class="keys">
+        <span><kbd>Space</kbd></span><span>Play / pause (when not typing)</span>
+        <span><kbd>⌘</kbd> <kbd>→</kbd> / <kbd>⌘</kbd> <kbd>←</kbd></span><span>Next / previous track</span>
+        <span><kbd>↑</kbd> <kbd>↓</kbd> · <kbd>Enter</kbd></span><span>Through the table · play the selected</span>
+        <span><kbd>⌘</kbd> <kbd>F</kbd></span><span>This page's search</span>
+        <span><kbd>⌘</kbd> <kbd>A</kbd> · <kbd>Esc</kbd></span><span>Select all · clear the selection, close a menu</span>
+        <span><kbd>⌘</kbd> <kbd>K</kbd></span><span>Open Search from anywhere</span>
+      </div>
+    </div>
+  </div>
+  <div class="toasts" id="toasts"></div>
+  <div class="ghost" id="ghost"></div>
+</div>
+
+<script>
+(function(){
+  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  const toasts=$('#toasts');
+  function toast(msg,{undo=false,err=false,stay=false}={}){
+    const t=document.createElement('div');t.className='toast';
+    t.innerHTML='<span class="d'+(err?' err':'')+'"></span><span>'+msg+'</span>'+(undo?'<span class="u">Undo</span>':'')+(err||stay?'<span class="u" style="color:#999">✕</span>':'');
+    toasts.appendChild(t);
+    const close=()=>{t.classList.add('out');setTimeout(()=>t.remove(),200)};
+    t.querySelectorAll('.u').forEach(u=>u.onclick=()=>{close(); if(u.textContent==='Undo') toast('Undone');});
+    if(!err&&!stay) setTimeout(close,4000);
+    while(toasts.children.length>3) toasts.firstChild.remove();
+  }
+  // analyze button
+  $('#anBtn').onclick=e=>{const b=e.currentTarget;b.disabled=true;b.innerHTML='<span class="spin"></span> Analyzing…';
+    setTimeout(()=>{b.disabled=false;b.innerHTML='∿ Analyze 223';toast('Analyzed 223 tracks · BPM found for 219');},1600)};
+  // menu
+  const menu=$('#menu');$('#mBtn').onclick=e=>{e.stopPropagation();menu.classList.toggle('open')};
+  document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.classList.remove('open')});
+  menu.querySelectorAll('div').forEach(d=>d.onclick=()=>{menu.classList.remove('open');toast(d.firstChild.textContent.trim()+' — done')});
+  // section
+  $('#secH').onclick=()=>$('#sec').classList.toggle('closed');
+  // rows: selection
+  const rows=$$('#rows .row');let anchor=0,cursor=0;
+  function sel(i,{add=false,range=false}={}){
+    if(range){const [a,b]=[Math.min(anchor,i),Math.max(anchor,i)];rows.forEach((r,k)=>r.classList.toggle('sel',k>=a&&k<=b));}
+    else if(add){rows[i].classList.toggle('sel');anchor=i;}
+    else{rows.forEach(r=>r.classList.remove('sel'));rows[i].classList.add('sel');anchor=i;}
+    cursor=i;$('#live').textContent=$$('#rows .row.sel').length+' selected';
+  }
+  rows.forEach((r,i)=>{
+    r.onclick=e=>{$('#rows').focus();sel(i,{add:e.metaKey||e.ctrlKey,range:e.shiftKey})};
+    r.ondblclick=()=>play(i);
+    r.querySelector('.p').onclick=e=>{e.stopPropagation();play(i)};
+    r.querySelector('.pz').onclick=e=>{e.stopPropagation();togglePause()};
+  });
+  let playing=1,paused=false;
+  function play(i){rows.forEach(r=>r.classList.remove('now'));rows[i].classList.add('now');playing=i;paused=false;$$('.eq').forEach(e=>e.classList.remove('paused'));}
+  function togglePause(){paused=!paused;$$('.eq').forEach(e=>e.classList.toggle('paused',paused));toast(paused?'Paused':'Playing');}
+  document.addEventListener('keydown',e=>{
+    const typing=/INPUT|TEXTAREA/.test(document.activeElement.tagName);
+    if(e.key==='Escape'){menu.classList.remove('open');rows.forEach(r=>r.classList.remove('sel'));$('#live').textContent='';}
+    if(typing)return;
+    if(e.code==='Space'){e.preventDefault();togglePause();}
+    if(document.activeElement===$('#rows')){
+      if(e.key==='ArrowDown'){e.preventDefault();sel(Math.min(cursor+1,rows.length-1),{range:e.shiftKey});}
+      if(e.key==='ArrowUp'){e.preventDefault();sel(Math.max(cursor-1,0),{range:e.shiftKey});}
+      if(e.key==='Enter'){play(cursor);}
+      if((e.metaKey||e.ctrlKey)&&e.key==='a'){e.preventDefault();rows.forEach(r=>r.classList.add('sel'));$('#live').textContent=rows.length+' selected';}
+    }
+  });
+  // drag & drop
+  const ghost=$('#ghost');
+  rows.forEach((r,i)=>{
+    r.addEventListener('dragstart',e=>{if(!r.classList.contains('sel'))sel(i);const n=$$('#rows .row.sel').length;
+      const img=new Image();img.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';e.dataTransfer.setDragImage(img,0,0);
+      e.dataTransfer.setData('text/plain',String(n));ghost.textContent=n+(n===1?' track':' tracks');ghost.style.display='block';$$('#rows .row.sel').forEach(x=>x.classList.add('dragging'));});
+    r.addEventListener('drag',e=>{if(e.clientX||e.clientY){ghost.style.left=(e.clientX+14)+'px';ghost.style.top=(e.clientY+10)+'px';}});
+    r.addEventListener('dragend',()=>{ghost.style.display='none';$$('#rows .row').forEach(x=>x.classList.remove('dragging'));$$('.pl').forEach(p=>p.classList.remove('drop'));});
+  });
+  $$('.pl').forEach(p=>{
+    p.addEventListener('dragover',e=>{e.preventDefault();p.classList.add('drop')});
+    p.addEventListener('dragleave',()=>p.classList.remove('drop'));
+    p.addEventListener('drop',e=>{e.preventDefault();p.classList.remove('drop');const n=e.dataTransfer.getData('text/plain');const name=p.dataset.pl;
+      if(name==='House')toast('Moved '+n+(n==='1'?' track':' tracks')+' to House',{undo:true});else toast('Added '+n+(n==='1'?' track':' tracks')+' to '+name,{undo:true});});
+  });
+  // skeleton loading
+  const ld=$('#ld');
+  function load(){ld.innerHTML='<div class="sk"></div><div class="sk"></div><div class="sk"></div>';
+    setTimeout(()=>{ld.innerHTML='<div class="fade-in">'+rows.slice(2,5).map(r=>r.outerHTML).join('')+'</div>';},1200)}
+  $('#ldBtn').onclick=load;load();
+  $('#errBtn').onclick=()=>toast("Couldn't reach Resident Advisor — showing the gigs from yesterday",{err:true});
+})();
+</script>
+
+</body></html>
