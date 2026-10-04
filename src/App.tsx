@@ -47,6 +47,7 @@ import { DjView } from './components/views/DjView'
 import { openSettingsSection } from './components/settings/openSections'
 import { djKey } from './lib/dj/names'
 import { useFolderTreeStore } from './store/folderTreeStore'
+import { useTrackTableLayout } from './store/trackTableLayoutStore'
 import type { ActiveView } from './lib/sidebarPrefs'
 import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
@@ -390,6 +391,10 @@ function AppContent() {
       const dbPath = await join(dataDir, 'recodeck.db')
       await tauriApi.initDatabase(dbPath)
       setDbReady(true)
+
+      // The track table's columns, before any table shows (no flash of the
+      // default layout); the table remounts on every view, so it reads them here.
+      await useTrackTableLayout.getState().load()
 
       // PERFORMANCE: Skip expensive path normalization on startup
       // This operation loads all tracks into memory - users can run it manually via settings if needed
