@@ -1,0 +1,59 @@
+/* src/components/Equalizer.css */
+/* Three bars that rise and fall out of step; paused, they hold where they are. */
+
+.equalizer {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 12px;
+  height: 12px;
+}
+
+.equalizer > span {
+  flex: 1;
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+  transform-origin: bottom;
+  animation: equalizer-bar 0.9s ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+/* Out of step from the first frame, so even standing still they differ. */
+.equalizer > span:nth-child(1) {
+  animation-duration: 0.8s;
+  animation-delay: -0.5s;
+}
+
+.equalizer > span:nth-child(2) {
+  animation-duration: 1.1s;
+  animation-delay: -0.2s;
+}
+
+.equalizer > span:nth-child(3) {
+  animation-duration: 0.95s;
+  animation-delay: -0.75s;
+}
+
+.equalizer--playing > span {
+  animation-play-state: running;
+}
+
+@keyframes equalizer-bar {
+  0% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .equalizer > span {
+    animation: none;
+    transform: scaleY(0.6);
+  }
+}
