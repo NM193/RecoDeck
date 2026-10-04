@@ -87,8 +87,8 @@ which also defines its panel and how it shows.
   track table plan builds the filter; this plan comes after it and only sets
   it.
 - A genre tile sets `{ genre }`; **Recently added** `{ added: 30 }`; **Never
-  played** `{ played: 'never' }` (played ids from new `get_played_track_ids()`,
-  read when this filter is chosen).
+  played** `{ played: 'never' }` (played ids from `get_played_track_ids()`,
+  built by the track table plan, read when this filter is chosen).
 - It shows in the table's **Filter** button ("Genre: Tech House ✕" becomes
   "Tech House ✕"), not as a chip; ✕ clears it. The text search still works
   within the filtered tracks.
@@ -102,7 +102,7 @@ them. This spec's plan 2 is replaced by that spec's plan.
 ## Navigation
 
 Play a track uses App's existing play handler; a DJ page uses `openDjPage`;
-a set uses `openSets({ openVideoId })`; a genre tile sets `allTracksFilter`
+a set uses `openSets({ openVideoId })`; a genre tile sets `tableFilter`
 and opens All Tracks.
 
 ## Plan split

@@ -85,11 +85,18 @@ It applies to the tracks the table is given, after the text search, so search
 works inside it.
 
 **Who owns it.** `TrackTable` takes `filter: TrackFilter | null` and
-`onFilterChange` — App holds one `tableFilter` for the view on screen, reset
-to null whenever another view opens; Home and Search set it as they open All
-Tracks. **This spec's plan builds** `TrackFilter`, its matching function, the
-button, the panel and App's `tableFilter`; the Search and Home plans only set
-it, and come after this one.
+`onFilterChange` — App holds one `tableFilter` for the view on screen. It is
+reset to null in App's navigation handlers (every handler that opens a view),
+not in an effect on the view key, which would wipe the filter Home sets as it
+opens All Tracks. Home and Search set it as they open All Tracks. **This
+spec's plan builds** `TrackFilter`, its matching function, the button, the
+panel, App's `tableFilter`, `get_played_track_ids()` and App's play-version
+number (raised after `recordPlayEvent` resolves, as the Home spec's wiring
+notes say); the Search and Home plans reuse them, and come after this one.
+
+During an All Tracks backend search, the genre and key lists are counted from
+the results; the value chosen stays in its select even when its count there
+is 0.
 
 ## Columns
 
@@ -117,10 +124,11 @@ A column's right edge **drags** to resize (pointer events; each column has a
 minimum). When the columns are wider than the window, the table scrolls
 sideways inside its own area, with # and the artwork staying put. One column
 layout serves every track table; it is stored in the settings table as
-`track_table_columns` (`{ artwork: bool, columns: [{ id, width }] }`, the
-shown columns in order), read once into a small store at start-up (the table
-remounts on every view change, so it must not read it per mount), with unknown
-ids dropped and a column added later starting off.
+`track_table_columns`
+(`{ artwork: bool, columns: [{ id, shown, width }] }`, every column in its
+panel order, so a hidden column keeps its place), read once into a small store
+at start-up (the table remounts on every view change, so it must not read it
+per mount), with unknown ids dropped and a column added later appended, hidden.
 
 Clicking a head sorts by it, again reverses; the arrow shows which. Sorting is
 otherwise unchanged (Rating sorts descending first). **#** is the row's
@@ -132,11 +140,13 @@ position in the list as sorted and filtered, as today, in playlists too.
 "—".
 
 **The cover** is the file's artwork made into a **72px thumbnail** on the
-client: `getTrackArtworkUrl`'s image is read once, drawn down to 72×72
-(`createImageBitmap` + canvas), and only the small JPEG kept; the full image
-is released. Thumbnails are cached in a least-recently-used cache of 1,000,
-read as rows scroll into view, at most 4 reads at a time; a fast scroll skips
-rows that left the view before their turn. About three quarters of the library
+client: the raw bytes from `tauriApi.getTrackArtwork(id)` (not
+`artworkCache`, which keeps full images and is the now-playing bar's) become a
+Blob, are drawn down to 72×72 (`createImageBitmap` + canvas), and only the
+small JPEG is kept. Thumbnails — and "no artwork", so a missing cover is not
+asked for again — are cached in a least-recently-used cache of 1,000, read as
+rows scroll into view, at most 4 reads at a time; a fast scroll skips rows
+that left the view before their turn. About three quarters of the library
 has artwork; a track without shows a gradient from its title. (The Search
 spec's Recently played tiles use the same thumbnails — `artwork_path` is empty
 for every track.)
@@ -169,11 +179,13 @@ the sidebar is the Interactions spec's.
 
 Every item acts on all selected tracks **at once**: the menu passes the list,
 App makes one call and shows one toast, and the table reloads once.
-- **Add to Playlist ▸** — adds them all.
+- **Add to Playlist ▸** — new `add_tracks_to_playlist(playlist_id, ids)`,
+  answering which ids it added (for Undo) and which were there already.
 - **Analyze BPM & Key** — one `analyzeTracksBatch(ids, true)`.
 - **Set Genre ▸** — existing `bulk_set_genre`.
 - **Clear Genre** — new `bulk_clear_genre(ids)`.
-- **Delete from playlist** (in a playlist) — removes them all.
+- **Delete from playlist** (in a playlist) — new
+  `remove_tracks_from_playlist(playlist_id, ids)`.
 - **Add / Edit Comment** — one track only; greyed with several selected.
 
 New: **Move to folder ▸** — a small searchable list (type to narrow) of every
@@ -181,18 +193,32 @@ folder in the library, shown as paths ("Music / House / Deep"), library roots
 included, from new `list_library_folders()` (recursive). When every selected
 track is in the same folder, that folder is greyed. Moving:
 - moves the files on disk into that folder, keeping their names;
-- for each file, moves it and updates its `file_path` in one step under the
-  database lock (taken per file, not for the whole batch); if the update
-  fails, the file is moved back. The track keeps its id, analysis, history,
-  playlists and cues, and the watcher's rescan finds nothing new (as renaming a
-  folder does today);
-- across disks it copies, checks the size, then deletes the original;
+- on the same disk, for each file: under the database lock (taken per file,
+  not for the batch), rename it into place and update its `file_path`; if the
+  update fails, rename it back;
+- across disks, for each file: copy it **outside the lock** to a temporary
+  name with no audio extension (`.recodeck-moving`, which the watcher and the
+  scanner ignore) and check its size; then under the lock rename the copy to
+  its final name and update `file_path`; release the lock, then delete the
+  original. If anything fails, the copy is deleted and the original stays. The
+  lock is never held during a copy: almost every database command runs on the
+  main thread, and App reloads tracks on the watcher's first event, so a long
+  hold would freeze the window;
+- the track keeps its id, analysis, history, playlists and cues, and the
+  watcher's rescan finds nothing new (as renaming a folder does today);
 - **skips and reports**: tracks already in that folder, a name that already
-  exists there, a source file that is missing, and **the track playing now**
-  (the player reads it from its path while it plays);
-- the tracks moved that are in the player's queue get their new path in the
-  queue (App updates the player store from the command's answer), so next and
-  previous still play them;
+  exists there, a source file that is missing, and **the player's current
+  track** — playing or paused, and during a crossfade the incoming one too
+  (the player streams it from its path);
+- the tracks moved that are in the player's queue get their new path through
+  a new player-store action that patches paths in `queue` and `originalQueue`
+  (so turning shuffle off keeps them). The patch must not reload the current
+  track: NowPlayingBar's load effect today runs on every queue change and
+  would restart the song from 0:00, so it is keyed on the current track's id
+  and path instead;
+- the sidebar's folder tree is refreshed afterwards, as renaming a folder does
+  (the watcher's events are throttled to one per 2s, so counts would stay
+  stale);
 - ends with a toast: "Moved 3 tracks to House", or "Moved 2 · 1 skipped (playing
   now)", with the reasons on hover.
 
@@ -206,8 +232,9 @@ freeze the window; the folder must be inside a library folder; it answers
 | Need | Source |
 |---|---|
 | Genres and keys for the panel | the view's tracks, counted on the client |
-| Played ids | `get_played_track_ids()` (Search spec), read when Played is set |
-| Plays column | new `get_play_counts()`: track id → plays, read when the column is on and again after a play (Home spec's data-version number) |
+| Played ids | new `get_played_track_ids()` (built here; the Search and Home plans reuse it), read when Played is set |
+| Plays column | new `get_play_counts()`: track id → plays, read when the column is on and again when App's play-version number changes (built here) |
+| Adding / removing many | new `add_tracks_to_playlist`, `remove_tracks_from_playlist` |
 | Columns | settings `track_table_columns`, through a store |
 | Folders for Move to folder | new `list_library_folders()` |
 | Moving | new `move_tracks_to_folder(track_ids, folder)` |
@@ -224,7 +251,13 @@ freeze the window; the folder must be inside a library folder; it answers
 - Rust: `move_tracks_to_folder` on a temp dir — moves and updates paths, keeps
   the id and analysis, skips a name clash, a missing file and a track already
   there, refuses a folder outside the library, moves a file back when the
-  update fails; `list_library_folders`; `get_play_counts`; `bulk_clear_genre`.
+  update fails, never holds the lock during a cross-disk copy (a temp file
+  without an audio extension, then a rename); `list_library_folders`;
+  `get_play_counts`; `get_played_track_ids`; `bulk_clear_genre`;
+  `add_tracks_to_playlist` (answers added vs already there);
+  `remove_tracks_from_playlist`.
+- TypeScript: the player-store path patch changes `queue` and `originalQueue`
+  and does not change the current track.
 - By hand: a genre tile and a BPM bar from Home show in the button; ✕ clears;
   columns on/off, reorder, resize, sideways scroll on a narrow window, survive
   a restart with no flash; artwork fills in while scrolling fast and memory
