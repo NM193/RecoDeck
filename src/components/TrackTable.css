@@ -9,23 +9,37 @@
   color: var(--text-primary);
 }
 
-/* --- Search Bar (integrated into table header area) --- */
+/* --- Toolbar: search, Filter, the AI buttons, the count --- */
 
-.track-table-search {
+.track-table-toolbar {
   flex-shrink: 0;
-  padding: 28px 0 0;
+  padding: 28px 12px 12px;
   background: var(--bg-secondary);
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
-.track-table-search .search-input-wrapper {
-  flex: 1;
-  border-radius: 0;
-  border-left: none;
-  border-right: none;
-  border-top: none;
+.track-table-toolbar .search-input-wrapper {
+  flex: 0 1 340px;
+  min-width: 160px;
+}
+
+.track-table-count {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.track-table-no-match {
+  padding: 48px 16px;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  text-align: center;
 }
 
 .track-table-ai-rec-btn {
@@ -143,20 +157,6 @@
 
 .track-table-body {
   position: relative;
-}
-
-.track-table-footer {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-secondary);
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.footer-sort-info {
-  color: var(--text-secondary);
-  opacity: 0.7;
 }
 
 .track-table-row {

@@ -16,6 +16,14 @@ import type { Track, Playlist } from '../types/track'
 import { usePlayerStore } from '../store/playerStore'
 import { Icon } from './Icon'
 import { StarRating } from './StarRating'
+import {
+  applyTrackFilter,
+  isEmptyFilter,
+  type TrackFilter,
+} from '../lib/trackTable/filter'
+import { trackCountLabel } from '../lib/trackTable/count'
+import { FilterButton } from './track-table/FilterButton'
+import { usePlayedTrackIds } from './track-table/usePlayedTrackIds'
 
 // --- Sort types ---
 
@@ -65,6 +73,14 @@ interface TrackTableProps {
   ) => void
   onOpenMixPrep?: (playlistId: number, playlistName: string) => void
   onSearch?: (query: string) => void
+  /** The view's filter, held by App; null for none. */
+  filter?: TrackFilter | null
+  onFilterChange?: (filter: TrackFilter | null) => void
+  /**
+   * The view's track count for the toolbar; `tracks.length` when absent.
+   * All Tracks passes the library's, which holds during a backend search.
+   */
+  totalCount?: number
 }
 
 export interface TrackTableRef {
@@ -91,6 +107,9 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       onGetPlaylistRecommendations,
       onOpenMixPrep,
       onSearch,
+      filter = null,
+      onFilterChange,
+      totalCount,
     },
     ref,
   ) {
@@ -245,7 +264,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     })
 
     // --- Search: filter tracks by query across all text fields ---
-    const filteredTracks = useMemo(() => {
+    const searchedTracks = useMemo(() => {
       if (!searchQuery.trim()) return tracks
 
       const query = searchQuery.toLowerCase().trim()
@@ -265,6 +284,19 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
         )
       })
     }, [tracks, searchQuery])
+
+    // --- Filter: after the search, so the search works inside it ---
+    const filterActive = !isEmptyFilter(filter)
+    const playedIds = usePlayedTrackIds(filter?.played !== undefined)
+    // Played is set and the played tracks are not read yet: show no rows
+    // rather than every row for a moment.
+    const filterPending = filter?.played !== undefined && playedIds === null
+    const filteredTracks = useMemo(
+      () =>
+        filterPending ? [] : applyTrackFilter(searchedTracks, filter, { playedIds }),
+      [searchedTracks, filter, playedIds, filterPending],
+    )
+    const narrowed = searchQuery.trim() !== '' || filterActive
 
     // --- Sort: order filtered tracks by selected column ---
     const sortedTracks = useMemo(() => {
@@ -434,8 +466,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
 
     return (
       <div className="track-table-container">
-        {/* Search bar — integrated into header area */}
-        <div className="track-table-search">
+        {/* Toolbar: search, Filter, the AI buttons, the count */}
+        <div className="track-table-toolbar">
           <div className="search-input-wrapper">
             <span className="search-icon">⌕</span>
             <input
@@ -455,6 +487,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               </button>
             )}
           </div>
+          {onFilterChange && (
+            <FilterButton
+              tracks={tracks}
+              filter={filter}
+              onChange={onFilterChange}
+              shownCount={sortedTracks.length}
+            />
+          )}
           {/* AI Recommendations for current playlist (DISC-02) */}
           {onGetPlaylistRecommendations &&
             selectedPlaylistId != null &&
@@ -502,6 +542,13 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                 </button>
               )
             })()}
+          <span className="track-table-count">
+            {trackCountLabel(
+              sortedTracks.length,
+              totalCount ?? tracks.length,
+              narrowed,
+            )}
+          </span>
         </div>
 
         {/* Scroll area: header + body scroll together */}
@@ -706,6 +753,23 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               })}
             </div>
           </div>
+          {sortedTracks.length === 0 && narrowed && !filterPending && (
+            <div className="track-table-no-match">
+              No tracks match
+              {filterActive && onFilterChange && (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="tt-filter-link"
+                    onClick={() => onFilterChange(null)}
+                  >
+                    Clear filter
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           </div>
         </div>
 
@@ -1028,21 +1092,6 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
           </div>
         )}
 
-
-        {/* Footer with track count + sort info */}
-        <div className="track-table-footer">
-          <span>
-            {searchQuery
-              ? `${sortedTracks.length} of ${tracks.length} tracks`
-              : `${tracks.length} tracks`}
-            {sort.column && (
-              <span className="footer-sort-info">
-                {' '}· sorted by {sort.column}{' '}
-                {sort.direction === 'asc' ? '\u2191' : '\u2193'}
-              </span>
-            )}
-          </span>
-        </div>
 
         {/* Custom Genre Input Modal */}
         {customGenreInput.visible && customGenreInput.track && onSetGenre && (
