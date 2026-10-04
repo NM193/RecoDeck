@@ -6,11 +6,13 @@
 
 **Architecture:**
 - **Backend** (`src-tauri/src/commands/move_tracks.rs`):
-  - `list_library_folders()` lists every folder, roots included, with labels like "Music / House / Deep".
+  - `list_library_folders()` lists every folder, roots included, with labels like "Music / House / Deep". A linked folder that leads outside the library is left out.
   - `move_tracks_to_folder(track_ids, folder)` is `async`, with the file work on `spawn_blocking`:
-    - **on the same disk**, each file is renamed and its path updated under the DB lock, taken per file;
-    - **across disks**, each file is copied outside the lock to `name.recodeck-moving` (no audio extension, so the watcher and the scanner pass it over); then, under the lock, the copy is renamed and the path updated; then the original is deleted.
+    - **on the same disk**, under the DB lock (taken per file), the name is checked free, the file renamed and its path updated;
+    - **across disks**, each file is copied outside the lock to `name.recodeck-moving` (no audio extension, so the watcher and the scanner pass it over) and written through to the disk; then, under the lock, the name is checked free, the copy renamed, the path updated and the original deleted. If the original will not go, the path goes back and the copy goes.
+    - **The name is checked under the lock** because a rename replaces an existing file (on macOS even one whose name differs only in case): two moves at once — a second move, or an Undo, while a copy runs — must not destroy each other's files.
   - It answers `{ moved: [{ id, newPath }], skipped: [{ id, reason }] }`.
+  - **The stream handler follows a move:** each moved file's old path → new path is kept in memory for the session. A track the player loads by its old path while a move runs (Next, or the song ending), or streams while its original goes, plays on.
 - **Frontend:**
   - **The menu:** the shared Menu gets a searchable submenu (a box at the top narrows the list), and `trackMenuEntries` adds Move to folder ▸. The folder every selected track already shares is greyed.
   - **App:**
@@ -18,7 +20,7 @@
     - moves the rest;
     - patches the player's queue paths, forgets the moved tracks' covers, and reloads the view and the folder tree;
     - toasts the result. Undo moves the tracks back, once per folder they came from.
-  - **The player store** gains `patchTrackPaths` and a `playRequest` counter. NowPlayingBar loads a track when a play is asked for or the track itself changes, not on every queue change. Without that, the patch would restart the song.
+  - **The player store** gains `patchTrackPaths` and a `playRequest` counter. NowPlayingBar loads a track when a play is asked for or the track itself (its id) changes, not on every queue change. Without that, the patch would restart the song.
 
 **Tech Stack:** Rust (std::fs, walkdir, rusqlite, Tauri async commands, tempfile in tests), React 19, TypeScript, zustand, Vitest.
 
@@ -36,22 +38,25 @@
   - `missing` (no file on disk, or the track is gone);
   - `failed` (the disk or the database refused; the file stays). A path the database will not take — another track row already holds it — counts as `failed`, and the file is renamed back.
 - **What loads the track:**
-  - **`playRequest`** goes up on setQueue, playNext, playPrevious, playTrackAtIndex and `applyQueueAction('play_now')`. NowPlayingBar's load effect depends on it and on the current track's id and path.
+  - **`playRequest`** goes up on setQueue, playNext, playPrevious, playTrackAtIndex and `applyQueueAction('play_now')`. NowPlayingBar's load effect depends on it and on the current track's id — not its path (the spec said id and path): a track that started from its old path while a move ran plays on through the stream handler, and a preview played with `setCurrentTrack` (AI Recommendations) is not replaced when the queue's paths are patched.
   - **What changes:** shuffling and adding to the queue no longer restart the song from 0:00, as they did, and neither does a path patch. A double click still restarts it.
 - **The folder list** is read each time the right-click menu opens (folders come and go on disk), and the last list shows meanwhile. The searchable submenu takes the keys at once, so typing narrows it.
+  - **Before the first list comes,** the submenu says "Reading folders…", whatever is typed.
+  - **When the items change under it** (a fresh list), the submenu is placed again, so a long list that arrives late still fits the window, and the highlight is dropped: Enter must not choose whatever now sits in its place.
 - **The toast:**
   - **What it says:** "Moved 3 tracks to House". With skips it says "Moved 2 · 1 skipped (playing now)", giving the reason only when every skip shares it. When nothing moved, it says "Nothing moved · …".
   - **On hover,** it lists one line per skipped track, "Juz Listen' — playing now" (6 lines at most, then "and N more").
   - **While a move takes more than 400ms** (a copy across disks), an info toast says "Moving … to …".
 - **After a move:**
-  - the moved tracks' thumbnails and full artwork are forgotten, because a folder's `cover.jpg` may now be another one;
+  - the moved tracks' thumbnails and full artwork are forgotten, because a folder's `cover.jpg` may now be another one. A row's cover is keyed on the track's id and path, so a moved track still on screen asks again;
   - the folder tree refreshes with `invalidateAll`, which keeps what is expanded. Renaming a folder uses `refreshRoot`, which does not.
-- **Undo** moves the tracks back once per folder they came from, through the same path. It only toasts when some stayed ("… skipped (…)" with the detail).
+- **Undo** moves the tracks back once per folder they came from, through the same path. It only toasts when some stayed ("… skipped (…)" with the detail). A folder that is gone by then (deleted, renamed, its root removed) leaves its tracks "couldn't move", and the other folders still get theirs.
+- **Left as they are** (found in review, accepted): an analysis batch running during a move skips the tracks moved meanwhile; the folder list is not virtualised (thousands of folders render, and the library is walked each time the menu opens); a `.recodeck-moving` file left by a crash mid-copy stays until deleted by hand; a track whose file is a symlink moves the link; the toast's detail shows on mouse hover only, as the interactions spec says.
 - **The interactions spec's toast detail is built here** (plan 4 left it out).
 
-**Checked:** every code block below was applied to a scratch copy of `feat/redesign` at fd77f37; the same blocks, applied to a clean `git archive`, reproduce it file for file.
+**Checked:** every code block below was applied to a scratch copy of `feat/redesign` at fd77f37; the same blocks, applied to a clean `git archive`, reproduce it file for file. An independent review applied the blocks task by task (each task's checks pass at its end) and found the issues the plan now fixes: the name checked outside the lock, the copy not written through, a failed delete reported as moved, the player reaching a moved track mid-batch, the submenu's late list and stale highlight, the Undo stopping at a gone folder.
 - **Builds and tests:**
-  - `cargo test --lib`: 435 passed, 7 of them new (temp dirs: a move, the skips, a failed update renamed back, a copy across disks with its temporary name, a failed copy that leaves no copy and the original, the folder outside the library, the folder list);
+  - `cargo test --lib`: 438 passed, 10 of them new (temp dirs: a move, the skips, a failed update renamed back, a copy across disks with its temporary name, a failed copy that leaves no copy and the original, an original that will not go (the copy goes, the path stays), a moved file found by its old path after two moves, the folder outside the library, the folder list, a linked folder leading outside left out);
   - clippy shows no new warnings; `tsc` passes, and so does eslint, with only existing warnings;
   - `vitest`: 13 new tests; the scratch tree counted 493 passed; the repo will count 507;
   - `vite build` passes.
@@ -60,6 +65,8 @@
   - **Narrowing:** "tech" narrows it to the 3 Techno folders. ↓↓ Enter moved them to the second, closed the menu, and gave the table its keys back. "afro" then Enter chose the only match.
   - **Edge cases:** "zzz" shows "No folder matches", and Esc closes the submenu. → from the keyboard opens it with the box focused; ← on the empty box goes back.
   - **The toast:** its detail is hidden until hovered.
+  - **A slow list** (1.2s, a row low in a 700px window): the submenu opens saying "Reading folders…", still says it after typing, and when the 8 folders come it moves up to fit (bottom 692).
+  - **A fresh list under the highlight:** a folder inserted above it, or a shorter list, drops the highlight; Enter then chooses nothing, and nothing throws.
 
 ---
 
@@ -207,29 +214,63 @@ pub(crate) fn assert_within_library_roots(db: &Database, target: &Path) -> Resul
 
 - [ ] **Step 3: The module, with its tests**
 
+Create `src-tauri/src/commands/move_tracks.rs`:
+
 ```rust
 // Moving tracks into another library folder (track table spec, Move to
 // folder): each file moves on disk, keeping its name, and only the track's
 // file_path changes — its id, and with it its analysis, history, playlists
 // and cues, stay. The database lock is taken per file and never held during a
 // copy: almost every database command runs on the main thread, so a long hold
-// would freeze the window.
+// would freeze the window. Every move checks the name is free and renames
+// under that lock, so two moves at once never replace each other's files
+// (a rename replaces an existing file, on macOS even one whose name differs
+// only in case).
 
 use crate::commands::library::{assert_within_library_roots, library_roots, AppState};
 use crate::db::Database;
 use crate::error::AppError;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use tauri::{AppHandle, Manager};
 use walkdir::WalkDir;
 
 /// Added to a file's name while it is copied across disks. The name then has
 /// no audio extension, so the watcher and the scanner pass it over.
 const MOVING_SUFFIX: &str = ".recodeck-moving";
+
+/// Where files moved this session went, old path → new. The player may ask
+/// for a moved file by its old path: a track it loads while a move runs, or
+/// the one it streams as its original goes. The stream handler follows.
+static MOVED: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn record_move(old: &str, new: &str) {
+    if let Ok(mut moved) = MOVED.lock() {
+        // Moved back (Undo): the old path holds the file again.
+        moved.remove(new);
+        moved.insert(old.to_string(), new.to_string());
+    }
+}
+
+/// Where the file once at `old` is now, following moves after moves; None
+/// when it never moved this session or is gone.
+pub fn moved_to(old: &str) -> Option<String> {
+    let moved = MOVED.lock().ok()?;
+    let mut path = moved.get(old)?;
+    // A few hops at most; the bound only guards against a cycle.
+    for _ in 0..16 {
+        if Path::new(path).is_file() {
+            return Some(path.clone());
+        }
+        path = moved.get(path)?;
+    }
+    None
+}
 
 /// A folder of the library: its path as tracks store it, and a label such
 /// as "Music / House / Deep".
@@ -284,8 +325,14 @@ fn stored_path(path: &Path) -> String {
 }
 
 /// Every folder of the library, the roots included, hidden folders left out,
-/// sorted by label.
+/// sorted by label. A linked folder that leads outside the library is left
+/// out too: a move refuses it.
 pub fn library_folders(roots: &[String]) -> Vec<LibraryFolder> {
+    let canonical_roots: Vec<PathBuf> = roots.iter().filter_map(|root| fs::canonicalize(root).ok()).collect();
+    // Only a link can lead out; what is under a root or a link kept is inside.
+    let inside = |path: &Path| {
+        fs::canonicalize(path).is_ok_and(|path| canonical_roots.iter().any(|root| path.starts_with(root)))
+    };
     let mut folders = Vec::new();
     for root in roots {
         let root_path = Path::new(root);
@@ -299,7 +346,11 @@ pub fn library_folders(roots: &[String]) -> Vec<LibraryFolder> {
         let walk = WalkDir::new(root_path)
             .follow_links(true)
             .into_iter()
-            .filter_entry(|e| e.depth() == 0 || !e.file_name().to_string_lossy().starts_with('.'));
+            .filter_entry(|e| {
+                e.depth() == 0
+                    || (!e.file_name().to_string_lossy().starts_with('.')
+                        && (!e.path_is_symlink() || inside(e.path())))
+            });
         for entry in walk.filter_map(Result::ok).filter(|e| e.file_type().is_dir()) {
             let mut label = root_name.clone();
             if let Ok(relative) = entry.path().strip_prefix(root_path) {
@@ -356,9 +407,9 @@ pub fn move_tracks(
     report
 }
 
-/// One file. On the same disk: rename it into place and update its path,
-/// both under the lock, and rename it back if the update fails. Across disks
-/// (or with `try_rename` false): copy it, outside the lock.
+/// One file. On the same disk: check its name is free, rename it into place
+/// and update its path, all under the lock, and rename it back if the update
+/// fails. Across disks (or with `try_rename` false): copy it, outside the lock.
 fn move_one(
     db: &Mutex<Option<Database>>,
     id: i64,
@@ -374,16 +425,22 @@ fn move_one(
         return Err(SkipReason::AlreadyThere);
     }
     let target = folder.join(name);
+    // Checked again under the lock; here it spares a copy that could not land.
     if target.exists() {
         return Err(SkipReason::NameTaken);
     }
+    let old_path = stored_path(source);
     let new_path = stored_path(&target);
 
     if try_rename {
         let renamed = with_db(db, |db| {
+            if target.exists() {
+                return Some(Err(SkipReason::NameTaken));
+            }
             Some(match fs::rename(source, &target) {
                 Ok(()) => {
                     if db.set_track_file_path(id, &new_path).is_ok() {
+                        record_move(&old_path, &new_path);
                         Ok(true)
                     } else {
                         let _ = fs::rename(&target, source);
@@ -400,23 +457,24 @@ fn move_one(
             return Ok(new_path);
         }
     }
-    copy_across(db, id, source, &target, &new_path)
+    copy_across(db, id, source, &target, &old_path, &new_path)
 }
 
-/// Across disks: copy to a temporary name and check its size, outside the
-/// lock; then, under the lock, give it its name and update the path; then
-/// delete the original. If anything fails, the copy goes and the original
-/// stays.
+/// Across disks: copy to a temporary name, write it through to the disk and
+/// check its size, outside the lock; then, under the lock, give it its name,
+/// update the path and delete the original. If anything fails, the copy goes
+/// and the original stays, keeping its path.
 fn copy_across(
     db: &Mutex<Option<Database>>,
     id: i64,
     source: &Path,
     target: &Path,
+    old_path: &str,
     new_path: &str,
 ) -> Result<String, SkipReason> {
     let temp = moving_path(target);
     let size = fs::metadata(source).map(|m| m.len()).map_err(|_| SkipReason::Failed)?;
-    if fs::copy(source, &temp).ok() != Some(size) {
+    if fs::copy(source, &temp).ok() != Some(size) || !written_through(&temp) {
         let _ = fs::remove_file(&temp);
         return Err(SkipReason::Failed);
     }
@@ -431,6 +489,14 @@ fn copy_across(
             let _ = fs::remove_file(target);
             return Some(Err(SkipReason::Failed));
         }
+        // The original goes last. If it will not, the track keeps it and the
+        // copy goes (unless the path will not go back: then the track keeps
+        // the copy, and the original stays as a duplicate a scan passes over).
+        if fs::remove_file(source).is_err() && db.set_track_file_path(id, old_path).is_ok() {
+            let _ = fs::remove_file(target);
+            return Some(Err(SkipReason::Failed));
+        }
+        record_move(old_path, new_path);
         Some(Ok(()))
     })
     .unwrap_or(Err(SkipReason::Failed));
@@ -438,10 +504,13 @@ fn copy_across(
         let _ = fs::remove_file(&temp);
         return Err(reason);
     }
-    // A leftover original has the same contents: a scan matches it by its
-    // hash and does not import it again.
-    let _ = fs::remove_file(source);
     Ok(new_path.to_string())
+}
+
+/// Writes a copy's bytes through to the disk before its original goes, so a
+/// drive pulled out right after a move still holds the whole file.
+fn written_through(path: &Path) -> bool {
+    fs::OpenOptions::new().write(true).open(path).and_then(|file| file.sync_all()).is_ok()
 }
 
 /// Every folder of the library, for Move to folder ▸.
@@ -654,6 +723,43 @@ mod tests {
         assert!(!moving_path(&target).exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn across_disks_an_original_that_will_not_go_keeps_its_path_and_the_copy_goes() {
+        use std::os::unix::fs::PermissionsExt;
+        let lib = library();
+        let (a, a_path) = lib.track("House", "a.mp3", b"aaaa");
+        let target = lib.root.join("Techno").join("a.mp3");
+        // A file cannot be deleted from a folder that cannot be written.
+        fs::set_permissions(lib.root.join("House"), fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result = move_one(&lib.db, a, Path::new(&a_path), &lib.root.join("Techno"), false);
+
+        fs::set_permissions(lib.root.join("House"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(result, Err(SkipReason::Failed));
+        assert_eq!(fs::read(&a_path).unwrap(), b"aaaa");
+        assert_eq!(lib.stored(a), a_path);
+        assert!(!target.exists());
+        assert!(!moving_path(&target).exists());
+    }
+
+    #[test]
+    fn a_moved_file_is_found_by_its_old_path_after_moves_after_moves() {
+        let lib = library();
+        fs::create_dir_all(lib.root.join("House").join("Deep")).unwrap();
+        let (a, a_path) = lib.track("House", "a.mp3", b"aaaa");
+        let techno = stored_path(&lib.root.join("Techno").join("a.mp3"));
+        let deep = stored_path(&lib.root.join("House").join("Deep").join("a.mp3"));
+
+        move_tracks(&lib.db, &[(a, Some(a_path.clone()))], &lib.root.join("Techno"));
+        assert_eq!(moved_to(&a_path), Some(techno.clone()));
+        move_tracks(&lib.db, &[(a, Some(techno.clone()))], &lib.root.join("House").join("Deep"));
+
+        assert_eq!(moved_to(&a_path), Some(deep.clone()));
+        assert_eq!(moved_to(&techno), Some(deep));
+        assert_eq!(moved_to(&stored_path(&lib.root.join("never.mp3"))), None);
+    }
+
     #[test]
     fn refuses_a_folder_outside_the_library() {
         let lib = library();
@@ -677,10 +783,22 @@ mod tests {
         assert_eq!(labels, vec!["Music", "Music / House", "Music / House / Deep", "Music / Techno"]);
         assert_eq!(folders[2].path, stored_path(&lib.root.join("House").join("Deep")));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn lists_no_linked_folder_that_leads_outside_the_library() {
+        let lib = library();
+        let outside = TempDir::new().unwrap();
+        std::os::unix::fs::symlink(outside.path(), lib.root.join("Elsewhere")).unwrap();
+        std::os::unix::fs::symlink(lib.root.join("Techno"), lib.root.join("House").join("Techno link")).unwrap();
+        let folders = library_folders(&[stored_path(&lib.root)]);
+        let labels: Vec<_> = folders.iter().map(|f| f.label.as_str()).collect();
+        assert_eq!(labels, vec!["Music", "Music / House", "Music / House / Techno link", "Music / Techno"]);
+    }
 }
 ```
 
-- [ ] **Step 4: Register it**
+- [ ] **Step 4: Register it; the stream handler follows a move**
 
 In `src-tauri/src/commands/mod.rs`, replace
 
@@ -715,6 +833,45 @@ pub mod server;
 pub mod settings;
 pub mod spotify;
 pub mod watcher;
+```
+
+In `src-tauri/src/lib.rs`, replace
+
+```rust
+                    Ok(data) => return Ok(data),
+                    Err(e) => e,
+                };
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    return Err(err);
+                }
+                // Fallback 0: on Windows, try with backslashes (frontend may send forward slashes)
+                #[cfg(target_os = "windows")]
+                {
+                    let with_backslash: String = path.replace('/', "\\");
+                    if with_backslash != path {
+                        eprintln!("[stream] Fallback 0 (backslashes): {:?}", with_backslash);
+```
+
+with
+
+```rust
+                    Ok(data) => return Ok(data),
+                    Err(e) => e,
+                };
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    return Err(err);
+                }
+                // Moved this session (Move to folder): asked for by its old path.
+                if let Some(moved) = commands::move_tracks::moved_to(path) {
+                    eprintln!("[stream] Moved to: {:?}", moved);
+                    return std::fs::read(&moved);
+                }
+                // Fallback 0: on Windows, try with backslashes (frontend may send forward slashes)
+                #[cfg(target_os = "windows")]
+                {
+                    let with_backslash: String = path.replace('/', "\\");
+                    if with_backslash != path {
+                        eprintln!("[stream] Fallback 0 (backslashes): {:?}", with_backslash);
 ```
 
 In `src-tauri/src/lib.rs`, replace
@@ -755,14 +912,14 @@ with
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd src-tauri && cargo test --lib move_tracks 2>&1 | grep "test result"; cargo test --lib 2>&1 | grep "test result"; cargo clippy --lib 2>&1 | grep -c "^warning"; cd ..`
-Expected: the module's 7 tests pass; `435 passed`; `11` (as before).
+Run: `cd src-tauri && cargo test --lib commands::move_tracks 2>&1 | grep "test result"; cargo test --lib 2>&1 | grep "test result"; cargo clippy --lib 2>&1 | grep -c "^warning"; cd ..`
+Expected: `10 passed` (the module's tests); `438 passed`; `11` (as before).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src-tauri/src/commands/move_tracks.rs src-tauri/src/db/mod.rs src-tauri/src/commands/library.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs
-git commit -m "feat(tracks): move tracks' files into a library folder — renamed on one disk, copied outside the lock across disks — and list the library's folders"
+git commit -m "feat(tracks): move tracks' files into a library folder — renamed on one disk, copied outside the lock across disks, the name checked under it — and list the library's folders"
 ```
 
 ---
@@ -917,6 +1074,8 @@ git commit -m "feat(tracks): the calls to list the library's folders and move tr
 
 - [ ] **Step 1: Write the failing tests**
 
+Create `src/lib/trackTable/moveMessages.test.ts`:
+
 ```ts
 // src/lib/trackTable/moveMessages.test.ts
 import { describe, expect, it } from 'vitest'
@@ -1001,6 +1160,8 @@ describe('Move to folder', () => {
 - [ ] **Step 2:** `npx vitest run src/lib/trackTable/moveMessages.test.ts` — FAIL, `Failed to resolve import "./moveMessages"`.
 
 - [ ] **Step 3: The helpers**
+
+Create `src/lib/trackTable/moveMessages.ts`:
 
 ```ts
 // src/lib/trackTable/moveMessages.ts
@@ -2035,9 +2196,9 @@ with
   // The track loads when a play is asked for (playRequest), or when the track
   // at the queue's index is another one — not when only the queue around it
   // changes (shuffled, added to, its paths patched after a move), which would
-  // restart the song from 0:00.
-  const queuedTrack = currentTrackIndex >= 0 ? queue[currentTrackIndex] : undefined
-  const queuedTrackKey = queuedTrack ? `${queuedTrack.id}\n${queuedTrack.file_path}` : null
+  // restart the song from 0:00. A moved track playing from its old path goes
+  // on: the stream handler follows the move.
+  const queuedTrackId = currentTrackIndex >= 0 ? (queue[currentTrackIndex]?.id ?? null) : null
   useEffect(() => {
     const { queue, currentTrackIndex } = usePlayerStore.getState()
     if (currentTrackIndex >= 0 && queue[currentTrackIndex]) {
@@ -2076,7 +2237,7 @@ with
     }
   }, [
     playRequest,
-    queuedTrackKey,
+    queuedTrackId,
     setCurrentTrack,
     setIsLoading,
     setError,
@@ -2452,6 +2613,11 @@ In `src/components/menu/Menu.tsx`, replace
 
   // Placed once its size is known: inside the window, flipped when needed.
   useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+    // offset sizes: the opening animation's scale does not count.
+    const width = panel.offsetWidth
+    const height = panel.offsetHeight
 ```
 
 with
@@ -2474,13 +2640,31 @@ with
   const [open, setOpen] = useState<OpenSubmenu | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Placed once its size is known: inside the window, flipped when needed.
+  // Items that change under the highlight (a fresh folder list) drop it:
+  // Enter must not choose whatever now sits in its place.
+  const labels = entries.map((e) => (e.kind === 'separator' ? '' : e.label)).join('\n')
+  const [seenLabels, setSeenLabels] = useState(labels)
+  if (labels !== seenLabels) {
+    setSeenLabels(labels)
+    setActive(-1)
+    setOpen(null)
+  }
+
+  // Placed once its size is known, and again when its items come or change
+  // (a list read as it opens): inside the window, flipped when needed.
   useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+    // offset sizes: the opening animation's scale does not count.
+    const width = panel.offsetWidth
+    const height = panel.offsetHeight
 ```
 
 In `src/components/menu/Menu.tsx`, replace
 
 ```tsx
+    if (left + width > window.innerWidth - EDGE) left = (flipX ?? x) - width
+    left = Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - width))
     const top = Math.max(EDGE, Math.min(y, window.innerHeight - EDGE - height))
     panel.style.left = `${left}px`
     panel.style.top = `${top}px`
@@ -2501,11 +2685,13 @@ In `src/components/menu/Menu.tsx`, replace
 with
 
 ```tsx
+    if (left + width > window.innerWidth - EDGE) left = (flipX ?? x) - width
+    left = Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - width))
     const top = Math.max(EDGE, Math.min(y, window.innerHeight - EDGE - height))
     panel.style.left = `${left}px`
     panel.style.top = `${top}px`
     panel.style.visibility = 'visible'
-  }, [x, flipX, y])
+  }, [x, flipX, y, labels])
 
   // A searchable list takes the keys at once, so typing narrows it.
   useEffect(() => {
@@ -2640,7 +2826,7 @@ with
 
   const enter = (index: number, fromKeyboard: boolean) => {
     const entry = shown[index]
-    if (entry.kind === 'separator' || entry.disabled) return
+    if (!entry || entry.kind === 'separator' || entry.disabled) return
     if (entry.kind === 'action') onChoose(entry)
     else openSubmenu(index, fromKeyboard)
   }
@@ -2655,7 +2841,7 @@ with
       setActive((index) => stepIndex(shown, index, event.key === 'ArrowDown' ? 1 : -1))
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
-      if (active >= 0 && shown[active].kind === 'submenu') enter(active, true)
+      if (shown[active]?.kind === 'submenu') enter(active, true)
     } else if (event.key === 'ArrowLeft' && onBack) {
       event.preventDefault()
       onBack()
@@ -2937,7 +3123,7 @@ git commit -m "feat(ui): a menu's submenu can be searched — a box at its top n
 
 ### Task 7: Move to folder ▸ in the track table's menu
 
-**Files:** Modify `src/components/track-table/trackMenuEntries.ts` (+ test), `src/components/TrackTable.tsx`; create `src/components/track-table/useLibraryFolders.ts`.
+**Files:** Modify `src/components/track-table/trackMenuEntries.ts` (+ test), `src/components/TrackTable.tsx`, `src/components/track-table/TrackCover.tsx`; create `src/components/track-table/useLibraryFolders.ts`.
 
 - [ ] **Step 1: The failing tests**
 
@@ -3027,9 +3213,9 @@ with
       folders: null,
       onMoveToFolder: vi.fn(),
     })
-    const [reading] = (find(entries, 'Move to folder') as MenuSubmenu).entries as MenuAction[]
-    expect(reading.label).toBe('Reading folders…')
-    expect(reading.disabled).toBe(true)
+    const move = find(entries, 'Move to folder') as MenuSubmenu
+    expect(move.entries).toEqual([])
+    expect(move.search?.empty).toBe('Reading folders…')
   })
 })
 ```
@@ -3163,17 +3349,18 @@ with
       kind: 'submenu',
       label: 'Move to folder',
       icon: 'FolderInput',
-      search: { placeholder: 'Find a folder', empty: 'No folder matches' },
-      entries:
-        folders === null
-          ? [{ kind: 'action', label: 'Reading folders…', disabled: true, onSelect: () => {} }]
-          : folders.map((folder) => ({
-              kind: 'action',
-              label: folder.label,
-              icon: 'Folder',
-              disabled: folder.path === here,
-              onSelect: () => move(tracks, folder),
-            })),
+      // While the list is read, the box says so, whatever is typed.
+      search: {
+        placeholder: 'Find a folder',
+        empty: folders === null ? 'Reading folders…' : 'No folder matches',
+      },
+      entries: (folders ?? []).map((folder) => ({
+        kind: 'action',
+        label: folder.label,
+        icon: 'Folder',
+        disabled: folder.path === here,
+        onSelect: () => move(tracks, folder),
+      })),
     })
   }
 
@@ -3188,6 +3375,8 @@ with
 Run the tests again — PASS, 8.
 
 - [ ] **Step 3: The folder list, read as the menu opens**
+
+Create `src/components/track-table/useLibraryFolders.ts`:
 
 ```ts
 // src/components/track-table/useLibraryFolders.ts
@@ -3376,6 +3565,42 @@ with
 In `src/components/TrackTable.tsx`, replace
 
 ```tsx
+                      >
+                        <Icon name={isPlayingTrack && isPlaying ? 'Pause' : 'Play'} size={14} />
+                      </button>
+                    </div>
+                    {layout.artwork && (
+                      <div className="tt-cell cell-art">
+                        <TrackCover key={track.id} track={track} />
+                      </div>
+                    )}
+                    {columns.map((column) => (
+                      <TrackCell
+                        key={column.id}
+                        column={column.id}
+```
+
+with
+
+```tsx
+                      >
+                        <Icon name={isPlayingTrack && isPlaying ? 'Pause' : 'Play'} size={14} />
+                      </button>
+                    </div>
+                    {layout.artwork && (
+                      <div className="tt-cell cell-art">
+                        <TrackCover key={`${track.id}\n${track.file_path}`} track={track} />
+                      </div>
+                    )}
+                    {columns.map((column) => (
+                      <TrackCell
+                        key={column.id}
+                        column={column.id}
+```
+
+In `src/components/TrackTable.tsx`, replace
+
+```tsx
                   value:
                     selected.every((t) => t.genre === selected[0].genre)
                       ? selected[0].genre || ''
@@ -3409,10 +3634,45 @@ with
           />
 ```
 
-- [ ] **Step 4:** `npx tsc --noEmit -p .` — no errors. `npx eslint src/components/track-table src/components/TrackTable.tsx` — only the existing `incompatible-library` warning. Commit:
+- [ ] **Step 4: A moved track's cover is asked for again**
+
+In `src/components/track-table/TrackCover.tsx`, replace
+
+```tsx
+// src/components/track-table/TrackCover.tsx
+// A row's cover (track table spec, Rows): the artwork thumbnail, faded in
+// when it arrives (at once when it was read before); a quiet empty square
+// while it is read and for a track without artwork, as in Traktor. Give it
+// `key={track.id}` where rows are reused.
+import { useEffect, useState } from 'react'
+import type { Track } from '../../types/track'
+import { thumbnails } from '../../lib/thumbnails/thumbnails'
+import type { Thumb } from '../../lib/thumbnails/queue'
+
+export function TrackCover({ track }: { track: Track }) {
+```
+
+with
+
+```tsx
+// src/components/track-table/TrackCover.tsx
+// A row's cover (track table spec, Rows): the artwork thumbnail, faded in
+// when it arrives (at once when it was read before); a quiet empty square
+// while it is read and for a track without artwork, as in Traktor. Give it
+// a key of the track's id and path where rows are reused: a moved track asks
+// again (a folder's cover.jpg may now be another one).
+import { useEffect, useState } from 'react'
+import type { Track } from '../../types/track'
+import { thumbnails } from '../../lib/thumbnails/thumbnails'
+import type { Thumb } from '../../lib/thumbnails/queue'
+
+export function TrackCover({ track }: { track: Track }) {
+```
+
+- [ ] **Step 5:** `npx tsc --noEmit -p .` — no errors. `npx eslint src/components/track-table src/components/TrackTable.tsx` — only the existing `incompatible-library` warning. Commit:
 
 ```bash
-git add src/components/track-table/trackMenuEntries.ts src/components/track-table/trackMenuEntries.test.ts src/components/track-table/useLibraryFolders.ts src/components/TrackTable.tsx
+git add src/components/track-table/trackMenuEntries.ts src/components/track-table/trackMenuEntries.test.ts src/components/track-table/useLibraryFolders.ts src/components/track-table/TrackCover.tsx src/components/TrackTable.tsx
 git commit -m "feat(tracks): Move to folder ▸ — every library folder, searchable, the one the tracks share greyed"
 ```
 
@@ -3588,9 +3848,15 @@ with
                     const back: MoveReport['moved'] = []
                     const stayed: Skip[] = []
                     for (const group of undoGroups(moved, oldPath)) {
-                      const result = await moveFiles(group.ids, group.folder)
-                      back.push(...result.moved)
-                      stayed.push(...result.skipped)
+                      try {
+                        const result = await moveFiles(group.ids, group.folder)
+                        back.push(...result.moved)
+                        stayed.push(...result.skipped)
+                      } catch {
+                        // Its folder is gone, or no longer in the library:
+                        // these stay; the other folders still get theirs.
+                        stayed.push(...group.ids.map((id) => ({ id, reason: 'failed' as const })))
+                      }
                     }
                     if (stayed.length > 0) {
                       toast(movedMessage(back.map((m) => byId.get(m.id)!), stayed, 'where they were'), {
@@ -3672,18 +3938,152 @@ git commit -m "feat(tracks): Move to folder — the track playing stays, the que
 
 **Files:** Modify `docs/superpowers/specs/2026-10-04-interactions-design.md`, `docs/superpowers/specs/2026-10-04-track-table-design.md`.
 
-- [ ] **Step 1:**
-  - In the interactions spec, change `which plan 5 adds), and` to `built by plan 5), and`.
-  - In the track table spec's Move to folder list, after the bullet that ends `and path instead;`, add a bullet:
+- [ ] **Step 1:** The interactions spec: the toast's detail is built.
 
-    `- (built: the player store's playRequest — raised by a play, next, previous — and the current track's id and path key that effect, so shuffling and adding to the queue no longer restart the song either);`
-- [ ] **Step 2:** Commit:
+In `docs/superpowers/specs/2026-10-04-interactions-design.md`, replace
+
+```markdown
+missing, moves the remaining transitions to the tokens, and does the sweep;
+each page plan wires its own Undo rows, drag sources and targets, and
+shortcuts as the tables above say.
+
+Built already by track table plan 4: `Menu` (without the confirm in the
+menu's place), `toast()` and the `Toaster` (without the detail on hover,
+which plan 5 adds), and `restore_track_genres` with Set / Clear genre's Undo.
+
+## Testing
+
+- TypeScript: the toast queue (max 3, error stays, warning 6s, hover pauses);
+  shortcut routing (ignored while typing or with an overlay open, a
+  `:focus-visible` control keeps Space and a mouse-focused one does not,
+```
+
+with
+
+```markdown
+missing, moves the remaining transitions to the tokens, and does the sweep;
+each page plan wires its own Undo rows, drag sources and targets, and
+shortcuts as the tables above say.
+
+Built already by track table plan 4: `Menu` (without the confirm in the
+menu's place), `toast()` and the `Toaster` (without the detail on hover,
+built by plan 5), and `restore_track_genres` with Set / Clear genre's Undo.
+
+## Testing
+
+- TypeScript: the toast queue (max 3, error stays, warning 6s, hover pauses);
+  shortcut routing (ignored while typing or with an overlay open, a
+  `:focus-visible` control keeps Space and a mouse-focused one does not,
+```
+
+- [ ] **Step 2:** The track table spec: the name checked under the lock, the copy written through and the original deleted under it, the load keyed on the id alone, the stream handler following a move, linked folders outside left out.
+
+In `docs/superpowers/specs/2026-10-04-track-table-design.md`, replace
+
+```markdown
+- **Delete from playlist** (in a playlist) — new
+  `remove_tracks_from_playlist(playlist_id, ids)`.
+- **Add / Edit Comment** — one track only; greyed with several selected.
+
+New: **Move to folder ▸** — a small searchable list (type to narrow) of every
+folder in the library, shown as paths ("Music / House / Deep"), library roots
+included, from new `list_library_folders()` (recursive). When every selected
+track is in the same folder, that folder is greyed. Moving:
+- moves the files on disk into that folder, keeping their names;
+- on the same disk, for each file: under the database lock (taken per file,
+  not for the batch), rename it into place and update its `file_path`; if the
+  update fails, rename it back;
+- across disks, for each file: copy it **outside the lock** to a temporary
+  name with no audio extension (`.recodeck-moving`, which the watcher and the
+  scanner ignore) and check its size; then under the lock rename the copy to
+  its final name and update `file_path`; release the lock, then delete the
+  original. If anything fails, the copy is deleted and the original stays. The
+  lock is never held during a copy: almost every database command runs on the
+  main thread, and App reloads tracks on the watcher's first event, so a long
+  hold would freeze the window;
+- the track keeps its id, analysis, history, playlists and cues, and the
+  watcher's rescan finds nothing new (as renaming a folder does today);
+- **skips and reports**: tracks already in that folder, a name that already
+```
+
+with
+
+```markdown
+- **Delete from playlist** (in a playlist) — new
+  `remove_tracks_from_playlist(playlist_id, ids)`.
+- **Add / Edit Comment** — one track only; greyed with several selected.
+
+New: **Move to folder ▸** — a small searchable list (type to narrow) of every
+folder in the library, shown as paths ("Music / House / Deep"), library roots
+included, from new `list_library_folders()` (recursive; a linked folder that
+leads outside the library is left out, as a move would refuse it). When every
+selected track is in the same folder, that folder is greyed. Moving:
+- moves the files on disk into that folder, keeping their names;
+- on the same disk, for each file: under the database lock (taken per file,
+  not for the batch), check its name is free, rename it into place and update
+  its `file_path`; if the update fails, rename it back. The name is checked
+  under the lock because a rename replaces an existing file (on macOS even one
+  whose name differs only in case): two moves at once must not destroy each
+  other's files;
+- across disks, for each file: copy it **outside the lock** to a temporary
+  name with no audio extension (`.recodeck-moving`, which the watcher and the
+  scanner ignore), write it through to the disk and check its size; then under
+  the lock check its name is free, rename the copy to its final name, update
+  `file_path` and delete the original (if it will not go, `file_path` goes
+  back). If anything fails, the copy is deleted and the original stays. The
+  lock is never held during a copy: almost every database command runs on the
+  main thread, and App reloads tracks on the watcher's first event, so a long
+  hold would freeze the window;
+- the track keeps its id, analysis, history, playlists and cues, and the
+  watcher's rescan finds nothing new (as renaming a folder does today);
+- **skips and reports**: tracks already in that folder, a name that already
+```
+
+In `docs/superpowers/specs/2026-10-04-track-table-design.md`, replace
+
+```markdown
+  (the player streams it from its path);
+- the tracks moved that are in the player's queue get their new path through
+  a new player-store action that patches paths in `queue` and `originalQueue`
+  (so turning shuffle off keeps them). The patch must not reload the current
+  track: NowPlayingBar's load effect today runs on every queue change and
+  would restart the song from 0:00, so it is keyed on the current track's id
+  and path instead;
+- the sidebar's folder tree is refreshed afterwards, as renaming a folder does
+  (the watcher's events are throttled to one per 2s, so counts would stay
+  stale);
+- ends with a toast: "Moved 3 tracks to House", or "Moved 2 · 1 skipped (playing
+  now)", with the reasons on hover.
+```
+
+with
+
+```markdown
+  (the player streams it from its path);
+- the tracks moved that are in the player's queue get their new path through
+  a new player-store action that patches paths in `queue` and `originalQueue`
+  (so turning shuffle off keeps them). The patch must not reload the current
+  track: NowPlayingBar's load effect today runs on every queue change and
+  would restart the song from 0:00, so it is keyed on the current track's id
+  instead (built: with the player store's playRequest — raised by a play,
+  next, previous — so shuffling and adding to the queue no longer restart the
+  song either);
+- the stream handler follows a file moved this session (old path → new, kept
+  in memory), so a track the player loads by its old path while a move runs,
+  or streams while its original goes, plays on;
+- the sidebar's folder tree is refreshed afterwards, as renaming a folder does
+  (the watcher's events are throttled to one per 2s, so counts would stay
+  stale);
+- ends with a toast: "Moved 3 tracks to House", or "Moved 2 · 1 skipped (playing
+  now)", with the reasons on hover.
+```
+
+- [ ] **Step 3:** Commit only these two (`git add -A` or `commit -a` would take `.claude/settings.local.json` and `.planning/STATE.md` too):
 
   ```bash
-  git commit -am "docs(spec): Move to folder and the toast's detail are built"
+  git add docs/superpowers/specs/2026-10-04-interactions-design.md docs/superpowers/specs/2026-10-04-track-table-design.md
+  git commit -m "docs(spec): Move to folder and the toast's detail are built"
   ```
-
-  Check first that only these two files are staged; leave `.claude/settings.local.json` and `.planning/STATE.md` out.
 
 ---
 
@@ -3697,6 +4097,7 @@ git commit -m "feat(tracks): Move to folder — the track playing stays, the que
     - BPM, key, playlists and history stay.
     - Undo puts them back.
   - **The track playing:** include it. It stays and keeps playing without a restart; the toast says "Moved 2 · 1 skipped (playing now)", and hovering shows the title.
+  - **Next during a move** (across disks, several big files, the first of them playing): press Next while it copies. The next track plays, also after its original goes, and does not restart when the move ends.
   - **The queue:** if the moved tracks are next in the queue, they play from their new place. Shuffle on, then off, still plays them, and the song playing does not restart on either.
   - **A name already in the folder:** that track is skipped, and its file is untouched.
   - **The list:**
