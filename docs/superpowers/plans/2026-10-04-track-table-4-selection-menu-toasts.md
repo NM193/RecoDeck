@@ -43,8 +43,15 @@
 - **One track, greyed with several:** Add / Edit Comment and Generate AI Playlist.
 - **Set Genre ▸** checks the genre every selected track shares, and shows it beside the item. Custom… opens the existing dialog for the whole selection.
 - **↑ ↓ and Enter** come with ⌘A and Esc. The Interactions spec lists them for the focused track table. Clicking a row gives the table the keys; a control inside a row (stars, ▶) keeps its own.
+- **⌘ selects on macOS, Ctrl elsewhere.** On macOS a Ctrl-click is a right-click: it opens the menu and does not toggle the row.
+- **The two dialogs** (Set Genre ▸ Custom… and the comment editor) register with `useOverlay`, as the Interactions spec asks of every modal. Esc closes them, and they give the table its keys back.
+- **A row moved to with ↑ stays out from under the column heads** (`scrollPaddingStart`).
+- **Delete from playlist's Undo** puts the old order back first; tracks added to the playlist since keep their places after it.
+- **One analysis at a time:** while one runs, Analyze says "Analysis is already running". A second batch would reset the first one's cancel flag.
+- **The menu opens** with a fade, a 4px drop and a scale from 0.98 (base), as the Interactions spec says. **It closes at once**, not with the spec's fast fade-out: a choice should not wait for a fade, and a fading menu would have to stay mounted while the next right-click opens. The Interactions plan can add the fade with `AnimatePresence`.
 - **Undo reloads whichever view is shown by then** (`loadTracksRef`). A failed Undo shows an error toast.
-- **What stays for later:** `Notification` and `HeaderNotification` stay for the rest of the app, and so do the old `.context-menu` rules, which the sidebar's menus still use. The Interactions plan moves both.
+- **What stays for later:** `Notification` and `HeaderNotification` stay for the rest of the app, and so do the old `.context-menu` rules, which the sidebar's menus still use. The Interactions plan moves both. The end of an analysis is still reported by the old `Notification`.
+- **Accepted, from the plan review:** the genre Undo puts back the genres the table's tracks had. A genre written in the background since the table's last load would come back stale. The table reloads after every change made in the app, so this needs a change from outside it.
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at ec68a0e, and the same blocks, applied to a clean `git archive`, reproduce it file for file.
 - **Builds and tests:**
@@ -61,6 +68,26 @@
   - **At the window's bottom-right corner** the menu moves inside the window, and its submenu opens on the left. Custom… gives the dialog's box the focus.
   - **Toasts:** a fourth pushes the oldest out; they sit bottom-centre; the one under the mouse stays, and the rest of its time runs after the mouse leaves.
   - **Midnight and Dawn:** the menu, the red Delete, the grey item, the colour dots and the toasts read well.
+- **Plan review** (an independent reviewer, on a copy):
+  - **No blockers.** It found two bugs, both now fixed and re-checked in WebKit:
+    - a menu whose tracks left the view came back on the next click. On macOS, Ctrl-click (a right-click there) toggled the row off, which hid the menu and then brought it back. Now Ctrl-click opens the menu with the row selected, and the next click leaves it closed;
+    - ↑ left the row 30px under the column heads. Now 0px.
+  - **The smaller points, all fixed:**
+    - after the dialogs, the table did not get its keys back (now it does, after Enter and after Esc);
+    - Delete's Undo order;
+    - a second analysis could start while one was running;
+    - ⌘A in the menu selected the page's text (now 0 characters);
+    - the menu's 4px drop;
+    - the toast's fade-out under reduced motion.
+  - **Speed** in a release build, on a file database of 8,600 tracks:
+
+    | With all 8,600 | Time |
+    |---|---|
+    | `bulk_set_genre` | 24 ms (before this plan, without a transaction: about 236 ms per 1,000 tracks) |
+    | `bulk_clear_genre` | 15 ms |
+    | `restore_track_genres` | 16 ms |
+    | `add_tracks_to_playlist` | 18 ms |
+    | `remove_tracks_from_playlist` | 8 ms |
 
 ---
 
@@ -1368,7 +1395,10 @@ export function Toaster() {
             className={`toast toast--${t.kind}`}
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, transition: { duration: MOTION.base, ease: EASE } }}
+            exit={{
+              opacity: 0,
+              transition: { duration: reduceMotion ? MOTION.fast : MOTION.base, ease: EASE },
+            }}
             transition={{ duration: reduceMotion ? MOTION.fast : MOTION.slow, ease: EASE }}
             onPointerEnter={() => holdToast(t.id)}
             onPointerLeave={() => releaseToast(t.id)}
@@ -1642,7 +1672,8 @@ Notes:
 // it; ↑ ↓ move, → opens a submenu and ← closes it, Enter chooses. A submenu
 // opens beside its item, on the left when the right has no room. Destructive
 // items are red. The menu and each open submenu register with useOverlay, so
-// Esc closes the innermost first.
+// Esc closes the innermost first. It opens with a fade, a 4px drop and a
+// scale from 0.98, and closes at once (a choice should not wait for a fade).
 import {
   useEffect,
   useLayoutEffect,
@@ -1839,7 +1870,10 @@ function MenuPanel({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      // Not the page's text: there is nothing to select in a menu.
+      event.preventDefault()
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       setActive((index) => stepIndex(entries, index, event.key === 'ArrowDown' ? 1 : -1))
     } else if (event.key === 'ArrowRight') {
@@ -2000,7 +2034,7 @@ function Submenu({
 @keyframes menu-in {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: translateY(-4px) scale(0.98);
   }
 }
 
@@ -2425,7 +2459,7 @@ import { Equalizer } from './Equalizer'
 import { Menu } from './menu/Menu'
 import { TrackCover } from './track-table/TrackCover'
 import { trackMenuEntries } from './track-table/trackMenuEntries'
-import { isOverlayOpen } from '../lib/overlays'
+import { isOverlayOpen, useOverlay } from '../lib/overlays'
 import {
   NO_SELECTION,
   clickRow,
@@ -2448,6 +2482,26 @@ with
 ```tsx
 import { trackCountLabel } from '../lib/trackTable/count'
 import { tracksSubject } from '../lib/trackTable/bulkMessages'
+```
+
+In `src/components/TrackTable.tsx`, replace
+
+```tsx
+import { useTrackTableLayout } from '../store/trackTableLayoutStore'
+
+// --- Component ---
+```
+
+with
+
+```tsx
+import { useTrackTableLayout } from '../store/trackTableLayoutStore'
+
+// ⌘ selects on macOS, Ctrl elsewhere (Interactions spec); on macOS a
+// Ctrl-click is a right-click.
+const IS_MAC = navigator.platform.startsWith('Mac')
+
+// --- Component ---
 ```
 
 In `src/components/TrackTable.tsx`, replace
@@ -2547,6 +2601,19 @@ up to, not including, the line
       value: string
     }>({ visible: false, track: null, value: '' })
 
+    // The dialogs are overlays (Esc closes them), and give the table its keys
+    // back when they close.
+    const closeCustomGenre = () => {
+      setCustomGenreInput(null)
+      parentRef.current?.focus({ preventScroll: true })
+    }
+    const closeComment = () => {
+      setCommentInput({ visible: false, track: null, value: '' })
+      parentRef.current?.focus({ preventScroll: true })
+    }
+    useOverlay(customGenreInput !== null, closeCustomGenre)
+    useOverlay(commentInput.visible, closeComment)
+
     // The playlists to add to: no folders, and not the one shown
     const actualPlaylists = useMemo(
       () =>
@@ -2582,6 +2649,8 @@ with
       () => (menuAt ? selectedTracks(selection, sortedTracks) : []),
       [menuAt, selection, sortedTracks],
     )
+    // Its tracks left the view (a reload): the menu closes for good.
+    if (menuAt && menuTracks.length === 0) setMenuAt(null)
 ```
 
 In `src/components/TrackTable.tsx`, replace
@@ -2600,7 +2669,7 @@ with
     const handleTableKeys = (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.target !== event.currentTarget || isOverlayOpen()) return
       const key = event.key
-      if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 'a') {
+      if ((IS_MAC ? event.metaKey : event.ctrlKey) && key.toLowerCase() === 'a') {
         event.preventDefault()
         setSelection((current) => selectAll(current, shownIds))
       } else if (key === 'Escape' && selection.ids.size > 0) {
@@ -2642,8 +2711,33 @@ with
       const genre = customGenreInput?.value.trim()
       if (!customGenreInput || !genre || !onSetGenre) return
       onSetGenre(customGenreInput.tracks, genre)
-      setCustomGenreInput(null)
+      closeCustomGenre()
     }
+
+    const saveComment = () => {
+      if (!commentInput.track || !onUpdateTrack) return
+      const trimmed = commentInput.value.trim()
+      onUpdateTrack({ ...commentInput.track, comment: trimmed ? trimmed : undefined })
+      closeComment()
+    }
+```
+
+In `src/components/TrackTable.tsx`, replace
+
+```tsx
+      overscan: 10,
+      scrollMargin: HEADER_HEIGHT,
+    })
+```
+
+with
+
+```tsx
+      overscan: 10,
+      scrollMargin: HEADER_HEIGHT,
+      // A row moved to with the keys stays out from under the column heads.
+      scrollPaddingStart: HEADER_HEIGHT,
+    })
 ```
 
 - [ ] **Step 3: The count, the focusable scroll area, the rows**
@@ -2718,11 +2812,12 @@ with
                       if (e.shiftKey) e.preventDefault()
                     }}
                     onClick={(e) => {
+                      if (IS_MAC && e.ctrlKey) return // a right-click: the menu has it
                       setSelection((current) =>
                         clickRow(
                           current,
                           track.id,
-                          { toggle: e.metaKey || e.ctrlKey, range: e.shiftKey },
+                          { toggle: IS_MAC ? e.metaKey : e.ctrlKey, range: e.shiftKey },
                           shownIds,
                         ),
                       )
@@ -2757,7 +2852,7 @@ with
                     }}
 ```
 
-- [ ] **Step 4: The menu, and the genre dialog for several**
+- [ ] **Step 4: The menu, the genre dialog for several, the comment dialog as an overlay**
 
 In `src/components/TrackTable.tsx`, replace everything from the line
 
@@ -2822,7 +2917,7 @@ up to, not including, the line
 ```tsx
         {/* Set Genre ▸ Custom…: a name for the selected tracks */}
         {customGenreInput && onSetGenre && (
-          <div className="modal-overlay" onClick={() => setCustomGenreInput(null)}>
+          <div className="modal-overlay" onClick={closeCustomGenre}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <h3>Set Genre</h3>
               <p className="modal-subtitle">{tracksSubject(customGenreInput.tracks)}</p>
@@ -2836,7 +2931,6 @@ up to, not including, the line
                 }
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') saveCustomGenre()
-                  else if (e.key === 'Escape') setCustomGenreInput(null)
                 }}
                 autoFocus
               />
@@ -2844,7 +2938,7 @@ up to, not including, the line
                 <button
                   type="button"
                   className="modal-button modal-button-secondary"
-                  onClick={() => setCustomGenreInput(null)}
+                  onClick={closeCustomGenre}
                 >
                   Cancel
                 </button>
@@ -2860,6 +2954,119 @@ up to, not including, the line
             </div>
           </div>
         )}
+```
+
+In `src/components/TrackTable.tsx`, replace
+
+```tsx
+        {/* Comment Editor Modal */}
+        {commentInput.visible && commentInput.track && onUpdateTrack && (
+          <div
+            className="modal-overlay"
+            onClick={() =>
+              setCommentInput({ visible: false, track: null, value: '' })
+            }
+          >
+```
+
+with
+
+```tsx
+        {/* Comment Editor Modal */}
+        {commentInput.visible && commentInput.track && onUpdateTrack && (
+          <div className="modal-overlay" onClick={closeComment}>
+```
+
+In `src/components/TrackTable.tsx`, replace
+
+```tsx
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    const trimmed = commentInput.value.trim()
+                    onUpdateTrack({
+                      ...commentInput.track!,
+                      comment: trimmed ? trimmed : undefined,
+                    })
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  } else if (e.key === 'Escape') {
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  }
+                }}
+```
+
+with
+
+```tsx
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    saveComment()
+                  }
+                }}
+```
+
+In `src/components/TrackTable.tsx`, replace
+
+```tsx
+                <button
+                  type="button"
+                  className="modal-button modal-button-secondary"
+                  onClick={() =>
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  }
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="modal-button modal-button-primary"
+                  onClick={() => {
+                    const trimmed = commentInput.value.trim()
+                    onUpdateTrack({
+                      ...commentInput.track!,
+                      comment: trimmed ? trimmed : undefined,
+                    })
+                    setCommentInput({
+                      visible: false,
+                      track: null,
+                      value: '',
+                    })
+                  }}
+                >
+                  Save
+                </button>
+```
+
+with
+
+```tsx
+                <button
+                  type="button"
+                  className="modal-button modal-button-secondary"
+                  onClick={closeComment}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="modal-button modal-button-primary"
+                  onClick={saveComment}
+                >
+                  Save
+                </button>
 ```
 
 Run: `grep -n "contextMenu\|selectedRowId\|Submenu\|onAnalyzeTrack\b" src/components/TrackTable.tsx`
@@ -2966,6 +3173,11 @@ with
 ```tsx
   // Analyze the selected tracks (BPM + Key) in one batch — decoded once each
   async function handleAnalyzeTracks(selected: Track[]) {
+    // One analysis at a time: a second would reset the first one's cancel flag.
+    if (analyzing) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
     const first = selected[0]
     try {
       setAnalyzing(true)
@@ -3058,7 +3270,13 @@ up to, not including, the line
       toast(removedMessage(selected, name), {
         action: undoing(async () => {
           await tauriApi.addTracksToPlaylist(playlistId, ids)
-          await tauriApi.reorderPlaylistTracks(playlistId, before)
+          // The old order first; tracks added since keep their places after it.
+          const now = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+          const old = new Set(before)
+          await tauriApi.reorderPlaylistTracks(playlistId, [
+            ...before,
+            ...now.filter((id) => !old.has(id)),
+          ])
           await loadPlaylists()
         }),
       })
@@ -3175,6 +3393,8 @@ git commit -m "docs(spec): the menu, the toasts and the genre Undo are built by 
 - **Analyze BPM & Key** on 5 tracks: the analysis bar counts 5.
 - **Add Comment** is grey with several selected and works with one. Custom… opens the dialog for the whole selection.
 - **The menu:**
+  - on a Mac, Ctrl-click a row opens the menu; the next click does not bring it back;
+  - after Custom… or a comment, ↑ ↓ work at once (the table has its keys back);
   - near the window's right and bottom edges it stays on screen;
   - submenus open on hover and with →; Esc closes the submenu first;
   - a press outside closes it.
