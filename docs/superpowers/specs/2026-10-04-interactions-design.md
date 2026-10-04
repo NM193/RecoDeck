@@ -112,7 +112,7 @@ exist today and builds what they need:
 | Add to playlist | removes only the tracks this add put in (`add_tracks_to_playlist` answers which) | track table plan |
 | Delete from playlist | before deleting, capture the playlist's full stored order (`get_playlist_tracks`, not the table's view); Undo calls `add_tracks_to_playlist`, then `reorder_playlist_tracks` with that order | track table plan |
 | Reorder by dragging (playlist) | `reorder_playlist_tracks` with the order before the drop | track table plan |
-| Set genre / Clear genre | new `restore_track_genres([{ id, genre, source }])`, which writes both columns as given (today's `set_track_genre` always writes `'user'`, and `save_track_genre` will not overwrite a user genre) | this plan |
+| Set genre / Clear genre | new `restore_track_genres([{ id, genre, source }])`, which writes both columns as given (today's `set_track_genre` always writes `'user'`, and `save_track_genre` will not overwrite a user genre) | track table plan 4 |
 | Move to folder | `move_tracks_to_folder` once per original folder, skips reported as a move reports them | track table plan |
 | Mark all seen (new sets) | `mark_all_dj_finds_seen` answers the `(name_key, video_id)` rows it changed; new `mark_dj_finds_unseen(rows)` clears only those; raises Home's data-version number | Home plan |
 | Remove a heart (Saved tracks) | hearts it again with its old `saved_at`, so it keeps its place (`save_youtube_track` gains an optional `saved_at`) | this plan |
@@ -199,6 +199,10 @@ spec's rules, so they need no rework. This plan then builds what is still
 missing, moves the remaining transitions to the tokens, and does the sweep;
 each page plan wires its own Undo rows, drag sources and targets, and
 shortcuts as the tables above say.
+
+Built already by track table plan 4: `Menu` (without the confirm in the
+menu's place), `toast()` and the `Toaster` (without the detail on hover,
+which plan 5 adds), and `restore_track_genres` with Set / Clear genre's Undo.
 
 ## Testing
 
