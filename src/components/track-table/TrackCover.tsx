@@ -2,7 +2,8 @@
 // A row's cover (track table spec, Rows): the artwork thumbnail, faded in
 // when it arrives (at once when it was read before); a quiet empty square
 // while it is read and for a track without artwork, as in Traktor. Give it
-// `key={track.id}` where rows are reused.
+// a key of the track's id and path where rows are reused: a moved track asks
+// again (a folder's cover.jpg may now be another one).
 import { useEffect, useState } from 'react'
 import type { Track } from '../../types/track'
 import { thumbnails } from '../../lib/thumbnails/thumbnails'

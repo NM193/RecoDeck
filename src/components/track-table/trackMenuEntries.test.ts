@@ -5,7 +5,7 @@ import type { MenuAction, MenuEntry, MenuSubmenu } from '../menu/Menu'
 import { trackMenuEntries } from './trackMenuEntries'
 
 const track = (id: number, extra: Partial<Track> = {}) =>
-  ({ id, title: `Track ${id}`, ...extra }) as Track
+  ({ id, title: `Track ${id}`, file_path: `/Music/${id}.mp3`, ...extra }) as Track
 const playlist = (id: number, name: string) => ({ id, name }) as Playlist
 const find = (entries: MenuEntry[], label: string) =>
   entries.find((e) => e.kind !== 'separator' && e.label === label) as
@@ -97,5 +97,38 @@ describe('the track table right-click menu', () => {
   it('greys Add to Playlist with no playlists to add to', () => {
     const entries = trackMenuEntries({ tracks: [track(1)], playlists: [], genres: [], ...actions })
     expect((find(entries, 'Add to Playlist') as MenuAction).disabled).toBe(true)
+  })
+
+  it('moves every selected track to a folder, greying the one they share', () => {
+    const onMoveToFolder = vi.fn()
+    const tracks = [
+      track(1, { file_path: '/Music/House/a.mp3' }),
+      track(2, { file_path: '/Music/House/b.mp3' }),
+    ]
+    const folders = [
+      { path: '/Music', label: 'Music' },
+      { path: '/Music/House', label: 'Music / House' },
+    ]
+    const entries = trackMenuEntries({ tracks, playlists: [], genres: [], folders, onMoveToFolder })
+    const move = find(entries, 'Move to folder') as MenuSubmenu
+    expect(move.search).toBeDefined()
+    const [music, house] = move.entries as MenuAction[]
+    expect(house.disabled).toBe(true)
+    expect(music.disabled).toBe(false)
+    music.onSelect()
+    expect(onMoveToFolder).toHaveBeenCalledWith(tracks, folders[0])
+  })
+
+  it('says it is reading the folders until they come', () => {
+    const entries = trackMenuEntries({
+      tracks: [track(1)],
+      playlists: [],
+      genres: [],
+      folders: null,
+      onMoveToFolder: vi.fn(),
+    })
+    const move = find(entries, 'Move to folder') as MenuSubmenu
+    expect(move.entries).toEqual([])
+    expect(move.search?.empty).toBe('Reading folders…')
   })
 })

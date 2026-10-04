@@ -14,7 +14,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from 'react'
-import type { Track, Playlist } from '../types/track'
+import type { LibraryFolder, Track, Playlist } from '../types/track'
 import { usePlayerStore } from '../store/playerStore'
 import { audioPlayer } from '../lib/audioPlayer'
 import { Icon } from './Icon'
@@ -22,6 +22,7 @@ import { Equalizer } from './Equalizer'
 import { Menu } from './menu/Menu'
 import { TrackCover } from './track-table/TrackCover'
 import { trackMenuEntries } from './track-table/trackMenuEntries'
+import { useLibraryFolders } from './track-table/useLibraryFolders'
 import { isOverlayOpen, useOverlay } from '../lib/overlays'
 import {
   NO_SELECTION,
@@ -79,6 +80,7 @@ interface TrackTableProps {
   onRemoveFromPlaylist?: (tracks: Track[]) => void
   onSetGenre?: (tracks: Track[], genre: string) => void
   onClearGenre?: (tracks: Track[]) => void
+  onMoveToFolder?: (tracks: Track[], folder: LibraryFolder) => void
   onUpdateTrack?: (track: Track) => void
   genreDefinitions?: Array<{ id: number; name: string; color?: string }>
   onGenerateAIPlaylist?: (track: Track) => void
@@ -118,6 +120,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       onRemoveFromPlaylist,
       onSetGenre,
       onClearGenre,
+      onMoveToFolder,
       onUpdateTrack,
       genreDefinitions = [],
       onGenerateAIPlaylist,
@@ -283,6 +286,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     )
     // Its tracks left the view (a reload): the menu closes for good.
     if (menuAt && menuTracks.length === 0) setMenuAt(null)
+    // Move to folder ▸'s list, read as the menu opens.
+    const libraryFolders = useLibraryFolders(menuAt !== null && onMoveToFolder !== undefined)
 
     const HEADER_HEIGHT = 30
 
@@ -621,7 +626,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                     </div>
                     {layout.artwork && (
                       <div className="tt-cell cell-art">
-                        <TrackCover key={track.id} track={track} />
+                        <TrackCover key={`${track.id}\n${track.file_path}`} track={track} />
                       </div>
                     )}
                     {columns.map((column) => (
@@ -681,6 +686,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       : '',
                 }),
               onClearGenre,
+              folders: libraryFolders,
+              onMoveToFolder,
               onRemoveFromPlaylist:
                 selectedPlaylistId != null ? onRemoveFromPlaylist : undefined,
               onEditComment: editComment,

@@ -2,7 +2,8 @@
 // The track table's right-click menu (track table spec, Right-click menu):
 // every item acts on all the selected tracks at once. Add / Edit Comment and
 // Generate AI Playlist take one track: greyed with several selected.
-import type { Playlist, Track } from '../../types/track'
+import type { LibraryFolder, Playlist, Track } from '../../types/track'
+import { sharedFolder } from '../../lib/trackTable/moveMessages'
 import type { MenuEntry } from '../menu/Menu'
 
 export interface TrackMenuActions {
@@ -12,6 +13,7 @@ export interface TrackMenuActions {
   /** Set Genre ▸ Custom…: asks for a name. */
   onCustomGenre?: (tracks: Track[]) => void
   onClearGenre?: (tracks: Track[]) => void
+  onMoveToFolder?: (tracks: Track[], folder: LibraryFolder) => void
   /** Only in a playlist. */
   onRemoveFromPlaylist?: (tracks: Track[]) => void
   onEditComment?: (track: Track) => void
@@ -24,12 +26,15 @@ interface TrackMenuInput extends TrackMenuActions {
   /** The playlists to add to: no folders, and not the one shown. */
   playlists: Playlist[]
   genres: Array<{ name: string; color?: string }>
+  /** The library's folders for Move to folder ▸; null while they are read. */
+  folders?: LibraryFolder[] | null
 }
 
 export function trackMenuEntries({
   tracks,
   playlists,
   genres,
+  folders = null,
   ...actions
 }: TrackMenuInput): MenuEntry[] {
   const one = tracks.length === 1
@@ -106,6 +111,29 @@ export function trackMenuEntries({
   if (actions.onClearGenre && tracks.some((t) => t.genre)) {
     const clear = actions.onClearGenre
     entries.push({ kind: 'action', label: 'Clear Genre', icon: 'X', onSelect: () => clear(tracks) })
+  }
+
+  if (actions.onMoveToFolder) {
+    const move = actions.onMoveToFolder
+    // Every selected track in one folder: that folder is greyed.
+    const here = sharedFolder(tracks)
+    entries.push({
+      kind: 'submenu',
+      label: 'Move to folder',
+      icon: 'FolderInput',
+      // While the list is read, the box says so, whatever is typed.
+      search: {
+        placeholder: 'Find a folder',
+        empty: folders === null ? 'Reading folders…' : 'No folder matches',
+      },
+      entries: (folders ?? []).map((folder) => ({
+        kind: 'action',
+        label: folder.label,
+        icon: 'Folder',
+        disabled: folder.path === here,
+        onSelect: () => move(tracks, folder),
+      })),
+    })
   }
 
   if (actions.onEditComment) {
