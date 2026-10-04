@@ -27,13 +27,14 @@
 6. dragging tracks to playlists and folders, and reordering a playlist.
 
 **Decisions, beyond the spec's letter:**
-- **While a cover is being read**, the square is a quiet `--bg-tertiary`, not the title gradient. The gradient means "no artwork". Showing it first would flash every row from gradient to picture while scrolling. A picture fades in when it arrives (the Interactions spec's "content after loading").
-- **The playing row's accent** (title, equalizer, button) is the accent drawn 25% toward the text colour (`--row-accent`):
+- **While a cover is being read**, the square is a quiet `--bg-tertiary`, not the title gradient. The gradient means "no artwork". Showing it first would flash every row from gradient to picture while scrolling. A picture fades in when it arrives (the Interactions spec's "content after loading"); a cover already read shows at once, so scrolling back or jumping to the track playing does not fade the screen again.
+- **The playing row's accent** (title, equalizer) is the accent drawn 25% toward the text colour (`--row-accent`):
   - plan 2 used `--accent-hover`, which a plan review measured at about 2.7:1 on Dawn's pale tint;
-  - this reads about 5.9:1 on Dawn;
+  - this reads about 5.5:1 on Dawn (Midnight 5.7, Carbon 6.2, Neon 6.9);
   - on the dark themes it stays light.
+- **Under the mouse, the playing row's title and its pause / play button take the text colour**, as the mockup's hovered playing row does.
 - **Esc during a column ⠿ drag cancels the drag** and leaves the panel open (Interactions spec: Esc cancels a drag first). The drag registers as the topmost overlay while it lasts.
-- **Clicking ▶ also selects the row**, as the first click of a double click would. Only the double click on the button is stopped, so the row's own double click does not play it twice.
+- **Clicking ▶ also selects the row**, as the first click of a double click would. The double click on the button is stopped, so the row's own double click does not play it twice, and the button ignores the second click of a double click: the first one played the row, and after it the row is the playing one, so a second click would pause it.
 - **Pause and play on here, as the bottom player does:** the button calls `audioPlayer.pause()` and `audioPlayer.resume()`. The player's own `onPlayStateChange` updates `isPlaying`. Space comes with the Interactions plan.
 
 **Checked:** every code block below was applied to a scratch worktree of `feat/redesign` at 93abf8f.
@@ -46,6 +47,9 @@
   - **Row button:** hovering the paused playing row shows Play and hides the equalizer, and while playing it shows Pause. Clicking ▶ on row 5 played that row's track.
   - **Esc during a column drag:** it ended the drag, the panel stayed open, and the order was unchanged; a second Esc closed the panel.
   - **Dawn:** the playing title is rgb(81, 83, 187) on rgb(236, 237, 253).
+- **Plan review** (applied to a clean copy of e494024; every replacement matched): it found a double click on ▶ played the row and then paused it, and cached covers fading in again on every scroll back. Both are fixed below and were re-checked in WebKit: a double click on ▶ only plays, and 0 of 14 cached covers fade again. It also read a real 832×1248 and a 3000×3000 JPEG and a PNG down to 72×72 (a Blob without a type decodes in WebKit), and random bytes fall back to the gradient.
+
+**Left for later plans:** the thumbnail cache is never cleared. Track ids can be reused after deletes, and Move to folder (plan 5) changes which folder `cover.jpg` a track picks up, so plan 5 adds a `forget(id)` / `clear()` to the queue and calls it there and after a rescan.
 
 ---
 
@@ -366,7 +370,10 @@ import { ThumbnailCache, ThumbnailQueue, type Thumb } from './queue'
 /** Pixels: twice the 36px cover, so it stays sharp on retina screens. */
 export const THUMB_SIZE = 72
 
-/** A 72px JPEG of the picture's middle square; null when it does not decode. */
+/**
+ * A 72px JPEG of the picture's middle square. It rejects when the picture
+ * does not decode; the queue keeps that as null, like no artwork.
+ */
 export async function makeThumbnail(bytes: ArrayBuffer): Promise<Thumb> {
   const bitmap = await createImageBitmap(new Blob([bytes]))
   try {
@@ -415,8 +422,9 @@ export const thumbnails = new ThumbnailQueue(
 ```tsx
 // src/components/track-table/TrackCover.tsx
 // A row's cover (track table spec, Rows): the artwork thumbnail, faded in
-// once read; a gradient from the title for a track without artwork; a quiet
-// square meanwhile. Give it `key={track.id}` where rows are reused.
+// when it arrives (at once when it was read before); a gradient from the
+// title for a track without artwork; a quiet square meanwhile. Give it
+// `key={track.id}` where rows are reused.
 import { useEffect, useState } from 'react'
 import type { Track } from '../../types/track'
 import { thumbnails } from '../../lib/thumbnails/thumbnails'
@@ -424,7 +432,9 @@ import type { Thumb } from '../../lib/thumbnails/queue'
 import { titleGradient } from '../../lib/trackTable/cells'
 
 export function TrackCover({ track }: { track: Track }) {
-  const [thumb, setThumb] = useState<Thumb | undefined>(() => thumbnails.cached(track.id))
+  // What was known when the row appeared: a cover read before shows at once.
+  const [known] = useState(() => thumbnails.cached(track.id))
+  const [thumb, setThumb] = useState<Thumb | undefined>(known)
 
   useEffect(() => {
     if (thumb !== undefined) return
@@ -437,7 +447,14 @@ export function TrackCover({ track }: { track: Track }) {
   }
   return (
     <span className="tt-cover">
-      {thumb && <img className="tt-cover__img" src={thumb} alt="" draggable={false} />}
+      {thumb && (
+        <img
+          className={known === undefined ? 'tt-cover__img tt-cover__img--in' : 'tt-cover__img'}
+          src={thumb}
+          alt=""
+          draggable={false}
+        />
+      )}
     </span>
   )
 }
@@ -657,11 +674,12 @@ with
                         aria-label={
                           isPlayingTrack ? (isPlaying ? 'Pause' : 'Play') : `Play ${track.title || 'track'}`
                         }
-                        onClick={() =>
-                          isPlayingTrack
-                            ? togglePlayback()
-                            : onTrackDoubleClick?.(track, sortedTracks, virtualRow.index)
-                        }
+                        onClick={(e) => {
+                          // The second click of a double click: the first did it.
+                          if (e.detail > 1) return
+                          if (isPlayingTrack) togglePlayback()
+                          else onTrackDoubleClick?.(track, sortedTracks, virtualRow.index)
+                        }}
                         onDoubleClick={(e) => e.stopPropagation()}
                       >
                         <Icon name={isPlayingTrack && isPlaying ? 'Pause' : 'Play'} size={14} />
@@ -708,6 +726,12 @@ with
 ```css
 .data-row--playing .cell-title__name {
   color: var(--row-accent);
+}
+
+/* Under the mouse, the playing row's title takes the text colour, as its
+   pause / play button does (the mockup). */
+.data-row--playing:hover .cell-title__name {
+  color: var(--text-primary);
 }
 ```
 
@@ -765,10 +789,6 @@ with
   cursor: pointer;
 }
 
-.data-row--playing .row-action {
-  color: var(--row-accent);
-}
-
 .row-action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -796,12 +816,22 @@ with
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Only a cover that has just arrived fades in; one read before shows at once. */
+.tt-cover__img--in {
   animation: tt-cover-in var(--motion-slow) var(--ease);
 }
 
 @keyframes tt-cover-in {
   from {
     opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-cover__img--in {
+    animation-duration: var(--motion-fast);
   }
 }
 ```
@@ -895,10 +925,10 @@ git commit -m "fix(tracks): Esc during a column drag cancels the drag and leaves
 
 - [ ] **Step 2: The checklist, by hand**
 - **All Tracks:** the covers are the files' artwork, sharp at 36px, fading in as they arrive. A track without artwork has a gradient. While a cover is read, the square is a quiet grey.
-- **Fast scroll:** scroll fast from top to bottom and back. The covers fill in where the scroll stops, the window stays smooth, and the memory (Activity Monitor, the RecoDeck WebContent process) settles rather than climbing.
+- **Fast scroll:** scroll fast from top to bottom and back. The covers fill in where the scroll stops, the window stays smooth, and the memory (Activity Monitor, the RecoDeck WebContent process) settles rather than climbing. Covers already seen show at once when you scroll back, without fading again.
 - **Playing:** play a track. Its number becomes the moving equalizer, and its title is in the accent colour. Pause in the bottom player: the bars stand still.
-- **Under the mouse:** the playing row shows pause while playing and ▶ while paused, and clicking it does that. The bottom player follows. On any other row the number becomes ▶, and clicking it plays that row, with the table as the queue, as a double click does.
-- **Double click:** a double click still plays a row once.
+- **Under the mouse:** the playing row shows pause while playing and ▶ while paused, and clicking it does that; its title and the button turn to the text colour. The bottom player follows. On any other row the number becomes ▶, and clicking it plays that row, with the table as the queue, as a double click does.
+- **Double click:** a double click still plays a row once, on the row and on its ▶ alike (it does not pause right after).
 - **Columns, Esc:** drag a ⠿ and press Esc before releasing. The drag ends, the order is as it was, and the panel stays open; a second Esc closes it.
 - **Dawn (light theme):** the playing row's title and equalizer read well.
 - **Reduce motion** (macOS → Accessibility → Display): the equalizer is three still bars, and covers only fade in.
