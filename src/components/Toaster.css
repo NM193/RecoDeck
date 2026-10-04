@@ -1,0 +1,98 @@
+/* src/components/Toaster.css */
+/* Toasts: bottom-centre over the main area, newest at the bottom. */
+
+.toaster {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.5);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  pointer-events: auto;
+}
+
+.toast__dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.toast--info .toast__dot {
+  background: var(--accent);
+}
+
+.toast--warning .toast__dot {
+  background: var(--color-warning);
+}
+
+.toast--error .toast__dot {
+  background: var(--color-danger);
+}
+
+.toast__message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Undo: the accent drawn toward the text colour, so it reads on light themes. */
+.toast__action {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: color-mix(in srgb, var(--accent), var(--text-primary) 25%);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 8%);
+}
+
+.toast__close {
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.toast__close:hover {
+  color: var(--text-primary);
+}
+
+.toast__action:focus-visible,
+.toast__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
