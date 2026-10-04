@@ -191,9 +191,14 @@ the target attributes) without wiring sources or targets. It removes
 `Notification`, `HeaderNotification` and the sidebar toast, and moves every
 `transition:` to the tokens.
 
-**Order**: this plan goes first; the sidebar, track table, Search, Home and
-Sets plans come after and use its pieces, each wiring its own Undo rows, drag
-sources and targets, and shortcuts as the tables above say.
+**Order**: this plan comes **later**, after some of the page redesigns (the
+user's choice). A plan that comes before it builds, from this spec, only the
+pieces it needs that do not exist yet — e.g. the track table plan builds the
+toast with Undo and the drag layer, the Sets plan builds `useOverlay` — to this
+spec's rules, so they need no rework. This plan then builds what is still
+missing, moves the remaining transitions to the tokens, and does the sweep;
+each page plan wires its own Undo rows, drag sources and targets, and
+shortcuts as the tables above say.
 
 ## Testing
 
