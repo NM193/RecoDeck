@@ -2100,6 +2100,19 @@ impl Database {
         rows.collect()
     }
 
+    /// How many times each played track was played, for the track table's
+    /// Plays column. Tracks never played are left out.
+    pub fn get_play_counts(&self) -> Result<Vec<(i64, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_id, COUNT(*) FROM play_history
+             WHERE track_id IS NOT NULL
+             GROUP BY track_id
+             ORDER BY track_id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+        rows.collect()
+    }
+
     /// Get recently played tracks (joined with track data), ordered by most recent first.
     pub fn get_recently_played(&self, limit: i64) -> Result<Vec<(i64, Option<i64>, i64, Option<String>, Option<String>, Option<String>)>> {
         let mut stmt = self.conn.prepare(
@@ -4515,5 +4528,25 @@ mod tests {
         db.record_play_event(ids[2], None).unwrap();
 
         assert_eq!(db.get_played_track_ids().unwrap(), vec![ids[0], ids[2]]);
+    }
+
+    #[test]
+    fn test_get_play_counts_counts_each_played_track() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let mut ids = Vec::new();
+        for n in 0..3 {
+            let mut track = create_test_track();
+            track.file_path = format!("/path/to/counted-{}.mp3", n);
+            track.file_hash = format!("counted-{}", n);
+            ids.push(db.create_track(&track).unwrap());
+        }
+        db.record_play_event(ids[2], None).unwrap();
+        db.record_play_event(ids[0], Some(7)).unwrap();
+        db.record_play_event(ids[2], None).unwrap();
+        db.record_play_event(ids[2], Some(7)).unwrap();
+
+        assert_eq!(db.get_play_counts().unwrap(), vec![(ids[0], 1), (ids[2], 3)]);
     }
 }

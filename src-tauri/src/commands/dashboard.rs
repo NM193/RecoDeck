@@ -15,6 +15,12 @@ pub struct PlayHistoryEntry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct PlayCount {
+    pub track_id: i64,
+    pub plays: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RecentlyAddedTrack {
     pub id: i64,
     pub title: Option<String>,
@@ -65,6 +71,26 @@ pub fn get_played_track_ids(state: State<AppState>) -> Result<Vec<i64>, AppError
 
     db.get_played_track_ids()
         .map_err(|e| AppError::Internal(format!("Failed to read played tracks: {}", e)))
+}
+
+/// How many times each played track was played (the track table's Plays column).
+#[tauri::command]
+pub fn get_play_counts(state: State<AppState>) -> Result<Vec<PlayCount>, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Database not initialized".to_string()))?;
+
+    let rows = db
+        .get_play_counts()
+        .map_err(|e| AppError::Internal(format!("Failed to count plays: {}", e)))?;
+    Ok(rows
+        .into_iter()
+        .map(|(track_id, plays)| PlayCount { track_id, plays })
+        .collect())
 }
 
 #[tauri::command]

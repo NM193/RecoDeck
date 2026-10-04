@@ -586,6 +586,7 @@ pub fn run() {
             commands::dashboard::record_play_event,
             commands::dashboard::get_recently_played,
             commands::dashboard::get_played_track_ids,
+            commands::dashboard::get_play_counts,
             commands::dashboard::get_recently_added,
             commands::dashboard::get_library_insights,
             commands::dashboard::save_dashboard_layout,
