@@ -14,7 +14,7 @@
 
 **The track table spec is built by five plans, in order:**
 1. **this plan** — the toolbar, the filter, `get_played_track_ids`, `useOverlay`, `Popover`, the first shared controls;
-2. columns and rows — the Columns panel and its stored layout, resizing, sideways scroll, the new columns, `get_play_counts` with App's play-version number, the artwork thumbnails, the 46px rows, the equalizer. It also fixes the gap under the column heads: rows start 36px below the head, from the virtualizer's `scrollMargin`; this is in the current table too;
+2. columns and rows — the Columns panel and its stored layout, resizing, sideways scroll, the new columns, `get_play_counts` with App's play-version number, the artwork thumbnails, the 46px rows, the equalizer. (The gap under the column heads, rows starting 36px below the head from the virtualizer's `scrollMargin`, was fixed during this plan's hand check, in 5e01614.);
 3. selecting several and the bulk menu — ⌘/Shift-click, ⌘A, Esc, the right-click menu on the selection, `add_tracks_to_playlist`, `remove_tracks_from_playlist`, `bulk_clear_genre`, the toast with Undo;
 4. Move to folder;
 5. dragging tracks to playlists and folders, and reordering a playlist.
