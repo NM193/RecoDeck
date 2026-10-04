@@ -31,6 +31,13 @@ export interface Track {
   key_confidence?: number
 }
 
+/** A track's genre and its source, as the Undo of a genre change puts them back. */
+export interface TrackGenre {
+  id: number
+  genre: string | null
+  source: string | null
+}
+
 export interface ScanResult {
   total_files: number
   imported: number

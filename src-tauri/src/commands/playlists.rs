@@ -180,6 +180,46 @@ pub fn remove_track_from_playlist(
         .map_err(|e| AppError::Database(format!("Failed to remove track: {}", e)))
 }
 
+/// The answer of add_tracks_to_playlist: the ids it added (what an Undo
+/// removes) and those already in the playlist.
+#[derive(Debug, Clone, Serialize)]
+pub struct AddedTracks {
+    pub added: Vec<i64>,
+    pub already: Vec<i64>,
+}
+
+/// Add several tracks to a playlist at once (the track table's selection).
+#[tauri::command]
+pub fn add_tracks_to_playlist(
+    state: State<AppState>,
+    playlist_id: i64,
+    track_ids: Vec<i64>,
+) -> Result<AddedTracks, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let (added, already) = db
+        .add_tracks_to_playlist(playlist_id, &track_ids)
+        .map_err(|e| AppError::Database(format!("Failed to add tracks: {}", e)))?;
+    Ok(AddedTracks { added, already })
+}
+
+/// Remove several tracks from a playlist at once. Answers how many it held.
+#[tauri::command]
+pub fn remove_tracks_from_playlist(
+    state: State<AppState>,
+    playlist_id: i64,
+    track_ids: Vec<i64>,
+) -> Result<i64, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let removed = db
+        .remove_tracks_from_playlist(playlist_id, &track_ids)
+        .map_err(|e| AppError::Database(format!("Failed to remove tracks: {}", e)))?;
+    Ok(removed as i64)
+}
+
 /// Reorder tracks in a playlist (atomic position update)
 #[tauri::command]
 pub fn reorder_playlist_tracks(

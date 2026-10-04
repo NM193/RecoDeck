@@ -535,6 +535,8 @@ pub fn run() {
             commands::playlists::get_playlist_tracks,
             commands::playlists::add_track_to_playlist,
             commands::playlists::remove_track_from_playlist,
+            commands::playlists::add_tracks_to_playlist,
+            commands::playlists::remove_tracks_from_playlist,
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::export_playlist_to_folder,
             commands::playlists::pick_export_folder,
@@ -548,6 +550,8 @@ pub fn run() {
             commands::genre::delete_genre_definition,
             commands::genre::rename_genre_definition,
             commands::genre::bulk_set_genre,
+            commands::genre::bulk_clear_genre,
+            commands::genre::restore_track_genres,
             // Settings commands
             commands::settings::get_setting,
             commands::settings::set_setting,

@@ -29,6 +29,7 @@ import type {
   GenreCount,
   GenreDefinition,
   DuplicateGroup,
+  TrackGenre,
 } from '../types/track'
 import type {
   ChatMessage,
@@ -298,6 +299,19 @@ export const tauriApi = {
     trackId: number,
   ): Promise<void> {
     return await invoke('remove_track_from_playlist', { playlistId, trackId })
+  },
+
+  /** Adds several tracks at once; answers which it added and which were there. */
+  async addTracksToPlaylist(
+    playlistId: number,
+    trackIds: number[],
+  ): Promise<{ added: number[]; already: number[] }> {
+    return await invoke('add_tracks_to_playlist', { playlistId, trackIds })
+  },
+
+  /** Removes several tracks at once; answers how many the playlist held. */
+  async removeTracksFromPlaylist(playlistId: number, trackIds: number[]): Promise<number> {
+    return await invoke('remove_tracks_from_playlist', { playlistId, trackIds })
   },
 
   async reorderPlaylistTracks(
@@ -946,6 +960,15 @@ export const tauriApi = {
 
   async bulkSetGenre(trackIds: number[], genre: string): Promise<number> {
     return await invoke('bulk_set_genre', { trackIds, genre })
+  },
+
+  async bulkClearGenre(trackIds: number[]): Promise<number> {
+    return await invoke('bulk_clear_genre', { trackIds })
+  },
+
+  /** Puts genres and their sources back exactly as given (a genre Undo). */
+  async restoreTrackGenres(genres: TrackGenre[]): Promise<number> {
+    return await invoke('restore_track_genres', { genres })
   },
 
   // Artwork command

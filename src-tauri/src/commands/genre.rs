@@ -3,7 +3,7 @@
 use crate::commands::library::{AppState, TrackDTO};
 use crate::db::GenreDefinition;
 use crate::error::AppError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 /// DTO for genre counts (for sidebar display)
@@ -134,6 +134,43 @@ pub fn bulk_set_genre(track_ids: Vec<i64>, genre: String, state: State<AppState>
 
     let count = db.bulk_set_genre(&track_ids, &genre)
         .map_err(|e| AppError::Database(format!("Failed to bulk set genre: {}", e)))?;
+
+    Ok(count as i64)
+}
+
+/// Clear the genre of several tracks at once
+#[tauri::command]
+pub fn bulk_clear_genre(track_ids: Vec<i64>, state: State<AppState>) -> Result<i64, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let count = db.bulk_clear_genre(&track_ids)
+        .map_err(|e| AppError::Database(format!("Failed to clear genres: {}", e)))?;
+
+    Ok(count as i64)
+}
+
+/// A track's genre and its source, as the Undo of a genre change puts them back.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrackGenre {
+    pub id: i64,
+    pub genre: Option<String>,
+    pub source: Option<String>,
+}
+
+/// Put back tracks' genres and sources exactly as given (the Undo of Set
+/// Genre and Clear Genre).
+#[tauri::command]
+pub fn restore_track_genres(genres: Vec<TrackGenre>, state: State<AppState>) -> Result<i64, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let rows: Vec<(i64, Option<String>, Option<String>)> = genres
+        .into_iter()
+        .map(|g| (g.id, g.genre, g.source))
+        .collect();
+    let count = db.restore_track_genres(&rows)
+        .map_err(|e| AppError::Database(format!("Failed to restore genres: {}", e)))?;
 
     Ok(count as i64)
 }
