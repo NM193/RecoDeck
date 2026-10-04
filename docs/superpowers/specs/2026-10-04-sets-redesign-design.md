@@ -38,8 +38,8 @@ From the top:
    - **Empty** → no dropdown.
    A DJ page's **Find more** opens Sets with the DJ's name in this box (today's
    `initialQuery`), nothing spent until the YouTube row is chosen.
-2. **Tabs**: Library (count) · Saved tracks (count) · Following (badge) ·
-   Stats. On the right of the Library tab: **By DJ** / **Newest**.
+2. **Tabs**: Library (count, and "· 3 new" for unseen finds) · Saved tracks
+   (count) · Following (badge: channel news) · Stats. On the right of the Library tab: **By DJ** / **Newest**.
 3. **New from DJs you watch** (Library tab only): the unseen finds of the Home
    spec's "New sets" (`yt_dj_finds.seen_at`), newest first, as cards —
    thumbnail, DJ, title, "saved" or "opening costs 5–7". A card opens the set.
@@ -132,7 +132,9 @@ The hero's buttons become **Pause / Play**, **⏮**, **⏭** and **✕ Stop**, t
 ⋯. ⏮ and ⏭, the equalizer and every label of "what is playing" follow the
 track the playhead is in (today's `currentTrack`, from the panel's position),
 not the last row clicked — so ⏮ / ⏭ work right after Play set and after the
-video runs on.
+video runs on. They step between timed rows only, and are disabled for an
+untimed list. The panel's position is polled every 400ms, so after each seek
+the expected position is set at once and a second quick ⏭ steps from there.
 
 **Leaving the set page** — back to the library, to another set's page, to Home
 or anywhere in the app — keeps the video playing in a **bar above the bottom
@@ -145,18 +147,23 @@ the bar until Play set is pressed there (or a track of it is opened, above).
 over a DOM box; it cannot scroll and it draws above the page. So:
 - it sits in the hero's box exactly while the playing set's page is mounted
   with its hero box; otherwise it sits in the bar's box, and the bar shows
-  exactly then. The handoff waits for the view change to finish (App's 0.2s
-  fade), so the panel never points at a box that is leaving;
+  exactly then. The hero box registers itself with `useSetPlayer` through a
+  callback ref when it mounts and unregisters when it unmounts, so the handoff
+  needs no timers and holds both for App's view fade and for library ↔ set page
+  inside Sets (no fade);
 - it follows its box every frame the box moves or resizes — a
   `requestAnimationFrame` check of the box's rectangle while a set plays,
   sending new bounds only when they change — so a sidebar collapse, a banner
   above the content or a window resize never leaves it behind;
-- **while any overlay is open** — a modal (prompt, delete-folder, EQ), a
-  context or ⋯ menu, a popover (Filter, Columns), the expanded player — it is
-  moved off-screen through the existing `set_youtube_panel_bounds` and keeps
-  playing, then put back when the last overlay closes. Overlays report
-  themselves through one small App hook (`useOverlay`), which every overlay
-  component calls;
+- **while any overlay is open** it is moved off-screen through the existing
+  `set_youtube_panel_bounds` and keeps playing, then put back when the last
+  overlay closes. Overlays report themselves through one small App hook
+  (`useOverlay`, Interactions spec); every one of today's overlays calls it:
+  `PromptModal`, the delete-folder modal, `EQModal`, `DuplicatesModal`,
+  `ExportPlaylistModal`, `SharePlaylistModal`, `WhatsNewDialog`, the
+  TrackTable and FolderTree menus, `DjCandidatesMenu`, the NowPlayingBar menus
+  and its expanded view, `SidebarFlyout` (it opens on hover beside the video),
+  the hero's ⋯ menu, and the new Filter and Columns popovers;
 - if the panel cannot be shown, the set opens in the browser, as today.
 
 This moves the set player out of `SetsView` into App: a `useSetPlayer` hook
@@ -197,9 +204,14 @@ each list.
 
 A check's news shows as today: a DJ's finds land in the library's **New from
 DJs you watch**; a channel's new uploads show under that channel for this
-session (as today, in memory), until opened or dismissed — dismissing marks the
-channel seen up to its newest upload (`markYouTubeChannelSeen`), as today. The
-Following badge counts both: unseen DJ finds plus this session's channel news.
+session, until opened or dismissed — dismissing marks the channel seen up to
+its newest upload (`markYouTubeChannelSeen`), as today. The session's channel
+news is kept in **App** (beside `SetsStart`), fed by App's existing
+`yt-new-sets` listener and by the check buttons, so it survives tab switches,
+set pages and trips out of Sets — and news from a background check is there
+when App's toast says "see Sets › Following". The **Following** badge counts
+that channel news; unseen DJ finds show on the **Library** tab instead
+("Library 29 · 3 new"), where their row is.
 
 Per-row checks need two new commands that check one item:
 `check_youtube_dj(name_key)` and `check_youtube_channel(channel_id)`, beside
@@ -233,8 +245,10 @@ unidentified").
 
 **Depends on** the Home spec's `yt_dj_finds.seen_at` (migration 018),
 `get_new_dj_finds`, `mark_dj_finds_seen`, `mark_all_dj_finds_seen` and the
-equalizer component; **this plan includes whichever of them do not exist yet**
-when it is written. Plan order: (1) the set player into App with
+equalizer component, the Search spec's `get_known_djs` (DJ photos in
+Following), and the Interactions spec's `useOverlay`, toasts and shared
+controls; **this plan includes whichever of them do not exist yet** when it is
+written. Plan order: (1) the set player into App with
 `SetPlayerBar` and `useOverlay`; (2) splitting the components and the set page;
 (3) the library and the box; (4) Following, Saved and Stats.
 
@@ -244,8 +258,10 @@ when it is written. Plan order: (1) the set player into App with
   the filter counts (IDs only unknown rows); the hero's numbers with parts
   left out; By DJ grouping order; which box the panel belongs in (page mounted
   or not); ⏮ / ⏭ from the playhead's track.
-- Rust: `check_youtube_dj` and `check_youtube_channel` check only their item
-  (with the network mocked as the existing check tests do).
+- Rust: the choice of what a check covers (one DJ or channel, all, or only
+  those due) is a pure function, tested as `is_due` is; the two new commands
+  pass one key into it. (The network calls themselves are not unit-tested
+  today, and stay so.)
 - By hand (WebKit): paste a link (stored and not), type a DJ (free results
   first, YouTube only on its row); open a set from each place; Back keeps the
   library's tab and scroll, also after a DJ page; Play set then ⏭ at once; let

@@ -28,7 +28,8 @@ the sort shows as the arrow in its column head.
 
 ## Filter
 
-**Filter** opens a panel under the button:
+**Filter** opens a panel under the button (a popover that registers with the
+Interactions spec's `useOverlay`, as the Columns panel does):
 
 | Field | Control | Matches |
 |---|---|---|
