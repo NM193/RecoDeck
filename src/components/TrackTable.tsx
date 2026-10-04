@@ -642,7 +642,9 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       left: 0,
                       width: '100%',
                       height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
+                      // start counts from the top of the scroll area, header
+                      // included (scrollMargin); the body already sits under it.
+                      transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                     }}
                     onClick={() => {
                       setSelectedRowId(track.id)
