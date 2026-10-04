@@ -3,6 +3,7 @@
 // Show N closes the panel, Clear all clears every field.
 import { useMemo } from 'react'
 import type { Track } from '../../types/track'
+import { SelectMenu, type SelectOption } from '../SelectMenu'
 import {
   parseBpmInput,
   ratingLabel,
@@ -38,7 +39,15 @@ const PLAYED: SegmentOption<'never' | 'played'>[] = [
   { value: 'played', label: 'Played' },
 ]
 
-const RATINGS = [1, 2, 3, 4, 5]
+const ANY: SelectOption = { value: '', label: 'Any' }
+
+const RATINGS: SelectOption[] = [
+  ANY,
+  ...[1, 2, 3, 4, 5].map((rating) => ({
+    value: String(rating),
+    label: ratingLabel(rating),
+  })),
+]
 
 function Segmented<T extends string | number>({
   label,
@@ -76,6 +85,28 @@ export function FilterPanel({
   onClose,
 }: FilterPanelProps) {
   const facets = useMemo(() => trackFacets(tracks, filter), [tracks, filter])
+  const genres = useMemo(
+    () => [
+      ANY,
+      ...facets.genres.map((genre) => ({
+        value: genre.value,
+        label: genre.value,
+        hint: genre.count.toLocaleString('en-US'),
+      })),
+    ],
+    [facets],
+  )
+  const keys = useMemo(
+    () => [
+      ANY,
+      ...facets.keys.map((key) => ({
+        value: key.value,
+        label: key.value,
+        hint: key.count.toLocaleString('en-US'),
+      })),
+    ],
+    [facets],
+  )
   const set = <K extends keyof TrackFilter>(
     field: K,
     value: TrackFilter[K] | undefined,
@@ -87,19 +118,14 @@ export function FilterPanel({
 
       <div className="tt-filter-field">
         <label htmlFor="tt-filter-genre">Genre</label>
-        <select
+        <SelectMenu
           id="tt-filter-genre"
-          className="tt-filter-input"
+          label="Genre"
           value={filter?.genre ?? ''}
-          onChange={(e) => set('genre', e.target.value || undefined)}
-        >
-          <option value="">Any</option>
-          {facets.genres.map((genre) => (
-            <option key={genre.value} value={genre.value}>
-              {genre.value} ({genre.count.toLocaleString('en-US')})
-            </option>
-          ))}
-        </select>
+          options={genres}
+          onChange={(value) => set('genre', value || undefined)}
+          searchable
+        />
       </div>
 
       <div className="tt-filter-field">
@@ -134,19 +160,13 @@ export function FilterPanel({
 
       <div className="tt-filter-field">
         <label htmlFor="tt-filter-key">Key</label>
-        <select
+        <SelectMenu
           id="tt-filter-key"
-          className="tt-filter-input"
+          label="Key"
           value={filter?.key ?? ''}
-          onChange={(e) => set('key', e.target.value || undefined)}
-        >
-          <option value="">Any</option>
-          {facets.keys.map((key) => (
-            <option key={key.value} value={key.value}>
-              {key.value}
-            </option>
-          ))}
-        </select>
+          options={keys}
+          onChange={(value) => set('key', value || undefined)}
+        />
       </div>
 
       <div className="tt-filter-field">
@@ -171,21 +191,13 @@ export function FilterPanel({
 
       <div className="tt-filter-field">
         <label htmlFor="tt-filter-rating">Rating</label>
-        <select
+        <SelectMenu
           id="tt-filter-rating"
-          className="tt-filter-input"
-          value={filter?.minRating ?? ''}
-          onChange={(e) =>
-            set('minRating', e.target.value ? Number(e.target.value) : undefined)
-          }
-        >
-          <option value="">Any</option>
-          {RATINGS.map((rating) => (
-            <option key={rating} value={rating}>
-              {ratingLabel(rating)}
-            </option>
-          ))}
-        </select>
+          label="Rating"
+          value={filter?.minRating !== undefined ? String(filter.minRating) : ''}
+          options={RATINGS}
+          onChange={(value) => set('minRating', value ? Number(value) : undefined)}
+        />
       </div>
 
       <div className="tt-filter-footer">

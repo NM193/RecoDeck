@@ -1,0 +1,132 @@
+/* A select in the app's own style (SelectMenu.tsx). */
+
+.select-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.select-menu__box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease);
+}
+
+.select-menu__box:hover,
+.select-menu__box[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--border), var(--text-primary) 20%);
+}
+
+.select-menu__box:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.select-menu__box--empty .select-menu__value {
+  color: var(--text-muted);
+}
+
+.select-menu__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-menu__chevron {
+  color: var(--text-muted);
+  transition: transform var(--motion-base) var(--ease);
+}
+
+.select-menu__box[aria-expanded='true'] .select-menu__chevron {
+  transform: rotate(180deg);
+}
+
+/* The list: the shared popover, tighter, under the box and at least as wide. */
+.popover.select-menu__list {
+  top: calc(100% + 4px);
+  min-width: 100%;
+  width: max-content;
+  max-width: 300px;
+  padding: 4px;
+}
+
+.select-menu__search {
+  width: 100%;
+  height: 28px;
+  margin-bottom: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.select-menu__search:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.select-menu__options {
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  outline: none;
+}
+
+.select-menu__option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.select-menu__option--active {
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 10%);
+}
+
+/* Only the chosen row carries the check, which moves its label over. */
+.select-menu__check {
+  flex-shrink: 0;
+  color: var(--accent-hover);
+}
+
+.select-menu__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-menu__hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.select-menu__empty {
+  padding: 6px 8px;
+  color: var(--text-muted);
+}
