@@ -197,17 +197,22 @@ App makes one call and shows one toast, and the table reloads once.
 
 New: **Move to folder ▸** — a small searchable list (type to narrow) of every
 folder in the library, shown as paths ("Music / House / Deep"), library roots
-included, from new `list_library_folders()` (recursive). When every selected
-track is in the same folder, that folder is greyed. Moving:
+included, from new `list_library_folders()` (recursive; a linked folder that
+leads outside the library is left out, as a move would refuse it). When every
+selected track is in the same folder, that folder is greyed. Moving:
 - moves the files on disk into that folder, keeping their names;
 - on the same disk, for each file: under the database lock (taken per file,
-  not for the batch), rename it into place and update its `file_path`; if the
-  update fails, rename it back;
+  not for the batch), check its name is free, rename it into place and update
+  its `file_path`; if the update fails, rename it back. The name is checked
+  under the lock because a rename replaces an existing file (on macOS even one
+  whose name differs only in case): two moves at once must not destroy each
+  other's files;
 - across disks, for each file: copy it **outside the lock** to a temporary
   name with no audio extension (`.recodeck-moving`, which the watcher and the
-  scanner ignore) and check its size; then under the lock rename the copy to
-  its final name and update `file_path`; release the lock, then delete the
-  original. If anything fails, the copy is deleted and the original stays. The
+  scanner ignore), write it through to the disk and check its size; then under
+  the lock check its name is free, rename the copy to its final name, update
+  `file_path` and delete the original (if it will not go, `file_path` goes
+  back). If anything fails, the copy is deleted and the original stays. The
   lock is never held during a copy: almost every database command runs on the
   main thread, and App reloads tracks on the watcher's first event, so a long
   hold would freeze the window;
@@ -222,7 +227,12 @@ track is in the same folder, that folder is greyed. Moving:
   (so turning shuffle off keeps them). The patch must not reload the current
   track: NowPlayingBar's load effect today runs on every queue change and
   would restart the song from 0:00, so it is keyed on the current track's id
-  and path instead;
+  instead (built: with the player store's playRequest — raised by a play,
+  next, previous — so shuffling and adding to the queue no longer restart the
+  song either);
+- the stream handler follows a file moved this session (old path → new, kept
+  in memory), so a track the player loads by its old path while a move runs,
+  or streams while its original goes, plays on;
 - the sidebar's folder tree is refreshed afterwards, as renaming a folder does
   (the watcher's events are throttled to one per 2s, so counts would stay
   stale);

@@ -202,7 +202,7 @@ shortcuts as the tables above say.
 
 Built already by track table plan 4: `Menu` (without the confirm in the
 menu's place), `toast()` and the `Toaster` (without the detail on hover,
-which plan 5 adds), and `restore_track_genres` with Set / Clear genre's Undo.
+built by plan 5), and `restore_track_genres` with Set / Clear genre's Undo.
 
 ## Testing
 
