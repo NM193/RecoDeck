@@ -11,11 +11,11 @@ import {
   useCallback,
   useImperativeHandle,
   forwardRef,
+  type CSSProperties,
 } from 'react'
 import type { Track, Playlist } from '../types/track'
 import { usePlayerStore } from '../store/playerStore'
 import { Icon } from './Icon'
-import { StarRating } from './StarRating'
 import {
   applyTrackFilter,
   isEmptyFilter,
@@ -24,27 +24,21 @@ import {
 import { trackCountLabel } from '../lib/trackTable/count'
 import { FilterButton } from './track-table/FilterButton'
 import { usePlayedTrackIds } from './track-table/usePlayedTrackIds'
-
-// --- Sort types ---
-
-type SortColumn =
-  | 'title'
-  | 'artist'
-  | 'album'
-  | 'bpm'
-  | 'key'
-  | 'genre'
-  | 'duration'
-  | 'format'
-  | 'rating'
-  | 'comment'
-
-type SortDirection = 'asc' | 'desc'
-
-interface SortState {
-  column: SortColumn
-  direction: SortDirection
-}
+import { usePlayCounts } from './track-table/usePlayCounts'
+import { ColumnsButton } from './track-table/ColumnsButton'
+import { TableHead } from './track-table/TableHead'
+import { TrackCell } from './track-table/TrackCell'
+import { gridTemplate, shownColumns } from '../lib/trackTable/columns'
+import { titleGradient } from '../lib/trackTable/cells'
+import {
+  DEFAULT_SORT,
+  nextSort,
+  sortTracks,
+  visibleSort,
+  type SortColumn,
+  type SortState,
+} from '../lib/trackTable/sort'
+import { useTrackTableLayout } from '../store/trackTableLayoutStore'
 
 // --- Component ---
 
@@ -81,6 +75,8 @@ interface TrackTableProps {
    * All Tracks passes the library's, which holds during a backend search.
    */
   totalCount?: number
+  /** App's play-version number: raised after each play is recorded. */
+  playVersion?: number
 }
 
 export interface TrackTableRef {
@@ -110,6 +106,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       filter = null,
       onFilterChange,
       totalCount,
+      playVersion = 0,
     },
     ref,
   ) {
@@ -258,10 +255,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     }, [])
 
     // Sort state — default: sort by title ascending
-    const [sort, setSort] = useState<SortState>({
-      column: 'title',
-      direction: 'asc',
-    })
+    const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
 
     // --- Search: filter tracks by query across all text fields ---
     const searchedTracks = useMemo(() => {
@@ -298,111 +292,30 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     )
     const narrowed = searchQuery.trim() !== '' || filterActive
 
-    // --- Sort: order filtered tracks by selected column ---
-    const sortedTracks = useMemo(() => {
-      const sorted = [...filteredTracks]
-      const { column, direction } = sort
-      const dir = direction === 'asc' ? 1 : -1
+    // --- Columns: one layout for every track table (Columns panel) ---
+    const layout = useTrackTableLayout((state) => state.layout)
+    const grid = useMemo(() => gridTemplate(layout), [layout])
+    const columns = useMemo(() => shownColumns(layout), [layout])
+    const [columnsOpen, setColumnsOpen] = useState(false)
+    const plays = usePlayCounts(
+      columns.some((column) => column.id === 'plays'),
+      playVersion,
+    )
 
-      sorted.sort((a, b) => {
-        let valA: string | number | undefined
-        let valB: string | number | undefined
+    // --- Sort: by the column whose head was clicked, if it is still shown ---
+    const shownSort = visibleSort(sort, layout)
+    const sortedTracks = useMemo(
+      () => sortTracks(filteredTracks, shownSort, plays),
+      [filteredTracks, shownSort, plays],
+    )
+    const handleSort = (column: SortColumn) => setSort(nextSort(shownSort, column))
 
-        switch (column) {
-          case 'title':
-            valA = a.title?.toLowerCase() ?? ''
-            valB = b.title?.toLowerCase() ?? ''
-            break
-          case 'artist':
-            valA = a.artist?.toLowerCase() ?? ''
-            valB = b.artist?.toLowerCase() ?? ''
-            break
-          case 'album':
-            valA = a.album?.toLowerCase() ?? ''
-            valB = b.album?.toLowerCase() ?? ''
-            break
-          case 'bpm':
-            valA = a.bpm ?? 0
-            valB = b.bpm ?? 0
-            break
-          case 'key':
-            valA = (a.musical_key ?? '').toLowerCase()
-            valB = (b.musical_key ?? '').toLowerCase()
-            break
-          case 'genre':
-            valA = (a.genre ?? '').toLowerCase()
-            valB = (b.genre ?? '').toLowerCase()
-            break
-          case 'duration':
-            valA = a.duration_ms ?? 0
-            valB = b.duration_ms ?? 0
-            break
-          case 'format':
-            valA = a.file_format?.toLowerCase() ?? ''
-            valB = b.file_format?.toLowerCase() ?? ''
-            break
-          case 'rating':
-            valA = a.rating ?? 0
-            valB = b.rating ?? 0
-            break
-          case 'comment':
-            valA = (a.comment ?? '').toLowerCase()
-            valB = (b.comment ?? '').toLowerCase()
-            break
-        }
-
-        // Compare: strings use localeCompare, numbers use subtraction
-        if (typeof valA === 'string' && typeof valB === 'string') {
-          // Push empty strings to the bottom regardless of sort direction
-          if (valA === '' && valB !== '') return 1
-          if (valA !== '' && valB === '') return -1
-          return valA.localeCompare(valB) * dir
-        }
-
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          // Push 0/empty to the bottom regardless of sort direction
-          if (valA === 0 && valB !== 0) return 1
-          if (valA !== 0 && valB === 0) return -1
-          return (valA - valB) * dir
-        }
-
-        return 0
-      })
-
-      return sorted
-    }, [filteredTracks, sort])
-
-    // Handle column header click — toggle sort
-    const handleSort = (column: SortColumn) => {
-      setSort((prev) => {
-        if (prev.column === column) {
-          // Same column: toggle direction
-          return {
-            column,
-            direction: prev.direction === 'asc' ? 'desc' : 'asc',
-          }
-        }
-        // Rating defaults to descending (5 stars first); others start ascending
-        return { column, direction: column === 'rating' ? 'desc' : 'asc' }
-      })
-    }
-
-    // Render sort indicator arrow
-    const sortIndicator = (column: SortColumn) => {
-      if (sort.column !== column) return null
-      return (
-        <span className="sort-indicator">
-          {sort.direction === 'asc' ? '▲' : '▼'}
-        </span>
-      )
-    }
-
-    const HEADER_HEIGHT = 36
+    const HEADER_HEIGHT = 30
 
     const virtualizer = useVirtualizer({
       count: sortedTracks.length,
       getScrollElement: () => parentRef.current,
-      estimateSize: () => 32,
+      estimateSize: () => 46,
       overscan: 10,
       scrollMargin: HEADER_HEIGHT,
     })
@@ -444,10 +357,13 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               `[data-index="${index}"]`,
             ) as HTMLElement
             if (element) {
-              element.style.transition = 'background-color 0.3s ease'
-              element.style.backgroundColor = 'rgba(var(--accent-rgb), 0.3)'
+              // --row-bg, so the sticky # and artwork cells flash too.
+              element.style.setProperty(
+                '--row-bg',
+                'color-mix(in srgb, var(--bg-primary), var(--accent) 30%)',
+              )
               setTimeout(() => {
-                element.style.backgroundColor = ''
+                element.style.removeProperty('--row-bg')
               }, 600)
             }
           }, 100)
@@ -456,13 +372,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       [currentTrack, sortedTracks, virtualizer],
     )
 
-    // Format duration from milliseconds to MM:SS
-    const formatDuration = (ms?: number) => {
-      if (!ms) return '--:--'
-      const minutes = Math.floor(ms / 60000)
-      const seconds = Math.floor((ms % 60000) / 1000)
-      return `${minutes}:${seconds.toString().padStart(2, '0')}`
-    }
+    // The comment editor and the stars, where tracks can be edited.
+    const editComment = onUpdateTrack
+      ? (track: Track) =>
+          setCommentInput({ visible: true, track, value: track.comment || '' })
+      : undefined
+    const rate = onUpdateTrack
+      ? (track: Track, rating: number) => onUpdateTrack({ ...track, rating })
+      : undefined
 
     return (
       <div className="track-table-container">
@@ -495,6 +412,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               shownCount={sortedTracks.length}
             />
           )}
+          <ColumnsButton open={columnsOpen} onOpenChange={setColumnsOpen} />
           {/* AI Recommendations for current playlist (DISC-02) */}
           {onGetPlaylistRecommendations &&
             selectedPlaylistId != null &&
@@ -560,60 +478,23 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             overflow: 'auto',
           }}
         >
-          <div className="track-table-holder">
+          <div
+            className="track-table-holder"
+            style={
+              {
+                '--tt-min': `${grid.minWidth}px`,
+                '--tt-grid': grid.template,
+              } as CSSProperties
+            }
+          >
           {/* Column headers — sticky inside scroll area */}
           <div className="track-table-header">
-            <div className="track-table-row header-row">
-              <div className="table-cell cell-index">#</div>
-              <div
-                className={`table-cell cell-title sortable ${sort.column === 'title' ? 'sorted' : ''}`}
-                onClick={() => handleSort('title')}
-              >
-                Title {sortIndicator('title')}
-              </div>
-              <div
-                className={`table-cell cell-artist sortable ${sort.column === 'artist' ? 'sorted' : ''}`}
-                onClick={() => handleSort('artist')}
-              >
-                Artist {sortIndicator('artist')}
-              </div>
-              <div
-                className={`table-cell cell-bpm sortable ${sort.column === 'bpm' ? 'sorted' : ''}`}
-                onClick={() => handleSort('bpm')}
-              >
-                BPM {sortIndicator('bpm')}
-              </div>
-              <div
-                className={`table-cell cell-key sortable ${sort.column === 'key' ? 'sorted' : ''}`}
-                onClick={() => handleSort('key')}
-              >
-                Key {sortIndicator('key')}
-              </div>
-              <div
-                className={`table-cell cell-genre sortable ${sort.column === 'genre' ? 'sorted' : ''}`}
-                onClick={() => handleSort('genre')}
-              >
-                Genre {sortIndicator('genre')}
-              </div>
-              <div
-                className={`table-cell cell-comment sortable ${sort.column === 'comment' ? 'sorted' : ''}`}
-                onClick={() => handleSort('comment')}
-              >
-                Comment {sortIndicator('comment')}
-              </div>
-              <div
-                className={`table-cell cell-rating sortable ${sort.column === 'rating' ? 'sorted' : ''}`}
-                onClick={() => handleSort('rating')}
-              >
-                Rating {sortIndicator('rating')}
-              </div>
-              <div
-                className={`table-cell cell-duration sortable ${sort.column === 'duration' ? 'sorted' : ''}`}
-                onClick={() => handleSort('duration')}
-              >
-                Duration {sortIndicator('duration')}
-              </div>
-            </div>
+            <TableHead
+              layout={layout}
+              sort={shownSort}
+              onSort={handleSort}
+              onOpenColumns={() => setColumnsOpen(true)}
+            />
           </div>
           {/* Virtualized body */}
           <div className="track-table-body">
@@ -678,7 +559,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       })
                     }}
                   >
-                    <div className="table-cell cell-index">
+                    <div className="tt-cell cell-index">
                       {isPlayingTrack ? (
                         <span className="row-playing">
                           <Icon name="Volume2" size={14} />
@@ -694,62 +575,24 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                         </>
                       )}
                     </div>
-                    <div className="table-cell cell-title" title={track.title || 'Untitled'}>
-                      {track.title || <span className="text-muted">Untitled</span>}
-                    </div>
-                    <div className="table-cell cell-artist" title={track.artist || 'Unknown Artist'}>
-                      {track.artist || <span className="text-muted">Unknown Artist</span>}
-                    </div>
-                    <div className="table-cell cell-bpm">
-                      {track.bpm ? track.bpm.toFixed(2) : '—'}
-                    </div>
-                    <div
-                      className="table-cell cell-key"
-                      title={
-                        track.key_confidence != null
-                          ? `${track.musical_key ?? '—'} (${Math.round((track.key_confidence ?? 0) * 100)}%)`
-                          : undefined
-                      }
-                    >
-                      {track.musical_key ?? '—'}
-                    </div>
-                    <div className="table-cell cell-genre" title={track.genre}>
-                      {track.genre || <span className="text-muted">—</span>}
-                    </div>
-                    <div
-                      className="table-cell cell-comment"
-                      title={track.comment}
-                      onClick={(e) => {
-                        if (!onUpdateTrack) return
-                        e.stopPropagation()
-                        setCommentInput({
-                          visible: true,
-                          track,
-                          value: track.comment || '',
-                        })
-                      }}
-                    >
-                      {track.comment || (
-                        <span className="text-muted">
-                          {onUpdateTrack ? '+ Add' : '—'}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className="table-cell cell-rating"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <StarRating
-                        value={track.rating ?? 0}
-                        readonly={!onUpdateTrack}
-                        onChange={(rating) => {
-                          onUpdateTrack?.({ ...track, rating })
-                        }}
+                    {layout.artwork && (
+                      <div className="tt-cell cell-art">
+                        <span
+                          className="tt-cover"
+                          style={{ background: titleGradient(track.title) }}
+                        />
+                      </div>
+                    )}
+                    {columns.map((column) => (
+                      <TrackCell
+                        key={column.id}
+                        column={column.id}
+                        track={track}
+                        plays={plays}
+                        onEditComment={editComment}
+                        onRate={rate}
                       />
-                    </div>
-                    <div className="table-cell cell-duration">
-                      {formatDuration(track.duration_ms)}
-                    </div>
+                    ))}
                   </div>
                 )
               })}

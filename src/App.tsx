@@ -145,6 +145,9 @@ function AppContent() {
   // that opens a view clears it, and Home and Search set it as they open All
   // Tracks; an effect on the view key would wipe the filter they set.
   const [tableFilter, setTableFilter] = useState<TrackFilter | null>(null)
+  // Raised after each play is recorded: the track table's Plays column (and
+  // Home, later) read their counts again.
+  const [playVersion, setPlayVersion] = useState(0)
 
   // Genre state
   const [genreDefinitions, setGenreDefinitions] = useState<
@@ -1333,6 +1336,7 @@ function AppContent() {
       if (trackToPlay?.id) {
         tauriApi
           .recordPlayEvent(trackToPlay.id, selectedPlaylistId ?? null)
+          .then(() => setPlayVersion((version) => version + 1))
           .catch(console.error)
       }
     } catch (err) {
@@ -1853,6 +1857,7 @@ function AppContent() {
                     }
                     filter={tableFilter}
                     onFilterChange={setTableFilter}
+                    playVersion={playVersion}
                     totalCount={
                       !selectedFolder && !selectedPlaylistId
                         ? totalTrackCount
