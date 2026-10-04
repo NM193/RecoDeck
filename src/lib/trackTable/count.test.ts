@@ -15,4 +15,10 @@ describe('the track count', () => {
   it('says track for one', () => {
     expect(trackCountLabel(1, 1, false)).toBe('1 track')
   })
+
+  it('starts with the rows selected when there are several', () => {
+    expect(trackCountLabel(1162, 8583, true, 3)).toBe('3 selected · 1,162 of 8,583 tracks')
+    expect(trackCountLabel(8583, 8583, false, 1204)).toBe('1,204 selected · 8,583 tracks')
+    expect(trackCountLabel(8583, 8583, false, 1)).toBe('8,583 tracks')
+  })
 })
