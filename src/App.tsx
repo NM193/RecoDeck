@@ -53,7 +53,17 @@ import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
-import { toast } from './lib/toast'
+import { dismissToast, toast } from './lib/toast'
+import { audioPlayer } from './lib/audioPlayer'
+import { evictArtworkCache } from './lib/artworkCache'
+import { thumbnails } from './lib/thumbnails/thumbnails'
+import {
+  folderName,
+  movedMessage,
+  skipDetail,
+  undoGroups,
+  type Skip,
+} from './lib/trackTable/moveMessages'
 import {
   addedMessage,
   alreadyMessage,
@@ -61,10 +71,13 @@ import {
   genreSetMessage,
   genreSnapshot,
   removedMessage,
+  tracksSubject,
 } from './lib/trackTable/bulkMessages'
 import type {
   Track,
   Playlist,
+  LibraryFolder,
+  MoveReport,
   AnalysisProgressEvent,
   AnalysisCompleteEvent,
 } from './types/track'
@@ -1238,6 +1251,103 @@ function AppContent() {
     }
   }
 
+  // Move to folder (track table spec): the files move on disk. The track
+  // playing — and during a crossfade the one coming in — stays where it is:
+  // the player streams it from its path.
+  function tracksInUse(): Set<number> {
+    const ids = new Set<number>()
+    const current = usePlayerStore.getState().currentTrack
+    if (current) ids.add(current.id)
+    if (audioPlayer.incomingTrackId !== null) ids.add(audioPlayer.incomingTrackId)
+    return ids
+  }
+
+  // Moves the tracks' files, then gives the player's queue their new paths,
+  // forgets their covers (a folder's cover.jpg may differ), and reloads the
+  // view and the sidebar's folder tree. Answers what moved and what stayed.
+  async function moveFiles(
+    ids: number[],
+    folder: string,
+  ): Promise<{ moved: MoveReport['moved']; skipped: Skip[] }> {
+    const inUse = tracksInUse()
+    const playing: Skip[] = ids.filter((id) => inUse.has(id)).map((id) => ({ id, reason: 'playing' }))
+    const movable = ids.filter((id) => !inUse.has(id))
+    const report: MoveReport =
+      movable.length > 0
+        ? await tauriApi.moveTracksToFolder(movable, folder)
+        : { moved: [], skipped: [] }
+    if (report.moved.length > 0) {
+      usePlayerStore
+        .getState()
+        .patchTrackPaths(new Map(report.moved.map((m) => [m.id, m.newPath])))
+      for (const { id } of report.moved) {
+        thumbnails.forget(id)
+        evictArtworkCache(id)
+      }
+      await loadTracksRef.current()
+      await useFolderTreeStore.getState().invalidateAll(libraryFoldersRef.current)
+    }
+    return { moved: report.moved, skipped: [...playing, ...report.skipped] }
+  }
+
+  async function handleMoveToFolder(selected: Track[], folder: LibraryFolder) {
+    const name = folderName(folder.label)
+    const byId = new Map(selected.map((t) => [t.id, t]))
+    const titleOf = (id: number) => byId.get(id)?.title
+    // A copy across disks takes a while: say so when it does.
+    let working: number | null = null
+    const slow = setTimeout(() => {
+      working = toast(`Moving ${tracksSubject(selected)} to ${name}…`, { kind: 'info' })
+    }, 400)
+    try {
+      const { moved, skipped } = await moveFiles(
+        selected.map((t) => t.id),
+        folder.path,
+      )
+      toast(movedMessage(moved.map((m) => byId.get(m.id)!), skipped, name), {
+        kind: skipped.length > 0 ? 'warning' : 'success',
+        detail: skipped.length > 0 ? skipDetail(skipped, titleOf) : undefined,
+        // Undo: back to the folders they came from, once per folder; what
+        // stays is reported as a move reports it.
+        action:
+          moved.length === 0
+            ? undefined
+            : {
+                label: 'Undo',
+                run: () => {
+                  const oldPath = (id: number) => byId.get(id)!.file_path
+                  ;(async () => {
+                    const back: MoveReport['moved'] = []
+                    const stayed: Skip[] = []
+                    for (const group of undoGroups(moved, oldPath)) {
+                      try {
+                        const result = await moveFiles(group.ids, group.folder)
+                        back.push(...result.moved)
+                        stayed.push(...result.skipped)
+                      } catch {
+                        // Its folder is gone, or no longer in the library:
+                        // these stay; the other folders still get theirs.
+                        stayed.push(...group.ids.map((id) => ({ id, reason: 'failed' as const })))
+                      }
+                    }
+                    if (stayed.length > 0) {
+                      toast(movedMessage(back.map((m) => byId.get(m.id)!), stayed, 'where they were'), {
+                        kind: 'warning',
+                        detail: skipDetail(stayed, titleOf),
+                      })
+                    }
+                  })().catch((err) => toast(`Couldn't undo: ${errorText(err)}`, { kind: 'error' }))
+                },
+              },
+      })
+    } catch (err) {
+      toast(`Couldn't move to ${name}: ${errorText(err)}`, { kind: 'error' })
+    } finally {
+      clearTimeout(slow)
+      if (working !== null) dismissToast(working)
+    }
+  }
+
   // Persist a track update (rating, comment, etc.) and refresh the list
   async function handleUpdateTrack(track: Track) {
     try {
@@ -1894,6 +2004,7 @@ function AppContent() {
                     onRemoveFromPlaylist={handleRemoveFromPlaylist}
                     onSetGenre={handleSetGenre}
                     onClearGenre={handleClearGenre}
+                    onMoveToFolder={handleMoveToFolder}
                     onUpdateTrack={handleUpdateTrack}
                     genreDefinitions={genreDefinitions}
                     onGenerateAIPlaylist={
