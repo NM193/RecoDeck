@@ -1,7 +1,7 @@
 // src/components/track-table/ColumnsPanel.tsx
 // The Columns panel (track table spec): a checkbox per column, ⠿ to drag a
-// column to another place (or ↑ ↓ on the focused handle), Reset, and the
-// Artwork switch. # and the artwork are not in the list.
+// column to another place (or ↑ ↓ on the focused handle; Esc cancels a drag),
+// Reset, and the Artwork switch. # and the artwork are not in the list.
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import {
   columnDef,
@@ -11,6 +11,7 @@ import {
   type ColumnId,
   type TrackTableLayout,
 } from '../../lib/trackTable/columns'
+import { useOverlay } from '../../lib/overlays'
 import { Icon } from '../Icon'
 import { ToggleSwitch } from '../settings/ToggleSwitch'
 
@@ -34,6 +35,10 @@ export function ColumnsPanel({ layout, onChange }: ColumnsPanelProps) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const handles = useRef(new Map<ColumnId, HTMLButtonElement>())
   const last = layout.columns.length - 1
+
+  // A drag in progress is the topmost overlay: Esc cancels it before it
+  // closes the panel (Interactions spec).
+  useOverlay(drag !== null, () => setDrag(null))
 
   const startDrag = (index: number) => (event: PointerEvent<HTMLButtonElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId)
