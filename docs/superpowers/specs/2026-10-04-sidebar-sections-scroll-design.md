@@ -17,8 +17,8 @@ first.
   longer scrolls.
 - **Space follows content** (chosen of three options): several sections can be
   open; a short one (Spotify's five lists) keeps its whole height, and the
-  long ones share what is left, each scrolling inside. When everything fits,
-  nothing scrolls and the headers simply follow each other.
+  long ones share what is left equally, each scrolling inside. When everything
+  fits, nothing scrolls and the headers simply follow each other.
 - An open body never shrinks below three rows (about 96px); if the window is
   so short that even that does not fit, the section area as a whole scrolls,
   as a fallback.
@@ -28,16 +28,28 @@ first.
 
 ## How
 
-The section area becomes a flex column filling the height under the nav
-(`flex: 1; min-height: 0`). Each section is a header plus a body; the body is
-`flex: 0 1 auto; min-height: 96px; overflow-y: auto`. Flexbox shrinks items in
-proportion to their size, so a long body gives up space and a short one keeps
-its own — which is the "space follows content" rule without code. The
-sidebar's scrollbar styling moves to the bodies.
+The nav moves out of the scrolling area; below it, the section area fills the
+rest of the height (`flex: 1; min-height: 0`) and only scrolls as the fallback
+above.
 
-Files: `src/components/layout/Sidebar.tsx` (the section area wrapper; the
-sections already render a header and a body) and
-`src/components/layout/Sidebar.css`.
+Flexbox alone cannot give "space follows content": when the lists overflow it
+shrinks every item in proportion to its size, so a short Spotify list would
+shrink and scroll too. So each open section's list gets an explicit height,
+from a pure function `distributeHeights(available, natural)`:
+- `available` is the section area's height minus the headers and dividers;
+  `natural` is each open list's own height (measured with `ResizeObserver` on
+  an inner wrapper, so a folder expanding or a list growing re-measures);
+- lists that fit in an equal share of what is left keep their whole height
+  (shortest first); the rest share the remainder equally and scroll inside;
+- never below 96px (or the list's own height, if shorter).
+
+The list's height is animated (the existing framer-motion body animates to the
+number instead of `auto`), so opening one section smoothly makes room in the
+others. The sidebar's scrollbar styling moves to the lists.
+
+Files: `src/lib/sidebarSections.ts` (the function, unit-tested),
+`src/components/layout/useSectionHeights.ts` (the measuring),
+`src/components/layout/Sidebar.tsx` and `src/components/layout/Sidebar.css`.
 
 ## Testing
 
