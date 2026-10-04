@@ -754,7 +754,7 @@ fn validate_folder_name(name: &str) -> Result<String, AppError> {
 }
 
 /// Load registered library root folders from settings.
-fn library_roots(db: &Database) -> Result<Vec<String>, AppError> {
+pub(crate) fn library_roots(db: &Database) -> Result<Vec<String>, AppError> {
     let raw = db
         .get_setting("library_folders")
         .map_err(|e| AppError::Database(format!("Failed to read library_folders: {}", e)))?;
@@ -767,7 +767,7 @@ fn library_roots(db: &Database) -> Result<Vec<String>, AppError> {
 }
 
 /// Canonicalize and confirm `target` sits inside one of the registered library roots.
-fn assert_within_library_roots(db: &Database, target: &Path) -> Result<(), AppError> {
+pub(crate) fn assert_within_library_roots(db: &Database, target: &Path) -> Result<(), AppError> {
     let canonical = std::fs::canonicalize(target)
         .map_err(|e| AppError::Validation(format!("Invalid path '{}': {}", target.display(), e)))?;
     let roots = library_roots(db)?;

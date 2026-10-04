@@ -7,6 +7,7 @@ pub mod dashboard;
 pub mod dj;
 pub mod genre;
 pub mod library;
+pub mod move_tracks;
 pub mod playback;
 pub mod playlists;
 pub mod server;

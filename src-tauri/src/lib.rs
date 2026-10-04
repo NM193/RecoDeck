@@ -249,6 +249,11 @@ pub fn run() {
                 if err.kind() != std::io::ErrorKind::NotFound {
                     return Err(err);
                 }
+                // Moved this session (Move to folder): asked for by its old path.
+                if let Some(moved) = commands::move_tracks::moved_to(path) {
+                    eprintln!("[stream] Moved to: {:?}", moved);
+                    return std::fs::read(&moved);
+                }
                 // Fallback 0: on Windows, try with backslashes (frontend may send forward slashes)
                 #[cfg(target_os = "windows")]
                 {
@@ -537,6 +542,8 @@ pub fn run() {
             commands::playlists::remove_track_from_playlist,
             commands::playlists::add_tracks_to_playlist,
             commands::playlists::remove_tracks_from_playlist,
+            commands::move_tracks::list_library_folders,
+            commands::move_tracks::move_tracks_to_folder,
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::export_playlist_to_folder,
             commands::playlists::pick_export_folder,

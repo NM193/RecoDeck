@@ -819,6 +819,19 @@ impl Database {
         Ok((added, already))
     }
 
+    /// Point a track at its file's new place (Move to folder). Its id, and so
+    /// its analysis, history, playlists and cues, stay.
+    pub fn set_track_file_path(&self, track_id: i64, file_path: &str) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE id = ?",
+            params![file_path, track_id],
+        )?;
+        if changed == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
     /// Remove tracks from a playlist in one transaction. Answers how many were
     /// in it.
     pub fn remove_tracks_from_playlist(&self, playlist_id: i64, track_ids: &[i64]) -> Result<usize> {
