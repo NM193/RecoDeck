@@ -14,6 +14,7 @@ import type { Playlist } from '../../types/track'
 import { FolderTree, type FolderTreeRef } from '../FolderTree'
 import { SidebarRail } from './SidebarRail'
 import { SidebarColourMenu } from './SidebarColourMenu'
+import { useSectionHeights } from './useSectionHeights'
 import type { NavItem, SidebarSpotify, SidebarYouTubeMusic } from './sidebarTypes'
 import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
 import { SpotifyLists } from '../spotify/SpotifyLists'
@@ -55,6 +56,8 @@ function readStoredWidth(): number {
 // --- Section component ---
 
 interface SectionProps {
+  /** Which section: its list wrapper says so, for the measuring. */
+  section: SidebarSection
   title: string
   iconName?: IconName
   /** Drawn instead of `iconName` — for Spotify, which lucide does not draw. */
@@ -66,10 +69,17 @@ interface SectionProps {
   /** Shown right-aligned in the header. It sits inside the header button, so
    *  it must not be interactive itself. */
   trailing?: React.ReactNode
+  /** The list's height from `useSectionHeights`; 0 until measured. */
+  height?: number
+  /** Whether a change of `height` animates (open / close) or is immediate (resize). */
+  animateHeight: boolean
+  /** `useSectionHeights`' ref for the list wrapper. */
+  contentRef: (el: HTMLDivElement | null) => (() => void) | undefined
   children: React.ReactNode
 }
 
 function Section({
+  section,
   title,
   iconName,
   glyph,
@@ -78,13 +88,23 @@ function Section({
   iconStyle,
   onContextMenu,
   trailing,
+  height,
+  animateHeight,
+  contentRef,
   children,
 }: SectionProps) {
+  const bodyRef = useRef<HTMLDivElement>(null)
+  /** Set by the header when it opens the list: the selected row is shown once it is open. */
+  const justOpened = useRef(false)
+
   return (
     <div className="sidebar-section">
       <button
         className="sidebar-section__header"
-        onClick={onToggle}
+        onClick={() => {
+          justOpened.current = !expanded
+          onToggle()
+        }}
         onContextMenu={onContextMenu}
         type="button"
       >
@@ -103,14 +123,42 @@ function Section({
       <AnimatePresence initial={false}>
         {expanded && (
           <motion.div
+            ref={bodyRef}
             className="sidebar-section__body"
             key="body"
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            animate={{
+              // 0 until measured, so a list never starts at its full height
+              // and pushes the headers below it off screen.
+              height: height ?? 0,
+              opacity: 1,
+              transition: { duration: animateHeight ? 0.2 : 0, ease: 'easeInOut' },
+            }}
+            exit={{
+              height: 0,
+              opacity: 0,
+              transition: { duration: 0.2, ease: 'easeInOut' },
+            }}
+            // No scrollbar while the height moves (it would flash and shift the rows).
+            onAnimationStart={() => {
+              bodyRef.current?.setAttribute('data-animating', '')
+            }}
+            onAnimationComplete={() => {
+              bodyRef.current?.removeAttribute('data-animating')
+              if (!justOpened.current) return
+              justOpened.current = false
+              bodyRef.current
+                ?.querySelector('.folder-row.selected')
+                ?.scrollIntoView({ block: 'nearest' })
+            }}
           >
-            {children}
+            <div
+              className="sidebar-section__content"
+              data-section={section}
+              ref={contentRef}
+            >
+              {children}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -215,6 +263,16 @@ export function Sidebar({
   const [playlistsExpanded, setPlaylistsExpanded] = useState(true)
   const [spotifyExpanded, setSpotifyExpanded] = useState(true)
   const [youtubeMusicExpanded, setYouTubeMusicExpanded] = useState(true)
+
+  // The open sections share the height under the nav (spec: sidebar sections
+  // scroll); each open list gets its share and scrolls inside.
+  const openSections: SidebarSection[] = []
+  if (foldersExpanded) openSections.push('folders')
+  if (playlistsExpanded) openSections.push('playlists')
+  if (spotify && spotifyExpanded) openSections.push('spotify')
+  if (youtubeMusic && youtubeMusicExpanded) openSections.push('youtube-music')
+  const { areaRef, contentRef, heights, animate } =
+    useSectionHeights(openSections)
 
   // Right-click menu: a section's colour, plus Create Playlist / Folder on Playlists.
   const [ctxMenu, setCtxMenu] = useState<{
@@ -556,33 +614,38 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Scrollable content */}
-      <div className="sidebar-scroll">
-        {/* Top nav items */}
-        <div className="sidebar-nav">
-          {navItems.map((item) => (
-            <button
-              key={item.section}
-              className={`sidebar-nav-item ${activeSection === item.section ? 'sidebar-nav-item--active' : ''}`}
-              onClick={item.onClick}
-              onContextMenu={openColourMenu(item.section)}
-              type="button"
-            >
-              <Icon
-                name={item.icon}
-                size={16}
-                style={iconStyle(item.section)}
-              />
-              <span>{item.label}</span>
-              {item.count != null && item.count > 0 && (
-                <span className="sidebar-nav-item__count">({item.count})</span>
-              )}
-            </button>
-          ))}
-        </div>
+      {/* Top nav items — they stay put; the sections share the space below */}
+      <div className="sidebar-nav">
+        {navItems.map((item) => (
+          <button
+            key={item.section}
+            className={`sidebar-nav-item ${activeSection === item.section ? 'sidebar-nav-item--active' : ''}`}
+            onClick={item.onClick}
+            onContextMenu={openColourMenu(item.section)}
+            type="button"
+          >
+            <Icon
+              name={item.icon}
+              size={16}
+              style={iconStyle(item.section)}
+            />
+            <span>{item.label}</span>
+            {item.count != null && item.count > 0 && (
+              <span className="sidebar-nav-item__count">({item.count})</span>
+            )}
+          </button>
+        ))}
+      </div>
 
+      {/* The sections. Only their lists scroll; this area scrolls as a whole
+          only when even three rows per open list do not fit. */}
+      <div className="sidebar-scroll" ref={areaRef}>
         {/* Folders section */}
         <Section
+          section="folders"
+          height={heights.folders}
+          animateHeight={animate}
+          contentRef={contentRef}
           title="Folders"
           iconName="Disc3"
           expanded={foldersExpanded}
@@ -598,6 +661,10 @@ export function Sidebar({
 
         {/* Playlists section */}
         <Section
+          section="playlists"
+          height={heights.playlists}
+          animateHeight={animate}
+          contentRef={contentRef}
           title="Playlists"
           iconName="ListMusic"
           expanded={playlistsExpanded}
@@ -613,6 +680,10 @@ export function Sidebar({
           <>
             <div className="sidebar-divider" />
             <Section
+              section="spotify"
+              height={heights.spotify}
+              animateHeight={animate}
+              contentRef={contentRef}
               title="Spotify"
               glyph={<SpotifyGlyph size={14} style={iconStyle('spotify')} />}
               expanded={spotifyExpanded}
@@ -643,6 +714,10 @@ export function Sidebar({
           <>
             <div className="sidebar-divider" />
             <Section
+              section="youtube-music"
+              height={heights['youtube-music']}
+              animateHeight={animate}
+              contentRef={contentRef}
               title="YouTube Music"
               glyph={
                 <YouTubeGlyph size={14} style={iconStyle('youtube-music')} />

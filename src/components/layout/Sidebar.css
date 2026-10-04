@@ -61,25 +61,38 @@
   color: white;
 }
 
-/* ===== Scroll area ===== */
+/* ===== Section area: the sections under the nav ===== */
 
+/* The open sections' lists share this height (useSectionHeights) and scroll
+   inside themselves. The area scrolls as a whole only when even three rows
+   per open list do not fit. */
 .sidebar-scroll {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.sidebar-scroll,
+.sidebar-section__body {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
-.sidebar-scroll::-webkit-scrollbar {
+.sidebar-scroll::-webkit-scrollbar,
+.sidebar-section__body::-webkit-scrollbar {
   width: 4px;
 }
 
-.sidebar-scroll::-webkit-scrollbar-track {
+.sidebar-scroll::-webkit-scrollbar-track,
+.sidebar-section__body::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.sidebar-scroll::-webkit-scrollbar-thumb {
+.sidebar-scroll::-webkit-scrollbar-thumb,
+.sidebar-section__body::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 2px;
 }
@@ -87,7 +100,8 @@
 /* ===== Collapsible section ===== */
 
 .sidebar-section {
-  /* No extra spacing — sections flow naturally */
+  /* Sized by its list's height, never by the area's flex. */
+  flex-shrink: 0;
 }
 
 .sidebar-section__header {
@@ -133,15 +147,21 @@
   margin-left: auto;
 }
 
-/* ===== Section body (animated) ===== */
+/* ===== Section body (animated, scrolls inside) ===== */
 
 .sidebar-section__body {
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.sidebar-section__body[data-animating] {
+  overflow-y: hidden;
 }
 
 /* ===== Top nav items (Home, All Tracks) ===== */
 
 .sidebar-nav {
+  flex-shrink: 0;
   padding: 8px 8px 0;
   display: flex;
   flex-direction: column;
@@ -184,6 +204,7 @@
 /* ===== Divider ===== */
 
 .sidebar-divider {
+  flex-shrink: 0;
   height: 1px;
   background: var(--border);
   margin: 4px 14px;
