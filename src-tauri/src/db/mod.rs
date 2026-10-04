@@ -2088,6 +2088,18 @@ impl Database {
         Ok(())
     }
 
+    /// Every track played at least once, each once, for the track table's
+    /// Played filter.
+    pub fn get_played_track_ids(&self) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT track_id FROM play_history
+             WHERE track_id IS NOT NULL
+             ORDER BY track_id",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.collect()
+    }
+
     /// Get recently played tracks (joined with track data), ordered by most recent first.
     pub fn get_recently_played(&self, limit: i64) -> Result<Vec<(i64, Option<i64>, i64, Option<String>, Option<String>, Option<String>)>> {
         let mut stmt = self.conn.prepare(
@@ -4484,5 +4496,24 @@ mod tests {
         let convs = db.list_conversations().unwrap();
         assert_eq!(convs[0].title.len(), 50, "Title should be exactly 50 chars");
         assert_eq!(convs[0].title, &long_content[..50]);
+    }
+
+    #[test]
+    fn test_get_played_track_ids_lists_each_played_track_once() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let mut ids = Vec::new();
+        for n in 0..3 {
+            let mut track = create_test_track();
+            track.file_path = format!("/path/to/played-{}.mp3", n);
+            track.file_hash = format!("played-{}", n);
+            ids.push(db.create_track(&track).unwrap());
+        }
+        db.record_play_event(ids[2], None).unwrap();
+        db.record_play_event(ids[0], Some(7)).unwrap();
+        db.record_play_event(ids[2], None).unwrap();
+
+        assert_eq!(db.get_played_track_ids().unwrap(), vec![ids[0], ids[2]]);
     }
 }

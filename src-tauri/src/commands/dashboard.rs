@@ -52,6 +52,21 @@ pub fn record_play_event(
         .map_err(|e| AppError::Internal(format!("Failed to record play event: {}", e)))
 }
 
+/// Every track played at least once, for the track table's Played filter.
+#[tauri::command]
+pub fn get_played_track_ids(state: State<AppState>) -> Result<Vec<i64>, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Database not initialized".to_string()))?;
+
+    db.get_played_track_ids()
+        .map_err(|e| AppError::Internal(format!("Failed to read played tracks: {}", e)))
+}
+
 #[tauri::command]
 pub fn get_recently_played(
     limit: Option<i64>,

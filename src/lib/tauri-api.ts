@@ -993,6 +993,11 @@ export const tauriApi = {
     return await invoke('record_play_event', { trackId, playlistId })
   },
 
+  /** Every track played at least once (the track table's Played filter). */
+  async getPlayedTrackIds(): Promise<number[]> {
+    return await invoke('get_played_track_ids')
+  },
+
   async getRecentlyPlayed(limit?: number): Promise<{
     track_id: number
     playlist_id: number | null
