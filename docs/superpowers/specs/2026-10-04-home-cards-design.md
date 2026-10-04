@@ -101,8 +101,9 @@ playlist). Missing BPM or key shows "—". Hovering a row turns its number into
 ▶; clicking ▶, or double-clicking the row, plays. The track playing now shows
 an **equalizer** in place of its number — three thin bars in the accent colour
 that move while it plays and stand still while it is paused — and its title in
-the accent colour. Hovering that row shows a pause icon there (lucide `Pause`,
-not a text glyph); clicking it pauses, as the player's button does. The same
+the accent colour. Hovering that row shows **pause** while it plays and **▶**
+while it is paused (lucide icons, not text glyphs); clicking does that, as the
+player's button does. The same
 indicator is used in All Tracks and in a set's track list (their specs). The
 mockup's ▮▮ is replaced by it. The queue is the card's list as it was when you pressed play:
 Recently played then re-reads and the track moves to the top, but the queue

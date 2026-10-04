@@ -22,7 +22,7 @@ quota). A section with nothing to show is not rendered.
 | Section | Shows | Click | Data |
 |---|---|---|---|
 | **Recent searches** | the last 10 searches as chips, each with ×; "Clear" | runs that search again | `localStorage['search_recent']`, this machine only |
-| **Recently played** | 6 tiles: artwork when `tracks.artwork_path` is set, else a gradient from the title; title, artist; play button on hover | plays the track | new `get_recently_played_tracks(limit)` |
+| **Recently played** | 6 tiles: the file's artwork as the track table spec's 72px thumbnail (`artwork_path` is empty for every track), else a gradient from the title; title, artist; play button on hover | plays the track | new `get_recently_played_tracks(limit)` |
 | **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line | opens the DJ page | new `get_known_djs(today)` + `localStorage['dj_recent']` |
 | **Your library by genre** | tiles for the 6 biggest genres with counts, plus **Recently added** and **Never played** with counts | opens All Tracks with that filter | new `get_library_groups()` |
 | **Recently added** | 6 rows (title, artist, "today" / "2 days ago") | plays the track | new `get_recently_added_tracks(limit)` (full track rows, shared with Home; the old `get_recently_added` returns five fields and cannot be played) |
@@ -82,8 +82,10 @@ object of the track table spec
 ([`2026-10-04-track-table-design.md`](./2026-10-04-track-table-design.md)),
 which also defines its panel and how it shows.
 
-- App state `allTracksFilter: TrackFilter | null`, set by a genre tile and
-  cleared whenever another view opens.
+- App's `tableFilter: TrackFilter | null` (track table spec), set by a genre
+  tile as it opens All Tracks, and cleared whenever another view opens. The
+  track table plan builds the filter; this plan comes after it and only sets
+  it.
 - A genre tile sets `{ genre }`; **Recently added** `{ added: 30 }`; **Never
   played** `{ played: 'never' }` (played ids from new `get_played_track_ids()`,
   read when this filter is chosen).
