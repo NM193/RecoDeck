@@ -12,7 +12,7 @@
 
 **Branch:** `feat/redesign` (holds the spec).
 
-**Checked:** every code block below was applied to a scratch copy of the code at `main` (48c0927; `Sidebar.tsx`/`Sidebar.css` are the same on `feat/redesign`). `tsc`, `eslint` on the touched files and the whole `vitest` suite pass. In WebKit (Playwright, a page rendering only the sidebar with 40 folders, 30 playlists and 5 Spotify lists) at 260×800, all open: Spotify kept its 172px and Folders and Playlists got 176px each, scrolling inside, every header on screen; Folders closed → Playlists 352px, Spotify 172px; at 420px high → every list 96px and the section area scrolls.
+**Checked:** every code block below was applied to a scratch copy of the code at `main` (48c0927; `Sidebar.tsx`/`Sidebar.css` are the same on `feat/redesign`). `tsc`, `eslint` on the touched files and the whole `vitest` suite pass. In WebKit (Playwright, a page rendering only the sidebar with 40 folders, 30 playlists and 5 Spotify lists) at 260×800, all open: Spotify kept its 172px and Folders and Playlists got 176px each, scrolling inside, every header on screen; Folders closed → Playlists 352px, Spotify 172px; at 420px high → every list 96px and the section area scrolls. Sampled every frame: no overflow while loading, closing or reopening a section; a resize from 800 to 650 overflowed for 2 frames (until the observer reports), then not at all. (A first version animated every height change and started lists at their full height; review measured headers pushed off screen for ~250ms — hence `height ?? 0` and `animateHeight`.)
 
 **Testing note:** the repo has no React Testing Library and jsdom has no `ResizeObserver`; the sharing rule is unit-tested, the measuring and the layout are checked by hand in the Tauri window (WebKit) in Task 4.
 
@@ -36,7 +36,7 @@
 
 ```bash
 git switch feat/redesign
-git status --short   # only .claude/settings.local.json and .planning/STATE.md may show; leave them
+git status --short --untracked-files=no   # only .claude/settings.local.json and .planning/STATE.md may show; leave them (untracked files are the user's, leave them too)
 ```
 
 - [ ] **Step 2: Confirm a clean baseline**
@@ -205,6 +205,12 @@ export interface SectionHeights {
   contentRef: (el: HTMLDivElement | null) => (() => void) | undefined
   /** Each open section's list height; absent until measured. */
   heights: Heights
+  /**
+   * True when these heights came from opening or closing a section, which the
+   * lists animate; false when they came from a resize, which they follow at
+   * once (an animation would trail the window and push headers off screen).
+   */
+  animate: boolean
 }
 
 /** An element's height with its vertical margins (the dividers have margins). */
@@ -229,9 +235,14 @@ export function useSectionHeights(open: SidebarSection[]): SectionHeights {
   const area = useRef<HTMLDivElement | null>(null)
   const contents = useRef(new Map<string, HTMLDivElement>())
   const observer = useRef<ResizeObserver | null>(null)
-  const [heights, setHeights] = useState<Heights>({})
+  const [state, setState] = useState<{ heights: Heights; animate: boolean }>({
+    heights: {},
+    animate: false,
+  })
   // One string, so measuring follows which sections are open, not each render.
   const openKey = open.join(',')
+  /** The open sections at the last measurement: a change since then animates. */
+  const measuredKey = useRef<string | null>(null)
 
   const measure = useCallback(() => {
     const el = area.current
@@ -243,15 +254,22 @@ export function useSectionHeights(open: SidebarSection[]): SectionHeights {
       fixed += outerHeight(part)
     })
     const sections = openKey ? (openKey.split(',') as SidebarSection[]) : []
-    const natural = sections.map(
-      (section) => contents.current.get(section)?.offsetHeight ?? 0,
-    )
-    const shares = distributeHeights(el.clientHeight - fixed, natural)
+    // Whole pixels, rounded so a list that fits never shows a scrollbar.
+    const natural = sections.map((section) => {
+      const content = contents.current.get(section)
+      return content ? Math.ceil(content.getBoundingClientRect().height) : 0
+    })
+    const available = Math.floor(el.getBoundingClientRect().height) - fixed
+    const shares = distributeHeights(available, natural)
     const next: Heights = {}
     sections.forEach((section, i) => {
       next[section] = shares[i]
     })
-    setHeights((prev) => (sameHeights(prev, next) ? prev : next))
+    const animate = measuredKey.current !== openKey
+    measuredKey.current = openKey
+    setState((prev) =>
+      sameHeights(prev.heights, next) ? prev : { heights: next, animate },
+    )
   }, [openKey])
 
   // The observer outlives renders, so it calls whichever measure is current.
@@ -298,7 +316,7 @@ export function useSectionHeights(open: SidebarSection[]): SectionHeights {
     [watch],
   )
 
-  return { areaRef, contentRef, heights }
+  return { areaRef, contentRef, heights: state.heights, animate: state.animate }
 }
 ```
 
@@ -342,8 +360,10 @@ In `interface SectionProps`, add before `title: string`:
 and before `children: React.ReactNode`:
 
 ```ts
-  /** The list's height from `useSectionHeights`; until measured, its own. */
+  /** The list's height from `useSectionHeights`; 0 until measured. */
   height?: number
+  /** Whether a change of `height` animates (open / close) or is immediate (resize). */
+  animateHeight: boolean
   /** `useSectionHeights`' ref for the list wrapper. */
   contentRef: (el: HTMLDivElement | null) => (() => void) | undefined
 ```
@@ -362,6 +382,7 @@ function Section({
   onContextMenu,
   trailing,
   height,
+  animateHeight,
   contentRef,
   children,
 }: SectionProps) {
@@ -374,7 +395,7 @@ function Section({
       <button
         className="sidebar-section__header"
         onClick={() => {
-          if (!expanded) justOpened.current = true
+          justOpened.current = !expanded
           onToggle()
         }}
         onContextMenu={onContextMenu}
@@ -399,10 +420,24 @@ function Section({
             className="sidebar-section__body"
             key="body"
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: height ?? 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            animate={{
+              // 0 until measured, so a list never starts at its full height
+              // and pushes the headers below it off screen.
+              height: height ?? 0,
+              opacity: 1,
+              transition: { duration: animateHeight ? 0.2 : 0, ease: 'easeInOut' },
+            }}
+            exit={{
+              height: 0,
+              opacity: 0,
+              transition: { duration: 0.2, ease: 'easeInOut' },
+            }}
+            // No scrollbar while the height moves (it would flash and shift the rows).
+            onAnimationStart={() => {
+              bodyRef.current?.setAttribute('data-animating', '')
+            }}
             onAnimationComplete={() => {
+              bodyRef.current?.removeAttribute('data-animating')
               if (!justOpened.current) return
               justOpened.current = false
               bodyRef.current
@@ -437,7 +472,8 @@ function Section({
   if (playlistsExpanded) openSections.push('playlists')
   if (spotify && spotifyExpanded) openSections.push('spotify')
   if (youtubeMusic && youtubeMusicExpanded) openSections.push('youtube-music')
-  const { areaRef, contentRef, heights } = useSectionHeights(openSections)
+  const { areaRef, contentRef, heights, animate } =
+    useSectionHeights(openSections)
 ```
 
 - [ ] **Step 4: Move the nav out of the scroll area** — replace
@@ -487,24 +523,28 @@ The sections and dividers stay inside this `div`; its closing `</div>` (before `
 ```tsx
           section="folders"
           height={heights.folders}
+          animateHeight={animate}
           contentRef={contentRef}
 ```
 
 ```tsx
           section="playlists"
           height={heights.playlists}
+          animateHeight={animate}
           contentRef={contentRef}
 ```
 
 ```tsx
               section="spotify"
               height={heights.spotify}
+              animateHeight={animate}
               contentRef={contentRef}
 ```
 
 ```tsx
               section="youtube-music"
               height={heights['youtube-music']}
+              animateHeight={animate}
               contentRef={contentRef}
 ```
 
@@ -565,6 +605,10 @@ Replace the section body block with:
 .sidebar-section__body {
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.sidebar-section__body[data-animating] {
+  overflow-y: hidden;
 }
 ```
 
