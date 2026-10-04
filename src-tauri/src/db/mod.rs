@@ -778,6 +778,62 @@ impl Database {
         Ok(())
     }
 
+    /// Add tracks to the end of a playlist, in the order given, in one
+    /// transaction. Answers the ids it added (what an Undo removes) and those
+    /// already in the playlist; an id given twice counts once.
+    pub fn add_tracks_to_playlist(
+        &self,
+        playlist_id: i64,
+        track_ids: &[i64],
+    ) -> Result<(Vec<i64>, Vec<i64>)> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut position: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(position), 0) FROM playlist_tracks WHERE playlist_id = ?",
+            [playlist_id],
+            |row| row.get(0),
+        )?;
+        let mut seen = std::collections::HashSet::new();
+        let mut added = Vec::new();
+        let mut already = Vec::new();
+        for &track_id in track_ids {
+            if !seen.insert(track_id) {
+                continue;
+            }
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?)",
+                params![playlist_id, track_id],
+                |row| row.get(0),
+            )?;
+            if exists {
+                already.push(track_id);
+                continue;
+            }
+            position += 1;
+            tx.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+                params![playlist_id, track_id, position],
+            )?;
+            added.push(track_id);
+        }
+        tx.commit()?;
+        Ok((added, already))
+    }
+
+    /// Remove tracks from a playlist in one transaction. Answers how many were
+    /// in it.
+    pub fn remove_tracks_from_playlist(&self, playlist_id: i64, track_ids: &[i64]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut removed = 0;
+        for &track_id in track_ids {
+            removed += tx.execute(
+                "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+                params![playlist_id, track_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(removed)
+    }
+
     /// Count tracks in a playlist.
     pub fn count_playlist_tracks(&self, playlist_id: i64) -> Result<i64> {
         let count: i64 = self.conn.query_row(
@@ -1954,13 +2010,49 @@ impl Database {
         Ok(())
     }
 
-    /// Bulk set genre for multiple tracks
+    /// Bulk set genre for multiple tracks, in one transaction: a whole
+    /// library's worth is one write, not thousands.
     pub fn bulk_set_genre(&self, track_ids: &[i64], genre: &str) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
         let mut count = 0;
         for &track_id in track_ids {
             self.save_track_genre(track_id, genre, "user")?;
             count += 1;
         }
+        tx.commit()?;
+        Ok(count)
+    }
+
+    /// Clear the genre of several tracks in one transaction.
+    pub fn bulk_clear_genre(&self, track_ids: &[i64]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut count = 0;
+        for &track_id in track_ids {
+            count += tx.execute(
+                "UPDATE tracks SET genre = NULL, genre_source = NULL WHERE id = ?",
+                [track_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
+
+    /// Write each track's genre and its source as given, none included and
+    /// over a user genre: the Undo of setting or clearing genres puts back
+    /// what was there (save_track_genre would keep a user genre).
+    pub fn restore_track_genres(
+        &self,
+        genres: &[(i64, Option<String>, Option<String>)],
+    ) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut count = 0;
+        for (track_id, genre, source) in genres {
+            count += tx.execute(
+                "UPDATE tracks SET genre = ?, genre_source = ? WHERE id = ?",
+                params![genre, source, track_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(count)
     }
 
@@ -4548,5 +4640,98 @@ mod tests {
         db.record_play_event(ids[2], Some(7)).unwrap();
 
         assert_eq!(db.get_play_counts().unwrap(), vec![(ids[0], 1), (ids[2], 3)]);
+    }
+
+    // Three tracks with distinct paths, for the bulk operations' tests.
+    fn create_three_tracks(db: &Database, name: &str) -> Vec<i64> {
+        (0..3)
+            .map(|n| {
+                let mut track = create_test_track();
+                track.file_path = format!("/path/to/{}-{}.mp3", name, n);
+                track.file_hash = format!("{}-{}", name, n);
+                db.create_track(&track).unwrap()
+            })
+            .collect()
+    }
+
+    fn playlist_ids(db: &Database, playlist_id: i64) -> Vec<i64> {
+        db.get_playlist_tracks(playlist_id)
+            .unwrap()
+            .into_iter()
+            .map(|(track, ..)| track.id.unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_add_tracks_to_playlist_answers_added_and_already_there() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "add");
+        let playlist = db.create_playlist("Peak Time", "playlist", None).unwrap();
+        db.add_track_to_playlist(playlist, ids[0]).unwrap();
+
+        let (added, already) = db
+            .add_tracks_to_playlist(playlist, &[ids[1], ids[0], ids[2], ids[1]])
+            .unwrap();
+
+        assert_eq!(added, vec![ids[1], ids[2]]);
+        assert_eq!(already, vec![ids[0]]);
+        assert_eq!(playlist_ids(&db, playlist), vec![ids[0], ids[1], ids[2]]);
+    }
+
+    #[test]
+    fn test_remove_tracks_from_playlist_counts_those_it_held() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "remove");
+        let playlist = db.create_playlist("Warm Up", "playlist", None).unwrap();
+        db.add_tracks_to_playlist(playlist, &[ids[0], ids[1]]).unwrap();
+
+        let removed = db
+            .remove_tracks_from_playlist(playlist, &[ids[0], ids[2]])
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        assert_eq!(playlist_ids(&db, playlist), vec![ids[1]]);
+    }
+
+    #[test]
+    fn test_bulk_clear_genre_clears_only_those_given() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "clear");
+        db.bulk_set_genre(&ids, "House").unwrap();
+
+        assert_eq!(db.bulk_clear_genre(&[ids[0], ids[1]]).unwrap(), 2);
+
+        assert_eq!(db.get_track_genre(ids[0]).unwrap(), None);
+        assert_eq!(db.get_track_genre(ids[1]).unwrap(), None);
+        assert_eq!(
+            db.get_track_genre(ids[2]).unwrap(),
+            Some(("House".to_string(), "user".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_restore_track_genres_writes_genre_and_source_as_given() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "restore");
+        db.save_track_genre(ids[0], "Deep House", "tag").unwrap();
+        db.bulk_set_genre(&[ids[0], ids[1]], "Techno").unwrap();
+
+        let count = db
+            .restore_track_genres(&[
+                (ids[0], Some("Deep House".to_string()), Some("tag".to_string())),
+                (ids[1], None, None),
+            ])
+            .unwrap();
+
+        assert_eq!(count, 2);
+        assert_eq!(
+            db.get_track_genre(ids[0]).unwrap(),
+            Some(("Deep House".to_string(), "tag".to_string()))
+        );
+        assert_eq!(db.get_track_genre(ids[1]).unwrap(), None);
     }
 }
