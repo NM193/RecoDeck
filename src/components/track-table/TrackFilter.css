@@ -1,0 +1,130 @@
+/* src/components/track-table/TrackFilter.css */
+/* The track table's Filter button and its panel (FilterButton.tsx). */
+
+.tt-filter {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.tt-filter__label {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* With a filter on, the button and its ✕ read as one accent button. */
+.tt-filter--on .tt-filter__main,
+.tt-filter--on .tt-filter__clear {
+  background: rgba(var(--accent-rgb), 0.18);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  color: color-mix(in srgb, var(--accent), var(--text-primary) 65%);
+}
+
+.tt-filter--on .tt-filter__main:hover,
+.tt-filter--on .tt-filter__clear:hover {
+  background: rgba(var(--accent-rgb), 0.26);
+}
+
+.tt-filter--on .tt-filter__main {
+  border-right: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.tt-filter--on .tt-filter__clear {
+  padding: 0 10px 0 6px;
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  color: var(--accent-hover);
+}
+
+.tt-filter-panel {
+  width: 300px;
+}
+
+.tt-filter-field {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tt-filter-field > :first-child {
+  color: var(--text-secondary);
+}
+
+.tt-filter-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  transition: border-color var(--motion-fast) var(--ease);
+}
+
+.tt-filter-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* BPM boxes: plain boxes, no stepper arrows */
+.tt-filter-input[type='number'] {
+  appearance: textfield;
+}
+
+.tt-filter-input::-webkit-inner-spin-button,
+.tt-filter-input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.tt-filter-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.tt-filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.tt-filter-link {
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease);
+}
+
+.tt-filter-link:hover {
+  color: var(--text-primary);
+}
+
+.tt-filter-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* "No tracks match · Clear filter" under the table */
+.track-table-no-match .tt-filter-link {
+  color: var(--accent-hover);
+}
