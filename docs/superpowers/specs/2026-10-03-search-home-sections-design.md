@@ -75,6 +75,20 @@ Recently Played widget (Home spec).
 - With an empty library and no history: only the current "Search your
   library" text, as today.
 
+
+**Results while typing.** The search field, the DJs row and the Tracks heading
+with its count stay put; **only the track rows scroll**, in their own area, as
+on a DJ page's Tracks tab. The Playlists results, which today come after the
+tracks, move above them as a row of cards like the DJs, so nothing sits below
+the scrolling list. Without a query, the sections scroll under the field as
+one page, and the field stays.
+
+**Bug to fix with it:** with a long DJs row (7 cards) the page is wider than
+the window — the field and the track rows run off the right edge, and Key,
+Genre and Duration are cut off. The DJs row must scroll sideways inside itself
+and nothing may widen the page (`min-width: 0` down the flex and grid chain to
+the app's main column). Check in WebKit at 1000px wide.
+
 ## All Tracks filter (new)
 
 All Tracks has only a text search today. It gains a filter: the `TrackFilter`
@@ -120,7 +134,9 @@ Home widgets moved to the Home cards spec.
   section-order storage (unknown ids dropped, new ids off), the "one line" for
   a DJ.
 - By hand: empty query shows the sections; typing hides them; customize,
-  restart, order kept; a genre tile opens All Tracks filtered.
+  restart, order kept; a genre tile opens All Tracks filtered; with 32 results
+  only the rows scroll and the field, DJs and heading stay; 7 DJs at 1000px
+  wide scroll sideways and nothing is cut off on the right.
 
 ## Out of scope
 
