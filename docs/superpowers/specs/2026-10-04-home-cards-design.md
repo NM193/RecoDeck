@@ -36,7 +36,7 @@ these groups; on Home a card shows no group.
 | | **Sets you saved lately** | rows: title, channel, date saved | opens the set in Sets | 2×2 | 2×1 | 4×3 |
 | | **Your DJs** | round photos, name, one line ("next gig Tue, Oct 6", "watching for sets") | opens the DJ page | 4×1 | 2×1 | 4×2 |
 | Needs you | **Needs you** | one row per kind of news, with its number (below) | each row opens its place | 2×2 | 2×1 | 4×2 |
-| | **New likes you don't own** | one row per Spotify / YouTube Music list with new likes not owned | opens the list | 2×2 | 2×1 | 4×3 |
+| | **New likes you don't own** | one row per Spotify / YouTube Music list with new likes not owned, for a service shown in the sidebar | opens the list | 2×2 | 2×1 | 4×3 |
 | | **New sets** | sets your watched DJs' searches found that you have not seen (see New sets) | opens the set in Sets | 2×2 | 2×1 | 4×3 |
 | | **Your DJs play next** | upcoming gigs of every DJ with a page: date block, "DJ · venue", city | opens the DJ page | 2×2 | 2×1 | 4×3 |
 | Your library | **Library stats** | see Library stats | — | 1×1 | 1×1 | 4×1 |
@@ -115,24 +115,30 @@ card says "Nothing new":
 |---|---|---|
 | New Spotify likes you don't own | the sidebar's Spotify number (`newCounts.total`), when Spotify is shown in the sidebar | the list with the most new likes |
 | New YouTube Music likes | the same for YouTube Music | the same |
-| New sets | the New sets count (below) | Sets' library, where the Sets spec puts new sets first |
+| New sets | the New sets count (below) | Sets, on its library (`SetsStart` gains a library start) |
 | Tracks not analyzed | tracks with no BPM | Analyze all |
 | Next gig | the earliest upcoming gig of your DJs, as "Tue · Traumer plays Hï Ibiza · Oct 6" | that DJ's page |
 
-**New sets.** A set is new while a watched DJ's search has found it
-(`yt_dj_finds`) and you have not seen it. "Seen" is kept per find, in a new
-column `yt_dj_finds.seen_at` (migration 018, SQLite `datetime('now')`). A find
-becomes seen when its set is opened anywhere (Sets, Home, a DJ page — every
-video id opened marks its finds), or with **Mark all seen** (New sets card,
-and the Sets library's new-sets row in the Sets spec). Opening Sets by itself
-marks nothing. On the first start with migration 018, every find already stored
-is marked seen, so news starts with the next search.
+**New sets.** News is about a video. A video is new while none of its find
+rows (`yt_dj_finds`) is seen. "Seen" is a new nullable column
+`yt_dj_finds.seen_at` (migration 018, no default; NULL is unseen; marking
+writes SQLite `datetime('now')`). A find row is written already seen when its
+video is in `yt_sets` at that moment or already has a seen row — so a set you
+imported or opened before any search found it, or a b2b set a second DJ's
+search finds later, never comes back as new. (Auto-import files a set after
+its find is written, so an auto-imported set is new.) A video's finds become
+seen when its set is opened anywhere (Sets, Home, a DJ page), or with **Mark
+all seen** on the New sets card. Opening Sets by itself marks nothing. On the
+first start with migration 018, every find already stored is marked seen, so
+news starts with the next search.
 
 Both kinds of find count: those auto-import already filed in `yt_sets` (they
 open at no cost) and those it did not (opening one fetches it, 5–7 units). A
 row shows the title, the DJ, the channel, and "saved" or "5–7 units". The
 count is of distinct videos; a video found by two DJs' searches shows once,
-under the DJ whose search found it first. Followed channels' new uploads are
+under the DJ whose row has the earliest `first_seen_at` (then the lowest name
+key, as one check stamps its rows with the same second). Newest first means by
+that earliest `first_seen_at`. Followed channels' new uploads are
 not stored until Sets checks them, so they are not on Home.
 
 **Library stats.** At 1×1: the track count, and "N added lately" under it. At
@@ -200,7 +206,9 @@ returns to Home on Back: App's `DjOrigin` gains `{ view: 'home' }`, and
 Cards read their data when Home opens. While Home stays open, App passes a
 number that it raises after each recorded play, after an analysis finishes, on
 `library-changed` (the folder watcher's rescan) and on `yt-new-sets` (with the
-auto-import that follows it). Every card reads its data again when it changes;
+auto-import that follows it). Home raises it too, through an App callback,
+after Mark all seen and after a set is opened from Home. Every card reads its
+data again when it changes;
 the reads are local and cheap. The Spotify and YouTube Music numbers are App
 state already and follow on their own.
 
@@ -245,9 +253,9 @@ Spotify and YouTube Music new counts and lists.
 
 ## Depends on
 
-The Search spec's plan part 1 builds `get_recently_played_tracks`,
-`get_known_djs`, `get_library_groups`, `get_played_track_ids`, the `dj_recent`
-order and the All Tracks filter. **The Home plan includes whichever of these
+The Search spec's plan builds `get_recently_played_tracks`,
+`get_recently_added_tracks`, `get_known_djs`, `get_library_groups`,
+`get_played_track_ids`, the `dj_recent` order and the All Tracks filter. **The Home plan includes whichever of these
 do not exist yet when it is written**, so it can be built before or after
 Search part 1.
 
@@ -284,7 +292,15 @@ then Customize.
   card's empty text; Analyze all from Home analyzes the 223, not the library or
   a playlist.
 
+Wiring notes for the plan: `recordPlayEvent` is fire-and-forget today, so the
+number is raised after it resolves; on `library-changed`, after the rescan and
+`loadTracks` finish; in the `yt-new-sets` handler, before its early returns and
+again after the auto-import.
+
 ## Out of scope
 
 AI cards, anything fetched from the network, checking channels for new sets
-from Home, cross-device layouts.
+from Home, cross-device layouts, and anything the Sets redesign spec adds to
+Sets (a new-sets row in its library, its own Mark all seen). Until that ships,
+Sets' library shows stored sets only, and the New sets card is where unfiled
+finds are seen.
