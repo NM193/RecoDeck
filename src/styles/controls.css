@@ -39,6 +39,11 @@
   background: color-mix(in srgb, var(--bg-elevated), black 15%);
 }
 
+.btn[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 10%);
+  color: var(--text-primary);
+}
+
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -66,6 +71,28 @@
 
 .btn--sm {
   height: 28px;
+}
+
+/* A button that reads as a link: Clear all, Reset */
+.link-btn {
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease);
+}
+
+.link-btn:hover {
+  color: var(--text-primary);
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Segmented control: follows the buttons */

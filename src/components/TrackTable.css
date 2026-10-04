@@ -42,6 +42,10 @@
   text-align: center;
 }
 
+.track-table-no-match .link-btn {
+  color: var(--accent-hover);
+}
+
 .track-table-ai-rec-btn {
   display: flex;
   align-items: center;

@@ -1,12 +1,27 @@
 // src/components/Popover.tsx
 // A panel that hangs under its button: it opens with a fade, a 4px drop and
 // a scale from 0.98 and closes faster (Interactions spec). It registers with
-// useOverlay, so Esc closes it; so does a press outside its anchor.
-import { useEffect, type ReactNode, type RefObject } from 'react'
+// useOverlay, so Esc closes it; so does a press outside its anchor. It tells
+// its content how much room there is under the anchor (--popover-room), so a
+// tall list can scroll inside it instead of being cut off.
+import { useCallback, useEffect, type ReactNode, type RefObject } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useOverlay } from '../lib/overlays'
 import { EASE, MOTION } from '../lib/motion'
 import './Popover.css'
+
+// The height from just under the anchor to the nearest edge that clips it:
+// the window, or an ancestor that does not let content overflow.
+function roomBelow(anchor: HTMLElement): number {
+  const top = anchor.getBoundingClientRect().bottom + 6
+  let bottom = window.innerHeight
+  for (let el = anchor.parentElement; el; el = el.parentElement) {
+    if (getComputedStyle(el).overflowY !== 'visible') {
+      bottom = Math.min(bottom, el.getBoundingClientRect().bottom)
+    }
+  }
+  return Math.max(120, Math.floor(bottom - top - 8))
+}
 
 interface PopoverProps {
   open: boolean
@@ -33,6 +48,15 @@ export function Popover({
   const reduceMotion = useReducedMotion()
   useOverlay(open, onClose)
 
+  const measure = useCallback(
+    (panel: HTMLDivElement | null) => {
+      if (panel && anchorRef.current) {
+        panel.style.setProperty('--popover-room', `${roomBelow(anchorRef.current)}px`)
+      }
+    },
+    [anchorRef],
+  )
+
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: PointerEvent) => {
@@ -46,6 +70,7 @@ export function Popover({
     <AnimatePresence>
       {open && (
         <motion.div
+          ref={measure}
           role="dialog"
           aria-label={label}
           className={className ? `popover ${className}` : 'popover'}

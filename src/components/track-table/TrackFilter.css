@@ -93,38 +93,3 @@
   gap: 6px;
   color: var(--text-muted);
 }
-
-.tt-filter-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.tt-filter-link {
-  padding: 2px 4px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: color var(--motion-fast) var(--ease);
-}
-
-.tt-filter-link:hover {
-  color: var(--text-primary);
-}
-
-.tt-filter-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* "No tracks match · Clear filter" under the table */
-.track-table-no-match .tt-filter-link {
-  color: var(--accent-hover);
-}

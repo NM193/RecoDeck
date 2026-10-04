@@ -763,7 +763,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   {' · '}
                   <button
                     type="button"
-                    className="tt-filter-link"
+                    className="link-btn"
                     onClick={() => onFilterChange(null)}
                   >
                     Clear filter

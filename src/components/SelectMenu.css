@@ -82,7 +82,8 @@
 }
 
 .select-menu__options {
-  max-height: 220px;
+  /* The popover's room under the box, less the search box; 220px at most. */
+  max-height: min(220px, calc(var(--popover-room, 264px) - 44px));
   margin: 0;
   padding: 0;
   overflow-y: auto;

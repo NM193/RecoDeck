@@ -200,8 +200,8 @@ export function FilterPanel({
         />
       </div>
 
-      <div className="tt-filter-footer">
-        <button type="button" className="tt-filter-link" onClick={() => onChange(null)}>
+      <div className="popover__footer">
+        <button type="button" className="link-btn" onClick={() => onChange(null)}>
           Clear all
         </button>
         <button type="button" className="btn btn--primary btn--sm" onClick={onClose}>
