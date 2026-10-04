@@ -21,6 +21,7 @@ import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
 import type { ChannelNews } from './types/youtube'
+import type { TrackFilter } from './lib/trackTable/filter'
 import appPackage from '../package.json'
 import { Notification } from './components/Notification'
 import { UpdateToast } from './components/UpdateToast'
@@ -139,6 +140,10 @@ function AppContent() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
+  // The filter on the track table on screen (track table spec). Every handler
+  // that opens a view clears it, and Home and Search set it as they open All
+  // Tracks; an effect on the view key would wipe the filter they set.
+  const [tableFilter, setTableFilter] = useState<TrackFilter | null>(null)
 
   // Genre state
   const [genreDefinitions, setGenreDefinitions] = useState<
@@ -355,6 +360,7 @@ function AppContent() {
       setSelectedFolder(null)
       setSelectedPlaylistId(null)
       setShowAllTracks(false)
+      setTableFilter(null)
       setShowSets(false)
       setShowSearch(false)
       setShowAIChat(false)
@@ -755,6 +761,7 @@ function AppContent() {
     setDjPage(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -770,6 +777,7 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -784,6 +792,7 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -826,6 +835,7 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowAIChat(false)
   }
@@ -837,6 +847,7 @@ function AppContent() {
     setDjPage(null)
     setSelectedFolder(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -853,6 +864,7 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSearch(false)
     setShowSets(false)
     setShowAIChat(false)
@@ -1032,6 +1044,7 @@ function AppContent() {
       folderTreeRef.current?.refreshLibraryRoot(folderPath)
       if (selectedFolder === folderPath) {
         setSelectedFolder(null)
+        setTableFilter(null)
         await loadTracks(null, null)
       } else {
         await loadTracks()
@@ -1059,6 +1072,7 @@ function AppContent() {
       if (selectedPlaylistId === id) {
         setSelectedPlaylistId(null)
         setSelectedFolder(null)
+        setTableFilter(null)
         await loadTracks(null, null)
       }
 
@@ -1360,6 +1374,12 @@ function AppContent() {
     )
   }
 
+  // All Tracks keeps its table, and the search box in it, while the library
+  // has tracks: no rows there is a search that found nothing, or the tracks
+  // still loading.
+  const allTracksWithLibrary =
+    showAllTracks && !selectedFolder && !selectedPlaylistId && totalTrackCount > 0
+
   // Determine empty state message
   const emptyTitle = selectedPlaylistId
     ? 'Playlist is empty'
@@ -1473,6 +1493,7 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSearch(false)
         setShowSets(false)
         setShowAIChat(false)
@@ -1483,6 +1504,7 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSettings(false)
         setShowSearch(false)
         setShowSets(false)
@@ -1494,6 +1516,7 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(true)
+        setTableFilter(null)
         setShowSettings(false)
         setShowSearch(false)
         setShowSets(false)
@@ -1508,6 +1531,7 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSettings(false)
         setShowAIChat(false)
         loadTracks(null, null)
@@ -1527,6 +1551,7 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSettings(false)
         setShowAIChat(false)
       }}
@@ -1576,6 +1601,7 @@ function AppContent() {
               setSelectedFolder(null)
               setSelectedPlaylistId(null)
               setShowAllTracks(false)
+              setTableFilter(null)
             }
           : undefined
       }
@@ -1738,6 +1764,7 @@ function AppContent() {
                         setSelectedPlaylistId(null)
                         setSelectedFolder(null)
                         setShowAllTracks(false)
+                        setTableFilter(null)
                         setShowSearch(false)
                         setShowSets(false)
                         setShowSettings(false)
@@ -1752,11 +1779,12 @@ function AppContent() {
                   setSelectedPlaylistId(null)
                   setSelectedFolder(null)
                   setShowAllTracks(false)
+                  setTableFilter(null)
                   setShowSearch(false)
                   setShowSets(false)
                 }}
               />
-            ) : tracks.length === 0 ? (
+            ) : tracks.length === 0 && !allTracksWithLibrary ? (
               <div className="empty-state">
                 <h2>{emptyTitle}</h2>
                 <p>{emptySubtitle}</p>
@@ -1816,6 +1844,13 @@ function AppContent() {
                     onSearch={
                       !selectedFolder && !selectedPlaylistId
                         ? handleSearch
+                        : undefined
+                    }
+                    filter={tableFilter}
+                    onFilterChange={setTableFilter}
+                    totalCount={
+                      !selectedFolder && !selectedPlaylistId
+                        ? totalTrackCount
                         : undefined
                     }
                   />
