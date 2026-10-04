@@ -30,6 +30,12 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+
+  /* Motion (Interactions spec): three durations, one easing */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* Midnight theme - Spotify warm blacks (default) */

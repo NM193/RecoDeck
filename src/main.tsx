@@ -1,5 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+// The shared controls come before every page's own styles, which win over
+// them at equal specificity.
+import './styles/controls.css'
 import App from './App'
 import '@fontsource-variable/inter'
 import './styles/globals.css'

@@ -56,7 +56,7 @@ export function WhatsNewDialog({ version, changes, onClose }: WhatsNewDialogProp
         </div>
 
         <div className="whats-new__footer">
-          <button className="btn btn-primary" onClick={onClose}>
+          <button className="btn-primary" onClick={onClose}>
             Got it
           </button>
         </div>
