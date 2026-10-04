@@ -36,6 +36,7 @@ export function NowPlayingBar({
     error,
     queue,
     currentTrackIndex,
+    playRequest,
     repeatMode,
     isShuffle,
     setPosition,
@@ -294,7 +295,14 @@ export function NowPlayingBar({
   // Load and play track when currentTrackIndex changes
   const loadGenRef = useRef(0)
   const crossfadeCompletedRef = useRef(false)
+  // The track loads when a play is asked for (playRequest), or when the track
+  // at the queue's index is another one — not when only the queue around it
+  // changes (shuffled, added to, its paths patched after a move), which would
+  // restart the song from 0:00. A moved track playing from its old path goes
+  // on: the stream handler follows the move.
+  const queuedTrackId = currentTrackIndex >= 0 ? (queue[currentTrackIndex]?.id ?? null) : null
   useEffect(() => {
+    const { queue, currentTrackIndex } = usePlayerStore.getState()
     if (currentTrackIndex >= 0 && queue[currentTrackIndex]) {
       const track = queue[currentTrackIndex]
       const gen = ++loadGenRef.current
@@ -351,8 +359,8 @@ export function NowPlayingBar({
       console.warn(`[NowPlayingBar] useEffect: invalid state - currentTrackIndex=${currentTrackIndex} but no track in queue`)
     }
   }, [
-    currentTrackIndex,
-    queue,
+    playRequest,
+    queuedTrackId,
     setCurrentTrack,
     setIsLoading,
     setError,

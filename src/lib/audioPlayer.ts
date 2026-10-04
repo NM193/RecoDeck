@@ -30,6 +30,9 @@ export class AudioPlayer {
   private crossfadeDurationMs: number = 8000 // default 8 seconds
   private crossfadeAudio: HTMLAudioElement | null = null // second audio element for incoming track
   private isCrossfading: boolean = false
+  // The incoming track's id while a crossfade runs: the player streams it
+  // from its path, so Move to folder leaves it where it is.
+  private crossfadeTrackId: number | null = null
   private crossfadeFadeComplete: boolean = false // fade-in done, waiting for outgoing track to end naturally
   private _isCompletingCrossfade: boolean = false // true during onTrackEnded() call from completeCrossfade()
   private crossfadeStartTime: number = 0
@@ -1091,6 +1094,11 @@ export class AudioPlayer {
     return this.isCrossfading || this.crossfadeFadeComplete || this._isCompletingCrossfade
   }
 
+  /** The incoming track's id during a crossfade; null otherwise. */
+  get incomingTrackId(): number | null {
+    return this.crossfadeTrackId
+  }
+
   getAnalyser(): AnalyserNode | null {
     if (this.mode !== 'html') return null
 
@@ -1209,7 +1217,7 @@ export class AudioPlayer {
    */
   async startCrossfadeToNext(
     nextTrackFilePath: string,
-    _nextTrackId?: number,
+    nextTrackId?: number,
     nextTrackBpm?: number | null,
     currentTrackBpm?: number | null,
   ): Promise<void> {
@@ -1236,6 +1244,7 @@ export class AudioPlayer {
     }
 
     this.isCrossfading = true
+    this.crossfadeTrackId = nextTrackId ?? null
     this.outgoingBpm = currentTrackBpm ?? null
     this.incomingBpm = nextTrackBpm ?? null
 
@@ -1383,6 +1392,7 @@ export class AudioPlayer {
     this.audio = newAudio
     this.audio.volume = 1.0
     this.crossfadeAudio = null
+    this.crossfadeTrackId = null
 
     // Reattach event listeners to the new audio element
     this.setupEventListeners()
@@ -1475,6 +1485,7 @@ export class AudioPlayer {
       this.crossfadeAudio.load()
       this.crossfadeAudio = null
     }
+    this.crossfadeTrackId = null
 
     // Restore outgoing track volume and playback rate
     if (this.audio) {

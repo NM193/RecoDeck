@@ -23,6 +23,12 @@ interface PlayerState {
   repeatMode: 'off' | 'all' | 'one'
   isShuffle: boolean
   originalQueue: Track[] // Store original order before shuffle
+  /**
+   * Raised by every action that asks for the track at currentTrackIndex to
+   * be loaded and played (a play, next, previous). Shuffling, adding to the
+   * queue and patching paths leave the track playing as it is.
+   */
+  playRequest: number
 
   // Actions
   setCurrentTrack: (track: Track | null) => void
@@ -42,6 +48,14 @@ interface PlayerState {
   setShuffle: (enabled: boolean) => void
   playTrackAtIndex: (index: number) => void
   applyQueueAction: (tracks: Track[], mode: string) => void
+  /** New paths for tracks whose files moved (Move to folder); nothing reloads. */
+  patchTrackPaths: (paths: ReadonlyMap<number, string>) => void
+}
+
+/** The tracks with their moved files' new paths; the same array when none moved. */
+export function withPaths(tracks: Track[], paths: ReadonlyMap<number, string>): Track[] {
+  if (!tracks.some((t) => paths.has(t.id))) return tracks
+  return tracks.map((t) => (paths.has(t.id) ? { ...t, file_path: paths.get(t.id)! } : t))
 }
 
 const initialState = {
@@ -57,6 +71,7 @@ const initialState = {
   repeatMode: 'off' as const,
   isShuffle: false,
   originalQueue: [],
+  playRequest: 0,
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -96,6 +111,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queue: [...tracks],
       originalQueue: [...tracks],
       currentTrackIndex: startIndex,
+      playRequest: get().playRequest + 1,
     })
   },
 
@@ -115,7 +131,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
     }
 
-    set({ currentTrackIndex: nextIndex })
+    set({ currentTrackIndex: nextIndex, playRequest: state.playRequest + 1 })
   },
 
   playPrevious: () => {
@@ -123,7 +139,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { queue, currentTrackIndex } = state
     if (queue.length === 0 || currentTrackIndex <= 0) return
 
-    set({ currentTrackIndex: currentTrackIndex - 1 })
+    set({ currentTrackIndex: currentTrackIndex - 1, playRequest: state.playRequest + 1 })
   },
 
   setRepeatMode: (mode) => set({ repeatMode: mode }),
@@ -178,7 +194,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   playTrackAtIndex: (index) => {
     const state = get()
     if (index >= 0 && index < state.queue.length) {
-      set({ currentTrackIndex: index })
+      set({ currentTrackIndex: index, playRequest: state.playRequest + 1 })
     }
   },
 
@@ -190,6 +206,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         originalQueue: tracks,
         currentTrackIndex: 0,
         currentTrack: tracks[0] || null,
+        playRequest: state.playRequest + 1,
       });
     } else if (mode === 'play_next') {
       const newQueue = [
@@ -202,5 +219,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const newQueue = [...state.queue, ...tracks];
       set({ queue: newQueue, originalQueue: newQueue });
     }
+  },
+
+  patchTrackPaths: (paths) => {
+    const { queue, originalQueue, currentTrack } = get()
+    set({
+      queue: withPaths(queue, paths),
+      originalQueue: withPaths(originalQueue, paths),
+      currentTrack:
+        currentTrack && paths.has(currentTrack.id)
+          ? { ...currentTrack, file_path: paths.get(currentTrack.id)! }
+          : currentTrack,
+    })
   },
 }))
