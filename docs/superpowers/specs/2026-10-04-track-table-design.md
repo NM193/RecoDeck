@@ -147,7 +147,9 @@ small JPEG is kept. Thumbnails — and "no artwork", so a missing cover is not
 asked for again — are cached in a least-recently-used cache of 1,000, read as
 rows scroll into view, at most 4 reads at a time; a fast scroll skips rows
 that left the view before their turn. About three quarters of the library
-has artwork; a track without shows a gradient from its title. (The Search
+has artwork; a track without shows a quiet empty square, as in Traktor — the
+same square shown while a cover is read (the user, on seeing the title
+gradient in the app, 2026-10-04). (The Search
 spec's Recently played tiles use the same thumbnails — `artwork_path` is empty
 for every track.)
 
