@@ -654,3 +654,22 @@ button.context-menu-item:hover {
 .context-submenu > *:last-child {
   margin-bottom: 0;
 }
+
+/* --- Dragging (track table spec, Dragging) --- */
+
+.data-row--dragging {
+  opacity: 0.45;
+}
+
+/* Where dragged tracks land in a playlist's own order, over the sticky cells. */
+.tt-reorder-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}

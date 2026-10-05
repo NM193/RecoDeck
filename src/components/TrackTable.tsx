@@ -10,6 +10,7 @@ import {
   useEffect,
   useCallback,
   useImperativeHandle,
+  useId,
   forwardRef,
   type CSSProperties,
   type KeyboardEvent,
@@ -23,6 +24,10 @@ import { Menu } from './menu/Menu'
 import { TrackCover } from './track-table/TrackCover'
 import { trackMenuEntries } from './track-table/trackMenuEntries'
 import { useLibraryFolders } from './track-table/useLibraryFolders'
+import { ReorderLine } from './track-table/ReorderLine'
+import { useTrackDrag } from '../lib/drag/useTrackDrag'
+import { useTrackDragStore } from '../lib/drag/trackDrag'
+import { reorderIds } from '../lib/trackTable/reorder'
 import { isOverlayOpen, useOverlay } from '../lib/overlays'
 import {
   NO_SELECTION,
@@ -81,6 +86,8 @@ interface TrackTableProps {
   onSetGenre?: (tracks: Track[], genre: string) => void
   onClearGenre?: (tracks: Track[]) => void
   onMoveToFolder?: (tracks: Track[], folder: LibraryFolder) => void
+  /** Dragged within a playlist's own order: its new order, as track ids. */
+  onReorderPlaylist?: (order: readonly number[]) => void
   onUpdateTrack?: (track: Track) => void
   genreDefinitions?: Array<{ id: number; name: string; color?: string }>
   onGenerateAIPlaylist?: (track: Track) => void
@@ -121,6 +128,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       onSetGenre,
       onClearGenre,
       onMoveToFolder,
+      onReorderPlaylist,
       onUpdateTrack,
       genreDefinitions = [],
       onGenerateAIPlaylist,
@@ -292,11 +300,12 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     const libraryFolders = useLibraryFolders(menuAt !== null && onMoveToFolder !== undefined)
 
     const HEADER_HEIGHT = 30
+    const ROW_HEIGHT = 46
 
     const virtualizer = useVirtualizer({
       count: sortedTracks.length,
       getScrollElement: () => parentRef.current,
-      estimateSize: () => 46,
+      estimateSize: () => ROW_HEIGHT,
       overscan: 10,
       scrollMargin: HEADER_HEIGHT,
       // A row moved to with the keys stays out from under the column heads.
@@ -329,6 +338,52 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
         onTrackDoubleClick?.(sortedTracks[index], sortedTracks, index)
       }
     }
+
+    // Dragging (track table spec): the selected tracks, or the row pressed, to
+    // a playlist or a library folder in the sidebar — or, in a playlist's own
+    // order with no search or filter, to another place in it.
+    const tableId = useId()
+    const canReorder =
+      ownOrder && shownSort === null && !narrowed && onReorderPlaylist !== undefined
+    // The gap between rows nearest a pointer's height: 0 above the first row.
+    const gapAt = (clientY: number) => {
+      const area = parentRef.current
+      if (!area) return 0
+      const y = clientY - area.getBoundingClientRect().top + area.scrollTop - HEADER_HEIGHT
+      return Math.max(0, Math.min(sortedTracks.length, Math.round(y / ROW_HEIGHT)))
+    }
+    // The line's place in the body: at that gap, kept below the sticky heads.
+    const lineAt = (clientY: number) =>
+      Math.max(gapAt(clientY) * ROW_HEIGHT - 1, (parentRef.current?.scrollTop ?? 0) + 1)
+    const startDrag = useTrackDrag({
+      begin: (track) => {
+        // A row not selected is dragged alone, selected first.
+        const picked = selection.ids.has(track.id)
+        if (!picked) setSelection(selectOnly(track.id))
+        return {
+          tracks: picked ? selectedTracks(selection, sortedTracks) : [track],
+          table: tableId,
+          reorder: canReorder,
+          playlistId: selectedPlaylistId,
+        }
+      },
+      onDrop: (payload, target, at) => {
+        if (target.kind === 'playlist') {
+          onAddToPlaylist?.(payload.tracks, target.id)
+        } else if (target.kind === 'folder') {
+          onMoveToFolder?.(payload.tracks, { path: target.path, label: target.name })
+        } else {
+          const moving = new Set(payload.tracks.map((t) => t.id))
+          const order = reorderIds(shownIds, moving, gapAt(at.y))
+          if (order !== shownIds) onReorderPlaylist?.(order)
+        }
+      },
+    })
+    // The rows being dragged dim.
+    const dragged = useTrackDragStore((state) =>
+      state.payload?.table === tableId ? state.payload.tracks : null,
+    )
+    const draggedIds = useMemo(() => new Set(dragged?.map((t) => t.id)), [dragged])
 
     // Expose scroll to current track method via ref
     useImperativeHandle(
@@ -500,6 +555,9 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
           className="track-table-scroll-area"
           tabIndex={0}
           onKeyDown={handleTableKeys}
+          data-drop="rows"
+          data-drop-table={tableId}
+          data-drop-scroll
           style={{
             flex: 1,
             overflow: 'auto',
@@ -543,7 +601,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   <div
                     key={virtualRow.key}
                     data-index={virtualRow.index}
-                    className={`track-table-row data-row ${isPlayingTrack ? 'data-row--playing' : ''} ${selection.ids.has(track.id) ? 'data-row--selected' : ''}`}
+                    className={`track-table-row data-row ${isPlayingTrack ? 'data-row--playing' : ''} ${selection.ids.has(track.id) ? 'data-row--selected' : ''} ${draggedIds.has(track.id) ? 'data-row--dragging' : ''}`}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -554,10 +612,17 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       // included (scrollMargin); the body already sits under it.
                       transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                     }}
-                    // Shift-click selects rows, not the text in them.
+                    // A press selects rows, not the text in them: a text
+                    // selection would also let WebKit scroll the table
+                    // itself during a drag, or drag a selected word. A
+                    // control in the row keeps its own press.
                     onMouseDown={(e) => {
-                      if (e.shiftKey) e.preventDefault()
+                      if (e.button !== 0) return
+                      if (!(e.target as Element).closest('button, input, textarea, select, a')) {
+                        e.preventDefault()
+                      }
                     }}
+                    onPointerDown={(e) => startDrag(e, track)}
                     onClick={(e) => {
                       if (IS_MAC && e.ctrlKey) return // a right-click: the menu has it
                       setSelection((current) =>
@@ -644,6 +709,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   </div>
                 )
               })}
+              <ReorderLine table={tableId} lineAt={lineAt} />
             </div>
           </div>
           {sortedTracks.length === 0 && narrowed && !filterPending && (
