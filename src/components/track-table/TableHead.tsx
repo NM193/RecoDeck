@@ -1,6 +1,7 @@
 // src/components/track-table/TableHead.tsx
 // The column heads (track table spec, Columns): a click sorts by the column
-// and again reverses, the arrow shows which; Title & artist's "Title" and
+// and again reverses (in a playlist, a third click goes back to its own
+// order), the arrow shows which; Title & artist's "Title" and
 // "Artist" each sort. A head's right edge drags to resize (Title & artist
 // takes what is left, so it has none). A right-click opens the Columns panel.
 import { useRef, useState, type PointerEvent } from 'react'
@@ -16,7 +17,8 @@ import { useTrackTableLayout } from '../../store/trackTableLayoutStore'
 
 interface TableHeadProps {
   layout: TrackTableLayout
-  sort: SortState
+  /** null: the list's own order (a playlist), no arrow. */
+  sort: SortState | null
   onSort: (column: SortColumn) => void
   onOpenColumns: () => void
 }
@@ -29,10 +31,10 @@ function SortButton({
 }: {
   column: SortColumn
   label: string
-  sort: SortState
+  sort: SortState | null
   onSort: (column: SortColumn) => void
 }) {
-  const sorted = sort.column === column
+  const sorted = sort?.column === column
   return (
     <button
       type="button"

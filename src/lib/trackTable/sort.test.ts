@@ -18,9 +18,24 @@ describe('clicking a head', () => {
   })
 
   it('starts Rating, Plays and Added with the most', () => {
-    expect(nextSort(DEFAULT_SORT, 'rating').direction).toBe('desc')
-    expect(nextSort(DEFAULT_SORT, 'plays').direction).toBe('desc')
-    expect(nextSort(DEFAULT_SORT, 'added').direction).toBe('desc')
+    expect(nextSort(DEFAULT_SORT, 'rating')?.direction).toBe('desc')
+    expect(nextSort(DEFAULT_SORT, 'plays')?.direction).toBe('desc')
+    expect(nextSort(DEFAULT_SORT, 'added')?.direction).toBe('desc')
+  })
+
+  it("goes back to a playlist's own order on the third click", () => {
+    const byBpm = nextSort(null, 'bpm', true)
+    expect(byBpm).toEqual({ column: 'bpm', direction: 'asc' })
+    const reversed = nextSort(byBpm, 'bpm', true)
+    expect(reversed).toEqual({ column: 'bpm', direction: 'desc' })
+    expect(nextSort(reversed, 'bpm', true)).toBeNull()
+    const byRating = nextSort(null, 'rating', true)
+    expect(nextSort(nextSort(byRating, 'rating', true), 'rating', true)).toBeNull()
+  })
+
+  it('never goes back to no sort outside a playlist', () => {
+    const reversed = nextSort(nextSort(DEFAULT_SORT, 'bpm'), 'bpm')
+    expect(nextSort(reversed, 'bpm')).toEqual({ column: 'bpm', direction: 'asc' })
   })
 })
 
@@ -34,6 +49,12 @@ describe('the sort shown', () => {
   it('falls back to title once the sorted column is hidden', () => {
     const layout = setColumnShown(defaultLayout(), 'bpm', false)
     expect(visibleSort({ column: 'bpm', direction: 'desc' }, layout)).toEqual(DEFAULT_SORT)
+  })
+
+  it("falls back to a playlist's own order there", () => {
+    const layout = setColumnShown(defaultLayout(), 'bpm', false)
+    expect(visibleSort({ column: 'bpm', direction: 'desc' }, layout, null)).toBeNull()
+    expect(visibleSort(null, defaultLayout(), null)).toBeNull()
   })
 })
 
@@ -64,6 +85,11 @@ describe('sorting', () => {
       fresh,
       old,
     ])
+  })
+
+  it("keeps the list's own order with no sort", () => {
+    const tracks = [track({ title: 'b' }), track({ title: 'a' })]
+    expect(sortTracks(tracks, null, null)).toBe(tracks)
   })
 
   it('leaves the given list as it was', () => {

@@ -216,8 +216,10 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       [playlists, selectedPlaylistId],
     )
 
-    // Sort state — default: sort by title ascending
-    const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
+    // Sort state: by title ascending; a playlist opens in its own order (null),
+    // and the third click on a head goes back to it.
+    const ownOrder = selectedPlaylistId != null
+    const [sort, setSort] = useState<SortState | null>(ownOrder ? null : DEFAULT_SORT)
 
     // --- Search: filter tracks by query across all text fields ---
     const searchedTracks = useMemo(() => {
@@ -265,12 +267,12 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     )
 
     // --- Sort: by the column whose head was clicked, if it is still shown ---
-    const shownSort = visibleSort(sort, layout)
+    const shownSort = visibleSort(sort, layout, ownOrder ? null : DEFAULT_SORT)
     const sortedTracks = useMemo(
       () => sortTracks(filteredTracks, shownSort, plays),
       [filteredTracks, shownSort, plays],
     )
-    const handleSort = (column: SortColumn) => setSort(nextSort(shownSort, column))
+    const handleSort = (column: SortColumn) => setSort(nextSort(shownSort, column, ownOrder))
 
     // Rows no longer shown leave the selection: adjusted while rendering, when
     // the rows shown change (search, filter, sort, a reload).
