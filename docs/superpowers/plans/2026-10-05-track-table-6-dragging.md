@@ -12,14 +12,14 @@ Each drop gives one toast with Undo. A playlist now opens in its own order, so a
 **Architecture:**
 - **The drag layer** (`src/lib/drag/`), built to the Interactions spec's *Drag and drop* rules. It uses pointer events, not HTML5 drag and drop: the virtualized table unmounts rows while it scrolls, and the Tauri window's file-drop handling would take a native drag.
   - `useTrackDrag` turns a press on a row into a drag after 4px.
-  - `startTrackDrag` puts move, up, Esc and blur listeners on `window`, plus a frame loop. Each frame it reads the target from the element under the pointer (`elementFromPoint` + `data-drop-*`), scrolls a list whose edge the pointer is near (`data-drop-scroll`), and opens what the pointer has rested on for 600ms (`data-drop-open`, through `registerDropOpener`).
+  - `startTrackDrag` puts move, up, Esc, right-click and blur listeners on `window`, plus a frame loop. It reads the target from the element under the pointer (`elementFromPoint` + `data-drop-*`). Each frame it scrolls a list whose edge the pointer has stayed near for 300ms (`data-drop-scroll`), and opens what the pointer has rested on for 600ms (`data-drop-open`, through `registerDropOpener`).
   - A small zustand store holds what is dragged, the pointer and the valid target.
   - `DragGhost` (rendered by AppShell) is the "3 tracks" label at the pointer. Its CSS holds the grabbing and not-allowed cursors and the lit target (accent tint and outline).
 - **Targets:**
   - FolderTree's playlist rows are `data-drop="playlist"`; library folders (roots and subfolders) are `data-drop="folder"`; a playlist folder is `data-drop="none"`, so it takes nothing.
   - A closed folder carries `data-drop-open`; so do the collapsed rail's Folders and Playlists icons, which open their flyout and close it when the drag ends.
   - The section lists, the sections area, the flyout and the table scroll near their edges.
-  - The table's scroll area is `data-drop="rows"`, a target only for a drag that started there, and valid only while the table may reorder.
+  - The table's scroll area is `data-drop="rows"`. It is a target only in a playlist, only for a drag that started there, and valid only while the table may reorder.
 - **The table:**
   - The rows are the source; the dragged rows dim.
   - `ReorderLine` draws the line in the gap under the pointer.
@@ -50,16 +50,36 @@ Each drop gives one toast with Undo. A playlist now opens in its own order, so a
 - **Only valid targets light up;** the table's own rows show the line instead of a tint.
 - **A drag:**
   - starts only from a plain press: not with ⌘, Ctrl or Shift held (they select), and not on a control in the row (▶, the stars, a comment's button);
-  - leaves the selection as it was: the click a release fires is swallowed.
-- **A reorder** of several tracks lands them together, in the order they had. A drop that would change nothing does nothing (no toast). App shows the new order before the call returns; if the call fails, it reloads and shows an error toast.
+  - leaves the selection as it was: the click a release fires is swallowed, after a cancel too (the release that follows Esc clicks nothing);
+  - ends with nothing dropped on Esc, a right-click (which opens no menu), the window losing focus, or a move with the button already up (its release was lost to a dialog or another window). Otherwise the next click would drop.
+- **A press on a row selects no text** (`preventDefault` on the row's mousedown, not on its controls). A text selection would let WebKit scroll the table itself while the pointer is outside it during a drag, or let you drag a word you selected by double-clicking. The row's click already gives the table the focus.
+- **Lists scroll** once the pointer has stayed for 300ms within 16px of their edge. So the row at the edge, 28px high in the sidebar, can still be aimed at and rested on.
+- **The table is a target only in a playlist.** In All Tracks or a folder, dragging over the table shows no not-allowed cursor; the spec asks for it only in a playlist's own table.
+- **A reorder:**
+  - several tracks land together, in the order they had;
+  - a drop that would change nothing does nothing (no toast);
+  - App shows the new order at once, then stores it only if the table held exactly the playlist's stored tracks. A playlist just opened may still show the last view's tracks while it loads; otherwise App reloads the view.
+  - If the call fails, App reloads the view shown by then and shows an error toast.
+  - The line stays below the sticky column heads.
+- **The folder the tracks share** is compared with `/` paths: the folder tree may give Windows paths with `\`.
 - **Undo of a reorder** puts back the order before the drop. Tracks removed since stay out; tracks added since keep their places after it, as plan 4's Undo of Delete from playlist does.
 - **Rail flyouts:** one opened by resting on its icon closes when the drag ends, dropped or cancelled. One opened by a click closes on the press that starts a drag, as it did before.
 - **Esc** cancels the drag before anything else hears it (a capture listener on `window`, `stopImmediatePropagation`), so a flyout or the table's selection stays.
 - **Home's track rows** as a source are left for the Home plan, as the spec says.
 
-**Checked:** every code block below was applied to a scratch copy of `feat/redesign` at b8d8d5c; the same blocks, applied to a clean `git archive`, reproduce it file for file.
+**Checked:** every code block below was applied to a scratch copy of `feat/redesign` at 1cbd035; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc` and each task's tests pass at every task's end.
+- **Review:** an independent review found no blockers. Its findings are fixed here:
+  - a lost release left a drag running;
+  - the edge zone covered the last row;
+  - the release after Esc collapsed the selection;
+  - WebKit scrolled the table itself;
+  - a right-click opened a menu during a drag;
+  - All Tracks showed not-allowed over its own table;
+  - a reorder trusted a table still loading;
+  - the line slipped under the heads;
+  - Windows paths.
 - **Builds and tests:**
-  - `vitest`: 14 new tests (the sort 4, the reorder 4, the drop targets 6). The scratch tree counted 507 passed; the repo will count 521 (its gitignored fixtures add 14).
+  - `vitest`: 16 new tests (the sort 4, the reorder 4, the drop targets 8). The scratch tree counted 509 passed; the repo will count 523 (its gitignored fixtures add 14).
   - `tsc` passes; eslint shows only the existing 22 problems; `vite build` passes. `cargo test` is unchanged: 438.
 - **In WebKit** (a test page with the real Sidebar, a playlist's TrackTable, AppShell's DragGhost and Toaster, IPC mocked):
   - **Adding:** an unselected row dragged onto Peak Time. The label said "1 track", the row dimmed, and Peak Time lit with the accent tint and outline. The drop added it, and the row stayed selected alone.
@@ -72,6 +92,14 @@ Each drop gives one toast with Undo. A playlist now opens in its own order, so a
   - **Scrolling:** the Playlists list scrolled near its bottom edge (390px in 0.5s). The table scrolled near its bottom edge during a reorder (444px), and the line followed.
   - **The rail:** with the sidebar collapsed, resting 800ms on the Playlists icon opened its flyout (not at 300ms). Dropping on Peak Time in it added the track and closed the flyout. Resting on Folders, then Esc, closed it too.
   - **The ▶ button:** a press on it does not start a drag.
+  - **After the review's fixes:**
+    - With 3 rows selected, Esc and a release on the pressed row leave all 3 selected, and the next click still selects.
+    - Resting 700ms on the last visible row of the Playlists list (List 14) keeps it lit, and the drop goes there.
+    - A swallowed release leaves the drag running until the next move with no button, which ends it. A click on Peak Time then only selects it.
+    - A right-click during a drag cancels it, and no menu opens.
+    - With the pointer over the toolbar for 0.8s during a drag, the table stays at its scroll position.
+    - Scrolled, the line at the top gap sits 1px below the heads.
+    - In All Tracks, dragging over the table shows no not-allowed cursor and no line.
 
 ---
 
@@ -713,6 +741,7 @@ beforeEach(() => {
     <div data-drop="folder" data-drop-path="/Music/Techno" data-drop-name="Techno"
          data-drop-open="library-node:/Music/Techno"><span id="in-folder">Techno</span></div>
     <div data-drop="folder" data-drop-path="/Music/House" data-drop-name="House" id="shared-folder"></div>
+    <div data-drop="folder" data-drop-path="C:\\Music\\House" id="shared-on-windows"></div>
     <div data-drop="rows" data-drop-table="t1"><div id="own-row"></div></div>
     <div data-drop="rows" data-drop-table="t2"><div id="other-row"></div></div>
     <div data-drop="playlist" id="broken"></div>
@@ -740,6 +769,11 @@ describe('where dragged tracks land', () => {
     expect(targetAt(el('playlist-folder'), payload)?.valid).toBe(false)
   })
 
+  it('knows the shared folder in a Windows path too', () => {
+    const tracks = [track(1, 'C:/Music/House/a.mp3')]
+    expect(targetAt(el('shared-on-windows'), { ...payload, tracks })?.valid).toBe(false)
+  })
+
   it('reorders only in the table the drag started in, and only when it may', () => {
     expect(targetAt(el('own-row'), payload)).toMatchObject({
       target: { kind: 'rows', table: 't1' },
@@ -747,6 +781,10 @@ describe('where dragged tracks land', () => {
     })
     expect(targetAt(el('own-row'), { ...payload, reorder: false })?.valid).toBe(false)
     expect(targetAt(el('other-row'), payload)).toBeNull()
+  })
+
+  it('leaves a table outside a playlist alone: no reorder, no not-allowed', () => {
+    expect(targetAt(el('own-row'), { ...payload, playlistId: null, reorder: false })).toBeNull()
   })
 
   it('finds nothing outside a target, or in one missing its id', () => {
@@ -824,10 +862,13 @@ export function targetAt(element: Element | null, payload: DragPayload): FoundTa
       const path = data.dropPath
       if (!path) return null
       const target: DropTarget = { kind: 'folder', path, name: data.dropName || path }
-      return { target, element: holder, valid: path !== sharedFolder(payload.tracks) }
+      // Tracks store `/` on Windows too; the folder tree may not.
+      const shared = path.replace(/\\/g, '/') === sharedFolder(payload.tracks)
+      return { target, element: holder, valid: !shared }
     }
     case 'rows': {
-      if (data.dropTable !== payload.table) return null
+      // Only a playlist's own table reorders, and refuses while it may not.
+      if (data.dropTable !== payload.table || payload.playlistId === null) return null
       return { target: { kind: 'rows', table: payload.table }, element: holder, valid: payload.reorder }
     }
     case 'none':
@@ -843,7 +884,7 @@ export function restKeyAt(element: Element | null): string | null {
 }
 ```
 
-- [ ] **Step 3:** Run the same command: PASS, 6. Commit:
+- [ ] **Step 3:** Run the same command: PASS, 8. Commit:
 
 ```bash
 git add src/lib/drag/dropTargets.ts src/lib/drag/dropTargets.test.ts
@@ -870,7 +911,7 @@ Create `src/lib/drag/trackDrag.ts`:
 // take it. The move and up listeners sit on window, and the target is read
 // from the element under the pointer (dropTargets.ts). While dragging, a label
 // follows the pointer (DragGhost), the dragged rows dim, a valid target lights
-// up, a list scrolls when the pointer nears its edge, resting on a closed
+// up, a list scrolls when the pointer stays near its edge, resting on a closed
 // folder or a rail icon opens it, and Esc cancels.
 import { create } from 'zustand'
 import { restKeyAt, targetAt, type DragPayload, type DropTarget } from './dropTargets'
@@ -882,8 +923,10 @@ export interface Point {
 
 /** Resting this long on a closed folder or a rail icon opens it. */
 const REST_OPEN_MS = 600
-/** A list scrolls when the pointer is this close to its top or bottom edge. */
-const EDGE = 32
+/** A list scrolls when the pointer is this close to its top or bottom edge… */
+const EDGE = 16
+/** …and has stayed there this long, so the row at the edge can still be aimed at. */
+const EDGE_WAIT_MS = 300
 /** Pixels a list scrolls per frame with the pointer at its very edge. */
 const MAX_STEP = 16
 
@@ -927,9 +970,9 @@ function openAt(key: string, element: HTMLElement) {
   openers.get(key.slice(0, colon))?.(key.slice(colon + 1), element)
 }
 
-// The list under the pointer that can scroll towards the edge it is near,
-// scrolled a step: further the closer the pointer is to the edge.
-function scrollNearEdge(element: Element | null, y: number): boolean {
+// The list under the pointer that can scroll towards the edge the pointer is
+// near, with the step it would scroll: further the closer to the edge.
+function listAtEdge(element: Element | null, y: number): { list: HTMLElement; step: number } | null {
   for (
     let list = element?.closest<HTMLElement>('[data-drop-scroll]');
     list;
@@ -937,12 +980,12 @@ function scrollNearEdge(element: Element | null, y: number): boolean {
   ) {
     const { top, bottom } = list.getBoundingClientRect()
     const depth = y < top + EDGE ? y - (top + EDGE) : y > bottom - EDGE ? y - (bottom - EDGE) : 0
-    if (depth === 0) continue
-    const before = list.scrollTop
-    list.scrollTop += Math.sign(depth) * Math.ceil(MAX_STEP * Math.min(1, Math.abs(depth) / EDGE))
-    if (list.scrollTop !== before) return true
+    const room = depth < 0 ? list.scrollTop : list.scrollHeight - list.clientHeight - list.scrollTop
+    if (depth === 0 || room <= 0) continue
+    const step = Math.sign(depth) * Math.ceil(MAX_STEP * Math.min(1, Math.abs(depth) / EDGE))
+    return { list, step }
   }
-  return false
+  return null
 }
 
 // The click a release fires after a drag is not a click on a row.
@@ -955,10 +998,26 @@ function swallowNextClick() {
   setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0)
 }
 
+// A drag cancelled with the button still down (Esc): its release, when it
+// comes, clicks nothing either. A new press first means that release was lost.
+function swallowClickOfRelease() {
+  const done = () => {
+    window.removeEventListener('pointerup', onUp, true)
+    window.removeEventListener('pointerdown', done, true)
+  }
+  const onUp = () => {
+    done()
+    swallowNextClick()
+  }
+  window.addEventListener('pointerup', onUp, true)
+  window.addEventListener('pointerdown', done, true)
+}
+
 /**
  * Drags `payload` from the pointer at `at`. `onDrop` gets the valid target the
- * tracks are let go over, and the pointer; Esc, a cancelled pointer or the
- * window losing focus ends it with nothing dropped.
+ * tracks are let go over, and the pointer. Esc, a right-click, a cancelled
+ * pointer, a move with the button no longer down (its release was lost) or
+ * the window losing focus ends it with nothing dropped.
  */
 export function startTrackDrag(
   payload: DragPayload,
@@ -970,6 +1029,7 @@ export function startTrackDrag(
   let { x, y } = at
   let lit: HTMLElement | null = null
   let rest: { key: string; since: number; opened: boolean } | null = null
+  let edge: { list: HTMLElement; since: number } | null = null
   let frame = 0
 
   const light = (element: HTMLElement | null) => {
@@ -988,11 +1048,17 @@ export function startTrackDrag(
     useTrackDragStore.setState({ x, y, target: valid?.target ?? null })
   }
 
-  // Each frame: scroll a list the pointer is near the edge of, and open what
-  // it has rested on long enough.
+  // Each frame: scroll a list the pointer has stayed near the edge of, and
+  // open what it has rested on long enough.
   const tick = (now: number) => {
     const element = document.elementFromPoint(x, y)
-    if (scrollNearEdge(element, y)) {
+    const near = listAtEdge(element, y)
+    if (!near) {
+      edge = null
+    } else if (edge?.list !== near.list) {
+      edge = { list: near.list, since: now }
+    } else if (now - edge.since >= EDGE_WAIT_MS) {
+      near.list.scrollTop += near.step
       useTrackDragStore.setState((state) => ({ scrolls: state.scrolls + 1 }))
       update()
     }
@@ -1009,22 +1075,33 @@ export function startTrackDrag(
     frame = requestAnimationFrame(tick)
   }
 
-  const end = (drop: boolean) => {
+  // `released`: the pointer came up (a drop, or nothing under it).
+  const end = (released: boolean) => {
     cancelAnimationFrame(frame)
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
     window.removeEventListener('pointercancel', onCancel)
     window.removeEventListener('blur', onCancel)
     window.removeEventListener('keydown', onKey, true)
+    window.removeEventListener('contextmenu', onContextMenu, true)
     const { target } = useTrackDragStore.getState()
     light(null)
     root.classList.remove('track-drag', 'track-drag--refused')
     useTrackDragStore.setState({ payload: null, target: null })
+    if (!released) {
+      swallowClickOfRelease()
+      return
+    }
     swallowNextClick()
-    if (drop && target) onDrop(target, { x, y })
+    if (target) onDrop(target, { x, y })
   }
 
   const onMove = (event: PointerEvent) => {
+    // The main button is up: its release was lost (a dialog, another window).
+    if ((event.buttons & 1) === 0) {
+      end(false)
+      return
+    }
     x = event.clientX
     y = event.clientY
     update()
@@ -1043,12 +1120,19 @@ export function startTrackDrag(
     event.stopImmediatePropagation()
     end(false)
   }
+  // A right-click cancels it, and opens no menu.
+  const onContextMenu = (event: MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    end(false)
+  }
 
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
   window.addEventListener('pointercancel', onCancel)
   window.addEventListener('blur', onCancel)
   window.addEventListener('keydown', onKey, true)
+  window.addEventListener('contextmenu', onContextMenu, true)
   root.classList.add('track-drag')
   window.getSelection()?.removeAllRanges()
   useTrackDragStore.setState({ payload, x, y, target: null })
@@ -1099,9 +1183,15 @@ export function useTrackDrag(source: TrackDragSource) {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', stop)
       window.removeEventListener('pointercancel', stop)
+      window.removeEventListener('blur', stop)
     }
     const onMove = (move: PointerEvent) => {
       if (move.pointerId !== pointerId) return
+      // The button is up: its release was lost (a dialog, another window).
+      if ((move.buttons & 1) === 0) {
+        stop()
+        return
+      }
       if (Math.hypot(move.clientX - start.x, move.clientY - start.y) < DRAG_THRESHOLD) return
       stop()
       const payload = sourceRef.current.begin(track)
@@ -1113,6 +1203,7 @@ export function useTrackDrag(source: TrackDragSource) {
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', stop)
     window.addEventListener('pointercancel', stop)
+    window.addEventListener('blur', stop)
   }
 }
 ```
@@ -1274,12 +1365,11 @@ import { useTrackDragStore } from '../../lib/drag/trackDrag'
 interface ReorderLineProps {
   /** The table's id: the line shows while its own rows are the target. */
   table: string
-  /** The gap nearest a pointer's height: 0 above the first row. */
-  gapAt: (clientY: number) => number
-  rowHeight: number
+  /** Where the line goes for a pointer's height, in pixels from the first row's top. */
+  lineAt: (clientY: number) => number
 }
 
-export function ReorderLine({ table, gapAt, rowHeight }: ReorderLineProps) {
+export function ReorderLine({ table, lineAt }: ReorderLineProps) {
   const y = useTrackDragStore((state) =>
     state.target?.kind === 'rows' && state.target.table === table ? state.y : null,
   )
@@ -1289,7 +1379,7 @@ export function ReorderLine({ table, gapAt, rowHeight }: ReorderLineProps) {
   return (
     <div
       className="tt-reorder-line"
-      style={{ transform: `translateY(${gapAt(y) * rowHeight - 1}px)` }}
+      style={{ transform: `translateY(${lineAt(y)}px)` }}
     />
   )
 }
@@ -1564,6 +1654,9 @@ with
       const y = clientY - area.getBoundingClientRect().top + area.scrollTop - HEADER_HEIGHT
       return Math.max(0, Math.min(sortedTracks.length, Math.round(y / ROW_HEIGHT)))
     }
+    // The line's place in the body: at that gap, kept below the sticky heads.
+    const lineAt = (clientY: number) =>
+      Math.max(gapAt(clientY) * ROW_HEIGHT - 1, (parentRef.current?.scrollTop ?? 0) + 1)
     const startDrag = useTrackDrag({
       begin: (track) => {
         // A row not selected is dragged alone, selected first.
@@ -1655,6 +1748,20 @@ In `src/components/TrackTable.tsx`, replace
                       left: 0,
                       width: '100%',
                       height: `${virtualRow.size}px`,
+                      // start counts from the top of the scroll area, header
+                      // included (scrollMargin); the body already sits under it.
+                      transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                    }}
+                    // Shift-click selects rows, not the text in them.
+                    onMouseDown={(e) => {
+                      if (e.shiftKey) e.preventDefault()
+                    }}
+                    onClick={(e) => {
+                      if (IS_MAC && e.ctrlKey) return // a right-click: the menu has it
+                      setSelection((current) =>
+                        clickRow(
+                          current,
+                          track.id,
 ```
 
 with
@@ -1673,33 +1780,19 @@ with
                       left: 0,
                       width: '100%',
                       height: `${virtualRow.size}px`,
-```
-
-In `src/components/TrackTable.tsx`, replace
-
-```tsx
+                      // start counts from the top of the scroll area, header
+                      // included (scrollMargin); the body already sits under it.
                       transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                     }}
-                    // Shift-click selects rows, not the text in them.
+                    // A press selects rows, not the text in them: a text
+                    // selection would also let WebKit scroll the table
+                    // itself during a drag, or drag a selected word. A
+                    // control in the row keeps its own press.
                     onMouseDown={(e) => {
-                      if (e.shiftKey) e.preventDefault()
-                    }}
-                    onClick={(e) => {
-                      if (IS_MAC && e.ctrlKey) return // a right-click: the menu has it
-                      setSelection((current) =>
-                        clickRow(
-                          current,
-                          track.id,
-```
-
-with
-
-```tsx
-                      transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                    }}
-                    // Shift-click selects rows, not the text in them.
-                    onMouseDown={(e) => {
-                      if (e.shiftKey) e.preventDefault()
+                      if (e.button !== 0) return
+                      if (!(e.target as Element).closest('button, input, textarea, select, a')) {
+                        e.preventDefault()
+                      }
                     }}
                     onPointerDown={(e) => startDrag(e, track)}
                     onClick={(e) => {
@@ -1736,7 +1829,7 @@ with
                   </div>
                 )
               })}
-              <ReorderLine table={tableId} gapAt={gapAt} rowHeight={ROW_HEIGHT} />
+              <ReorderLine table={tableId} lineAt={lineAt} />
             </div>
           </div>
           {sortedTracks.length === 0 && narrowed && !filterPending && (
@@ -2241,10 +2334,17 @@ with
     if (selectedPlaylistId == null) return
     const playlistId = selectedPlaylistId
     const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
-    const before = tracks.map((t) => t.id)
     const byId = new Map(tracks.map((t) => [t.id, t]))
     setTracks(order.flatMap((id) => byId.get(id) ?? []))
     try {
+      // Stored only when the table held exactly the playlist's tracks (not
+      // the last view's, still showing while it loads).
+      const before = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+      const shown = new Set(order)
+      if (before.length !== order.length || !before.every((id) => shown.has(id))) {
+        await loadTracksRef.current()
+        return
+      }
       await tauriApi.reorderPlaylistTracks(playlistId, [...order])
       toast(`Reordered ${name}`, {
         action: undoing(async () => {
@@ -2258,7 +2358,7 @@ with
         }),
       })
     } catch (err) {
-      await loadTracks(null, playlistId)
+      await loadTracksRef.current()
       toast(`Couldn't reorder ${name}: ${errorText(err)}`, { kind: 'error' })
     }
   }
@@ -2308,7 +2408,7 @@ with
 
 - [ ] **Step 2: Check.** Run these:
   - `npx tsc --noEmit -p .`: no errors;
-  - `npx vitest run 2>&1 | grep "Tests "`: `521 passed`;
+  - `npx vitest run 2>&1 | grep "Tests "`: `523 passed`;
   - `npx eslint src 2>&1 | grep problems`: `✖ 22 problems (10 errors, 12 warnings)`;
   - `npx vite build 2>&1 | tail -1`: `✓ built in …`.
 
@@ -2508,6 +2608,10 @@ for the Home plan.
     - Typing in the search box also turns reordering off.
   - **Scrolling:** in a long playlist, drag to the bottom edge, and the table scrolls. Do the same at the Playlists list's edge in the sidebar.
   - **The collapsed sidebar** (⌘\\): rest on the Playlists icon, and its flyout opens. Drop on a playlist in it; the flyout closes.
-  - **Esc** during a drag cancels it, and nothing else closes.
+  - **Esc** during a drag cancels it, and nothing else closes. Release on the row you pressed: the selection is still all the rows you dragged.
+  - **The edge row:** rest on the last visible playlist in the sidebar's list. It stays lit and takes the drop; the list scrolls only if you stay at its very edge.
+  - **During a reorder,** move over the toolbar or the player: the table does not jump.
+  - **Text:** double-click a row's title, then drag. No word is dragged; the tracks are.
+  - **Right-click** during a drag cancels it, with no menu.
   - **Clicks still work:** a click, ⌘-click and Shift-click on rows select as before; a double click plays; ▶ and the stars respond and never start a drag.
 - [ ] **Step 3:** Commit any fix-ups as `fix(tracks): …`.
