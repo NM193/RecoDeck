@@ -10,7 +10,17 @@ import {
   type FolderNodeData,
 } from '../store/folderTreeStore'
 import { Icon } from './Icon'
+import { registerDropOpener } from '../lib/drag/trackDrag'
 import './FolderTree.css'
+
+// Dragged tracks land on a playlist (added) or a library folder (moved);
+// resting on a closed folder opens it (Interactions spec, Drag and drop). The
+// rows carry data-drop-open only while closed, so these only ever open.
+registerDropOpener('playlist-folder', (id) =>
+  useFolderTreeStore.getState().togglePlaylistFolder(Number(id)),
+)
+registerDropOpener('library-root', (path) => void useFolderTreeStore.getState().toggleRoot(path))
+registerDropOpener('library-node', (path) => void useFolderTreeStore.getState().toggleNode(path))
 
 // --- Types ---
 
@@ -92,6 +102,10 @@ function FolderNode({
         style={{ paddingLeft: `${12 + depth * 16}px` }}
         onClick={() => onSelect(node.info.path)}
         onContextMenu={(e) => onContextMenu(e, node.info.path, node.info.name)}
+        data-drop="folder"
+        data-drop-path={node.info.path}
+        data-drop-name={node.info.name}
+        data-drop-open={hasChildren && !isExpanded ? `library-node:${node.info.path}` : undefined}
       >
         <span
           className={`folder-arrow ${hasChildren ? 'has-children' : ''}`}
@@ -260,6 +274,10 @@ export function FolderTree({
         <div
           className={`folder-row ${isSelected ? 'selected' : ''}`}
           style={{ paddingLeft: `${12 + depth * 16}px` }}
+          // A playlist takes dragged tracks; a playlist folder takes none.
+          data-drop={isFolder ? 'none' : 'playlist'}
+          data-drop-id={isFolder ? undefined : p.id}
+          data-drop-open={isFolder && !isExpanded ? `playlist-folder:${p.id}` : undefined}
           onClick={() => {
             if (isFolder) {
               togglePlaylistFolder(p.id)
@@ -348,6 +366,10 @@ export function FolderTree({
                   <div key={folderPath} className="folder-root">
                     <div
                       className={`folder-row root-folder ${isRootSelected ? 'selected' : ''}`}
+                      data-drop="folder"
+                      data-drop-path={folderPath}
+                      data-drop-name={name}
+                      data-drop-open={isExpanded ? undefined : `library-root:${folderPath}`}
                       onClick={() => onFolderSelect(folderPath)}
                       onContextMenu={(e) =>
                         showContextMenu(e, {
@@ -737,6 +759,10 @@ export function FolderTree({
                   <div key={folderPath} className="folder-root">
                     <div
                       className={`folder-row root-folder ${isRootSelected ? 'selected' : ''}`}
+                      data-drop="folder"
+                      data-drop-path={folderPath}
+                      data-drop-name={name}
+                      data-drop-open={isExpanded ? undefined : `library-root:${folderPath}`}
                       onClick={() => onFolderSelect(folderPath)}
                       onContextMenu={(e) =>
                         showContextMenu(e, {

@@ -125,6 +125,8 @@ function Section({
           <motion.div
             ref={bodyRef}
             className="sidebar-section__body"
+            // Scrolls while tracks are dragged near its edge.
+            data-drop-scroll
             key="body"
             initial={{ height: 0, opacity: 0 }}
             animate={{
@@ -639,7 +641,7 @@ export function Sidebar({
 
       {/* The sections. Only their lists scroll; this area scrolls as a whole
           only when even three rows per open list do not fit. */}
-      <div className="sidebar-scroll" ref={areaRef}>
+      <div className="sidebar-scroll" ref={areaRef} data-drop-scroll>
         {/* Folders section */}
         <Section
           section="folders"

@@ -50,7 +50,9 @@ export function SidebarFlyout({
       aria-label={title}
     >
       <div className="sidebar-flyout__title">{title}</div>
-      <div className="sidebar-flyout__body">{children}</div>
+      <div className="sidebar-flyout__body" data-drop-scroll>
+        {children}
+      </div>
     </div>
   )
 }

@@ -1,7 +1,10 @@
 // src/components/layout/SidebarRail.tsx
 // The sidebar collapsed to icons: nav items, Folders and Playlists as icons
 // that open flyouts, tooltips after a short hover, the profile at the bottom.
+// While tracks are dragged, resting on Folders or Playlists opens its flyout,
+// which closes again when the drag ends.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { registerDropOpener, useTrackDragStore } from '../../lib/drag/trackDrag'
 import { Icon } from '../Icon'
 import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
 import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
@@ -79,6 +82,16 @@ export function SidebarRail({
   } | null>(null)
   const closeFlyout = useCallback(() => setFlyout(null), [])
 
+  const openFlyout = useCallback((section: FlyoutSection, anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect()
+    setFlyout({
+      section,
+      top: Math.max(8, Math.min(rect.top, window.innerHeight - 320)),
+      left: rect.right + 6,
+      anchor,
+    })
+  }, [])
+
   const toggleFlyout =
     (section: FlyoutSection) => (e: React.MouseEvent<HTMLElement>) => {
       hideTip()
@@ -86,14 +99,30 @@ export function SidebarRail({
         setFlyout(null)
         return
       }
-      const rect = e.currentTarget.getBoundingClientRect()
-      setFlyout({
-        section,
-        top: Math.max(8, Math.min(rect.top, window.innerHeight - 320)),
-        left: rect.right + 6,
-        anchor: e.currentTarget,
-      })
+      openFlyout(section, e.currentTarget)
     }
+
+  // Dragging tracks: resting on Folders or Playlists opens its flyout, so its
+  // rows can be dropped on; one opened so closes when the drag ends.
+  const openedByDrag = useRef(false)
+  useEffect(() => {
+    const unregister = registerDropOpener('rail', (section, anchor) => {
+      if (section !== 'folders' && section !== 'playlists') return
+      clearTimeout(tipTimer.current)
+      setTip(null)
+      openedByDrag.current = true
+      openFlyout(section, anchor)
+    })
+    const unsubscribe = useTrackDragStore.subscribe((state, previous) => {
+      if (state.payload || !previous.payload || !openedByDrag.current) return
+      openedByDrag.current = false
+      setFlyout(null)
+    })
+    return () => {
+      unregister()
+      unsubscribe()
+    }
+  }, [openFlyout])
 
   /** `badge`, when above zero, is a small number at the icon's top-right. */
   const sectionButton = (
@@ -108,6 +137,11 @@ export function SidebarRail({
       onContextMenu={onColourMenu(section, section === 'playlists')}
       onMouseEnter={flyout ? undefined : showTip(label)}
       onMouseLeave={hideTip}
+      data-drop-open={
+        (section === 'folders' || section === 'playlists') && flyout?.section !== section
+          ? `rail:${section}`
+          : undefined
+      }
       aria-label={badge != null && badge > 0 ? `${label}, ${badge} new` : label}
       aria-haspopup="dialog"
       aria-expanded={flyout?.section === section}
