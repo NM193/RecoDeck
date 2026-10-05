@@ -134,6 +134,11 @@ Clicking a head sorts by it, again reverses; the arrow shows which. Sorting is
 otherwise unchanged (Rating sorts descending first). **#** is the row's
 position in the list as sorted and filtered, as today, in playlists too.
 
+A **playlist opens in its own order** (as stored; no arrow), and the click
+after the reversing one goes back to it — so reordering by dragging has an
+order to work in. Elsewhere the table still opens by title. (The user's
+choice; today a playlist opened by title, so its own order was never shown.)
+
 ## Rows
 
 46px high. # · cover · title over artist · the columns. Missing values show
@@ -180,7 +185,9 @@ selects it alone first).
 rules: the selection to a playlist (added) or a library folder in the Folders
 section (moved) in the sidebar, and reordering inside a playlist's own table
 (only with no sort, search or filter) — each with its Undo from that spec's
-table.
+table. (Built by plan 6: the playlist shown and the folder every dragged track
+is already in refuse the drop, like the menu greys them; a reorder says
+"Reordered Warm Up", with Undo.)
 
 ## Right-click menu
 
@@ -256,7 +263,7 @@ freeze the window; the folder must be inside a library folder; it answers
 | Folders for Move to folder | new `list_library_folders()` |
 | Moving | new `move_tracks_to_folder(track_ids, folder)` |
 | Clear genre for many | new `bulk_clear_genre(track_ids)` |
-| Dragging | the Interactions plan's drag layer (`useTrackDrag`, `data-drop-*` targets), wired here |
+| Dragging | the drag layer (`useTrackDrag`, `startTrackDrag`, `data-drop-*` targets, `DragGhost`), built here by plan 6 to the Interactions spec's rules |
 
 ## Testing
 

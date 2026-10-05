@@ -203,6 +203,11 @@ shortcuts as the tables above say.
 Built already by track table plan 4: `Menu` (without the confirm in the
 menu's place), `toast()` and the `Toaster` (without the detail on hover,
 built by plan 5), and `restore_track_genres` with Set / Clear genre's Undo.
+Built by track table plan 6: the whole drag layer (`useTrackDrag`,
+`startTrackDrag`, the `data-drop-*` targets and `DragGhost`, in
+`src/lib/drag/`), with the track table as the source and the sidebar's
+playlists, library folders and rail icons as targets; Home's rows are left
+for the Home plan.
 
 ## Testing
 
