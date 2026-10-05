@@ -258,7 +258,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   transition:
     background 0.15s,
     color 0.15s;
@@ -326,7 +326,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   transition:
     background 0.15s,
     color 0.15s;

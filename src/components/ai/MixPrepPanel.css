@@ -234,7 +234,7 @@
     rgba(var(--accent-rgb), 0.3) 100%
   );
   border: 1px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 12px 20px;
   color: var(--text-primary);
   font-size: var(--text-base);
@@ -353,7 +353,7 @@
   flex: 1;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 10px 16px;
   color: #fff;
   font-size: var(--text-base);
@@ -380,7 +380,7 @@
 .mix-prep-btn-secondary {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 10px 16px;
   color: var(--text-secondary);
   font-size: var(--text-base);

@@ -43,7 +43,7 @@
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid rgba(99, 102, 241, 0.2);
   color: #a5b4fc;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -321,7 +321,7 @@
   padding: 7px 14px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   color: #94a3b8;
   font-size: 12px;
   cursor: pointer;
@@ -425,7 +425,7 @@
 .chat-input__send-btn {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
   display: flex;
@@ -507,7 +507,7 @@
   padding: 8px 16px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid rgba(99, 102, 241, 0.25);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-top: 12px;
   cursor: pointer;
   transition: opacity 0.15s;

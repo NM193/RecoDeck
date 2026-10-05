@@ -271,7 +271,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   border: 1px solid rgba(var(--color-success-rgb), 0.35);
   background: rgba(var(--color-success-rgb), 0.1);
   color: var(--color-success);
@@ -290,7 +290,7 @@
 
 .sets-filter__btn {
   padding: 3px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
@@ -420,7 +420,7 @@
   padding: 2px 7px;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -723,7 +723,7 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
@@ -786,7 +786,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);

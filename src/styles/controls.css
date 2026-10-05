@@ -6,6 +6,14 @@
    Interactions plan adds .btn--icon, .btn--danger, .btn--pill and the
    Button component. */
 
+/* Every button's corner, the page-specific ones too (they keep their own
+   shape only where they are not buttons: a switch, a checkbox, a colour dot). */
+button,
+[role='button'],
+[role='tab'] {
+  border-radius: var(--radius-md);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

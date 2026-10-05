@@ -47,7 +47,7 @@
   color: var(--color-danger);
   cursor: pointer;
   padding: var(--space-1);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 
 .widget-wrapper__remove:hover {

@@ -287,7 +287,7 @@
   padding: 0;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   transition:
     color 0.15s,
     background 0.15s;
@@ -314,7 +314,7 @@
   height: 36px;
   background: var(--text-primary);
   color: var(--bg-primary);
-  border-radius: 50%;
+  border-radius: var(--radius-md);
 }
 
 .now-playing-bar__btn--play:hover:not(:disabled) {
@@ -573,7 +573,7 @@
   height: 40px;
   background: rgba(255, 255, 255, 0.08);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;

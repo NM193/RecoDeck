@@ -75,7 +75,7 @@
 
 .update-toast-btn {
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   padding: 6px 16px;
   font-size: var(--text-sm);
   font-weight: 500;

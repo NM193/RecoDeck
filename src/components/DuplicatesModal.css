@@ -38,7 +38,7 @@
   border: none;
   color: var(--text-secondary);
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -74,7 +74,7 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-primary);
   color: var(--text-secondary);
