@@ -1219,6 +1219,41 @@ function AppContent() {
     }
   }
 
+  // Dragged to another place in the playlist's own order: shown at once, then
+  // stored; Undo puts the order before the drop back.
+  async function handleReorderPlaylist(order: readonly number[]) {
+    if (selectedPlaylistId == null) return
+    const playlistId = selectedPlaylistId
+    const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
+    const byId = new Map(tracks.map((t) => [t.id, t]))
+    setTracks(order.flatMap((id) => byId.get(id) ?? []))
+    try {
+      // Stored only when the table held exactly the playlist's tracks (not
+      // the last view's, still showing while it loads).
+      const before = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+      const shown = new Set(order)
+      if (before.length !== order.length || !before.every((id) => shown.has(id))) {
+        await loadTracksRef.current()
+        return
+      }
+      await tauriApi.reorderPlaylistTracks(playlistId, [...order])
+      toast(`Reordered ${name}`, {
+        action: undoing(async () => {
+          // The old order; tracks added since keep their places after it.
+          const now = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+          const old = new Set(before)
+          await tauriApi.reorderPlaylistTracks(playlistId, [
+            ...before.filter((id) => now.includes(id)),
+            ...now.filter((id) => !old.has(id)),
+          ])
+        }),
+      })
+    } catch (err) {
+      await loadTracksRef.current()
+      toast(`Couldn't reorder ${name}: ${errorText(err)}`, { kind: 'error' })
+    }
+  }
+
   async function handleSetGenre(selected: Track[], genre: string) {
     const before = genreSnapshot(selected)
     try {
@@ -2005,6 +2040,7 @@ function AppContent() {
                     onSetGenre={handleSetGenre}
                     onClearGenre={handleClearGenre}
                     onMoveToFolder={handleMoveToFolder}
+                    onReorderPlaylist={handleReorderPlaylist}
                     onUpdateTrack={handleUpdateTrack}
                     genreDefinitions={genreDefinitions}
                     onGenerateAIPlaylist={
