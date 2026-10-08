@@ -8,7 +8,8 @@
 - **Pure TypeScript** (tested), `src/lib/sets/setPage.ts`: the hero's numbers and source line, the filter's counts and rows, the missing tracks to copy, the thumbnail address, "saved Sep 27".
 - **Store**, `src/store/setsViewStore.ts`: `useSetsView` — the library's tab, grouping and scroll, outliving `SetsView` (Back after a DJ page).
 - **Components**, `src/components/sets/`: `SetPage.tsx` (+ `SetPage.css`) and `SetTrackRow.tsx`, new; `TrackScrubber.tsx` and `StoreLinks.tsx`, moved out of `SetsView` as they are (the store links in the spec's order).
-- **`SetsView`** keeps the data (sets, saved tracks, matches, echoes, quota) and which page shows: the library (today's box above the tabs Library · Saved · Following · Stats) or the set page; one `openSet(videoId, { cueMs, title })` replaces the arrival effect, opening a stored set, an echo and a hit; removing a set asks first.
+- **`SetsView`** keeps the data (sets, saved tracks, matches, echoes, quota) and which page shows: the library (today's box above the tabs Library · Saved · Following · Stats) or the set page; one `openSet(videoId, { cueMs, title })` replaces the arrival effect, opening a stored set, an echo and a hit; a claim (`shownSets`) lets a newer open or Back give up a late one; removing a set asks first.
+- **App**: the sidebar's Sets, pressed while Sets shows, asks the library back (`useSetsView.requestLibrary`); comments that spoke of the Set tab follow (App, `DjView`, `DjSetsTab`).
 
 **Tech Stack:** React 19, TypeScript, zustand, Vitest (jsdom). No Rust.
 
@@ -18,16 +19,28 @@
 
 **Decisions, beyond the spec's letter** (Task 6 writes them into the spec):
 - **Until S3**, the library page is today's: the box ("Paste a set link, or type a DJ's name", Process / Search · 101 units, the quota line, the found list) moves above the tabs, and the Library tab keeps its list, "Where did I hear this?" and By DJ / Newest first. The `'set'` tab goes.
-- **Back** restores the library's tab, grouping and scroll from `useSetsView`, a store outside `SetsView` (the spec says "kept in App beside `SetsStart`"; a store survives the remount just the same without threading props). `SetsStart` is unchanged: nothing outside Sets opens a set at a cue yet.
+- **Back** restores the library's tab, grouping and scroll from `useSetsView`, a store outside `SetsView` (the spec says "kept in App beside `SetsStart`"; a store survives the remount just the same without threading props); the scroll once the list has loaded, and another tab starts at its top. `SetsStart` is unchanged: nothing outside Sets opens a set at a cue yet.
 - **One opener.** While a set reads, the page shows the title the opener passed or the library knows ("Reading the set…" when neither does), the thumbnail by id, and 8 skeleton rows. A stored set is stored again on every open, as opening one from the library did (its rows refilled for search and stats; `save_yt_set` keeps `added_at`, so the library's order does not change). A failure: "Couldn't read this set: …" with Try again in place of the rows ("This set" as the title if none is known) and an error toast.
-- **Look again**'s failure and its "only N units left" warning are toasts: the page has no error line.
+- **Late answers.** A newer open or Back gives up an open on its way (`shownSets` claims): it neither shows, plays nor fetches — so StrictMode's double mount in `tauri dev` fetches a set that is not stored once, not twice. A pasted link, a found set and a channel's upload open their page only if nothing else was opened since. **Look again** never takes the page: answering after Back or another set it is stored (a playing set gets its rows) and says what it found in a toast; its failures and its "only N units left" warning are toasts too (the page has no error line). A retry replaces the last "Couldn't read this set" toast.
+- **The sidebar's Sets** while a set's page shows goes back to the library (it does not remount Sets, which keeps its state, so the request goes through `useSetsView`).
 - **Remove from library** asks first (the native confirm, as Settings' Disconnect does), from ⋯ and from the library row's bin (which removed at once before), says "Removed from your library", stops the set if it plays and returns to the library when its page was open.
-- **The hero**: "‹ Sets" above the title, as the mockup draws it; the length on the thumbnail bottom right; a warm gradient mixed into the theme's background, so it holds on the light themes. ⋯ is the shared `Menu` (it reports itself as an overlay, so the video steps aside): Open on YouTube (at the position playing, when this set plays), Look again for a tracklist (5–7 units, disabled while it runs), Copy missing tracks (its count; a toast says how many), Remove from library (only for a set in the library).
-- **Rows**: ▶ shows on hover and when it has the keyboard (opacity, as Home's rows); the playing row hovered offers Pause / Play; the store links follow the title on hover; the playing colour is the track table's (`--accent` toward the text); an ID row is muted with no "missing" and no ♡.
+- **The hero**: "‹ Sets" above the title, as the mockup draws it; the length on the thumbnail bottom right; a warm gradient mixed into the theme's background, so it holds on the light themes. Playing here it is the mockup's compact one (no numbers or source line, an 18px title); the picture keeps to the top and both columns give way on a narrow window (the thumbnail to 200px, the video to 240px) — the window has no minimum width. ⋯ is the shared `Menu` (it reports itself as an overlay, so the video steps aside): Open on YouTube (at the position playing, when this set plays), Look again for a tracklist (5–7 units, disabled while it runs), Copy missing tracks (its count; a toast says how many), Remove from library (only for a set in the library).
+- **Rows**: ▶ shows on hover and when it has the keyboard (opacity, as Home's rows; only `:focus-visible` hides the number, as WebView2 focuses a clicked button); the playing row hovered offers Pause / Play and keeps its tint; the store links follow the title on hover and while the row holds the keyboard's focus; the playing colour is the track table's (`--accent` toward the text); an ID row is muted with no "missing" and no ♡.
 - **The filter** is four buttons with counts in the mockup's tab style (`aria-pressed`); another set is another page (`key`), so it starts on All.
+- **The source line** of a list assembled from comments has no "from N lists" (there are none); "Named without a timestamp" shows under a set with no rows too.
 - **Dead CSS**: the rules only the old Set tab and video band used go from `SetsView.css`.
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `a313c2f`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc` and each task's tests pass at every task's end.
+- **Review:** an independent review applied the plan to a clean copy (all 31 blocks matched once; every task's checks passed; eslint at the baseline), drove the page in WebKit (and in Chromium for WebView2's focus) with a harness extended by delays, fetches that succeed, Look again, comments-only and loose-only sets, long titles and StrictMode, and found no blockers. Its findings are fixed here:
+  - a late Look again took the page back after "‹ Sets", or replaced another set's page (now it never takes the page);
+  - under StrictMode (on in `tauri dev`) a set that was not stored was fetched twice, 10–14 units, with two error toasts on failure (now a given-up open neither fetches nor toasts);
+  - "Named without a timestamp" vanished for a set with no rows;
+  - while playing, the hero overflowed narrow windows (at 800×600 the video sat over the bottom player and the page scrolled sideways);
+  - on WebView2 a clicked ▶ left the number cell blank;
+  - an assembled set read "from 1 list";
+  - a stale scroll came back after a fresh visit; the sidebar's Sets did nothing on a set's page; the store links could not be reached by keyboard.
+  - Also taken: Back gives up a slow open (it no longer starts playing in the bar); a retry replaces the error toast; the arriving set is known from the first frame; `initialTab` before the first paint; another tab starts at its top; wrapped DJ links align left; the playing row keeps its tint on hover; the scrubber under the video drops the old band's frame; the comments about the Set tab; a time-zone-proof `savedLabel` test.
+  - Left as they are: focus is not moved after Back, an open or Try again (it stays on the page's body); `SetPage` relies on `SetsView.css` for the strip, the scrubber and the store links, which always load with it.
 - **Builds and tests:**
   - `vitest`: 10 new. The repo counts 632 after it: 631 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline, none new; `vite build` passes. No Rust changes.
@@ -41,7 +54,9 @@
   - a "Where did I hear this?" hit at 51:00: its row scrolled into view, the set seeking to 51:00, the row playing;
   - the untimed set: the sentence, no ▶ anywhere, "↳ 5:00", which opens the other set at 5:00;
   - ⋯ › Remove from library: the confirm is asked, the set deleted, back on the library, "Removed from your library";
-  - a set whose fetch is refused: "Couldn't read this set: Daily YouTube quota is spent …" with Try again, and the error toast.
+  - a set whose fetch is refused: "Couldn't read this set: Daily YouTube quota is spent …" with Try again, and the error toast; two retries leave one toast;
+  - in StrictMode, a set not stored: one fetch; Look again (1.5s) then "‹ Sets": the library stays and a toast says "Looked again at …: Nothing new — still 12 tracks."; Look again, Back, open another set: that set stays; the sidebar's request: back on the library; a loose-only set: the sentence, then "Named without a timestamp" with both names;
+  - playing at 960×700 and 800×600: the hero 302px and 255px tall, the rows 325px and 272px, nothing sideways.
 
 ---
 
@@ -55,6 +70,7 @@
 | `src/components/sets/SetTrackRow.tsx` | create | one row of the tracklist |
 | `src/components/sets/SetPage.tsx`, `SetPage.css` | create | the set's page |
 | `src/components/views/SetsView.tsx`, `SetsView.css` | modify | the library or the page; one opener; remove asks first; dead rules go |
+| `src/App.tsx`, `src/components/views/DjView.tsx`, `src/components/dj/DjSetsTab.tsx` | modify | the sidebar's Sets asks the library back; comments about the Set tab |
 | `docs/superpowers/specs/2026-10-04-sets-redesign-design.md` | modify | the decisions above |
 
 ---
@@ -130,7 +146,8 @@ describe('sourceLine', () => {
   })
 
   it('adds the status when the list is not a plain one, and is empty with no tracklist', () => {
-    expect(sourceLine(result({ status: 'assembled', source: null }))).toBe('from 3 crossed lists · assembled from comments')
+    // Assembled from comments: no lists were found to count.
+    expect(sourceLine(result({ status: 'assembled', source: null, sourceCount: 0 }))).toBe('assembled from comments')
     expect(sourceLine(result({ status: 'low_confidence' }))).toContain('· low confidence')
     expect(sourceLine(result({ tracks: [] }))).toBe('')
   })
@@ -167,9 +184,11 @@ describe('labels', () => {
   })
 
   it('says when the set was saved, with the year when it is not this one', () => {
+    // SQLite's UTC text for a local time, so the day holds in any time zone.
+    const stored = (date: Date) => date.toISOString().slice(0, 19).replace('T', ' ')
     const now = new Date(2026, 9, 8)
-    expect(savedLabel('2026-09-27 10:00:00', now)).toBe('saved Sep 27')
-    expect(savedLabel('2025-12-31 10:00:00', now)).toBe('saved Dec 31, 2025')
+    expect(savedLabel(stored(new Date(2026, 8, 27, 12)), now)).toBe('saved Sep 27')
+    expect(savedLabel(stored(new Date(2025, 11, 31, 12)), now)).toBe('saved Dec 31, 2025')
     expect(savedLabel(undefined, now)).toBeNull()
   })
 })
@@ -238,9 +257,10 @@ export function statusNote(result: TracklistResult): string | null {
  */
 export function sourceLine(result: TracklistResult): string {
   if (result.tracks.length === 0) return ''
-  const parts = [
-    result.sourceCount > 1 ? `from ${result.sourceCount} crossed lists` : 'from 1 list',
-  ]
+  const parts: string[] = []
+  // Assembled from scattered comments, there are no lists to count.
+  if (result.sourceCount > 1) parts.push(`from ${result.sourceCount} crossed lists`)
+  else if (result.sourceCount === 1) parts.push('from 1 list')
   if (result.source === 'description') parts.push('strongest source: the description')
   else if (result.source === 'comment') {
     parts.push(`strongest source: comment${result.sourceMeta ? ` by ${result.sourceMeta.author}` : ''}`)
@@ -334,18 +354,23 @@ interface SetsViewState {
   tab: SetsTab
   grouping: 'dj' | 'recent'
   scrollTop: number
+  /** Raised by the sidebar's Sets while Sets shows: a set's page goes back to the library. */
+  libraryRequests: number
   setTab: (tab: SetsTab) => void
   setGrouping: (grouping: 'dj' | 'recent') => void
   setScrollTop: (scrollTop: number) => void
+  requestLibrary: () => void
 }
 
 export const useSetsView = create<SetsViewState>((set) => ({
   tab: 'library',
   grouping: 'dj',
   scrollTop: 0,
+  libraryRequests: 0,
   setTab: (tab) => set({ tab, scrollTop: 0 }),
   setGrouping: (grouping) => set({ grouping }),
   setScrollTop: (scrollTop) => set({ scrollTop }),
+  requestLibrary: () => set((s) => ({ libraryRequests: s.libraryRequests + 1 })),
 }))
 ```
 
@@ -919,7 +944,7 @@ export function SetPage({
               </span>
             </div>
           )}
-          {result && ready && (
+          {result && ready && !playingHere && (
             <div className="set-hero__numbers">
               {heroNumbers(result, matches).map((n) => (
                 <span key={n.key} className={n.owned ? 'set-hero__number set-hero__number--owned' : 'set-hero__number'}>
@@ -928,7 +953,7 @@ export function SetPage({
               ))}
             </div>
           )}
-          {(source || notice) && (
+          {!playingHere && (source || notice) && (
             <p className="set-hero__source">{[source, notice].filter(Boolean).join(' · ')}</p>
           )}
 
@@ -1078,23 +1103,25 @@ export function SetPage({
                 />
               ))}
             </div>
-
-            {result.loose.length > 0 && (
-              <section className="set-page__loose">
-                <h3>Named without a timestamp</h3>
-                <p className="set-page__note">Mentioned in the comments, but nobody said where in the set.</p>
-                {result.loose.map((item) => (
-                  <div className="set-loose" key={item.key ?? item.title}>
-                    <span className="set-loose__name">
-                      {item.artist ? `${item.artist} — ${item.title}` : item.title}
-                      {item.mix && <span className="set-row__mix"> ({item.mix})</span>}
-                    </span>
-                    <span className="set-loose__by">{item.author}</span>
-                  </div>
-                ))}
-              </section>
-            )}
           </>
+        )}
+
+        {/* Named without a timestamp: under the rows, and under a set with
+            no rows too, whose comments only name tracks. */}
+        {ready && result && result.loose.length > 0 && (
+          <section className="set-page__loose">
+            <h3>Named without a timestamp</h3>
+            <p className="set-page__note">Mentioned in the comments, but nobody said where in the set.</p>
+            {result.loose.map((item) => (
+              <div className="set-loose" key={item.key ?? item.title}>
+                <span className="set-loose__name">
+                  {item.artist ? `${item.artist} — ${item.title}` : item.title}
+                  {item.mix && <span className="set-row__mix"> ({item.mix})</span>}
+                </span>
+                <span className="set-loose__by">{item.author}</span>
+              </div>
+            ))}
+          </section>
         )}
       </div>
     </div>
@@ -1131,13 +1158,17 @@ Create `src/components/sets/SetPage.css`:
   background: linear-gradient(180deg, color-mix(in srgb, #7c3a12 32%, var(--bg-primary)), var(--bg-primary));
 }
 
+/* The picture keeps to the top when the text beside it is taller, and both
+   give way on a narrow window rather than push the page sideways. */
 .set-hero__media {
-  flex: 0 0 300px;
-  min-width: 0;
+  flex: 0 1 300px;
+  align-self: flex-start;
+  min-width: 200px;
 }
 
 .set-hero--playing .set-hero__media {
   flex-basis: 440px;
+  min-width: 240px;
 }
 
 .set-hero__thumb,
@@ -1166,12 +1197,17 @@ Create `src/components/sets/SetPage.css`:
   font-variant-numeric: tabular-nums;
 }
 
+/* The scrubber (styled in SetsView.css, which always loads with this page)
+   under the video, without the old band's frame. */
 .set-hero__media .sets-scrub {
   margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
 }
 
 .set-hero__text {
-  flex: 1;
+  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -1210,6 +1246,11 @@ Create `src/components/sets/SetPage.css`:
   -webkit-box-orient: vertical;
 }
 
+/* Playing, the hero is the mockup's compact one: no numbers, a smaller title. */
+.set-hero--playing .set-hero__title {
+  font-size: 18px;
+}
+
 .set-hero__who {
   display: flex;
   flex-wrap: wrap;
@@ -1226,6 +1267,7 @@ Create `src/components/sets/SetPage.css`:
   background: none;
   color: var(--text-primary);
   font: inherit;
+  text-align: left;
 }
 
 .set-hero__dj {
@@ -1394,6 +1436,11 @@ Create `src/components/sets/SetPage.css`:
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
+/* Hovered, it keeps its tint (as specific as the rows' hover, and later). */
+.set-row.set-row--now:not(.set-row--head):hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
 /* The track table's playing colour: the accent drawn toward the text, so it
    reads on the light themes too. */
 .set-row--now .set-row__name,
@@ -1436,8 +1483,10 @@ Create `src/components/sets/SetPage.css`:
   opacity: 1;
 }
 
+/* Only the keyboard's focus counts: WebView2 focuses a button on a click,
+   which would leave the cell blank once the mouse moves on. */
 .set-row:hover .set-row__no > :not(.set-row__play),
-.set-row__no:focus-within > :not(.set-row__play) {
+.set-row__no:has(.set-row__play:focus-visible) > :not(.set-row__play) {
   visibility: hidden;
 }
 
@@ -1495,7 +1544,7 @@ Create `src/components/sets/SetPage.css`:
 }
 
 .set-row:hover .set-row__stores,
-.set-row .set-row__stores:focus-within {
+.set-row:focus-within .set-row__stores {
   display: inline-flex;
 }
 
@@ -1620,7 +1669,7 @@ git commit -m "feat(sets): a set's own page — the hero, the strip, the filter 
 
 ### Task 5: Sets opens on its library; a set opens on its page
 
-**Files:** Modify `src/components/views/SetsView.tsx`, `src/components/views/SetsView.css`.
+**Files:** Modify `src/components/views/SetsView.tsx`, `src/components/views/SetsView.css`, `src/App.tsx`, `src/components/views/DjView.tsx`, `src/components/dj/DjSetsTab.tsx`.
 
 - [ ] **Step 1: SetsView** — the moved components and the Set tab go; the library or the set page; one opener for the library's rows, an arrival, an echo and a hit; Back restores the library; removing asks first
 
@@ -1673,7 +1722,7 @@ import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { useSetPlayer } from '../../store/setPlayerStore'
 import { useSetsView, type SetsTab } from '../../store/setsViewStore'
-import { toast } from '../../lib/toast'
+import { dismissToast, toast } from '../../lib/toast'
 import type {
   RawSet,
   SavedTrack,
@@ -2112,11 +2161,15 @@ export function SetsView({
   const setGrouping = useSetsView((s) => s.setGrouping)
   const [view, setView] = useState<'library' | 'set'>(openVideoId ? 'set' : 'library')
   /** The set being read, or one that could not be; null once it is shown. */
-  const [opening, setOpening] = useState<SetOpening | null>(null)
+  const [opening, setOpening] = useState<SetOpening | null>(
+    openVideoId ? { videoId: openVideoId, title: null, error: null } : null,
+  )
   /** Opened at a track (a hit, an echo): the cue its row is scrolled to. */
   const [focusCue, setFocusCue] = useState<number | null>(null)
   const [lookingAgain, setLookingAgain] = useState(false)
   const libraryScroll = useRef<HTMLDivElement>(null)
+  /** The last "Couldn't read this set" toast: a retry replaces it rather than adding one. */
+  const readError = useRef<number | null>(null)
   const [input, setInput] = useState(initialQuery ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -2317,6 +2370,8 @@ with
           raw = await tauriApi.getYouTubeSet(videoId)
         } catch (err) {
           if (!isAppError(err) || err.kind !== 'NotFound') throw err
+          // Given up for a newer open: do not spend 5–7 units on it.
+          if (!current()) return
           fetched = true
           raw = await tauriApi.fetchYouTubeSet(videoId)
         }
@@ -2330,9 +2385,11 @@ with
         await storeParsedSet(raw, parsed)
         refreshLibrary()
       } catch (err) {
+        if (!current()) return
         const message = getErrorMessage(err)
-        if (current()) setOpening({ videoId, title: how.title ?? null, error: message })
-        toast(`Couldn't read this set: ${message}`, { kind: 'error' })
+        setOpening({ videoId, title: how.title ?? null, error: message })
+        if (readError.current !== null) dismissToast(readError.current)
+        readError.current = toast(`Couldn't read this set: ${message}`, { kind: 'error' })
       } finally {
         if (fetched) refreshQuota()
       }
@@ -2347,17 +2404,34 @@ with
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Home's New sets row opens the Library tab.
-  useEffect(() => {
+  // Home's New sets row opens the Library tab, before the first paint.
+  useLayoutEffect(() => {
     if (initialTab) setTab(initialTab)
   }, [initialTab, setTab])
 
-  // Back: the library where it was scrolled to.
+  /** Back to the library; a set still being read for the page is given up. */
+  const showLibrary = useCallback(() => {
+    shownSets.current++
+    setView('library')
+  }, [])
+
+  // The sidebar's Sets, pressed while a set's page shows.
+  useEffect(
+    () =>
+      useSetsView.subscribe((state, before) => {
+        if (state.libraryRequests !== before.libraryRequests) showLibrary()
+      }),
+    [showLibrary],
+  )
+
+  // Back: the library where it was scrolled to, once its list is there to
+  // scroll (on a fresh mount the list is still loading).
+  const libraryLoaded = sets.length > 0
   useLayoutEffect(() => {
-    if (view === 'library' && libraryScroll.current) {
+    if (view === 'library' && libraryLoaded && libraryScroll.current) {
       libraryScroll.current.scrollTop = useSetsView.getState().scrollTop
     }
-  }, [view])
+  }, [view, libraryLoaded])
 
   // A set shown here, however it was opened (the library, a link, a search
   // hit, a DJ page, Home), is no longer news on Home's New sets.
@@ -2369,7 +2443,6 @@ with
 In `src/components/views/SetsView.tsx`, replace
 
 ```tsx
-      .map((t) => matches.byIndex.get(t.index)?.track)
       .filter((t): t is LibraryTrack => Boolean(t))
   }, [result, matches])
 
@@ -2400,16 +2473,18 @@ In `src/components/views/SetsView.tsx`, replace
 with
 
 ```tsx
-      .map((t) => matches.byIndex.get(t.index)?.track)
       .filter((t): t is LibraryTrack => Boolean(t))
   }, [result, matches])
 
   const savedKeys = useMemo(() => new Set(saved.map((t) => trackKey(t))), [saved])
 
-  /** A set just fetched, on its page. */
-  function show(raw: RawSet): TracklistResult {
-    shownSets.current++
+  /**
+   * A set just fetched, on its page — unless something else was opened, or
+   * Back pressed, since it was asked for (`claim`).
+   */
+  function show(raw: RawSet, claim: number): TracklistResult {
     const parsed = analyse(raw.video, raw.comments)
+    if (shownSets.current !== claim) return parsed
     setReanalysed(null)
     setCurrentSet(raw)
     setResult(parsed)
@@ -2426,6 +2501,8 @@ with
 In `src/components/views/SetsView.tsx`, replace
 
 ```tsx
+      return
+    }
 
     setLoading(true)
     setError(null)
@@ -2449,13 +2526,16 @@ In `src/components/views/SetsView.tsx`, replace
 with
 
 ```tsx
+      return
+    }
 
     setLoading(true)
     setError(null)
     setFound(null)
+    const claim = ++shownSets.current
     try {
       const raw = await tauriApi.fetchYouTubeSet(input.trim())
-      const parsed = show(raw)
+      const parsed = show(raw, claim)
       setInput('')
 
       // Kept for good: reopening it later costs nothing.
@@ -2463,6 +2543,88 @@ with
       refreshLibrary()
     } catch (err) {
       setError(getErrorMessage(err))
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
+  }
+
+  /** Fetches one of the found sets: back to the ordinary 5-7 unit path. */
+  async function processFound(hit: SetSearchHit) {
+    setLoading(true)
+    setError(null)
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(hit.videoId)
+      const parsed = show(raw)
+      await storeParsed(raw, parsed)
+      setFound(null)
+      setInput('')
+      refreshLibrary()
+    } catch (err) {
+      setError(getErrorMessage(err))
+```
+
+with
+
+```tsx
+  }
+
+  /** Fetches one of the found sets: back to the ordinary 5-7 unit path. */
+  async function processFound(hit: SetSearchHit) {
+    setLoading(true)
+    setError(null)
+    const claim = ++shownSets.current
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(hit.videoId)
+      const parsed = show(raw, claim)
+      await storeParsed(raw, parsed)
+      setFound(null)
+      setInput('')
+      refreshLibrary()
+    } catch (err) {
+      setError(getErrorMessage(err))
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
+   * `channelId` moves the channel's last-seen marker. A watched DJ has none —
+   * its news comes from a dated search, not from a position in a listing.
+   */
+  async function importUpload(videoId: string, channelId?: string) {
+    setBusy(videoId)
+    setError(null)
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(videoId)
+      const parsed = show(raw)
+      await storeParsed(raw, parsed)
+      if (channelId) await tauriApi.markYouTubeChannelSeen(channelId, videoId).catch(() => {})
+      setNews(null)
+      setUploads(null)
+      refreshLibrary()
+    } catch (err) {
+```
+
+with
+
+```tsx
+   * `channelId` moves the channel's last-seen marker. A watched DJ has none —
+   * its news comes from a dated search, not from a position in a listing.
+   */
+  async function importUpload(videoId: string, channelId?: string) {
+    setBusy(videoId)
+    setError(null)
+    const claim = ++shownSets.current
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(videoId)
+      const parsed = show(raw, claim)
+      await storeParsed(raw, parsed)
+      if (channelId) await tauriApi.markYouTubeChannelSeen(channelId, videoId).catch(() => {})
+      setNews(null)
+      setUploads(null)
+      refreshLibrary()
+    } catch (err) {
 ```
 
 In `src/components/views/SetsView.tsx`, replace
@@ -2491,40 +2653,9 @@ In `src/components/views/SetsView.tsx`, replace
       const parsed = show(raw)
       // Playing, it plays on with the new rows.
       useSetPlayer.getState().replaceResult(parsed)
-```
-
-with
-
-```tsx
-   * amount of reparsing the old copy will find it.
-   *
-   * So this is the one that spends: 5-7 units for a fresh fetch, and it says so
-   * on the button.
-   */
-  async function reanalyse() {
-    if (!result || lookingAgain) return
-    const before = result.trackCount
-
-    const quotaLeft = quota?.remaining ?? 0
-    if (quotaLeft < 7) {
-      toast(`Fetching a set again costs 5–7 units and only ${quotaLeft} are left today.`, {
-        kind: 'warning',
-      })
-      return
-    }
-
-    setLookingAgain(true)
-    setReanalysed(null)
-    try {
-      const raw = await tauriApi.fetchYouTubeSet(result.video.id)
-      const parsed = show(raw)
-      // Playing, it plays on with the new rows.
-      useSetPlayer.getState().replaceResult(parsed)
-```
-
-In `src/components/views/SetsView.tsx`, replace
-
-```tsx
+      await storeParsed(raw, parsed)
+      refreshLibrary()
+      // What it was worth saying plainly, since it just cost something.
       setReanalysed(
         parsed.trackCount === before
           ? `Nothing new — still ${before} ${before === 1 ? 'track' : 'tracks'}.`
@@ -2606,11 +2737,48 @@ In `src/components/views/SetsView.tsx`, replace
 with
 
 ```tsx
-      setReanalysed(
+   * amount of reparsing the old copy will find it.
+   *
+   * So this is the one that spends: 5-7 units for a fresh fetch, and it says so
+   * on the button.
+   */
+  async function reanalyse() {
+    if (!result || lookingAgain) return
+    const before = result.trackCount
+
+    const quotaLeft = quota?.remaining ?? 0
+    if (quotaLeft < 7) {
+      toast(`Fetching a set again costs 5–7 units and only ${quotaLeft} are left today.`, {
+        kind: 'warning',
+      })
+      return
+    }
+
+    setLookingAgain(true)
+    setReanalysed(null)
+    // Look again never takes the page: if another set was opened, or Back
+    // pressed, by the time it answers, it is stored and said in a toast.
+    const claim = shownSets.current
+    const { id: videoId, title } = result.video
+    try {
+      const raw = await tauriApi.fetchYouTubeSet(videoId)
+      const parsed = analyse(raw.video, raw.comments)
+      // Playing, it plays on with the new rows.
+      useSetPlayer.getState().replaceResult(parsed)
+      // What it was worth saying plainly, since it just cost something.
+      const said =
         parsed.trackCount === before
           ? `Nothing new — still ${before} ${before === 1 ? 'track' : 'tracks'}.`
-          : `${before} → ${parsed.trackCount} tracks.`,
-      )
+          : `${before} → ${parsed.trackCount} tracks.`
+      if (shownSets.current === claim) {
+        setCurrentSet(raw)
+        setResult(parsed)
+        setReanalysed(said)
+      } else {
+        toast(`Looked again at ${title}: ${said}`, { kind: 'info' })
+      }
+      await storeParsed(raw, parsed)
+      refreshLibrary()
     } catch (err) {
       toast(`Couldn't read this set again: ${getErrorMessage(err)}`, { kind: 'error' })
     } finally {
@@ -2660,7 +2828,7 @@ with
     if (currentSet?.video.id === videoId) {
       setCurrentSet(null)
       setResult(null)
-      setView('library')
+      showLibrary()
     }
     refreshLibrary()
     toast('Removed from your library')
@@ -3133,7 +3301,7 @@ with
           notice={reanalysed}
           lookingAgain={lookingAgain}
           focusCue={focusCue}
-          onBack={() => setView('library')}
+          onBack={showLibrary}
           onRetry={() => opening && void openSet(opening.videoId, { title: opening.title })}
           onOpenDj={onOpenDj ? (name) => onOpenDj(name, currentSet?.video.id ?? null) : undefined}
           onPlayFile={playFromSet}
@@ -3242,7 +3410,11 @@ with
                 key={t}
                 type="button"
                 className={`sets-tab ${tab === t ? 'sets-tab--active' : ''}`}
-                onClick={() => setTab(t)}
+                onClick={() => {
+                  setTab(t)
+                  // Another tab starts at its top.
+                  if (libraryScroll.current) libraryScroll.current.scrollTop = 0
+                }}
               >
                 {t === 'library'
                   ? `Library (${sets.length})`
@@ -3939,10 +4111,225 @@ with
 }
 ```
 
-- [ ] **Step 3:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 631 passed (632)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
+- [ ] **Step 3: App** — the sidebar's Sets on a set's page asks the library back; the comments that spoke of the Set tab
+
+In `src/App.tsx`, replace
+
+```tsx
+import { relaunch } from '@tauri-apps/plugin-process'
+import { TrackTable, type TrackTableRef } from './components/TrackTable'
+import { NowPlayingBar } from './components/layout/NowPlayingBar'
+import { SetPlayerBar } from './components/sets/SetPlayerBar'
+import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
+import { useOverlay } from './lib/overlays'
+import { HomeView } from './components/views/HomeView'
+import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
+import { MiniPlayer } from './components/MiniPlayer'
+import { SettingsView } from './components/views/SettingsView'
+import { SearchView } from './components/views/SearchView'
+import { SetsView } from './components/views/SetsView'
+```
+
+with
+
+```tsx
+import { relaunch } from '@tauri-apps/plugin-process'
+import { TrackTable, type TrackTableRef } from './components/TrackTable'
+import { NowPlayingBar } from './components/layout/NowPlayingBar'
+import { SetPlayerBar } from './components/sets/SetPlayerBar'
+import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
+import { useOverlay } from './lib/overlays'
+import { useSetsView } from './store/setsViewStore'
+import { HomeView } from './components/views/HomeView'
+import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
+import { MiniPlayer } from './components/MiniPlayer'
+import { SettingsView } from './components/views/SettingsView'
+import { SearchView } from './components/views/SearchView'
+import { SetsView } from './components/views/SetsView'
+```
+
+In `src/App.tsx`, replace
+
+```tsx
+  /** From a Spotify search card: that artist, stored as a manual match. */
+  spotifyArtistId: string | null
+  from: DjOrigin
+}
+
+/**
+ * What the Sets view opens with: a stored set to show (Back from a DJ page
+ * opened from it, a DJ page's set card) or a DJ's name in the Set tab's box
+ * (a DJ page's Find more), or its library (Home's Needs you). SetsView reads
+ * them once, when it mounts.
+ */
+interface SetsStart {
+  openVideoId: string | null
+  initialQuery: string
+  tab?: 'library'
+}
+```
+
+with
+
+```tsx
+  /** From a Spotify search card: that artist, stored as a manual match. */
+  spotifyArtistId: string | null
+  from: DjOrigin
+}
+
+/**
+ * What the Sets view opens with: a set to open on its page (Back from a DJ
+ * page opened from it, a DJ page's set card, Home, Search, the set bar) or a
+ * DJ's name in its box (a DJ page's Find more), or its Library tab (Home's
+ * Needs you). SetsView reads them once, when it mounts.
+ */
+interface SetsStart {
+  openVideoId: string | null
+  initialQuery: string
+  tab?: 'library'
+}
+```
+
+In `src/App.tsx`, replace
+
+```tsx
+    }
+    setShowSearch(djPage.from.view === 'search')
+    setShowSets(false)
+    setDjPage(null)
+  }
+
+  // Sets, arriving on a set or with a DJ's name in the Set tab's box: Back
+  // here, and a DJ page's set cards and Find more. Every other view closes,
+  // as with the sidebar's Sets.
+  function openSets(start: SetsStart) {
+    setSetsStart(start)
+    setSetsVisit((visit) => visit + 1)
+    setDjPage(null)
+```
+
+with
+
+```tsx
+    }
+    setShowSearch(djPage.from.view === 'search')
+    setShowSets(false)
+    setDjPage(null)
+  }
+
+  // Sets, arriving on a set's page or with a DJ's name in its box: Back
+  // here, and a DJ page's set cards and Find more. Every other view closes,
+  // as with the sidebar's Sets.
+  function openSets(start: SetsStart) {
+    setSetsStart(start)
+    setSetsVisit((visit) => visit + 1)
+    setDjPage(null)
+```
+
+In `src/App.tsx`, replace
+
+```tsx
+          showSets &&
+          djPage === null &&
+          shownSpotifyList === null &&
+          shownYouTubeMusicList === null
+        setShowSets(true)
+        if (!setsShowing) setSetsStart(NO_SETS_START)
+        setStreamList(null)
+        setDjPage(null)
+        setShowSearch(false)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
+```
+
+with
+
+```tsx
+          showSets &&
+          djPage === null &&
+          shownSpotifyList === null &&
+          shownYouTubeMusicList === null
+        setShowSets(true)
+        if (!setsShowing) setSetsStart(NO_SETS_START)
+        // Showing already, a set's page goes back to the library.
+        else useSetsView.getState().requestLibrary()
+        setStreamList(null)
+        setDjPage(null)
+        setShowSearch(false)
+        setSelectedFolder(null)
+        setSelectedPlaylistId(null)
+        setShowAllTracks(false)
+```
+
+In `src/components/views/DjView.tsx`, replace
+
+```tsx
+  /** From a Spotify search card: stored as the manual match on opening. */
+  spotifyArtistId: string | null
+  /** App's Spotify data: the shared library index, verdicts, connection. */
+  spotify: SpotifyData
+  /** Back to where the first DJ page was opened from (Search or Sets). */
+  onBack: () => void
+  /** Sets, arriving on a set or with the Set tab's box filled in. */
+  onOpenSets: (start: {
+    openVideoId: string | null
+    initialQuery: string
+  }) => void
+  /** Another DJ's page (a gig's lineup); Back still returns to the first one's origin. */
+  onOpenDj: (name: string, spotifyArtistId: string | null) => void
+```
+
+with
+
+```tsx
+  /** From a Spotify search card: stored as the manual match on opening. */
+  spotifyArtistId: string | null
+  /** App's Spotify data: the shared library index, verdicts, connection. */
+  spotify: SpotifyData
+  /** Back to where the first DJ page was opened from (Search or Sets). */
+  onBack: () => void
+  /** Sets, arriving on a set's page or with its box filled in. */
+  onOpenSets: (start: {
+    openVideoId: string | null
+    initialQuery: string
+  }) => void
+  /** Another DJ's page (a gig's lineup); Back still returns to the first one's origin. */
+  onOpenDj: (name: string, spotifyArtistId: string | null) => void
+```
+
+In `src/components/dj/DjSetsTab.tsx`, replace
+
+```tsx
+// src/components/dj/DjSetsTab.tsx
+// The Sets tab: the DJ's saved sets as cards, each opening in Sets, then
+// "Find more", which opens Sets' Set tab with the name typed in (not run).
+import { Icon } from '../Icon'
+import { setMeta, setThumbnail } from '../../lib/dj/page'
+import type { YtSetSummary } from '../../types/youtube'
+
+/** One saved set: its YouTube thumbnail, title and "1 h 52 min · 24 tracks". The overview's Sets card shows these too. */
+export function SetCard({
+```
+
+with
+
+```tsx
+// src/components/dj/DjSetsTab.tsx
+// The Sets tab: the DJ's saved sets as cards, each opening in Sets, then
+// "Find more", which opens Sets with the name typed in its box (not run).
+import { Icon } from '../Icon'
+import { setMeta, setThumbnail } from '../../lib/dj/page'
+import type { YtSetSummary } from '../../types/youtube'
+
+/** One saved set: its YouTube thumbnail, title and "1 h 52 min · 24 tracks". The overview's Sets card shows these too. */
+export function SetCard({
+```
+
+- [ ] **Step 4:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 631 passed (632)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
 
 ```bash
-git add src/components/views/SetsView.tsx src/components/views/SetsView.css
+git add src/components/views/SetsView.tsx src/components/views/SetsView.css src/App.tsx src/components/views/DjView.tsx src/components/dj/DjSetsTab.tsx
 git commit -m "feat(sets): Sets opens on its library, and a set on a page of its own"
 ```
 
@@ -3993,17 +4380,25 @@ does not start playback.
   and By DJ / Newest first.
 - Back returns to the library's tab, grouping and scroll from a small store
   (`useSetsView`) that outlives `SetsView`, so a trip through a DJ page keeps
-  them. `SetsStart` is unchanged: no caller opens a set at a cue from outside
-  Sets yet, so it has no cue.
+  them; the scroll comes back once the list has loaded, and another tab
+  starts at its top. The sidebar's Sets, pressed while a set's page shows,
+  goes back to the library too (`requestLibrary`). `SetsStart` is unchanged:
+  no caller opens a set at a cue from outside Sets yet, so it has no cue.
 - One opener, `openSet(videoId, { cueMs, title })`: the page shows at once
   with the title the opener or the library knows ("Reading the set…" when
   neither does) and eight skeleton rows; a stored set is stored again (its
   rows refilled; `added_at` is kept); a set not stored is fetched and stored.
   A failure says "Couldn't read this set: …" with Try again ("This set" as
-  the title when none is known) and shows an error toast. Opened at a track,
-  its row is scrolled to the middle and the set plays from its cue.
-- Look again's failures and its "only N units left" warning are toasts (the
-  page has no error line). Removing a set asks first (the native confirm),
+  the title when none is known) and shows an error toast, which a retry
+  replaces. Opened at a track, its row is scrolled to the middle and the set
+  plays from its cue. A newer open, or Back, gives up an open still on its
+  way: it neither shows, nor plays, nor fetches (so React's StrictMode
+  double mount spends 5–7 units once). A pasted link, a found set and a
+  channel's upload open their page only if nothing else was opened since.
+- Look again never takes the page: answering after Back or another set, it
+  is stored (and a playing set gets its rows) and says what it found in a
+  toast ("Looked again at …: 12 → 13 tracks."). Its failures and its "only N
+  units left" warning are toasts too (the page has no error line). Removing a set asks first (the native confirm),
   from ⋯ and from the library row's bin, says "Removed from your library",
   and goes back to the library when its page was open; its saved tracks go
   with it.
@@ -4012,9 +4407,19 @@ does not start playback.
   position playing, when this set plays), Look again for a tracklist (5–7
   units), Copy missing tracks (its count; a toast says how many were copied),
   Remove from library (only for a set in it).
+- Playing here, the hero is the mockup's compact one: the numbers and the
+  source line go and the title is 18px. The picture keeps to the top when the
+  text beside it is taller, and both give way on a narrow window (the
+  thumbnail down to 200px, the video to 240px), so at 800×600 the rows keep
+  272px and nothing scrolls sideways.
+- A list assembled from scattered comments has no lists to count: its line
+  reads "assembled from comments", without "from N lists". "Named without a
+  timestamp" shows under a set with no rows too.
 - Rows: the number's ▶ shows on hover and when it has the keyboard (opacity,
-  so it stays reachable); the store links follow the title in the spec's
-  order (Beatport · Discogs · Bandcamp · Spotify); the playing row takes the
+  so it stays reachable; only the keyboard's focus hides the number, as
+  WebView2 focuses a clicked button); the store links follow the title in the
+  spec's order (Beatport · Discogs · Bandcamp · Spotify), on hover and while
+  the row holds the keyboard's focus; the playing row takes the
   track table's playing colour (the accent drawn toward the text, which reads
   on the light themes); an ID row is muted, with no "missing" and no ♡.
 - The filter is four buttons with their counts (`aria-pressed`), in the
@@ -4046,6 +4451,7 @@ git commit -m "docs(spec): Sets S2 as built"
   - Play set: the video plays where the thumbnail was, larger; Pause, ⏮, ⏭, Stop work; the rows scroll under a hero that stays put; ▶ on a row's number plays from there; the playing row shows the equalizer.
   - The filter: You own, Missing, IDs show those rows. A row's store links show on hover; "have it" plays your file (the video pauses); ♡ saves it.
   - ⋯: Open on YouTube; Look again (5–7 units) keeps a playing set playing; Copy missing tracks; Remove from library asks first.
-  - "‹ Sets": the library as you left it (tab, By DJ / Newest, scroll), the video playing on in the bar. The same after opening a DJ from the page and coming back.
+  - "‹ Sets": the library as you left it (tab, By DJ / Newest, scroll), the video playing on in the bar. The same after opening a DJ from the page and coming back. The sidebar's Sets on a set's page also returns to the library.
+  - A narrow window while a set plays: the hero shrinks, the rows stay visible, nothing scrolls sideways.
   - "Where did I hear this?": a hit opens its set at that track, playing. An untimed set's "↳ 12:30" opens the other set there.
   - A DJ page's set card, Home's set rows and the set bar open the set's page.
