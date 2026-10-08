@@ -5,18 +5,25 @@
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from '../Icon'
 import {
+  addedLabel,
+  bpmBars,
   count,
   gigDay,
   gigLine,
   gigWhere,
+  keyKnownLine,
+  lastPlaylistLine,
   libraryStats,
   needsYouRows,
+  newLikeRows,
   playedLabel,
   type NeedsYouRow,
   type StreamNews,
 } from '../../lib/home/labels'
 import { homeCard } from '../../lib/home/cards'
+import { djHue, djInitials, djLine } from '../../lib/search/labels'
 import type { TrackFilter } from '../../lib/trackTable/filter'
+import { formatTime } from '../../lib/trackTable/cells'
 import type { Playlist } from '../../types/track'
 import { homeGenreTiles, playlistGradient, userPlaylists } from './content'
 import { HomeTrackRows, type TrackRowActions } from './HomeTrackRows'
@@ -73,7 +80,7 @@ export function HomeCard({
   actions,
 }: HomeCardProps) {
   const title = homeCard(id)?.title ?? id
-  const link = editing ? null : headerLink(id, facts, actions)
+  const link = editing ? null : headerLink(id, data, facts, actions)
   return (
     <section className={editing ? 'home-card home-card--editing' : 'home-card'}>
       <div className="home-card__head">
@@ -106,9 +113,33 @@ export function HomeCard({
 
 function headerLink(
   id: string,
+  data: HomeData,
   facts: HomeFacts,
   actions: HomeActions,
 ): ReactNode {
+  if (id === 'recently-added' && facts.totalTrackCount > 0) {
+    return (
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => actions.onOpenAllTracks({ added: 30 })}
+      >
+        All Tracks
+      </button>
+    )
+  }
+  const last = data.lastPlaylist
+  if (id === 'last-playlist' && last !== null && last !== 'none') {
+    return (
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => actions.onOpenPlaylist(last.id)}
+      >
+        Open
+      </button>
+    )
+  }
   if (id === 'library-by-genre' && facts.totalTrackCount > 0) {
     return (
       <button
@@ -157,6 +188,143 @@ function CardBody({
           onAddToPlaylist={actions.onAddToPlaylist}
           onMoveToFolder={actions.onMoveToFolder}
         />
+      )
+    }
+    case 'recently-added': {
+      if (data.recentlyAdded === null) return null
+      if (data.recentlyAdded.length === 0) return <Empty>No tracks yet</Empty>
+      const now = new Date()
+      return (
+        <HomeTrackRows
+          table="home:recently-added"
+          tracks={data.recentlyAdded}
+          last={(track) => addedLabel(track.date_added, now)}
+          onPlay={actions.onPlay}
+          onAddToPlaylist={actions.onAddToPlaylist}
+          onMoveToFolder={actions.onMoveToFolder}
+        />
+      )
+    }
+    case 'your-djs':
+      if (data.djs === null) return null
+      if (data.djs.length === 0) {
+        return <Empty>No DJs yet — open a DJ page or watch a DJ in Sets</Empty>
+      }
+      return (
+        <div className="home-djs">
+          {data.djs.map((dj) => {
+            const line = djLine(dj, data.today)
+            return (
+              <button
+                key={dj.nameKey}
+                type="button"
+                className="home-dj"
+                onClick={() => actions.onOpenDj(dj.displayName)}
+              >
+                <span
+                  className="home-dj__photo"
+                  aria-hidden="true"
+                  style={
+                    dj.imageUrl
+                      ? undefined
+                      : { filter: `hue-rotate(${djHue(dj.displayName)}deg)` }
+                  }
+                >
+                  {dj.imageUrl ? (
+                    <img
+                      src={dj.imageUrl}
+                      alt=""
+                      loading="lazy"
+                      draggable={false}
+                    />
+                  ) : (
+                    <span className="home-dj__initials">
+                      {djInitials(dj.displayName)}
+                    </span>
+                  )}
+                </span>
+                <span className="home-dj__text">
+                  <span className="home-dj__name" title={dj.displayName}>
+                    {dj.displayName}
+                  </span>
+                  {line && <span className="home-dj__line">{line}</span>}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )
+    case 'new-likes': {
+      const rows = newLikeRows(facts.spotify, facts.youtubeMusic)
+      if (rows.length === 0) return <Empty>No new likes</Empty>
+      return (
+        <div className="home-list">
+          {rows.map((row) => (
+            <button
+              key={`${row.service}\n${row.listId}`}
+              type="button"
+              className={`home-news home-news--${row.service}`}
+              onClick={() => actions.onOpenStreamList(row.service, row.listId)}
+            >
+              <span className="home-news__number">{row.number}</span>
+              <span className="home-news__text" title={row.name}>
+                {row.name}
+              </span>
+              <span className="home-news__place">
+                <span className="home-news__place-name">
+                  {row.service === 'spotify' ? 'Spotify' : 'YouTube Music'}
+                </span>
+                <Icon name="ChevronRight" size={12} />
+              </span>
+            </button>
+          ))}
+        </div>
+      )
+    }
+    case 'bpm-key':
+      return <BpmAndKey data={data} actions={actions} />
+    case 'last-playlist': {
+      const last = data.lastPlaylist
+      if (last === null) return null
+      if (last === 'none') return <Empty>Play a playlist and it shows here</Empty>
+      return (
+        <div className="home-last">
+          <div className="home-last__head">
+            <span
+              className="home-last__cover"
+              style={{ background: playlistGradient(last.name) }}
+            />
+            <span className="home-last__text">
+              <span className="home-last__name" title={last.name}>
+                {last.name}
+              </span>
+              <span className="home-sub">
+                {lastPlaylistLine(last.tracks.length, last.playedAt, new Date())}
+              </span>
+            </span>
+            {last.tracks.length > 0 && (
+              <button
+                type="button"
+                className="home-last__play"
+                aria-label={`Play ${last.name}`}
+                onClick={() => actions.onPlayPlaylist(last.id)}
+              >
+                <Icon name="Play" size={14} />
+              </button>
+            )}
+          </div>
+          <HomeTrackRows
+            table="home:last-playlist"
+            tracks={last.tracks}
+            last={(track) => formatTime(track.duration_ms)}
+            // A play from here records the playlist, so it stays the last one.
+            onPlay={(track, list, index) =>
+              actions.onPlay(track, list, index, last.id)
+            }
+            onAddToPlaylist={actions.onAddToPlaylist}
+            onMoveToFolder={actions.onMoveToFolder}
+          />
+        </div>
       )
     }
     case 'upcoming-gigs':
@@ -348,6 +516,57 @@ function QuickAction({
       <Icon name={icon} size={16} />
       {label}
     </button>
+  )
+}
+
+/** BPM bars by range, then the keys; each opens All Tracks with its filter. */
+function BpmAndKey({ data, actions }: { data: HomeData; actions: HomeActions }) {
+  const counts = data.bpmKey
+  if (counts === null) return null
+  const bars = bpmBars(counts.bpm)
+  const most = Math.max(0, ...bars.map((bar) => bar.count))
+  if (most === 0 && counts.keys.length === 0) {
+    return <Empty>Nothing analyzed yet</Empty>
+  }
+  return (
+    <div className="home-bpm-key">
+      <div className="home-bars">
+        {bars.map((bar) => (
+          <button
+            key={bar.key}
+            type="button"
+            className="home-bar"
+            disabled={bar.count === 0}
+            onClick={() => actions.onOpenAllTracks(bar.filter)}
+          >
+            <span className="home-bar__label">{bar.label}</span>
+            <span className="home-bar__track">
+              <span
+                className="home-bar__fill"
+                style={{ width: `${most > 0 ? (bar.count / most) * 100 : 0}%` }}
+              />
+            </span>
+            <span className="home-bar__count">{count(bar.count)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="home-keys">
+        <div className="home-keys__list">
+          {counts.keys.map((key) => (
+            <button
+              key={key.key}
+              type="button"
+              className="home-key"
+              onClick={() => actions.onOpenAllTracks({ key: key.key })}
+            >
+              <span className="home-key__name">{key.key}</span>
+              <span className="home-key__count">{count(key.count)}</span>
+            </button>
+          ))}
+        </div>
+        <span className="home-sub">{keyKnownLine(counts.keys)}</span>
+      </div>
+    </div>
   )
 }
 

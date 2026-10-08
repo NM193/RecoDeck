@@ -252,7 +252,8 @@
    playing) takes the number's place. Hidden, it stays in the Tab order. */
 .home-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 34px 30px 62px;
+  /* The last column holds "Dec 31, 2025". */
+  grid-template-columns: 22px minmax(0, 1fr) 34px 30px 78px;
   align-items: center;
   gap: var(--space-2);
   height: 38px;
@@ -750,6 +751,286 @@
 }
 
 .home-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Your DJs: a round photo, the name and one line ---- */
+.home-djs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+
+.home-dj {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-dj:hover {
+  background: var(--bg-tertiary);
+}
+
+.home-dj:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The photo, else the no-photo gradient (as on Search's Your DJs) with initials. */
+.home-dj__photo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  overflow: hidden;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      ellipse 38% 60% at 30% 62%,
+      rgba(255, 255, 255, 0.1),
+      transparent 70%
+    ),
+    linear-gradient(135deg, #3b2a5c, #1b1b2f 55%, #0f3b4a);
+}
+
+.home-dj__photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.home-dj__initials {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.home-dj__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home-dj__name,
+.home-dj__line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-dj__name {
+  font-size: var(--text-sm);
+}
+
+.home-dj__line {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ---- BPM & key: bars by range beside the keys; stacked when narrow ---- */
+.home-bpm-key {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2) var(--space-5);
+}
+
+/* A wide card does not stretch the bars across it. */
+@container (min-width: 800px) {
+  .home-bpm-key {
+    grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
+  }
+}
+
+/* A narrow card keeps the keys beside the bars, so they show in it. */
+@container (max-width: 420px) {
+  .home-bpm-key {
+    column-gap: var(--space-3);
+  }
+
+  .home-bar {
+    grid-template-columns: 44px minmax(0, 1fr) 36px;
+    gap: 6px;
+  }
+}
+
+@container (max-width: 240px) {
+  .home-bpm-key {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.home-bars {
+  display: flex;
+  flex-direction: column;
+}
+
+.home-bar {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: var(--space-2);
+  width: calc(100% + 12px);
+  height: 26px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-bar:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.home-bar:disabled {
+  cursor: default;
+}
+
+.home-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.home-bar__label {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Seen on the card and on a row under the mouse alike. */
+.home-bar__track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+.home-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--home-accent);
+}
+
+.home-bar__count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.home-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.home-keys__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.home-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.home-key:hover {
+  background: color-mix(in srgb, var(--bg-tertiary), var(--text-primary) 6%);
+}
+
+.home-key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.home-key__name {
+  font-weight: 700;
+}
+
+.home-key__count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Last playlist: its cover, name, line and ▶ over its tracks ---- */
+.home-last__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 2px 0 8px;
+}
+
+.home-last__cover {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border-radius: var(--radius-md);
+}
+
+.home-last__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home-last__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 700;
+}
+
+.home-last__play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  padding: 0;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.home-last__play:hover {
+  background: var(--accent-hover);
+}
+
+.home-last__play:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
