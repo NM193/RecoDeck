@@ -10,6 +10,7 @@ import { Icon } from '../Icon'
 import { WaveformVisualizer } from '../WaveformVisualizer'
 import { EQModal } from '../eq/EQModal'
 import { useOverlay } from '../../lib/overlays'
+import { registerFileControls } from '../../lib/shortcuts/players'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -517,6 +518,17 @@ export function NowPlayingBar({
   handlePlayPauseRef.current = handlePlayPause
   handlePreviousRef.current = handlePrevious
   handleNextRef.current = handleNext
+
+  // Space and ⌘→ / ⌘← (useShortcuts) reach these buttons while the bar is here.
+  useEffect(
+    () =>
+      registerFileControls({
+        playPause: () => handlePlayPauseRef.current(),
+        next: () => handleNextRef.current(),
+        previous: () => handlePreviousRef.current(),
+      }),
+    [],
+  )
 
   // Emit player state for mini player window
   useEffect(() => {

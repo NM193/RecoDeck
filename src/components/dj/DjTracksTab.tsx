@@ -263,6 +263,7 @@ export function DjTracksTab({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search their tracks…"
+              data-page-search
               spellCheck={false}
             />
           </label>

@@ -160,6 +160,7 @@ export function SearchView({
             type="text"
             className="search-view__input"
             placeholder="Search tracks, playlists, artists..."
+            data-page-search
             value={query}
             onChange={(e) => {
               // Typing leaves Customize unsaved, as Cancel does.

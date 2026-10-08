@@ -2,8 +2,8 @@
 // Every open menu, popover and modal registers here (Interactions spec,
 // `useOverlay`), so the app knows when one is open, and Esc closes the one
 // opened last. The set video reads `isOverlayOpen()` every frame while a set
-// plays (it steps off the window); global shortcuts will once their plan
-// builds them.
+// plays (it steps off the window); the global shortcuts (useShortcuts) give
+// way while one is open.
 import { useEffect, useRef } from 'react'
 
 type Close = () => void

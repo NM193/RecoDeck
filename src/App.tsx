@@ -29,6 +29,7 @@ import { getErrorMessage } from './types/ai'
 import type { TrackFilter } from './lib/trackTable/filter'
 import appPackage from '../package.json'
 import { UpdateToast } from './components/UpdateToast'
+import { ShortcutsSheet } from './components/ShortcutsSheet'
 import {
   AnalysisProgress,
   type AnalysisProgressData,
@@ -59,6 +60,8 @@ import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
 import { dismissToast, toast } from './lib/toast'
+import { useShortcuts } from './lib/shortcuts/useShortcuts'
+import { focusPageSearch } from './lib/shortcuts/shortcuts'
 import { audioPlayer } from './lib/audioPlayer'
 import { evictArtworkCache } from './lib/artworkCache'
 import { thumbnails } from './lib/thumbnails/thumbnails'
@@ -275,6 +278,16 @@ function AppContent() {
     version: string
     changes: VersionChanges
   } | null>(null)
+
+  // The global keys (Interactions spec, Keyboard): ⌘K opens Search (on
+  // Search, its box), ⌘/ the shortcuts sheet; Space and ⌘→ / ⌘← drive
+  // whichever player played last.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  useShortcuts({
+    // The view shown, not showSearch: that stays true under a DJ page opened from Search.
+    openSearch: () => (activeView === 'search' ? void focusPageSearch() : openSearch()),
+    toggleSheet: () => setShortcutsOpen((open) => !open),
+  })
 
   // Analysis progress state
   const [analysisProgress, setAnalysisProgress] =
@@ -876,6 +889,21 @@ function AppContent() {
     setShowSearch(djPage.from.view === 'search')
     setShowSets(false)
     setDjPage(null)
+  }
+
+  // Search, from the sidebar or ⌘K: the other views close.
+  function openSearch() {
+    setShowSearch(true)
+    setStreamList(null)
+    setDjPage(null)
+    setShowSets(false)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(false)
+    setTableFilter(null)
+    setShowSettings(false)
+    setShowAIChat(false)
+    loadTracks(null, null)
   }
 
   // Sets, arriving on a set's page or with a DJ's name in its box: Back
@@ -1793,19 +1821,7 @@ function AppContent() {
         setShowAIChat(false)
       }}
       onShowAllTracks={() => openAllTracks()}
-      onSearch={() => {
-        setShowSearch(true)
-        setStreamList(null)
-        setDjPage(null)
-        setShowSets(false)
-        setSelectedFolder(null)
-        setSelectedPlaylistId(null)
-        setShowAllTracks(false)
-        setTableFilter(null)
-        setShowSettings(false)
-        setShowAIChat(false)
-        loadTracks(null, null)
-      }}
+      onSearch={openSearch}
       onNavigateSets={() => {
         // Sets already showing keeps its start: a new one would remount it and lose its state.
         const setsShowing =
@@ -2300,6 +2316,8 @@ function AppContent() {
           onLater={() => setPendingUpdate(null)}
         />
       )}
+
+      {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
 
       {/* What's New dialog */}
       {whatsNew && (

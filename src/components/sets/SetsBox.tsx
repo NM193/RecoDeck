@@ -125,6 +125,7 @@ export function SetsBox({
         <input
           className="sets-box__input"
           placeholder="Paste a set link, or type a DJ's name"
+          data-page-search
           value={value}
           autoFocus={autoFocus}
           role="combobox"

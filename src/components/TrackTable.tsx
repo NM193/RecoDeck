@@ -470,6 +470,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               type="text"
               className="search-input"
               placeholder="Search tracks..."
+              data-page-search
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
             />

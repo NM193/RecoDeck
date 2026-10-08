@@ -271,6 +271,7 @@ export function StreamingListView<R extends StreamRow>({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${title}…`}
+            data-page-search
             spellCheck={false}
           />
         </label>
