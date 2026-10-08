@@ -376,6 +376,57 @@ Per-row checks need two new commands that check one item:
 `check_youtube_dj(name_key)` and `check_youtube_channel(channel_id)`, beside
 today's check-all `check_youtube_djs` and `check_youtube_channels`.
 
+**As built by plan S4** (with Saved tracks and Stats):
+
+- Rust: what a check covers is `covered(items, scope, now)` over a
+  `Checkable` trait (a channel, a watched DJ) with `CheckScope::{All, Due,
+  One(key)}` — the buttons, the timer and a row — tested as `is_due` is. A
+  row's Check now runs whatever its interval says, Never included, because
+  someone asked. The new commands are `check_youtube_channel(channel_id)`
+  and `check_youtube_dj(name_key)`. A row's check that could not reach
+  YouTube answers the error (the toast says it) rather than "Nothing new";
+  the buttons and the timer still skip what failed, as today.
+- The channels' news is a small store (`useChannelNews`), fed by App's
+  `yt-new-sets` listener and by Following's checks; a DJ's finds are not
+  kept there (they are stored, and show on the library). It keeps each
+  channel's newest upload, so Dismiss moves the marker there even when the
+  row's ▾ is closed. Following's badge counts only the channels still
+  followed; ✕ clears a channel's news. App's notification for a timer's
+  finds names where they are: Sets › Library (DJs), Sets › Following
+  (channels).
+- Which check is running lives in that store too, so leaving the tab and
+  coming back keeps the buttons disabled — a second press cannot spend the
+  units again. An upload's "get it" leaves the news alone when the fetch
+  fails. A row's ▾ that is closed (or another row opened) before its
+  uploads arrive stays closed. Watching a DJ already watched, or following a
+  channel already followed, says so and spends nothing.
+- The box under the tabs (`SetsFollowing.tsx`, with `SetsTabs.css`): a
+  channel link or @handle follows it (2 units); a name asks first — Watch "…"
+  as a DJ, or Search for a channel anyway (100 units). Today's paragraphs
+  become one line under it.
+- A DJ's row: the photo (or the initials on the DJ's hue), the name (opening
+  the DJ page), "checked Oct 2" / "never checked", Check now · 100 units, ▾
+  (everything found so far) and ✕ (unwatch, as today without asking); under
+  it "checks" with the shared `SelectMenu` (Never / Daily / Weekly) and the
+  settings' `ToggleSwitch` "fetch new sets automatically". A channel's row:
+  its name, "@handle · checked …", Check now · 1–2 units, ▾ (its recent
+  uploads, 1–2 units) and ✕, and its "checks". A channel's news shows under
+  its row as "2 new sets" with Dismiss; "get it · 5–7 units" fetches and opens
+  an upload and moves the channel's last-seen marker there, as today.
+- What a check found is said in a toast: "2 new sets from Traumer — see
+  Library", "Nothing new on Cercle", "4 new sets from 2 DJs — see Library".
+  Search all refuses with a warning when the quota is short, as today.
+  Following's checks keep their own busy state, so the library's box no
+  longer reads "Reading…" while they run.
+- Saved tracks (`SetsSaved.tsx`): the cue; the track over its set's title,
+  which opens the set at the cue; the store links on hover (and while the row
+  holds the keyboard); ♥ removes it. Copy list says how many it copied.
+- Stats (`SetsStats.tsx`): the summary line, then the four cards two to a row
+  (one under a 900px window); Quota shows what was spent, what is left of the
+  day's units and when they reset.
+- `SetsView.css` loses the rules only the old Following, Saved and Stats
+  used.
+
 ## Stats
 
 Four cards in a grid, in Home's quiet card style: **Most played** (artists and
