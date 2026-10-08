@@ -26,17 +26,25 @@
 **Decisions, beyond the spec's letter** (Task 8 writes them into the spec):
 - **Your DJs** puts the round photo (44px) beside the name and its line, as Your playlists' cards, so the 4×1 card holds a row of DJs (a photo over its name, as on Search, needs more than the card's 74px body); more scroll inside the card. Search's 20 DJs, the DJ pages opened most recently first; a DJ without a photo shows Search's gradient with its initials.
 - **New likes** rows look like Needs you's: the number in the service's colour, the list's name, the service on the right with ›. Lists keep the sidebar's order, Spotify's first.
-- **BPM & key:** the bars beside the keys, stacked under 360px; in a card wider than 800px the bars keep to 520px. A range with no tracks shows 0 and is disabled. A BPM of 0 is counted nowhere, as All Tracks' filter leaves it out. The keys are 6px buttons ("8A 23"); with no key at all the line says "key known for 0 tracks".
-- **Last playlist:** the query answers the playlist's name too, so the card needs nothing from App's playlists; the track count is the rows read. The line: "played at 22:39" today, "played yesterday", else "played Oct 2". The card reads again when a playlist is renamed or its track count changes (App's playlists), besides the data-version number; a reorder inside it shows the next time Home opens or a track is played.
-- **Recently added's last column** follows the time-played rule ("09:05" today, "yesterday", "Oct 2"); "—" for a date it cannot read.
+- **BPM & key:** the bars beside the keys; under 420px the bars' label and count columns narrow so the keys stay beside them (a 2×2 card at 960px with the sidebar open), and only under 240px do they stack; in a card wider than 800px the bars keep to 520px. A range with no tracks shows 0 and is disabled. A BPM of 0 is counted nowhere, as All Tracks' filter leaves it out. The keys are 6px buttons ("8A 23"); with no key at all the line says "key known for 0 tracks".
+- **Last playlist:** the query answers the playlist's name too, so the card needs nothing from App's playlists; the track count is the rows read. A deleted playlist's id goes to the next playlist made (`playlists.id` has no AUTOINCREMENT) and its plays keep that id, so the query skips a play from before its playlist's `created_at` — this covers the plays of playlists deleted before this plan too. If its tracks cannot be read, the card still names the playlist, with no rows. The line: "played at 22:39" today, "played yesterday", else "played Oct 2". The card reads again when a playlist is renamed or its track count changes (App's playlists), besides the data-version number; a reorder inside it shows the next time Home opens or a track is played.
+- **Recently added's last column** follows the time-played rule ("09:05" today, "yesterday", "Oct 2", "Sep 3, 2025" in another year); "—" for a date it cannot read. Every Home track row's last column grows from 62px to 78px, so a date with its year fits (Recently played's too).
+- **Names cut short** (a DJ, a list, Last playlist's) show in full as a tooltip; a DJ's photo or initials are hidden from screen readers, so its button reads "Hot Since 82 next gig …".
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `91336f3`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc`, each task's tests and `cargo test` pass at every task's end.
+- **Review:** an independent review applied the plan to a clean copy (all 30 blocks matched once; every task's checks passed), drove it in WebKit (clicks, keyboard, Customize add / resize / Save, 960px with the sidebar open, the light Dawn theme, long names, a 2,000-track playlist) and found no blockers. Its findings are fixed here:
+  - Last playlist showed a new playlist that had been given a deleted one's id (it skips plays from before the playlist was made now, with a test);
+  - "Sep 3, 2025" was clipped in the rows' last column (62px → 78px);
+  - at 960px with the sidebar open, BPM & key stacked and its keys fell below the card (they stay beside the bars now);
+  - a failed read of Last playlist's tracks said "Play a playlist and it shows here";
+  - truncated names had no tooltip, and a DJ's initials were read as part of its button.
+  - Left as they are: a 2,000-track last playlist draws every row (the spec reads every track; a play re-renders ~31ms instead of ~17ms — the user's playlists hold up to 40); `YOUR_DJS_MAX` stays in Search's `useSectionsData`; the muted counts read low on the light theme, as on H1's cards.
 - **Builds and tests:**
   - `cargo test --lib`: 4 new (453); `cargo build` shows no warning.
   - `vitest`: 9 new. The repo counts 591 after it: 590 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline, none new; `vite build` passes.
 - **In WebKit** (H1's test page: the real AppShell, Sidebar collapsed and HomeView inside App's wrappers, IPC mocked with 8 tracks added from 10 minutes to 400 days ago, 6 DJs (two with a photo, three with a next gig, one long name), BPM counts 412 / 1,287 / 3,518 / 2,410 / 612 / 101, 13 keys over 97 tracks, Spotify new likes in Liked Songs (3) and Organic finds (2), YouTube Music's Liked music (1), "Deep House Vibes" played 6 days ago with 6 tracks, the first track playing):
-  - At 1280×900, Recently added and Last playlist 2×2 (578×252), Your DJs 4×1, New likes and BPM & key 2×2: nothing reaches past a card's sides; the lists scroll inside their cards (Recently added 312/206, Last playlist 298/206). The same at 1000px wide, where BPM & key keeps its bars beside the keys; at 2×1 every card scrolls inside itself; at 4×2 the bars keep to 520px.
+  - At 1280×900, Recently added and Last playlist 2×2 (578×252), Your DJs 4×1, New likes and BPM & key 2×2: nothing reaches past a card's sides; the lists scroll inside their cards (Recently added 312/206, Last playlist 298/206). The same at 1000px wide; at 960px with the sidebar open BPM & key keeps its keys beside the bars (body 302px); at 2×1 every card scrolls inside itself; at 4×2 the bars keep to 520px. No row's last column is clipped ("Sep 3, 2025").
   - Recently added: the playing track with the equalizer, "18:57", "yesterday", "Oct 3"; Last playlist "6 tracks · played Oct 2", its rows' length "6:40".
   - Clicks: ▶ on Recently added's row 2 → `play 2 of 1,…,8 at 1`; a double click on Last playlist's row 1 → `play 3 of 3,…,8 at 0 from playlist 9`; its ▶ → `play playlist 9`; DJs → `dj Adam Port`, `dj Traumer`; New likes → `stream spotify liked`, `stream spotify p2`, `stream youtube-music LM`; bars → `{"bpmMax":115}`, `{"bpmMin":135}`; keys → `{"key":"8A"}`, `{"key":"C#m"}`; "All Tracks" → `{"added":30}`; "Open" → `open playlist 9`. A range with 0 tracks cannot be clicked.
   - Only what the cards on Home show is read: `get_recently_added_tracks`, `get_known_djs`, `get_bpm_key_counts`, `get_last_played_playlist`, `get_playlist_tracks`.
@@ -216,12 +224,16 @@ with
     }
 
     /// The newest play made from a playlist that still exists; None when
-    /// there is none.
+    /// there is none. A deleted playlist's id is given to the next one made
+    /// (no AUTOINCREMENT) and its plays keep the id, so a play from before a
+    /// playlist was made came from another one.
     pub fn get_last_played_playlist(&self) -> Result<Option<LastPlayedPlaylist>> {
         self.conn
             .query_row(
                 "SELECT h.playlist_id, p.name, h.played_at FROM play_history h
                  JOIN playlists p ON p.id = h.playlist_id
+                 WHERE p.created_at IS NULL
+                    OR h.played_at >= CAST(strftime('%s', p.created_at) AS INTEGER)
                  ORDER BY h.played_at DESC, h.id DESC
                  LIMIT 1",
                 [],
@@ -311,26 +323,40 @@ with
         let song = track(&db, "song");
         assert_eq!(db.get_last_played_playlist().unwrap(), None);
 
+        // Oct 2–6, 20:00 UTC. Playlist 3 was made on Oct 8 with the id of a
+        // deleted one, played from on Oct 6; 99 was deleted.
         db.conn
             .execute_batch(&format!(
-                "INSERT INTO playlists (id, name) VALUES (1, 'Warm up'), (2, 'Peak');
+                "INSERT INTO playlists (id, name, created_at) VALUES
+                     (1, 'Warm up', '2026-10-01 10:00:00'),
+                     (2, 'Peak', '2026-10-01 10:00:00'),
+                     (3, 'Friday', '2026-10-08 12:00:00');
                  INSERT INTO play_history (track_id, playlist_id, played_at) VALUES
-                     ({song}, 1, 100),
-                     ({song}, 2, 200),
-                     ({song}, 99, 300),
-                     ({song}, NULL, 400);"
+                     ({song}, 1, 1790971200),
+                     ({song}, 2, 1791057600),
+                     ({song}, 99, 1791144000),
+                     ({song}, NULL, 1791230400),
+                     ({song}, 3, 1791316800);"
             ))
             .unwrap();
 
-        // 99 was deleted and the newest play came from no playlist.
         assert_eq!(
             db.get_last_played_playlist().unwrap(),
             Some(LastPlayedPlaylist {
                 playlist_id: 2,
                 name: "Peak".into(),
-                played_at: 200
+                played_at: 1791057600
             })
         );
+
+        // Played from after it was made, it is the last one.
+        db.conn
+            .execute(
+                "INSERT INTO play_history (track_id, playlist_id, played_at) VALUES (?1, 3, 1791489600)",
+                [song],
+            )
+            .unwrap();
+        assert_eq!(db.get_last_played_playlist().unwrap().map(|last| last.playlist_id), Some(3));
     }
 
     #[test]
@@ -391,7 +417,7 @@ with
 }
 ```
 
-- [ ] **Step 2:** `cd src-tauri && cargo test --lib db::home`: PASS, 5 (the spec's BPM edges: 114.9 → `< 115`, 115 and 119.9 → `115–119`, 135 → `135+`, no BPM and a BPM of 0 left out; keys biggest first; a deleted playlist and a play from no playlist skipped). Commit:
+- [ ] **Step 2:** `cd src-tauri && cargo test --lib db::home`: PASS, 5 (the spec's BPM edges: 114.9 → `< 115`, 115 and 119.9 → `115–119`, 135 → `135+`, no BPM and a BPM of 0 left out; keys biggest first; a deleted playlist, a play from no playlist and a play from before a reused id's playlist was made skipped). Commit:
 
 ```bash
 git add src-tauri/src/db/home.rs
@@ -1272,8 +1298,8 @@ Replace the whole of `src/components/home/useHomeData.ts` with:
 // src/components/home/useHomeData.ts
 // What the cards on Home read (Home cards spec, Data), all local: when Home
 // opens, when a card that needs something new is added, and each time App's
-// data-version number changes (a play, an analysis, a rescan, a move). Last
-// playlist reads again when a playlist changes too. Each part is null until
+// data-version number changes (a play, an analysis, a rescan, a move); with
+// Last playlist on Home, when a playlist changes too. Each part is null until
 // it is read, so a card shows nothing rather than its empty text for a
 // moment; what was read stays while it is read again.
 import { useEffect, useState } from 'react'
@@ -1347,12 +1373,12 @@ const NO_COUNTS: BpmKeyCounts = { bpm: [], keys: [] }
 async function readLastPlaylist(): Promise<LastPlaylist | 'none'> {
   const last = await tauriApi.getLastPlayedPlaylist()
   if (!last) return 'none'
-  return {
-    id: last.playlistId,
-    name: last.name,
-    playedAt: last.playedAt,
-    tracks: await tauriApi.getPlaylistTracks(last.playlistId),
-  }
+  // Its tracks unread, the card still names the playlist.
+  const tracks = await tauriApi.getPlaylistTracks(last.playlistId).catch((err) => {
+    console.warn('[Home] Failed to read the last playlist\'s tracks:', err)
+    return []
+  })
+  return { id: last.playlistId, name: last.name, playedAt: last.playedAt, tracks }
 }
 
 // One part's read: null when no card needs it; a failure reads as empty.
@@ -1368,7 +1394,8 @@ async function read<T>(wanted: boolean, empty: T, load: () => Promise<T>): Promi
 
 /**
  * `playlistsKey` changes when a playlist is renamed or its tracks change
- * (App's playlists); only Last playlist reads again for it.
+ * (App's playlists); with Last playlist on Home, the cards read again then
+ * (the reads are cheap).
  */
 export function useHomeData(cardIds: readonly string[], version: number, playlistsKey: string): HomeData {
   const [data, setData] = useState<HomeData>({
@@ -1739,6 +1766,7 @@ with
               >
                 <span
                   className="home-dj__photo"
+                  aria-hidden="true"
                   style={
                     dj.imageUrl
                       ? undefined
@@ -1759,7 +1787,9 @@ with
                   )}
                 </span>
                 <span className="home-dj__text">
-                  <span className="home-dj__name">{dj.displayName}</span>
+                  <span className="home-dj__name" title={dj.displayName}>
+                    {dj.displayName}
+                  </span>
                   {line && <span className="home-dj__line">{line}</span>}
                 </span>
               </button>
@@ -1780,7 +1810,9 @@ with
               onClick={() => actions.onOpenStreamList(row.service, row.listId)}
             >
               <span className="home-news__number">{row.number}</span>
-              <span className="home-news__text">{row.name}</span>
+              <span className="home-news__text" title={row.name}>
+                {row.name}
+              </span>
               <span className="home-news__place">
                 <span className="home-news__place-name">
                   {row.service === 'spotify' ? 'Spotify' : 'YouTube Music'}
@@ -1806,7 +1838,9 @@ with
               style={{ background: playlistGradient(last.name) }}
             />
             <span className="home-last__text">
-              <span className="home-last__name">{last.name}</span>
+              <span className="home-last__name" title={last.name}>
+                {last.name}
+              </span>
               <span className="home-sub">
                 {lastPlaylistLine(last.tracks.length, last.playedAt, new Date())}
               </span>
@@ -1934,6 +1968,43 @@ function NeedsYou({
 In `src/components/views/HomeView.css`, replace
 
 ```css
+
+/* ---- Track rows ---- */
+/* Under the mouse, or reached with Tab, ▶ (or pause / play on the row
+   playing) takes the number's place. Hidden, it stays in the Tab order. */
+.home-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 34px 30px 62px;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 6px;
+  margin: 0 -6px;
+  border-radius: var(--radius-md);
+```
+
+with
+
+```css
+
+/* ---- Track rows ---- */
+/* Under the mouse, or reached with Tab, ▶ (or pause / play on the row
+   playing) takes the number's place. Hidden, it stays in the Tab order. */
+.home-row {
+  display: grid;
+  /* The last column holds "Dec 31, 2025". */
+  grid-template-columns: 22px minmax(0, 1fr) 34px 30px 78px;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 6px;
+  margin: 0 -6px;
+  border-radius: var(--radius-md);
+```
+
+In `src/components/views/HomeView.css`, replace
+
+```css
 }
 
 .home-action:focus-visible {
@@ -2052,7 +2123,19 @@ with
   }
 }
 
-@container (max-width: 360px) {
+/* A narrow card keeps the keys beside the bars, so they show in it. */
+@container (max-width: 420px) {
+  .home-bpm-key {
+    column-gap: var(--space-3);
+  }
+
+  .home-bar {
+    grid-template-columns: 44px minmax(0, 1fr) 36px;
+    gap: 6px;
+  }
+}
+
+@container (max-width: 240px) {
   .home-bpm-key {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2266,18 +2349,24 @@ with
 
 - **Recently added** reads 20 rows; its last column says when a track was
   added as Recently played says when it was played ("09:05" today,
-  "yesterday", "Oct 2").
+  "yesterday", "Oct 2", "Sep 3, 2025"). Every track row's last column is
+  78px, so a date with its year fits.
 - **Your DJs** puts each round photo beside the name and its line, as Your
   playlists' cards, so a 4×1 card holds a row of DJs; more scroll inside the
-  card. It shows Search's 20, the DJ pages opened most recently first.
+  card. It shows Search's 20, the DJ pages opened most recently first. A
+  name cut short shows in full as a tooltip, as do the lists' and Last
+  playlist's.
 - **New likes you don't own**: a row per list, its number in the service's
   colour (as in Needs you), the list's name, and the service on the right.
-- **BPM & key**: the bars beside the keys, stacked when the card is narrower
-  than 360px; in a card wider than 800px the bars keep to 520px. A range with
-  no tracks shows 0 and cannot be clicked. The key counts are buttons (6px
-  corners) of the key and its count.
+- **BPM & key**: the bars beside the keys; in a narrow card the bars' label
+  and count columns narrow so the keys stay beside them, and only under
+  240px do they stack; in a card wider than 800px the bars keep to 520px. A
+  range with no tracks shows 0 and cannot be clicked. The key counts are
+  buttons (6px corners) of the key and its count.
 - **Last playlist**: `get_last_played_playlist()` answers the playlist's name
-  with its id, so the card needs nothing else from App. Its line reads "10
+  with its id, so the card needs nothing else from App. A deleted
+  playlist's id goes to the next one made and its plays keep that id, so a
+  play from before a playlist was made does not count for it. Its line reads "10
   tracks · played Oct 2" ("played at 22:39" today, "played yesterday"); its ▶
   is the accent square of the mockup. A play from its rows records the
   playlist, so it stays the last one. Besides the data-version number, it
@@ -2310,5 +2399,5 @@ git commit -m "docs(spec): Home H2 as built"
   - Your DJs: the DJs opened lately first; a click opens the DJ page, Back returns to Home.
   - New likes: a row per list with new likes; a click opens that list. Hide Spotify in the sidebar: its rows go.
   - BPM & key: a bar's count equals the number All Tracks then shows ("125–129 BPM" in its Filter button); a key opens All Tracks on that key.
-  - Last playlist: play a playlist (from Home's Your playlists ▶, or from the playlist) → the card shows it; its ▶ plays it; a row plays from it and the card keeps it; drag a track onto that playlist in the sidebar → its count and rows follow; "Open" opens it.
+  - Last playlist: play a playlist (from Home's Your playlists ▶, or from the playlist) → the card shows it; its ▶ plays it; a row plays from it and the card keeps it; drag a track onto that playlist in the sidebar → its count and rows follow; "Open" opens it. Delete that playlist and make a new one: the card shows the playlist played before it, never the new one.
   - Every card's empty text (a fresh library): "No tracks yet", "No DJs yet — open a DJ page or watch a DJ in Sets", "No new likes", "Nothing analyzed yet", "Play a playlist and it shows here".
