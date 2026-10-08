@@ -609,6 +609,10 @@ pub fn run() {
             commands::home::get_track_ids_without_bpm,
             commands::home::get_last_played_playlist,
             commands::home::get_bpm_key_counts,
+            commands::home::get_new_dj_finds,
+            commands::home::mark_dj_finds_seen,
+            commands::home::mark_all_dj_finds_seen,
+            commands::home::mark_dj_finds_unseen,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;
