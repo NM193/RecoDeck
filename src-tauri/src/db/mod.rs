@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
 pub mod dj;
+pub mod sections;
 pub mod spotify;
 pub mod youtube_music;
 
