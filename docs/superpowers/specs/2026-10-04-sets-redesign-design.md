@@ -176,6 +176,65 @@ Your own file and the set's video do not play over each other: starting a
 file in the bottom player pauses the video, and Play / ▶ on the set pauses the
 bottom player.
 
+**As built by plan S1** (the first of four: the player, the set page, the
+library and the box, then Following, Saved and Stats):
+
+- `useSetPlayer` is a zustand store (`src/store/setPlayerStore.ts`): the
+  playing set (its parsed result and the cue it opened at), the panel's last
+  report, and the two boxes; `play`, `seek`, `step`, `togglePause`, `stop`,
+  `replaceResult`. `SetPlayerEngine`, a component App mounts once in its
+  player area (so a poll re-renders only the bar and the set), opens the
+  panel at its box, follows the box every frame, polls every 400ms and keeps
+  the two players apart; on start it closes a panel left from before a
+  reload. The pure parts — the playhead's track, ⏮ / ⏭'s cue, which box, the
+  bounds, what to believe right after a seek, play or pause — live in
+  `src/lib/setPlayer/` with their tests.
+- The panel takes its orders through the companion server, which keeps one
+  instruction (seek, pause or play) that the player page polls every 400ms,
+  and a new page takes the first one it sees as its starting point. So a seek
+  is never followed by a play (the page's seek plays anyway), and a seek
+  asked for before the video has reported its length waits and goes out with
+  the first report (the panel opens at it if it is not open yet) — ⏭ right
+  after Play set lands. Play and pause are believed for 1.2s while the poll
+  catches up, and a set starts as buffering, so the button says Pause at once.
+- Every call that creates, moves or closes the webview waits its turn, so ✕
+  pressed while the panel is still opening closes it, and two quick sets
+  never race for the panel.
+- When the app starts the video itself (Play set, ▶, a seek, Play) your file
+  stops at once; the latch is only for a click inside the panel, and only
+  while the video is playing.
+- Until plan S2 builds the set page, the page box is Sets' video band above
+  the Set tab (today's player, its minimise gone): ⏮, Pause / Play, ⏭ and
+  close over the video, the scrubber under it, shown while the set open in
+  the Set tab is the one playing.
+- The bar sits in the player area above the bottom player, across the whole
+  window, 54px high with an 84×47 video; the toasts stay above it, over the
+  main area.
+- Off the window means x and y at −10000, keeping the box's size (320×180
+  when there is no box), so the video does not reflow.
+- Another set closes the panel before the new one opens, which forgets the
+  last set's position; until the video reports its length, the store keeps
+  the cue it opened at. After a seek, a report more than 2.5s from it is taken
+  as stale for 1.5s.
+- Every `openSets` is a new SetsView (a visit counter in its key), so the
+  bar's text opens the set even from Sets' own library.
+- Removing the playing set from the library stops it first; Look again on it
+  keeps it playing with the new rows.
+- The overlays that report themselves now: `PromptModal`, the delete-folder
+  modal, `EQModal`, `DuplicatesModal`, `ExportPlaylistModal` (Esc waits for a
+  running export, as its backdrop does), `SharePlaylistModal`,
+  `WhatsNewDialog`, the FolderTree menu, `DjCandidatesMenu`, the
+  NowPlayingBar's playlist menu and expanded view, `SidebarFlyout`, and two
+  the list above missed — the sidebar's colour menu and YouTube Music's list
+  menu — besides the shared `Menu`, `Popover` (the Filter and Columns
+  popovers) and the TrackTable menus that already did. The hero's ⋯ menu
+  comes with plan S2, on the shared `Menu`.
+- Left as they are: leaving the set page, the video stays over the fading
+  page for App's 200ms view fade; the frame check runs while a set is loaded,
+  paused too; a keyboard press on the bar's text or ✕ leaves focus on the
+  page, as the bar goes; the old top-right notifications sit under the video
+  band on Sets until the Interactions sweep replaces them with toasts.
+
 ## Saved tracks
 
 Rows in the set page's style: cue · "artist — title (mix)" over the set's
