@@ -57,6 +57,47 @@ Empty library: "Nothing here yet — paste a set link or type a DJ's name above.
 App (beside `SetsStart`), so they survive Sets being remounted by a trip
 through a DJ page.
 
+**As built by plan S3:**
+
+- The box is `src/components/sets/SetsBox.tsx`, its rules pure in
+  `src/lib/sets/box.ts` (tested): a link is any watch, youtu.be, live, shorts
+  or embed address or a bare 11-character id; text is matched against the
+  title, the channel and the DJ, without case or accents. The old Process /
+  Search button goes: ↑ / ↓ move through the dropdown (the lit row kept in
+  view), Enter opens the row lit (the first, so a free result comes before
+  the YouTube search), a press chooses a row before the box loses focus, Esc
+  closes the dropdown and then clears the box. Enter on a closed dropdown
+  only opens it, and on the YouTube row it waits until the free track search
+  has answered, so a name typed fast and Enter never spends 101 units before
+  the free results show; the last results stay while the next are read, so
+  the rows do not jump. One YouTube search runs at a time, and one answering
+  after Esc, an opened set or a newer search is dropped; its heading names
+  what was searched. With fewer than 101 units left, the row says how many.
+  "Reading…" shows in the box while a set is fetched or YouTube searched. The dropdown sits inside the main area, so it can never
+  cover the set video (the bar is below the main area, a set's page box is
+  not on the library) and does not report itself as an overlay.
+- YouTube's results replace the page below the box under "2 sets found on
+  YouTube — opening one costs 5–7 units" and "Back to your library"; one
+  already in the library says "in your library" and opens at no cost.
+- The tabs are the mockup's buttons: "Library 16 · 3 new", "Saved tracks 4",
+  "Following" (its badge counts the channels' news only) and "Stats", with
+  By DJ / Newest on the right of the Library tab.
+- New from DJs you watch shows up to 20 unseen finds, newest first, in a grid
+  that wraps (cards at least 260px): the thumbnail, the DJ in orange, the
+  title, "saved" or "opening costs 5–7". Mark all seen works as Home's, with
+  its toast and Undo. The finds are read with the library: on arrival, after
+  a check and after a set is opened (which marks it seen).
+- Your sets: 4 cards to a row, 3 when the window is under 1100px wide; the
+  library is up to 1180px wide (it was 900px) so the cards have room. Newest
+  is the grouping Sets starts on, as the mockup draws it (By DJ gives every
+  DJ a row, which with many one-set DJs is long). The library list's bin
+  goes; removing a set is on its page's ⋯, and on its page's error when a
+  stored set cannot be read.
+- A set opened from the library leaves New from DJs you watch at once: the
+  finds are read again after it is marked seen.
+- A DJ page's Find more fills the box and focuses it, so the dropdown shows
+  the free results at once; nothing is spent until the YouTube row.
+
 ## The set page
 
 The **hero stays put**; only what is under it — the strip, the filter and the
