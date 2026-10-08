@@ -445,6 +445,7 @@ pub fn run() {
             commands::youtube::list_youtube_channels,
             commands::youtube::unfollow_youtube_channel,
             commands::youtube::check_youtube_channels,
+            commands::youtube::check_youtube_channel,
             commands::youtube::set_youtube_channel_interval,
             commands::youtube::watch_youtube_dj,
             commands::youtube::list_youtube_djs,
@@ -452,6 +453,7 @@ pub fn run() {
             commands::youtube::set_youtube_dj_interval,
             commands::youtube::set_youtube_dj_auto_import,
             commands::youtube::check_youtube_djs,
+            commands::youtube::check_youtube_dj,
             commands::youtube::list_youtube_dj_finds,
             commands::youtube::mark_youtube_channel_seen,
             // Spotify
