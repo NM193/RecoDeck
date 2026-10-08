@@ -585,11 +585,14 @@ function NeedsYou({
   facts: HomeFacts
   actions: HomeActions
 }) {
-  if (data.gigs === null || data.withoutBpm === null) return null
+  if (data.gigs === null || data.withoutBpm === null || data.newSets === null) {
+    return null
+  }
   const withoutBpm = data.withoutBpm
   const rows = needsYouRows({
     spotify: facts.spotify,
     youtubeMusic: facts.youtubeMusic,
+    newSets: data.newSets,
     notAnalyzed: withoutBpm.length,
     nextGig: data.gigs[0] ?? null,
     today: data.today,
@@ -601,6 +604,9 @@ function NeedsYou({
       case 'spotify':
       case 'youtube-music':
         actions.onOpenStreamList(row.kind, row.listId)
+        break
+      case 'new-sets':
+        actions.onOpenSetsLibrary()
         break
       case 'not-analyzed':
         actions.onAnalyzeTracks(withoutBpm)

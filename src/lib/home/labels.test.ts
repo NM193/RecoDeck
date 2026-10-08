@@ -11,12 +11,14 @@ import {
   lastPlaylistLine,
   libraryStats,
   needsYouRows,
+  newSetCost,
+  newSetLine,
   newLikeRows,
   playedLabel,
   type StreamNews,
 } from './labels'
 import { matchesTrackFilter } from '../trackTable/filter'
-import type { BpmRangeCount, UpcomingGig } from '../../types/home'
+import type { BpmRangeCount, NewDjFind, NewDjFinds, UpcomingGig } from '../../types/home'
 import type { Track } from '../../types/track'
 
 // Local times, so the tests read the same in any time zone.
@@ -78,11 +80,23 @@ const gig: UpcomingGig = {
   country: 'ES',
 }
 
+const newSet = (videoId: string, displayName: string): NewDjFind => ({
+  videoId,
+  nameKey: displayName.toLowerCase(),
+  displayName,
+  title: `${displayName} live`,
+  channel: null,
+  saved: false,
+})
+
+const noSets: NewDjFinds = { total: 0, finds: [] }
+
 describe('needsYouRows', () => {
   it('lists the news in the spec’s order', () => {
     const rows = needsYouRows({
       spotify: news(3, { liked: 3 }),
       youtubeMusic: news(1, { p1: 1 }),
+      newSets: { total: 2, finds: [newSet('v1', 'Hot Since 82'), newSet('v2', 'Hot Since 82')] },
       notAnalyzed: 223,
       nextGig: gig,
       today: '2026-10-04',
@@ -90,25 +104,58 @@ describe('needsYouRows', () => {
     expect(rows).toEqual([
       { kind: 'spotify', number: '3', text: "New Spotify likes you don't own", place: 'Liked Songs', listId: 'liked' },
       { kind: 'youtube-music', number: '1', text: 'New YouTube Music like', place: 'Warm-up', listId: 'p1' },
+      { kind: 'new-sets', number: '2', text: 'New sets by Hot Since 82', place: 'Sets' },
       { kind: 'not-analyzed', number: '223', text: 'Tracks not analyzed', place: 'Analyze all' },
       { kind: 'next-gig', number: 'Tue', text: 'Traumer plays Hï Ibiza', place: 'Oct 6', djName: 'Traumer' },
     ])
   })
 
   it('leaves out a row whose number is 0, and a service not shown in the sidebar', () => {
-    const rows = needsYouRows({ spotify: news(0, {}), youtubeMusic: null, notAnalyzed: 0, nextGig: null, today: '2026-10-04' })
+    const rows = needsYouRows({
+      spotify: news(0, {}),
+      youtubeMusic: null,
+      newSets: noSets,
+      notAnalyzed: 0,
+      nextGig: null,
+      today: '2026-10-04',
+    })
     expect(rows).toEqual([])
+  })
+
+  it('names the DJ of the new sets only when every one was read and they are all theirs', () => {
+    const text = (newSets: NewDjFinds) =>
+      needsYouRows({ spotify: null, youtubeMusic: null, newSets, notAnalyzed: 0, nextGig: null, today: '2026-10-04' })[0]
+        .text
+    expect(text({ total: 1, finds: [newSet('v1', 'Traumer')] })).toBe('New set by Traumer')
+    expect(text({ total: 2, finds: [newSet('v1', 'Traumer'), newSet('v2', 'Solomun')] })).toBe('New sets')
+    // 21 unseen, 20 read: the 21st may be another DJ's.
+    const twenty = Array.from({ length: 20 }, (_, i) => newSet(`v${i}`, 'Traumer'))
+    expect(text({ total: 21, finds: twenty })).toBe('New sets')
   })
 
   it('says where a gig is without a venue, and the year when it is not this one', () => {
     const [row] = needsYouRows({
       spotify: null,
       youtubeMusic: null,
+      newSets: noSets,
       notAnalyzed: 0,
       nextGig: { ...gig, date: '2027-01-02', venue: null, city: null },
       today: '2026-10-04',
     })
     expect(row).toMatchObject({ number: 'Sat', text: 'Traumer has a gig', place: 'Jan 2, 2027' })
+  })
+})
+
+describe('new set rows', () => {
+  it('read "DJ · channel", the channel once when it is the DJ’s own', () => {
+    expect(newSetLine({ displayName: 'Hot Since 82', channel: 'Cercle' })).toBe('Hot Since 82 · Cercle')
+    expect(newSetLine({ displayName: 'Hot Since 82', channel: 'HOT SINCE 82' })).toBe('Hot Since 82')
+    expect(newSetLine({ displayName: 'Traumer', channel: null })).toBe('Traumer')
+  })
+
+  it('say what opening one costs', () => {
+    expect(newSetCost({ saved: true })).toBe('saved')
+    expect(newSetCost({ saved: false })).toBe('5–7 units')
   })
 })
 

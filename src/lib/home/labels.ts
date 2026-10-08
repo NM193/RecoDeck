@@ -2,7 +2,7 @@
 // The words and numbers on Home's cards (Home cards spec, Cards in detail).
 import { ALL_LISTS } from '../../types/spotify'
 import { parseUtcDate, type TrackFilter } from '../trackTable/filter'
-import type { BpmRangeCount, UpcomingGig } from '../../types/home'
+import type { BpmRangeCount, NewDjFind, NewDjFinds, UpcomingGig } from '../../types/home'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -115,7 +115,7 @@ export function newLikeRows(spotify: StreamNews | null, youtubeMusic: StreamNews
 
 export type NeedsYouRow =
   | { kind: 'spotify' | 'youtube-music'; number: string; text: string; place: string; listId: string }
-  | { kind: 'not-analyzed'; number: string; text: string; place: string }
+  | { kind: 'new-sets' | 'not-analyzed'; number: string; text: string; place: string }
   | { kind: 'next-gig'; number: string; text: string; place: string; djName: string }
 
 function streamRow(kind: 'spotify' | 'youtube-music', news: StreamNews | null): NeedsYouRow[] {
@@ -130,6 +130,16 @@ function streamRow(kind: 'spotify' | 'youtube-music', news: StreamNews | null): 
 }
 
 /**
+ * "New sets", or "New sets by Hot Since 82" when every one was read and
+ * they are all one DJ's.
+ */
+function newSetsText(news: NewDjFinds): string {
+  const sets = news.total === 1 ? 'New set' : 'New sets'
+  const djs = new Set(news.finds.map((find) => find.displayName))
+  return news.finds.length === news.total && djs.size === 1 ? `${sets} by ${[...djs][0]}` : sets
+}
+
+/**
  * Needs you's rows, in the spec's order; a row whose number is 0 is left
  * out. `spotify` / `youtubeMusic` are null when the service is not shown in
  * the sidebar; `nextGig` is the earliest upcoming gig of the DJs with a page.
@@ -137,6 +147,7 @@ function streamRow(kind: 'spotify' | 'youtube-music', news: StreamNews | null): 
 export function needsYouRows(facts: {
   spotify: StreamNews | null
   youtubeMusic: StreamNews | null
+  newSets: NewDjFinds
   notAnalyzed: number
   nextGig: UpcomingGig | null
   today: string
@@ -145,6 +156,14 @@ export function needsYouRows(facts: {
     ...streamRow('spotify', facts.spotify),
     ...streamRow('youtube-music', facts.youtubeMusic),
   ]
+  if (facts.newSets.total > 0) {
+    rows.push({
+      kind: 'new-sets',
+      number: count(facts.newSets.total),
+      text: newSetsText(facts.newSets),
+      place: 'Sets',
+    })
+  }
   if (facts.notAnalyzed > 0) {
     rows.push({
       kind: 'not-analyzed',
@@ -166,6 +185,18 @@ export function needsYouRows(facts: {
     })
   }
   return rows
+}
+
+/** A new set's line: "Hot Since 82 · Cercle"; the channel once when it is the DJ's own. */
+export function newSetLine(find: Pick<NewDjFind, 'displayName' | 'channel'>): string {
+  const channel = find.channel?.trim()
+  if (!channel || channel.toLowerCase() === find.displayName.toLowerCase()) return find.displayName
+  return `${find.displayName} · ${channel}`
+}
+
+/** What opening a new set costs: "saved" (in the library), else "5–7 units" (fetched). */
+export function newSetCost(find: Pick<NewDjFind, 'saved'>): string {
+  return find.saved ? 'saved' : '5–7 units'
 }
 
 /** A gig's date block: "06" over "OCT"; null for a date it cannot read. */
