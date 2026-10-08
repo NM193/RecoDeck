@@ -206,6 +206,34 @@ the sidebar's Create Playlist does.
 | Your playlists | No playlists yet |
 | Last playlist | Play a playlist and it shows here |
 
+**As built by plan H2:**
+
+- **Recently added** reads 20 rows; its last column says when a track was
+  added as Recently played says when it was played ("09:05" today,
+  "yesterday", "Oct 2", "Sep 3, 2025"). Every track row's last column is
+  78px, so a date with its year fits.
+- **Your DJs** puts each round photo beside the name and its line, as Your
+  playlists' cards, so a 4×1 card holds a row of DJs; more scroll inside the
+  card. It shows Search's 20, the DJ pages opened most recently first. A
+  name cut short shows in full as a tooltip, as do the lists' and Last
+  playlist's.
+- **New likes you don't own**: a row per list, its number in the service's
+  colour (as in Needs you), the list's name, and the service on the right.
+- **BPM & key**: the bars beside the keys; in a narrow card the bars' label
+  and count columns narrow so the keys stay beside them, and only under
+  240px do they stack; in a card wider than 800px the bars keep to 520px. A
+  range with no tracks shows 0 and cannot be clicked. The key counts are
+  buttons (6px corners) of the key and its count.
+- **Last playlist**: `get_last_played_playlist()` answers the playlist's name
+  with its id, so the card needs nothing else from App. A deleted
+  playlist's id goes to the next one made and its plays keep that id, so a
+  play from before a playlist was made does not count for it. Its line reads "10
+  tracks · played Oct 2" ("played at 22:39" today, "played yesterday"); its ▶
+  is the accent square of the mockup. A play from its rows records the
+  playlist, so it stays the last one. Besides the data-version number, it
+  reads again when a playlist is renamed or its number of tracks changes; a
+  reorder inside it shows the next time Home opens or a track is played.
+
 ## Playing
 
 There is no new player. A play from Home goes through App's play handler, as a
