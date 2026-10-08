@@ -234,6 +234,36 @@ the sidebar's Create Playlist does.
   reads again when a playlist is renamed or its number of tracks changes; a
   reorder inside it shows the next time Home opens or a track is played.
 
+**As built by plan H3:**
+
+- **New sets**: a row is the set's title over "DJ · channel" (the channel
+  once when it is the DJ's own), with "saved" or "5–7 units" on the right.
+  Videos found in the same second are newest published first. Mark all
+  seen's toast reads "4 sets marked seen" with Undo; Home reads again after
+  each.
+- **Needs you's New sets row** reads "New sets by Hot Since 82", as the
+  mockup, when every unseen set was read and all are one DJ's, else "New
+  sets"; its number is the mockup's orange (`#fb923c`), drawn toward the
+  text colour as the others.
+- **Sets you saved lately**: a row is the title over the channel, with when
+  it was saved on the right, as Recently added says it ("19:31",
+  "yesterday", "Oct 5").
+- **Seen** is marked in one place: Sets marks a video's finds seen whenever
+  it shows that set, as Home, a DJ page, Search, YouTube Music and Sets' own
+  library, links, search hits and Following all open sets there. A set whose
+  fetch fails (no quota) stays new. Home gives way to Sets when it opens a
+  set and reads again the next time it opens, so it raises the number only
+  after Mark all seen and its Undo (through App, which shows the toast).
+- Unwatching a DJ deletes their finds, as before; watched again, a set its
+  searches find then is new unless it is in the library or seen under
+  another DJ.
+- The "new sets" notification after a search announces only finds written
+  unseen, so it says what New sets then shows (a set seen under another DJ
+  is remembered, not announced).
+- Left as they are: an Undo of Mark all seen marks its rows unseen even if
+  one of those sets was opened in the 4 seconds since; after Mark all seen
+  its link is gone and keyboard focus goes back to the page.
+
 ## Playing
 
 There is no new player. A play from Home goes through App's play handler, as a
@@ -259,8 +289,9 @@ Cards read their data when Home opens. While Home stays open, App passes a
 number that it raises after each recorded play, after an analysis finishes, on
 `library-changed` (the folder watcher's rescan) and on `yt-new-sets` (with the
 auto-import that follows it). Home raises it too, through an App callback,
-after Mark all seen and after a set is opened from Home. Every card reads its
-data again when it changes;
+after Mark all seen and its Undo (as built by plan H3: a set opened from Home
+replaces Home with Sets, and Home reads everything again when it opens next).
+Every card reads its data again when it changes;
 the reads are local and cheap. The Spotify and YouTube Music numbers are App
 state already and follow on their own.
 
@@ -316,7 +347,8 @@ HomeView gains the props the cards act through, passed by App:
 `onOpenDj(name)`, `onOpenSet(videoId)`, `onOpenSets()`,
 `onOpenAllTracks(filter)`, `onOpenPlaylist(id)`,
 `onOpenStreamList(service, listId)`, `onAnalyzeTracks(ids)`,
-`onCreatePlaylist()`, `onImportFolder()`, the data-version number, and the
+`onCreatePlaylist()`, `onImportFolder()`, `onOpenSetsLibrary()` (Needs
+you's New sets row), `onMarkAllSetsSeen()`, the data-version number, and the
 Spotify and YouTube Music new counts and lists.
 
 ## Depends on
