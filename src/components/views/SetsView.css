@@ -29,40 +29,6 @@
   color: var(--text-primary);
 }
 
-.sets-view__subtitle {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  margin: 0 0 20px;
-}
-
-.sets-form {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.sets-form__input {
-  flex: 1;
-  height: var(--input-height);
-  padding: 0 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-}
-
-.sets-form__input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.sets-quota {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  margin: 0 0 20px;
-}
-
 .sets-error {
   padding: 10px 12px;
   border-radius: var(--radius-sm);
@@ -75,125 +41,11 @@
 
 /* --- track rows --- */
 
-.sets-track {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-}
-
-.sets-track:hover {
-  background: var(--bg-secondary);
-}
-
-.sets-track__cue {
-  flex: 0 0 68px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.sets-track__name {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-}
-
 .sets-track__artist {
   color: var(--text-secondary);
 }
 
-.sets-track__extra {
-  display: block;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  margin-top: 2px;
-}
-
-/* Agreement: how many of the found lists say this same name. */
-.sets-track__votes {
-  flex: 0 0 auto;
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-
-.sets-loose {
-  margin-top: 28px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.sets-loose__title {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-}
-
-.sets-loose__hint {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  margin: 0 0 10px;
-}
-
-.sets-empty {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  line-height: 1.7;
-}
-
-/* --- library ownership --- */
-
-.sets-filter {
-  display: flex;
-  gap: 6px;
-  margin: 14px 0 6px;
-}
-
-.sets-filter__btn {
-  padding: 3px 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.sets-filter__btn:hover {
-  color: var(--text-primary);
-}
-
 /* --- tabs, library, saved --- */
-
-.sets-stored {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-}
-
-.sets-stored:hover {
-  background: var(--bg-secondary);
-}
-
-.sets-stored__main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  padding: 0;
-}
 
 .sets-stored__title {
   color: var(--text-primary);
@@ -217,33 +69,6 @@
 /* A description that actually holds a list is the thing worth spotting. */
 .sets-found__promise--found {
   color: var(--color-success);
-}
-
-/* Held back before spending: says what it would cost and offers the cheap
-   right thing first, with the expensive one still available. */
-.sets-notice {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  margin: 8px 0;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
-
-.sets-notice strong {
-  color: var(--text-primary);
-}
-
-.sets-notice__actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 /* The same track, lit up in the strip. */
@@ -327,84 +152,6 @@
   background: var(--accent);
   transform: translateY(-50%);
   pointer-events: none;
-}
-
-/* Watching a DJ is a different mechanism at a hundred times the cost, so it
-   sits in its own block rather than beside the channels. */
-.sets-djs {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
-/* Fetch a watched DJ's new sets without asking. */
-.sets-autoimport {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.sets-autoimport input {
-  cursor: pointer;
-  margin: 0;
-}
-
-/* How often a followed channel is checked on its own. */
-.sets-interval {
-  flex: 0 0 auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  padding: 3px 6px;
-  cursor: pointer;
-}
-
-.sets-interval:hover {
-  color: var(--text-primary);
-}
-
-.sets-stored__remove {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px;
-}
-
-.sets-stored__remove:hover {
-  color: var(--color-danger);
-}
-
-.sets-track__heart {
-  flex: 0 0 auto;
-  background: none;
-  border: none;
-  padding: 2px 4px;
-  color: var(--border);
-  cursor: pointer;
-}
-
-.sets-track__heart:hover {
-  color: var(--text-secondary);
-}
-
-.sets-track__heart--on,
-.sets-track__heart--on:hover {
-  color: var(--color-danger);
-}
-
-.sets-saved__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
 .sets-store-link {
@@ -497,50 +244,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sets-summary {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  margin: 12px 0 0;
-}
-
-.sets-track__cue {
-  flex: 0 0 58px;
-}
-
-/* --- search hits and statistics --- */
-
-.sets-hit {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sets-hit:hover {
-  background: var(--bg-secondary);
-}
-
-.sets-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 24px;
-  margin-top: 20px;
-}
-
-.sets-stats__block .sets-track {
-  padding: 5px 0;
-}
-
-.sets-stats__block .sets-track:hover {
-  background: none;
-}
-
 /* --- results of searching YouTube by name --- */
 
 .sets-found {
@@ -588,10 +291,4 @@
    were originally written for. */
 .sets-stores .sets-store-link {
   padding: 0 4px;
-}
-
-/* --- the library, filed by DJ --- */
-
-.sets-dj {
-  margin-bottom: 26px;
 }

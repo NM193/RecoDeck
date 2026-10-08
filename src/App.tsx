@@ -11,6 +11,7 @@ import { SetPlayerBar } from './components/sets/SetPlayerBar'
 import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
 import { useOverlay } from './lib/overlays'
 import { useSetsView } from './store/setsViewStore'
+import { useChannelNews } from './store/channelNewsStore'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
@@ -644,6 +645,8 @@ function AppContent() {
     const stop = listen<ChannelNews[]>('yt-new-sets', async (event) => {
       // Home's New sets read again: the search has written its finds.
       setDataVersion((version) => version + 1)
+      // The channels' news waits under each channel on Sets' Following tab.
+      useChannelNews.getState().add(event.payload)
       const found = event.payload
       const total = found.reduce((sum, c) => sum + c.new_sets.length, 0)
       if (total === 0) return
@@ -652,8 +655,15 @@ function AppContent() {
         found.length === 1
           ? (found[0].title ?? 'a channel you follow')
           : `${found.length} of the channels and DJs you follow`
+      // A channel's news waits under it on Following; a DJ's finds are on
+      // the library's New from DJs you watch.
+      const where = found.every((item) => item.source === 'dj')
+        ? 'Sets › Library'
+        : found.every((item) => item.source !== 'dj')
+          ? 'Sets › Following'
+          : 'Sets'
       setNotification({
-        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see Sets › Following`,
+        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see ${where}`,
         type: 'info',
       })
 
