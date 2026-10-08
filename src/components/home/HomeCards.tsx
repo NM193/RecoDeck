@@ -36,6 +36,12 @@ export interface HomeActions extends TrackRowActions {
   onOpenPlaylist: (id: number) => void
   onOpenDj: (name: string) => void
   onOpenSets: () => void
+  /** Sets, with this set open: from the library, or fetched when it is not stored. */
+  onOpenSet: (videoId: string) => void
+  /** Sets, on its library. */
+  onOpenSetsLibrary: () => void
+  /** New sets' Mark all seen: App marks them, says so with an Undo, and Home reads again. */
+  onMarkAllSetsSeen: () => void
   /** All Tracks, with this filter or none. */
   onOpenAllTracks: (filter: TrackFilter | null) => void
   onOpenStreamList: (

@@ -21,6 +21,7 @@ import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
 import type { ChannelNews } from './types/youtube'
+import { getErrorMessage } from './types/ai'
 import type { TrackFilter } from './lib/trackTable/filter'
 import appPackage from '../package.json'
 import { Notification } from './components/Notification'
@@ -112,11 +113,13 @@ interface DjPageState {
 /**
  * What the Sets view opens with: a stored set to show (Back from a DJ page
  * opened from it, a DJ page's set card) or a DJ's name in the Set tab's box
- * (a DJ page's Find more). SetsView reads both once, when it mounts.
+ * (a DJ page's Find more), or its library (Home's Needs you). SetsView reads
+ * them once, when it mounts.
  */
 interface SetsStart {
   openVideoId: string | null
   initialQuery: string
+  tab?: 'library'
 }
 
 const NO_SETS_START: SetsStart = { openVideoId: null, initialQuery: '' }
@@ -629,6 +632,8 @@ function AppContent() {
   // closed. The Following tab carries the same event and shows the sets themselves.
   useEffect(() => {
     const stop = listen<ChannelNews[]>('yt-new-sets', async (event) => {
+      // Home's New sets read again: the search has written its finds.
+      setDataVersion((version) => version + 1)
       const found = event.payload
       const total = found.reduce((sum, c) => sum + c.new_sets.length, 0)
       if (total === 0) return
@@ -667,6 +672,8 @@ function AppContent() {
           // One set that will not fetch must not stop the rest.
         }
       }
+      // And again with the sets it filed: "saved", Sets you saved lately.
+      setDataVersion((version) => version + 1)
 
       if (imported > 0 || empty > 0) {
         const parts: string[] = []
@@ -1468,6 +1475,30 @@ function AppContent() {
     }
   }
 
+  // Home's New sets: Mark all seen. Its Undo marks exactly the rows it
+  // changed unseen again; Home reads again after each.
+  async function handleMarkAllSetsSeen() {
+    try {
+      const rows = await tauriApi.markAllDjFindsSeen()
+      setDataVersion((version) => version + 1)
+      const sets = new Set(rows.map((row) => row.videoId)).size
+      if (sets === 0) return
+      toast(`${sets.toLocaleString('en-US')} ${sets === 1 ? 'set' : 'sets'} marked seen`, {
+        action: {
+          label: 'Undo',
+          run: () => {
+            tauriApi
+              .markDjFindsUnseen(rows)
+              .then(() => setDataVersion((version) => version + 1))
+              .catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' }))
+          },
+        },
+      })
+    } catch (err) {
+      toast(`Couldn't mark the sets seen: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
+
   // Home's Analyze all: exactly the tracks without a BPM, which Home read.
   function handleAnalyzeFromHome(trackIds: number[]) {
     if (analyzing) {
@@ -2007,10 +2038,11 @@ function AppContent() {
             ) : showSets ? (
               <SetsView
                 // A new start is a new SetsView: it reads these props only when it mounts.
-                key={`sets-${setsStart.openVideoId ?? ''}-${setsStart.initialQuery}`}
+                key={`sets-${setsStart.openVideoId ?? ''}-${setsStart.initialQuery}-${setsStart.tab ?? ''}`}
                 onPlayTrack={handlePlayTrack}
                 openVideoId={setsStart.openVideoId}
                 initialQuery={setsStart.initialQuery}
+                initialTab={setsStart.tab}
                 onOpenDj={(name, openVideoId) => openDj(name, null, { view: 'sets', openVideoId })}
               />
             ) : showSettings ? (
@@ -2072,6 +2104,9 @@ function AppContent() {
                 onOpenPlaylist={handlePlaylistSelect}
                 onOpenDj={(name) => openDj(name, null, { view: 'home' })}
                 onOpenSets={() => openSets(NO_SETS_START)}
+                onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+                onOpenSetsLibrary={() => openSets({ ...NO_SETS_START, tab: 'library' })}
+                onMarkAllSetsSeen={() => void handleMarkAllSetsSeen()}
                 onOpenAllTracks={openAllTracks}
                 onOpenStreamList={(service, listId) =>
                   service === 'spotify' ? openSpotifyList(listId) : openYouTubeMusicList(listId)

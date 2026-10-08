@@ -362,11 +362,20 @@ interface SetsViewProps {
   initialQuery?: string
   /** Each DJ in the open set's chip opens their page; Back reopens this set. */
   onOpenDj?: (name: string, openVideoId: string | null) => void
+  /** Opens on the library instead: Home's Needs you, its New sets row. Read once, as openVideoId. */
+  initialTab?: 'library'
 }
 
-export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: SetsViewProps) {
-  // Opens on the Set tab, where both an arriving set and initialQuery show.
-  const [tab, setTab] = useState<Tab>('set')
+export function SetsView({
+  onPlayTrack,
+  openVideoId,
+  initialQuery,
+  onOpenDj,
+  initialTab,
+}: SetsViewProps) {
+  // Opens on the Set tab, where both an arriving set and initialQuery show,
+  // unless it is asked to open on the library.
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'set')
   const [input, setInput] = useState(initialQuery ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -573,6 +582,13 @@ export function SetsView({ onPlayTrack, openVideoId, initialQuery, onOpenDj }: S
       live = false
     }
   }, [openVideoId, refreshLibrary, refreshQuota])
+
+  // A set shown here, however it was opened (the library, a link, a search
+  // hit, a DJ page, Home), is no longer news on Home's New sets.
+  const shownVideoId = currentSet?.video.id
+  useEffect(() => {
+    if (shownVideoId) void tauriApi.markDjFindsSeen([shownVideoId]).catch(() => {})
+  }, [shownVideoId])
 
   // Reloaded whenever the set changes, and whenever the library of sets grows —
   // a record with nowhere to go today may have somewhere tomorrow.
