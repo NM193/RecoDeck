@@ -7,6 +7,9 @@ import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { NowPlayingBar } from './components/layout/NowPlayingBar'
+import { SetPlayerBar } from './components/sets/SetPlayerBar'
+import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
+import { useOverlay } from './lib/overlays'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
@@ -167,6 +170,12 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('')
   /** How Sets opens next; the sidebar's Sets opens it plain. */
   const [setsStart, setSetsStart] = useState<SetsStart>(NO_SETS_START)
+  /**
+   * Raised by every openSets: SetsView reads its start only when it mounts,
+   * so each is a new SetsView — even one asking for the set already shown
+   * (the set bar's text, from Sets' library).
+   */
+  const [setsVisit, setSetsVisit] = useState(0)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -885,6 +894,7 @@ function AppContent() {
   // as with the sidebar's Sets.
   function openSets(start: SetsStart) {
     setSetsStart(start)
+    setSetsVisit((visit) => visit + 1)
     setDjPage(null)
     setStreamList(null)
     setShowSets(true)
@@ -1124,6 +1134,12 @@ function AppContent() {
   }
 
   // Delete folder — open confirmation modal with "empty only" / "delete all files" choice
+  // The delete-folder modal is an overlay (useOverlay): Esc closes it, and
+  // the set video steps aside while it is open.
+  useOverlay(deleteFolderModal.open, () =>
+    setDeleteFolderModal({ open: false, folderPath: '', folderName: '' }),
+  )
+
   function handleDeleteFolder(folderPath: string, folderName: string) {
     setDeleteFolderModal({ open: true, folderPath, folderName })
   }
@@ -2038,7 +2054,7 @@ function AppContent() {
             ) : showSets ? (
               <SetsView
                 // A new start is a new SetsView: it reads these props only when it mounts.
-                key={`sets-${setsStart.openVideoId ?? ''}-${setsStart.initialQuery}-${setsStart.tab ?? ''}`}
+                key={`sets-${setsVisit}`}
                 onPlayTrack={handlePlayTrack}
                 openVideoId={setsStart.openVideoId}
                 initialQuery={setsStart.initialQuery}
@@ -2202,33 +2218,41 @@ function AppContent() {
   )
 
   const playerEl = (
-    <NowPlayingBar
-      playlists={playlists}
-      onTrackMetaClick={handleScrollToCurrentTrack}
-      onAddToPlaylist={async (trackId, playlistId) => {
-        try {
-          const added = await tauriApi.addTrackToPlaylist(playlistId, trackId)
-          await loadPlaylists()
-          const playlistName =
-            playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
-          if (added) {
-            setHeaderNotification(`Added to ${playlistName}`)
-          } else {
+    <>
+      {/* The set playing: its panel follows the set's page or this bar, and
+          keeps playing when Sets closes. */}
+      <SetPlayerEngine />
+      <SetPlayerBar
+        onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+      />
+      <NowPlayingBar
+        playlists={playlists}
+        onTrackMetaClick={handleScrollToCurrentTrack}
+        onAddToPlaylist={async (trackId, playlistId) => {
+          try {
+            const added = await tauriApi.addTrackToPlaylist(playlistId, trackId)
+            await loadPlaylists()
+            const playlistName =
+              playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+            if (added) {
+              setHeaderNotification(`Added to ${playlistName}`)
+            } else {
+              setNotification({
+                message: `Track is already in ${playlistName}`,
+                type: 'warning',
+              })
+            }
+          } catch (err) {
             setNotification({
-              message: `Track is already in ${playlistName}`,
-              type: 'warning',
+              message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
+              type: 'error',
             })
           }
-        } catch (err) {
-          setNotification({
-            message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-            type: 'error',
-          })
-        }
-      }}
-      onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
-      onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
-    />
+        }}
+        onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
+        onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
+      />
+    </>
   )
 
   return (

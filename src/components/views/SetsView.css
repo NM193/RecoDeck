@@ -735,34 +735,6 @@
   color: var(--accent);
 }
 
-/* --- collapsed player --- */
-
-/* Collapsed, the bar belongs at the bottom, under the list. */
-.sets-player--mini {
-  order: 2;
-  border-bottom: none;
-  border-top: 1px solid var(--border);
-}
-
-.sets-view__scroll {
-  order: 1;
-}
-
-.sets-player--mini .sets-player__bar {
-  gap: 14px;
-  padding: 8px 12px;
-  background: var(--bg-elevated, var(--bg-secondary));
-}
-
-/* The video itself, shrunk — the webview is laid exactly over this box. */
-.sets-player__surface--mini {
-  flex: 0 0 auto;
-  width: 128px;
-  height: 72px;
-  background: #000;
-  border-radius: var(--radius-sm);
-}
-
 .sets-player__label {
   flex: 1;
   min-width: 0;

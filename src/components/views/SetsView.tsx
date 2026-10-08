@@ -10,12 +10,12 @@ import { matchTracklist, type LibraryMatch, type MatchSummary } from '../../lib/
 import { extractDjName, groupByDj } from '../../lib/tracklist/djName'
 import { billingParts } from '../../lib/dj/names'
 import { describePreview, previewSet } from '../../lib/tracklist/preview'
-import { playerPageUrl, watchUrl } from '../../lib/youtubeWindow'
+import { watchUrl } from '../../lib/youtubeWindow'
 import { looksLikeAChannel } from '../../lib/channelInput'
 import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage, isAppError } from '../../types/ai'
-import { usePlayerStore } from '../../store/playerStore'
-import { audioPlayer } from '../../lib/audioPlayer'
+import { useSetPlayer, videoIsPlaying } from '../../store/setPlayerStore'
+import { playheadTrack, stepCue } from '../../lib/setPlayer/playhead'
 import type {
   RawSet,
   SavedTrack,
@@ -24,14 +24,13 @@ import type {
   YtStats,
   YtTrackHit,
   SetSearchHit,
-  YouTubePanelState,
   ChannelNews,
   ChannelUpload,
   TrackEcho,
   FollowedChannel,
   WatchedDj,
 } from '../../types/youtube'
-import { CHECK_INTERVALS, YT_PLAYING } from '../../types/youtube'
+import { CHECK_INTERVALS } from '../../types/youtube'
 import './SetsView.css'
 
 type Tab = 'set' | 'library' | 'saved' | 'channels' | 'stats'
@@ -423,92 +422,13 @@ export function SetsView({
    */
   const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([])
   const [grouping, setGrouping] = useState<'dj' | 'recent'>('dj')
-  const [playing, setPlaying] = useState<{ videoId: string; url: string; cueMs: number } | null>(
-    null,
-  )
-  /** Collapsed into the bar, still playing. */
-  const [mini, setMini] = useState(false)
-  /** Which row the player was last sent to, for the bar and for prev/next. */
-  const [playingIndex, setPlayingIndex] = useState<number | null>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  /**
-   * Where the video is. The panel is a webview of its own and reports back
-   * through the companion server, so this is polled rather than observed.
-   */
-  const [panel, setPanel] = useState<YouTubePanelState | null>(null)
-
-  // --- two players, one pair of ears -----------------------------------
-  //
-  // The video and the app's own player are separate engines that know nothing
-  // about each other, so whichever starts hands the other a pause.
-
-  const isPlayingOwnFile = usePlayerStore((state) => state.isPlaying)
-  const setOwnIsPlaying = usePlayerStore((state) => state.setIsPlaying)
-
-  /** Poll the panel while it is open, and only while it is open. */
-  useEffect(() => {
-    if (!playing) {
-      setPanel(null)
-      return
-    }
-    let live = true
-    const read = () => {
-      tauriApi
-        .youtubePanelState()
-        .then((state) => {
-          if (live) setPanel(state)
-        })
-        .catch(() => {})
-    }
-    read()
-    const timer = window.setInterval(read, 400)
-    return () => {
-      live = false
-      window.clearInterval(timer)
-    }
-  }, [playing])
-
-  /**
-   * True from the moment the video is asked to stand down until it says it has.
-   *
-   * The panel's state is read through a poll, and the instruction reaches it
-   * through another — so for the best part of a second after "have it" is
-   * clicked, the video still reports itself as playing. Without this latch the
-   * two rules below fight: the file starts, the stale report says the video is
-   * still going, and the file is paused a moment after it began. Which is
-   * exactly what happened — the video stopped, the track did not start, and it
-   * took a second click.
-   */
-  const waitingForVideoToStop = useRef(false)
-
-  const videoPlaying = panel?.player_state === YT_PLAYING
-
-  // The pause landed. Whatever the video reports from here is current again.
-  useEffect(() => {
-    if (!videoPlaying) waitingForVideoToStop.current = false
-  }, [videoPlaying])
-
-  // The video started — including from the click inside the panel, which is
-  // the one gesture the app cannot make on its own.
-  useEffect(() => {
-    if (videoPlaying && isPlayingOwnFile && !waitingForVideoToStop.current) {
-      audioPlayer.pause()
-      setOwnIsPlaying(false)
-    }
-  }, [videoPlaying, isPlayingOwnFile, setOwnIsPlaying])
-
-  // The other direction: a file of your own started, so the video steps back.
-  const wasPlayingOwnFile = useRef(false)
-  useEffect(() => {
-    const started = isPlayingOwnFile && !wasPlayingOwnFile.current
-    wasPlayingOwnFile.current = isPlayingOwnFile
-    if (started && playing) {
-      // Said before the request goes out, so the rule above is already deaf to
-      // the reports still in flight.
-      waitingForVideoToStop.current = true
-      void tauriApi.pauseYouTubePanel().catch(() => {})
-    }
-  }, [isPlayingOwnFile, playing])
+  // The set playing lives in App (the set player store), so it plays on in
+  // the bar above the player when you leave it; here it is shown big while
+  // its set is open. App's engine opens, places and polls the panel, and
+  // keeps the video and your own files from playing over each other.
+  const playing = useSetPlayer((s) => s.playing)
+  const panel = useSetPlayer((s) => s.panel)
+  const attachPageBox = useSetPlayer((s) => s.attachPageBox)
 
   const refreshQuota = useCallback(() => {
     tauriApi.getYouTubeQuota().then(setQuota).catch(() => {})
@@ -673,90 +593,12 @@ export function SetsView({
 
   const savedKeys = useMemo(() => new Set(saved.map((t) => trackKey(t))), [saved])
 
-  // The panel is a second webview laid over the page, so the page has to tell
-  // it where to sit and keep telling it whenever the layout moves.
-  // Opening is keyed on the video, not the cue: moving inside the same set is a
-  // seek, and reloading it would rebuffer for no reason.
-  useEffect(() => {
-    const el = panelRef.current
-    if (!playing || !el) return
-
-    const bounds = () => {
-      const r = el.getBoundingClientRect()
-      return { x: r.left, y: r.top, width: r.width, height: r.height }
-    }
-
-    const open = async () => {
-      // The player page needs a real http origin, which the companion server
-      // provides. It is normally already running; start it if it is not.
-      let status = await tauriApi.getCompanionStatus()
-      if (!status.running || !status.port) status = await tauriApi.startCompanionServer()
-      if (!status.port) throw new Error('The local server could not be started')
-
-      const b = bounds()
-      await tauriApi.openYouTubePanel(
-        playerPageUrl(status.port, playing.videoId, playing.cueMs),
-        b.x,
-        b.y,
-        b.width,
-        b.height,
-      )
-    }
-
-    void open().catch((err) => {
-      // If the in-window panel cannot be shown, the browser still can.
-      console.error('[Sets] panel failed, falling back to the browser', err)
-      openInBrowser(playing.url, playing.cueMs)
-      setPlaying(null)
-    })
-
-    const sync = () => {
-      const next = bounds()
-      void tauriApi.setYouTubePanelBounds(next.x, next.y, next.width, next.height).catch(() => {})
-    }
-    const observer = new ResizeObserver(sync)
-    observer.observe(el)
-    window.addEventListener('resize', sync)
-
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', sync)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing?.videoId])
-
-  // Moving the panel between the big box and the bar changes its position
-  // without changing its size, which no observer reports.
-  useEffect(() => {
-    const el = panelRef.current
-    if (!playing || !el) return
-    const r = el.getBoundingClientRect()
-    void tauriApi.setYouTubePanelBounds(r.left, r.top, r.width, r.height).catch(() => {})
-  }, [mini, playing])
-
-  // Leaving the Sets view must not leave a video playing over another screen.
-  useEffect(() => {
-    return () => {
-      void tauriApi.closeYouTubePanel().catch(() => {})
-    }
-  }, [])
-
-  // The panel is an overlay: it would sit on top of the library list too.
-  useEffect(() => {
-    if (tab !== 'set' && playing) {
-      setPlaying(null)
-      void tauriApi.closeYouTubePanel().catch(() => {})
-    }
-  }, [tab, playing])
-
-  /** Sends the player to a point in the set, opening it first if need be. */
-  function seekTo(videoId: string, url: string, cueMs: number, index: number | null) {
-    setPlayingIndex(index)
-    if (playing?.videoId === videoId) {
-      void tauriApi.seekYouTubePanel(Math.floor(cueMs / 1000)).catch(() => {})
-      return
-    }
-    setPlaying({ videoId, url, cueMs })
+  /**
+   * Plays a set from a cue: the set playing is sought, another takes its
+   * place. Leaving the set or Sets keeps it playing, in the bar.
+   */
+  function playAt(parsed: TracklistResult, cueMs: number) {
+    useSetPlayer.getState().play(parsed, cueMs)
   }
 
   function show(raw: RawSet): TracklistResult {
@@ -1070,6 +912,8 @@ export function SetsView({
     try {
       const raw = await tauriApi.fetchYouTubeSet(result.video.id)
       const parsed = show(raw)
+      // Playing, it plays on with the new rows.
+      useSetPlayer.getState().replaceResult(parsed)
       await storeParsed(raw, parsed)
       refreshLibrary()
       // What it was worth saying plainly, since it just cost something.
@@ -1096,8 +940,7 @@ export function SetsView({
     try {
       setError(null)
       const raw = await tauriApi.getYouTubeSet(echo.video_id)
-      show(raw)
-      seekTo(raw.video.id, raw.video.url, echo.cue_ms, null)
+      playAt(show(raw), echo.cue_ms)
     } catch (err) {
       setError(getErrorMessage(err))
     }
@@ -1130,15 +973,15 @@ export function SetsView({
     try {
       setError(null)
       const raw = await tauriApi.getYouTubeSet(hit.video_id)
-      const parsed = show(raw)
-      const row = parsed.tracks.find((t) => t.cueMs === hit.cue_ms)
-      seekTo(raw.video.id, raw.video.url, hit.cue_ms, row?.index ?? null)
+      playAt(show(raw), hit.cue_ms)
     } catch (err) {
       setError(getErrorMessage(err))
     }
   }
 
   async function removeStored(videoId: string) {
+    // A set that is playing stops first.
+    if (useSetPlayer.getState().playing?.result.video.id === videoId) useSetPlayer.getState().stop()
     await tauriApi.deleteYouTubeSet(videoId).catch(() => {})
     if (currentSet?.video.id === videoId) {
       setCurrentSet(null)
@@ -1206,51 +1049,25 @@ export function SetsView({
   /** How many unseen sets the last check turned up, for the tab badge. */
   const newCount = news?.reduce((total, item) => total + item.new_sets.length, 0) ?? 0
 
-  const nowPlaying =
-    playingIndex != null ? (result?.tracks.find((t) => t.index === playingIndex) ?? null) : null
+  /** The shown set is the one playing: its video sits in the box above the list. */
+  const playingHere = Boolean(result && playing?.result.video.id === result.video.id)
+  const positionMs = panel?.position_ms ?? playing?.startMs ?? 0
 
   /**
    * The track the playhead is inside, and where that track begins and ends.
-   *
    * Taken from the position rather than from what was last clicked: the video
    * runs on into the next track, and a strip that still says the previous one
    * is worse than none.
    */
-  const currentTrack = useMemo(() => {
-    if (!result || result.untimed || !panel) return null
-    const timed = result.tracks.filter((t) => t.cueMs > 0 || t.index === 1)
-    if (timed.length === 0) return null
-
-    let index = -1
-    for (let i = 0; i < timed.length; i += 1) {
-      if (timed[i].cueMs <= panel.position_ms) index = i
-      else break
-    }
-    if (index < 0) return null
-
-    const track = timed[index]
-    const next = timed[index + 1]
-    // The last track runs to the end of the video; the runtime is the better
-    // figure where the panel has reported one.
-    const endMs =
-      next?.cueMs ?? (panel.duration_ms > 0 ? panel.duration_ms : result.video.durationMs)
-    return { track, startMs: track.cueMs, endMs: Math.max(endMs, track.cueMs + 1) }
-  }, [result, panel])
-
-  /** Walks to the neighbouring track in the set, in the order it was played. */
-  function step(direction: 1 | -1) {
-    if (!result || !playing || playingIndex == null) return
-    const position = result.tracks.findIndex((t) => t.index === playingIndex)
-    const next = result.tracks[position + direction]
-    if (!next) return
-    seekTo(playing.videoId, playing.url, next.cueMs, next.index)
-  }
-
-  function canStep(direction: 1 | -1) {
-    if (!result || playingIndex == null) return false
-    const position = result.tracks.findIndex((t) => t.index === playingIndex)
-    return Boolean(result.tracks[position + direction])
-  }
+  const currentTrack =
+    playingHere && result
+      ? playheadTrack(
+          result.tracks,
+          Boolean(result.untimed),
+          positionMs,
+          panel && panel.duration_ms > 0 ? panel.duration_ms : result.video.durationMs,
+        )
+      : null
 
   /** One stored set, whichever way the library is grouped. */
   function StoredSet({ set }: { set: YtSetSummary }) {
@@ -1284,89 +1101,58 @@ export function SetsView({
 
   return (
     <div className="sets-view">
-      {playing && tab === 'set' && (
-        <div className={`sets-player ${mini ? 'sets-player--mini' : ''}`}>
+      {playingHere && tab === 'set' && result && (
+        <div className="sets-player">
           <div className="sets-player__bar">
-            {/* Collapsed: the video shrinks into the bar and keeps playing —
-                only its box moves, so nothing reloads. */}
-            {mini && <div className="sets-player__surface--mini" ref={panelRef} />}
-
-            <span className="sets-player__label">
-              {mini && nowPlaying ? (
-                <>
-                  <span className="sets-player__cue">{nowPlaying.cue}</span>{' '}
-                  {nowPlaying.artist ? `${nowPlaying.artist} — ${nowPlaying.title}` : nowPlaying.title}
-                </>
-              ) : (
-                (result?.video.title ?? 'YouTube')
-              )}
-            </span>
-
+            <span className="sets-player__label">{result.video.title}</span>
             <div className="sets-player__controls">
-              {mini && (
-                <>
-                  <button
-                    type="button"
-                    className="sets-player__ctrl"
-                    onClick={() => step(-1)}
-                    disabled={!canStep(-1)}
-                    title="Previous track"
-                  >
-                    <Icon name="SkipBack" size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="sets-player__ctrl"
-                    onClick={() => step(1)}
-                    disabled={!canStep(1)}
-                    title="Next track"
-                  >
-                    <Icon name="SkipForward" size={14} />
-                  </button>
-                </>
-              )}
               <button
                 type="button"
-                className="sets-player__close"
-                onClick={() => setMini(!mini)}
+                className="sets-player__ctrl"
+                onClick={() => useSetPlayer.getState().step(-1)}
+                disabled={stepCue(result.tracks, Boolean(result.untimed), positionMs, -1) === null}
+                title="Previous track"
               >
-                {mini ? (
-                  <>
-                    <Icon name="Maximize2" size={13} /> video
-                  </>
-                ) : (
-                  <>
-                    <Icon name="Minimize2" size={13} /> minimise
-                  </>
-                )}
+                <Icon name="SkipBack" size={14} />
+              </button>
+              <button
+                type="button"
+                className="sets-player__ctrl"
+                onClick={() => useSetPlayer.getState().togglePause()}
+                title={videoIsPlaying(panel) ? 'Pause' : 'Play'}
+              >
+                <Icon name={videoIsPlaying(panel) ? 'Pause' : 'Play'} size={14} />
+              </button>
+              <button
+                type="button"
+                className="sets-player__ctrl"
+                onClick={() => useSetPlayer.getState().step(1)}
+                disabled={stepCue(result.tracks, Boolean(result.untimed), positionMs, 1) === null}
+                title="Next track"
+              >
+                <Icon name="SkipForward" size={14} />
               </button>
               <button
                 type="button"
                 className="sets-player__close"
-                onClick={() => {
-                  setPlaying(null)
-                  setMini(false)
-                  setPlayingIndex(null)
-                  void tauriApi.closeYouTubePanel().catch(() => {})
-                }}
+                onClick={() => useSetPlayer.getState().stop()}
               >
                 <Icon name="X" size={14} /> close
               </button>
             </div>
           </div>
 
-          {/* Deliberately empty: the webview covers exactly this box. */}
-          {!mini && <div className="sets-player__surface" ref={panelRef} />}
+          {/* Deliberately empty: the webview covers exactly this box while
+              it is mounted; elsewhere the video sits in the bar. */}
+          <div className="sets-player__surface" ref={attachPageBox} />
 
-          {!mini && currentTrack && (
+          {currentTrack && (
             <TrackScrubber
               track={currentTrack.track}
               startMs={currentTrack.startMs}
               endMs={currentTrack.endMs}
-              positionMs={panel?.position_ms ?? 0}
-              onSeek={(ms) =>
-                void tauriApi.seekYouTubePanel(Math.floor(ms / 1000)).catch(() => {})
-              }
+              positionMs={positionMs}
+              onSeek={(ms) => useSetPlayer.getState().seek(ms)}
             />
           )}
         </div>
@@ -1515,7 +1301,7 @@ export function SetsView({
                       <button
                         type="button"
                         className="sets-track__cue-btn"
-                        onClick={() => seekTo(result.video.id, result.video.url, 0, null)}
+                        onClick={() => playAt(result, 0)}
                       >
                         <Icon name="Play" size={12} /> play here
                       </button>
@@ -1564,8 +1350,8 @@ export function SetsView({
                     <SetTimeline
                       tracks={result.tracks}
                       durationMs={result.video.durationMs}
-                      onSeek={(cueMs) => seekTo(result.video.id, result.video.url, cueMs, null)}
-                      positionMs={panel?.position_ms}
+                      onSeek={(cueMs) => playAt(result, cueMs)}
+                      positionMs={playingHere ? positionMs : undefined}
                       playingIndex={currentTrack?.track.index ?? null}
                       bpmByIndex={bpmByIndex}
                     />
@@ -1599,9 +1385,7 @@ export function SetsView({
                       <TrackRow
                         key={track.index}
                         track={track}
-                        onSeek={(cueMs) =>
-                          seekTo(result.video.id, result.video.url, cueMs, track.index)
-                        }
+                        onSeek={(cueMs) => playAt(result, cueMs)}
                         match={matches?.byIndex.get(track.index)}
                         onPlay={playFromSet}
                         untimed={result.untimed}
