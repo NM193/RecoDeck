@@ -3,12 +3,14 @@
 // moved to stay on screen; a press outside, Esc or choosing an item closes
 // it; ↑ ↓ move, → opens a submenu and ← closes it, Enter chooses. A submenu
 // opens beside its item, on the left when the right has no room. Destructive
-// items are red. The menu and each open submenu register with useOverlay, so
+// items are red; one with no Undo asks first, in the menu's place (Cancel
+// has the keys). The menu and each open submenu register with useOverlay, so
 // Esc closes the innermost first. It opens with a fade, a 4px drop and a
 // scale from 0.98, and closes at once (a choice should not wait for a fade).
 // A searchable submenu has a box at its top: typing narrows its items.
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -32,6 +34,8 @@ export interface MenuAction {
   disabled?: boolean
   /** A check at the right: this is the current choice. */
   checked?: boolean
+  /** Ask first, in the menu's place: the question, and the answer's label ("Remove"). */
+  confirm?: { message: string; label: string }
   onSelect: () => void
 }
 
@@ -68,6 +72,7 @@ interface MenuProps {
 
 export function Menu({ at, entries, label, onClose }: MenuProps) {
   useOverlay(true, onClose)
+  const [asking, setAsking] = useState<MenuAction | null>(null)
 
   // A press outside every open menu panel closes the menu.
   useEffect(() => {
@@ -91,18 +96,119 @@ export function Menu({ at, entries, label, onClose }: MenuProps) {
   }, [])
 
   return createPortal(
-    <MenuPanel
-      entries={entries}
-      x={at.x}
-      y={at.y}
-      label={label}
-      takeFocus
-      onChoose={(action) => {
-        onClose()
-        action.onSelect()
-      }}
-    />,
+    asking?.confirm ? (
+      <MenuConfirm
+        x={at.x}
+        y={at.y}
+        question={asking.confirm.message}
+        answer={asking.confirm.label}
+        onCancel={onClose}
+        onConfirm={() => {
+          onClose()
+          asking.onSelect()
+        }}
+      />
+    ) : (
+      <MenuPanel
+        entries={entries}
+        x={at.x}
+        y={at.y}
+        label={label}
+        takeFocus
+        onChoose={(action) => {
+          if (action.confirm) {
+            setAsking(action)
+            return
+          }
+          onClose()
+          action.onSelect()
+        }}
+      />
+    ),
     document.body,
+  )
+}
+
+/**
+ * Puts a panel at x, y inside the window: its right edge at `flipX` instead
+ * when the right has no room. It shows once placed.
+ */
+function place(panel: HTMLElement, x: number, y: number, flipX?: number) {
+  // offset sizes: the opening animation's scale does not count.
+  const width = panel.offsetWidth
+  const height = panel.offsetHeight
+  let left = x
+  if (left + width > window.innerWidth - EDGE) left = (flipX ?? x) - width
+  left = Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - width))
+  const top = Math.max(EDGE, Math.min(y, window.innerHeight - EDGE - height))
+  panel.style.left = `${left}px`
+  panel.style.top = `${top}px`
+  panel.style.visibility = 'visible'
+}
+
+// The question in the menu's place: Cancel, which has the keys, and the red
+// answer; Tab moves between the two. Esc and a press outside cancel, as they
+// close the menu.
+function MenuConfirm({
+  x,
+  y,
+  question,
+  answer,
+  onCancel,
+  onConfirm,
+}: {
+  x: number
+  y: number
+  question: string
+  answer: string
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const questionId = useId()
+
+  useLayoutEffect(() => {
+    if (panelRef.current) place(panelRef.current, x, y)
+  }, [x, y])
+
+  useEffect(() => {
+    cancelRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  // Tab moves between the two answers, by hand: leaving them would leave the
+  // menu open, and WebKit's Tab skips buttons unless the system says so.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return
+    event.preventDefault()
+    const buttons = [...(panelRef.current?.querySelectorAll('button') ?? [])]
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const next = (at + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length
+    buttons[next]?.focus()
+  }
+
+  return (
+    <div
+      ref={panelRef}
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby={questionId}
+      className="menu menu--confirm"
+      onKeyDown={onKeyDown}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <p id={questionId} className="menu__question">
+        {question}
+      </p>
+      <div className="menu__answers">
+        <button ref={cancelRef} type="button" className="btn btn--sm" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="btn btn--danger btn--sm" onClick={onConfirm}>
+          {answer}
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -171,18 +277,7 @@ function MenuPanel({
   // Placed once its size is known, and again when its items come or change
   // (a list read as it opens): inside the window, flipped when needed.
   useLayoutEffect(() => {
-    const panel = panelRef.current
-    if (!panel) return
-    // offset sizes: the opening animation's scale does not count.
-    const width = panel.offsetWidth
-    const height = panel.offsetHeight
-    let left = x
-    if (left + width > window.innerWidth - EDGE) left = (flipX ?? x) - width
-    left = Math.max(EDGE, Math.min(left, window.innerWidth - EDGE - width))
-    const top = Math.max(EDGE, Math.min(y, window.innerHeight - EDGE - height))
-    panel.style.left = `${left}px`
-    panel.style.top = `${top}px`
-    panel.style.visibility = 'visible'
+    if (panelRef.current) place(panelRef.current, x, y, flipX)
   }, [x, flipX, y, labels])
 
   // A searchable list takes the keys at once, so typing narrows it.

@@ -2,9 +2,9 @@
 /* Shared controls (Interactions spec). Every button has a 6px corner; hover
    is one step lighter, press scales to 0.97 one step darker, keyboard focus
    shows a 2px accent ring with a 2px gap, disabled is 40% opacity. Lighter
-   mixes in --text-primary, not white, so it reads in the light themes. The
-   Interactions plan adds .btn--icon, .btn--danger, .btn--pill and the
-   Button component. */
+   mixes in --text-primary, not white, so it reads in the light themes.
+   .btn--danger is a menu's answer to "Remove …?"; the Interactions sweep
+   adds .btn--icon, .btn--pill and the Button component. */
 
 /* Every button's corner, the page-specific ones too (they keep their own
    shape only where they are not buttons: a switch, a checkbox, a colour dot). */
@@ -79,6 +79,22 @@ button,
 
 .btn--sm {
   height: 28px;
+}
+
+/* A destructive answer: Remove, Delete */
+.btn--danger {
+  background: var(--color-danger);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn--danger:hover {
+  background: color-mix(in srgb, var(--color-danger), white 12%);
+  color: #fff;
+}
+
+.btn--danger:active {
+  background: color-mix(in srgb, var(--color-danger), black 15%);
 }
 
 /* A button that reads as a link: Clear all, Reset */

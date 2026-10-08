@@ -144,3 +144,31 @@
   margin: 5px 6px;
   background: var(--border);
 }
+
+/* Ask first, in the menu's place: the question over Cancel and the answer. */
+.menu--confirm {
+  width: 260px;
+  padding: 12px;
+}
+
+.menu__question {
+  margin: 0 0 12px;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.menu__answers {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Cancel on the panel's own colour would not show as a button. */
+.menu__answers .btn:not(.btn--danger) {
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 7%);
+}
+
+.menu__answers .btn:not(.btn--danger):hover {
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 12%);
+}
