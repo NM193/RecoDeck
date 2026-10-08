@@ -6,10 +6,10 @@
 
 **Architecture:**
 - **Menu** (`src/components/menu/Menu.tsx`): an optional `heading` — muted, over the items — naming what was right-clicked, as the sidebar's old menus did.
-- **Sidebar menus** (`src/components/FolderTree.tsx`): the right-click state holds where and what (`ContextMenuState | null`); `menuEntries()` builds each kind's items for `Menu`. Delete (a playlist or a playlist folder) carries `confirm`, so App's `handleDeletePlaylist` loses its native dialog. The tree's old two-section render — unused since the sidebar redesign passes `section` everywhere — goes, with its All Tracks menu, the `onAnalyzeAll` prop chain (App's `handleAnalyzeAll`) and the old `.context-menu` styles in `FolderTree.css` and `TrackTable.css`.
+- **Sidebar menus** (`src/components/FolderTree.tsx`): the right-click state holds where and what (`ContextMenuState | null`); `menuEntries()` builds each kind's items for `Menu`. Delete (a playlist or a playlist folder) carries `confirm`, so App's `handleDeletePlaylist` loses its native dialog (and `onDeletePlaylist` takes only the id). The rail's `SidebarFlyout` counts a press on a `.menu` as inside, since `Menu` lives in body. The tree's old two-section render — unused since the sidebar redesign passes `section` everywhere — goes, with its All Tracks menu, the `onAnalyzeAll` prop chain (App's `handleAnalyzeAll`) and the old `.context-menu` styles in `FolderTree.css` and `TrackTable.css`.
 - **Pure TypeScript** (tested), `src/lib/shortcuts/shortcuts.ts`: `shortcutFor(press, context)` — which key does what, and when it is someone else's (typing, an overlay open, a control with the keyboard ring keeping Space, a held key); `isTextField`, `ownsSpace`, `focusPageSearch`, `modKeyLabel`, `SHORTCUT_ROWS`.
 - **Players** (tested), `src/lib/shortcuts/players.ts`: `trackLastPlayed()` subscribes to the bottom player's `isPlaying` and the set video's panel state and notes which started last; `drivePlayer(action)` sends Space / ⌘→ / ⌘← to the set (`togglePause`, `step`) while it played last and is open, else to the bottom player's buttons, which `NowPlayingBar` hands over with `registerFileControls`.
-- **Hook and sheet**: `useShortcuts(actions)` in App (a window `keydown`; a key a component already handled is left alone); `ShortcutsSheet` (an overlay). App gets `openSearch()` (the sidebar's Search, now shared with ⌘K). The pages' search boxes carry `data-page-search` for ⌘F.
+- **Hook and sheet**: `useShortcuts(actions)` in App (a window `keydown`; a key a component already handled is left alone; it notes whether Tab or a press moved focus last, and skips while tracks are dragged); `ShortcutsSheet` (an overlay). App gets `openSearch()` (the sidebar's Search, now shared with ⌘K). The pages' search boxes carry `data-page-search` for ⌘F.
 
 **Tech Stack:** React 19, TypeScript, zustand, Vitest (jsdom).
 
@@ -21,10 +21,11 @@
 - **`Menu` gets a `heading`**: the sidebar's menus named what was right-clicked ("WARM UP", "PLAYLISTS"); without it a menu on a row that shows no selection would not say whose it is. Only the top panel has one.
 - **Delete Folder** (a library folder on disk) keeps its dialog: it asks whether the files go too, which a menu's question cannot. It stays red.
 - **The dead render goes**: FolderTree's default branch drew both sections in one panel; every caller passes `section` since the sidebar redesign, so `section` becomes required and the branch, its All Tracks › Analyze All Tracks menu (nothing else opens it), `onAnalyzeAll` from App through Sidebar, and the styles only it used are removed. Home's Analyze all is untouched (its own handler).
-- **⌘K on Search** goes to Search's box instead of reloading the page. **⌘F** with no search box on the page does nothing (and the WebView's own find stays cancelled).
+- **⌘K on Search** goes to Search's box instead of reloading the page — "on Search" being the view shown (`activeView`), not `showSearch`, which stays true under a DJ page opened from Search. **⌘F** with no search box on the page does nothing (and the WebView's own find stays cancelled).
 - **⌘/ with Shift** counts: "/" is Shift+7 on the Serbian and German layouts. "?" (Shift+/ on a US layout) counts too.
 - **Whichever played last** is noted from the stores, not from the buttons: a file starting (`isPlaying` false → true) or the video starting (its panel state turning to playing or buffering — a click inside the video too). A set that is closed falls back to the bottom player.
-- **Space on a focused control**: only a control showing the keyboard ring (`:focus-visible`) keeps Space; elsewhere Space plays and pauses, also right after clicking a button with the mouse (WebView2 focuses it; WebKit does not). `preventDefault` stops the WebView scrolling the page.
+- **Space on a focused control**: only a control that Tab brought focus to, and that shows the keyboard ring (`:focus-visible`), keeps Space; elsewhere Space plays and pauses, also right after clicking a button with the mouse (WebView2 focuses it and can call it `:focus-visible` once a key is pressed; WebKit does not focus it). `preventDefault` stops the WebView scrolling the page.
+- **While tracks are dragged** the shortcuts wait (Esc is the drag's).
 - **Esc** needs nothing new: the drag layer hears it first (capture, and stops it), then the overlay stack, then the focused track table clears its selection.
 - **`Skeleton` moves to I3**, with the loading states it replaces (they sit in the pages I3 sweeps).
 
@@ -34,10 +35,18 @@
   - `vitest`: 13 new. The repo counts 663 after it: 662 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline, none new; `vite build` passes.
 - **In WebKit** (a test page with the real Sidebar and TrackTable, the shortcuts hook, the sheet, a stand-in for the bottom player's buttons, and the real set player store), in the dark Midnight and the light Dawn themes:
+  - the collapsed rail's Playlists flyout: a right-click's Rename and Delete (after its question) run, the flyout staying open; a press elsewhere closes it;
   - right-click Warm Up: "WARM UP" over Share playlist, Export to folder, Rename, Delete; Delete: `Delete "Warm Up"? This cannot be undone.` in the menu's place; Delete deletes, nothing else asked; the Sets folder: Create Playlist, Create Folder, Rename, Delete; Esc closes; the Playlists area: "PLAYLISTS" over Create Playlist, Create Folder; the music folder: Analyze Tracks, New Subfolder; House: New Subfolder, Rename Folder, Delete Folder (its dialog, no question in the menu);
   - Space, Space: the bar plays, pauses; a set starts and plays: Space pauses the video, Space (the video paused) plays it again, ⌘→ seeks to the next cue (720 s), ⌘← to the one before (300 s); the bar's file starts: Space pauses the file, Ctrl+→ is the bar's next;
-  - typing "a b" in a field types it; a button clicked with the mouse, then Space: plays; a button with the keyboard ring, Space: presses the button; a menu open: Space does nothing;
+  - typing "a b" in a field types it; a button clicked with the mouse, then Space: plays (also when script focus makes WebKit call it `:focus-visible`); a button reached after Tab, Space: presses the button; a menu open: Space does nothing;
   - ⌘K: Search; ⌘F: the track table's box; ⌘/: the sheet, 11 rows; Space with it open does nothing; ⌘/ closes it, ⇧⌘/ opens it, Esc and a press outside close it.
+
+**Reviewed:** an independent review of the first version (committed as `81eee81`) found one blocker and two should-fix points; all are folded in above and checked:
+- **Blocker — a flyout's menu did nothing.** In the collapsed rail, FolderTree sits in `SidebarFlyout`, which closes on any press outside its own DOM; `Menu` lives in body, so pressing an item closed the flyout and unmounted the menu before the click. The flyout now counts a press on `.menu` as inside.
+- **⌘K on a DJ page opened from Search** only focused the DJ's track search (`showSearch` stays true underneath) → it asks for the view shown.
+- **Space after a click** could press the clicked button on WebView2, which may report `:focus-visible` once a key is pressed → Space is a control's only when Tab moved focus last.
+- Also: the shortcuts wait while tracks are dragged; `onDeletePlaylist` takes only the id now.
+- Left as it is: ⌘K and ⌘/ do nothing while typing in a field, as the spec's "unless focus is in a text field" says.
 
 ---
 
@@ -49,6 +58,7 @@
 | `src/components/FolderTree.tsx` | rewrite | menus on `Menu`; the dead render goes |
 | `src/components/FolderTree.css`, `src/components/TrackTable.css` | modify | the old menu and render styles go |
 | `src/components/layout/Sidebar.tsx`, `src/App.tsx` | modify | `onAnalyzeAll` goes; Delete without the native dialog; `openSearch`, `useShortcuts`, the sheet |
+| `src/components/layout/SidebarFlyout.tsx` | modify | a press on a menu is inside |
 | `src/lib/shortcuts/shortcuts.ts`, `players.ts` (+ tests), `useShortcuts.ts` | create | the keys |
 | `src/components/ShortcutsSheet.tsx`, `ShortcutsSheet.css` | create | ⌘/ |
 | `src/components/layout/NowPlayingBar.tsx` | modify | hands over its buttons |
@@ -314,7 +324,7 @@ git commit -m "feat(menu): a muted heading naming what was right-clicked"
 
 ### Task 2: The sidebar's menus on Menu
 
-**Files:** Rewrite `src/components/FolderTree.tsx`; modify `src/components/FolderTree.css`, `src/components/TrackTable.css`, `src/components/layout/Sidebar.tsx`, `src/App.tsx`.
+**Files:** Rewrite `src/components/FolderTree.tsx`; modify `src/components/FolderTree.css`, `src/components/TrackTable.css`, `src/components/layout/Sidebar.tsx`, `src/components/layout/SidebarFlyout.tsx`, `src/App.tsx`.
 
 - [ ] **Step 1: FolderTree** — the menus on `Menu`, Delete asking in its place; the old render goes
 
@@ -364,7 +374,7 @@ interface FolderTreeProps {
   onCreatePlaylist: (parentId: number | null) => void
   onCreateFolder: (parentId: number | null) => void
   onRenamePlaylist: (id: number, currentName: string) => void
-  onDeletePlaylist: (id: number, name: string) => void
+  onDeletePlaylist: (id: number) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
   onExportPlaylist?: (playlistId: number, playlistName: string) => void
   onCreateSubfolder: (parentPath: string) => void
@@ -562,7 +572,7 @@ export function FolderTree({
       icon: 'Trash2',
       danger: true,
       confirm: { message: `Delete "${playlistName}"? This cannot be undone.`, label: 'Delete' },
-      onSelect: () => onDeletePlaylist(playlistId, playlistName),
+      onSelect: () => onDeletePlaylist(playlistId),
     }
     const renamePlaylist: MenuEntry = {
       kind: 'action',
@@ -1274,7 +1284,7 @@ with
 }
 ```
 
-- [ ] **Step 3: `onAnalyzeAll` goes; Delete no longer opens a native dialog**
+- [ ] **Step 3: `onAnalyzeAll` goes; Delete no longer opens a native dialog; the flyout keeps its menu**
 
 In `src/components/layout/Sidebar.tsx`, replace
 
@@ -1292,6 +1302,10 @@ In `src/components/layout/Sidebar.tsx`, replace
   onDeletePlaylist: (id: number, name: string) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
   onExportPlaylist?: (playlistId: number, playlistName: string) => void
+  onCreateSubfolder: (parentPath: string) => void
+  onRenameFolder: (folderPath: string, currentName: string) => void
+  onDeleteFolder: (folderPath: string, folderName: string) => void
+  folderTreeRef?: React.Ref<FolderTreeRef>
 ```
 
 with
@@ -1306,9 +1320,13 @@ with
   onCreatePlaylist: (parentId: number | null) => void
   onCreateFolder: (parentId: number | null) => void
   onRenamePlaylist: (id: number, currentName: string) => void
-  onDeletePlaylist: (id: number, name: string) => void
+  onDeletePlaylist: (id: number) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
   onExportPlaylist?: (playlistId: number, playlistName: string) => void
+  onCreateSubfolder: (parentPath: string) => void
+  onRenameFolder: (folderPath: string, currentName: string) => void
+  onDeleteFolder: (folderPath: string, folderName: string) => void
+  folderTreeRef?: React.Ref<FolderTreeRef>
 ```
 
 In `src/components/layout/Sidebar.tsx`, replace
@@ -1386,6 +1404,71 @@ with
     onDeletePlaylist,
     onSharePlaylist,
     onExportPlaylist,
+```
+
+In `src/components/layout/SidebarFlyout.tsx`, replace
+
+```tsx
+// src/components/layout/SidebarFlyout.tsx
+// A panel beside a rail icon that shows what the expanded section would.
+// No transform on it or its ancestors: FolderTree's own menus are
+// position: fixed, and a transformed ancestor would misplace them.
+import { useEffect, useRef, type ReactNode } from 'react'
+import { useOverlay } from '../../lib/overlays'
+
+interface SidebarFlyoutProps {
+  title: string
+  top: number
+```
+
+with
+
+```tsx
+// src/components/layout/SidebarFlyout.tsx
+// A panel beside a rail icon that shows what the expanded section would.
+// A menu opened from inside it (FolderTree's right-click, the shared Menu)
+// lives in body, and a press on it is not "outside".
+import { useEffect, useRef, type ReactNode } from 'react'
+import { useOverlay } from '../../lib/overlays'
+
+interface SidebarFlyoutProps {
+  title: string
+  top: number
+```
+
+In `src/components/layout/SidebarFlyout.tsx`, replace
+
+```tsx
+  useOverlay(true, onClose)
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (ref.current?.contains(target) || anchor?.contains(target)) return
+      onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+```
+
+with
+
+```tsx
+  useOverlay(true, onClose)
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (ref.current?.contains(target) || anchor?.contains(target)) return
+      if ((target as Element).closest?.('.menu')) return
+      onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
 ```
 
 In `src/App.tsx`, replace
@@ -1555,7 +1638,7 @@ with
 - [ ] **Step 4:** `npx tsc --noEmit -p .`: no errors; `grep -rn "context-menu\|onAnalyzeAll" src`: nothing. Commit:
 
 ```bash
-git add src/components/FolderTree.tsx src/components/FolderTree.css src/components/TrackTable.css src/components/layout/Sidebar.tsx src/App.tsx
+git add src/components/FolderTree.tsx src/components/FolderTree.css src/components/TrackTable.css src/components/layout/Sidebar.tsx src/components/layout/SidebarFlyout.tsx src/App.tsx
 git commit -m "feat(sidebar): right-click menus on the shared Menu; Delete asks in its place"
 ```
 
@@ -1582,7 +1665,7 @@ const press = (key: string, over: Partial<KeyPress> = {}): KeyPress => ({
   repeat: false,
   ...over,
 })
-const free = { typing: false, overlayOpen: false, controlHasSpace: false }
+const free = { typing: false, overlayOpen: false, dragging: false, controlHasSpace: false }
 
 describe('which key does what', () => {
   it('reads the spec table, ⌘ as Ctrl too', () => {
@@ -1610,11 +1693,12 @@ describe('which key does what', () => {
     expect(shortcutFor(press(' ', { repeat: true }), free)).toBeNull()
   })
 
-  it('gives way while typing or with a menu, popover or modal open', () => {
+  it('gives way while typing, with a menu, popover or modal open, or while dragging', () => {
     expect(shortcutFor(press(' '), { ...free, typing: true })).toBeNull()
     expect(shortcutFor(press('k', { metaKey: true }), { ...free, typing: true })).toBeNull()
     expect(shortcutFor(press(' '), { ...free, overlayOpen: true })).toBeNull()
     expect(shortcutFor(press('ArrowRight', { metaKey: true }), { ...free, overlayOpen: true })).toBeNull()
+    expect(shortcutFor(press(' '), { ...free, dragging: true })).toBeNull()
   })
 
   it('leaves Space to a control that shows the keyboard ring, not its ⌘ keys', () => {
@@ -1637,10 +1721,11 @@ describe('what focus holds', () => {
     expect(isTextField(null)).toBe(false)
   })
 
-  it('never lets a plain element keep Space', () => {
-    expect(ownsSpace(document.createElement('div'))).toBe(false)
-    expect(ownsSpace(document.body)).toBe(false)
-    expect(ownsSpace(null)).toBe(false)
+  it('never lets a plain element keep Space, nor a button focus did not reach by Tab', () => {
+    expect(ownsSpace(document.createElement('div'), true)).toBe(false)
+    expect(ownsSpace(document.body, true)).toBe(false)
+    expect(ownsSpace(null, true)).toBe(false)
+    expect(ownsSpace(document.createElement('button'), false)).toBe(false)
   })
 
   it('writes ⌘ as Ctrl on Windows', () => {
@@ -1775,13 +1860,15 @@ export interface ShortcutContext {
   typing: boolean
   /** A menu, popover or modal is open. */
   overlayOpen: boolean
+  /** Tracks are being dragged: Esc is the drag's, the rest waits. */
+  dragging: boolean
   /** A control showing the keyboard ring has focus: Space is its own. */
   controlHasSpace: boolean
 }
 
 /** What a key press does here, or null when it is not a global shortcut now. */
 export function shortcutFor(press: KeyPress, context: ShortcutContext): Shortcut | null {
-  if (press.repeat || press.altKey || context.typing || context.overlayOpen) return null
+  if (press.repeat || press.altKey || context.typing || context.overlayOpen || context.dragging) return null
   if (!press.metaKey && !press.ctrlKey) {
     if (press.key === ' ' && !press.shiftKey && !context.controlHasSpace) return 'play-pause'
     return null
@@ -1828,12 +1915,13 @@ const SPACE_CONTROLS = [
 ].join(', ')
 
 /**
- * A control that keeps its own Space: one that shows the keyboard ring. A
- * button just clicked with the mouse (WebView2 focuses it) does not, so
- * Space still plays and pauses.
+ * A control that keeps its own Space: one reached from the keyboard (Tab)
+ * that shows the keyboard ring. A button just clicked with the mouse does
+ * not — WebView2 focuses it, and can call it :focus-visible once a key is
+ * pressed — so Space still plays and pauses.
  */
-export function ownsSpace(el: Element | null): boolean {
-  if (!el || !el.matches(SPACE_CONTROLS)) return false
+export function ownsSpace(el: Element | null, focusFromKeyboard: boolean): boolean {
+  if (!focusFromKeyboard || !el || !el.matches(SPACE_CONTROLS)) return false
   try {
     return el.matches(':focus-visible')
   } catch {
@@ -1969,6 +2057,7 @@ Create `src/lib/shortcuts/useShortcuts.ts`:
 // layer's and the track table's own.
 import { useEffect, useRef } from 'react'
 import { isOverlayOpen } from '../overlays'
+import { useTrackDragStore } from '../drag/trackDrag'
 import { drivePlayer, trackLastPlayed } from './players'
 import { focusPageSearch, isTextField, ownsSpace, shortcutFor } from './shortcuts'
 
@@ -1985,6 +2074,23 @@ export function useShortcuts(actions: ShortcutActions): void {
 
   useEffect(() => trackLastPlayed(), [])
 
+  // How focus last moved: Tab, or a press (which may focus a button).
+  const focusFromKeyboard = useRef(false)
+  useEffect(() => {
+    const onPointerDown = () => {
+      focusFromKeyboard.current = false
+    }
+    const onTab = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') focusFromKeyboard.current = true
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onTab, true)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onTab, true)
+    }
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
@@ -1992,7 +2098,8 @@ export function useShortcuts(actions: ShortcutActions): void {
       const shortcut = shortcutFor(event, {
         typing: isTextField(focused),
         overlayOpen: isOverlayOpen(),
-        controlHasSpace: ownsSpace(focused),
+        dragging: useTrackDragStore.getState().payload !== null,
+        controlHasSpace: ownsSpace(focused, focusFromKeyboard.current),
       })
       if (!shortcut) return
       // Also the WebView's own: Space scrolling the page, ⌘F's find.
@@ -2279,7 +2386,8 @@ with
   // whichever player played last.
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   useShortcuts({
-    openSearch: () => (showSearch ? void focusPageSearch() : openSearch()),
+    // The view shown, not showSearch: that stays true under a DJ page opened from Search.
+    openSearch: () => (activeView === 'search' ? void focusPageSearch() : openSearch()),
     toggleSheet: () => setShortcutsOpen((open) => !open),
   })
 
@@ -2762,20 +2870,25 @@ with
   on `Menu`). Delete — a playlist or a playlist folder — asks in the menu's
   place (`Delete "Warm Up"? This cannot be undone.`), and App's native
   dialog for it goes; Delete Folder still opens its dialog, which asks
-  whether the files go too. FolderTree's old two-section render, unused
-  since the sidebar redesign, goes with its All Tracks menu (App's
-  `handleAnalyzeAll`) and the old `.context-menu` styles.
+  whether the files go too. In the rail's flyouts the menu works the same:
+  the flyout counts a press on a menu as inside. FolderTree's old
+  two-section render, unused since the sidebar redesign, goes with its All
+  Tracks menu (App's `handleAnalyzeAll`) and the old `.context-menu`
+  styles.
 - `useShortcuts` (in App) reads keys through `shortcutFor`: Space, ⌘→ / ⌘←,
   ⌘K, ⌘F and ⌘/ (with or without Shift: "/" is Shift+7 on some layouts); ⌘
-  is Ctrl too. They give way while typing, while any overlay is open, to a
-  key a component already handled, and Space to a control showing the
-  keyboard ring. Held keys are ignored.
+  is Ctrl too. They give way while typing, while any overlay is open, while
+  tracks are dragged, and to a key a component already handled. Space stays
+  a control's only when Tab brought focus there and it shows the keyboard
+  ring — a button just clicked never keeps it (WebView2 can call it
+  :focus-visible once a key is pressed). Held keys are ignored.
 - Whichever played last: `trackLastPlayed` notes which player starts
   playing — the bottom player's `isPlaying`, or the set video's state (a
   click inside the video counts). Space and ⌘→ / ⌘← drive the set
   (`togglePause`, `step`) while it played last and is open, else the bottom
   player's buttons, which NowPlayingBar hands over (`registerFileControls`).
-- ⌘K opens Search; on Search it goes to its box. ⌘F focuses the page's
+- ⌘K opens Search; on Search (the view shown, not a DJ page opened from
+  it) it goes to its box. ⌘F focuses the page's
   search box — the inputs marked `data-page-search` (the track table,
   Search, Sets' box, a DJ's tracks, a streaming list) — its text selected.
 - ⌘/ opens the shortcuts sheet (`ShortcutsSheet`): the table above, ⌘
@@ -2806,7 +2919,8 @@ git commit -m "docs(spec): Interactions I2 as built"
 - [ ] **Step 1:** `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 662 passed (663)`; `npx tsc --noEmit -p .`; `npx eslint src mobile 2>&1 | grep problems`: 28; `npx vite build`; `cd src-tauri && cargo test --lib 2>&1 | grep "test result"`: 462 passed (unchanged).
 - [ ] **Step 2 (the user, by hand in `npm run tauri dev`):**
   - Right-click a playlist in the sidebar: its name on top, then Share, Export, Rename, Delete; Delete asks in the menu (Cancel keeps it). Right-click a library subfolder: Delete Folder still opens the dialog with the files choice.
-  - Play a track; click somewhere empty; Space pauses and plays. Click a button (e.g. Filter), then Space: it still plays / pauses.
+  - Collapse the sidebar (⌘\), open the Playlists flyout, right-click a playlist: Rename works from there.
+  - Play a track; click somewhere empty; Space pauses and plays. Click a button (e.g. Filter), then Space: it still plays / pauses — on Windows too, where the button takes focus.
   - Play a set (Sets › a set › Play set); Space pauses the video, Space resumes it; ⌘→ / ⌘← jump between its tracks. Play a file again: Space is the file's.
   - Type in a search box: Space types a space.
   - ⌘K: Search, with its box ready; ⌘F on All Tracks: the table's search box; ⌘/: the sheet (Ctrl on Windows); Esc closes it.
