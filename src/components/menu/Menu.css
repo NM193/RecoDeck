@@ -139,6 +139,19 @@
   color: var(--text-muted);
 }
 
+/* What was right-clicked, over the items. */
+.menu__heading {
+  overflow: hidden;
+  padding: 5px 10px 6px;
+  color: var(--text-muted);
+  font-size: var(--text-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .menu__separator {
   height: 1px;
   margin: 5px 6px;

@@ -67,10 +67,12 @@ interface MenuProps {
   entries: MenuEntry[]
   /** Names the menu for screen readers. */
   label: string
+  /** Muted over the items: what was right-clicked ("Peak Time"). */
+  heading?: string
   onClose: () => void
 }
 
-export function Menu({ at, entries, label, onClose }: MenuProps) {
+export function Menu({ at, entries, label, heading, onClose }: MenuProps) {
   useOverlay(true, onClose)
   const [asking, setAsking] = useState<MenuAction | null>(null)
 
@@ -114,6 +116,7 @@ export function Menu({ at, entries, label, onClose }: MenuProps) {
         x={at.x}
         y={at.y}
         label={label}
+        heading={heading}
         takeFocus
         onChoose={(action) => {
           if (action.confirm) {
@@ -219,6 +222,7 @@ interface MenuPanelProps {
   flipX?: number
   y: number
   label: string
+  heading?: string
   onChoose: (action: MenuAction) => void
   /** A submenu's ←: back to its parent. */
   onBack?: () => void
@@ -249,6 +253,7 @@ function MenuPanel({
   flipX,
   y,
   label,
+  heading,
   onChoose,
   onBack,
   takeFocus = false,
@@ -387,6 +392,7 @@ function MenuPanel({
             onKeyDown={onSearchKeyDown}
           />
         )}
+        {heading && <div className="menu__heading">{heading}</div>}
         {search && shown.length === 0 && <div className="menu__empty">{search.empty}</div>}
         <div className={search ? 'menu__list' : undefined}>
           {shown.map((entry, index) => {
