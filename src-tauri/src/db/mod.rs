@@ -358,6 +358,19 @@ impl Database {
         self.conn
             .execute_batch(include_str!("migrations/017_youtube_music.sql"))?;
 
+        // Migration 018: which DJ finds have been seen (Home's New sets)
+        // ALTER TABLE is not idempotent, and the finds stored before it are
+        // marked seen only once, so the column is checked for first.
+        let has_seen_at: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('yt_dj_finds') WHERE name = 'seen_at'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_seen_at {
+            self.conn
+                .execute_batch(include_str!("migrations/018_yt_dj_finds_seen.sql"))?;
+        }
+
         Ok(())
     }
 
@@ -2960,21 +2973,36 @@ impl Database {
 
     /// One set a DJ search turned up. New to the user exactly once.
     ///
-    /// Returns true when this was the first sighting, which is what makes it
-    /// news — the caller does not have to read the table back to find out.
+    /// It is written already seen when its video is in the library or another
+    /// DJ's find of it is seen: a set opened before any search found it, or a
+    /// b2b set a second DJ's search finds later, is not news on Home.
+    ///
+    /// Returns true when it is news — a first sighting, written unseen — so
+    /// what is announced is what Home's New sets shows, and the caller does
+    /// not have to read the table back to find out.
     pub fn record_yt_dj_find(&self, find: &YtDjFind) -> Result<bool> {
-        let inserted = self.conn.execute(
-            "INSERT OR IGNORE INTO yt_dj_finds (name_key, video_id, title, channel, published_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                find.name_key,
-                find.video_id,
-                find.title,
-                find.channel,
-                find.published_at,
-            ],
-        )?;
-        Ok(inserted > 0)
+        // A row when it was inserted (holding its seen_at), none when it was
+        // there already.
+        let written: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "INSERT OR IGNORE INTO yt_dj_finds (name_key, video_id, title, channel, published_at, seen_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5,
+                         CASE WHEN EXISTS (SELECT 1 FROM yt_sets WHERE video_id = ?2)
+                                OR EXISTS (SELECT 1 FROM yt_dj_finds WHERE video_id = ?2 AND seen_at IS NOT NULL)
+                              THEN datetime('now') END)
+                 RETURNING seen_at",
+                params![
+                    find.name_key,
+                    find.video_id,
+                    find.title,
+                    find.channel,
+                    find.published_at,
+                ],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(matches!(written, Some(None)))
     }
 
     pub fn list_yt_dj_finds(&self, name_key: &str) -> Result<Vec<YtDjFind>> {

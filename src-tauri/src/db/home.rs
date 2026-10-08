@@ -1,12 +1,14 @@
 // src-tauri/src/db/home.rs
 //! What Home's cards read that Search does not (Home cards spec, Data): the
 //! upcoming gigs of the DJs with a page, the tracks without a BPM, the
-//! playlist played from last, and the tracks per BPM range and per key. Local
-//! data only; the queries Search shares live in `sections.rs`.
+//! playlist played from last, the tracks per BPM range and per key, and the
+//! sets watched DJs' searches found that have not been seen (with marking
+//! them seen, and unseen again for an Undo). Local data only; the queries
+//! Search shares live in `sections.rs`.
 
 use super::Database;
 use rusqlite::{params, OptionalExtension, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A gig of a DJ with a page, for Your DJs play next and Needs you.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -65,6 +67,38 @@ pub struct BpmKeyCounts {
 
 /// Where BPM & key's bars split: `< 115`, `115–119`, …, `130–134`, `135+`.
 const BPM_EDGES: [i64; 5] = [115, 120, 125, 130, 135];
+
+/// A set a watched DJ's search found that has not been seen, for New sets:
+/// one per video, under the DJ whose search found it first.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewDjFind {
+    pub video_id: String,
+    pub name_key: String,
+    /// The DJ's name as watched ("Hot Since 82").
+    pub display_name: String,
+    pub title: String,
+    pub channel: Option<String>,
+    /// In the library (`yt_sets`): it opens at no cost; else opening it
+    /// fetches it (5–7 units).
+    pub saved: bool,
+}
+
+/// New sets: the newest unseen finds and how many videos are unseen in all.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewDjFinds {
+    pub total: i64,
+    pub finds: Vec<NewDjFind>,
+}
+
+/// One find row: what Mark all seen changed, and what its Undo puts back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjFindKey {
+    pub name_key: String,
+    pub video_id: String,
+}
 
 impl Database {
     /// The gigs on or after `today` ("2026-10-04", the user's local day, as
@@ -173,11 +207,97 @@ impl Database {
 
         Ok(BpmKeyCounts { bpm, keys })
     }
+
+    /// The videos none of whose finds is seen, newest first, at most `limit`,
+    /// and how many there are in all. A video found by two DJs' searches is
+    /// one, under the DJ whose find came first (on the same second, the lowest
+    /// name key: one check stamps its rows alike); newest first is by that
+    /// find, then by when the video was published.
+    pub fn get_new_dj_finds(&self, limit: i64) -> Result<NewDjFinds> {
+        const UNSEEN: &str = "SELECT video_id FROM yt_dj_finds GROUP BY video_id HAVING COUNT(seen_at) = 0";
+        let total = self
+            .conn
+            .query_row(&format!("SELECT COUNT(*) FROM ({UNSEEN})"), [], |row| row.get(0))?;
+        let mut stmt = self.conn.prepare(&format!(
+            "WITH firsts AS (
+                 SELECT f.*, ROW_NUMBER() OVER (
+                     PARTITION BY f.video_id ORDER BY f.first_seen_at, f.name_key
+                 ) AS n
+                 FROM yt_dj_finds f
+                 WHERE f.video_id IN ({UNSEEN})
+             )
+             SELECT f.video_id, f.name_key, COALESCE(w.display_name, f.name_key), f.title, f.channel,
+                    EXISTS (SELECT 1 FROM yt_sets s WHERE s.video_id = f.video_id)
+             FROM firsts f
+             LEFT JOIN yt_watched_djs w ON w.name_key = f.name_key
+             WHERE f.n = 1
+             ORDER BY f.first_seen_at DESC, f.published_at DESC, f.video_id
+             LIMIT ?1"
+        ))?;
+        let finds = stmt
+            .query_map([limit], |row| {
+                Ok(NewDjFind {
+                    video_id: row.get(0)?,
+                    name_key: row.get(1)?,
+                    display_name: row.get(2)?,
+                    title: row.get(3)?,
+                    channel: row.get(4)?,
+                    saved: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>>>()?;
+        Ok(NewDjFinds { total, finds })
+    }
+
+    /// Every find of these videos is seen from now on: their sets were opened.
+    pub fn mark_dj_finds_seen(&self, video_ids: &[String]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for video_id in video_ids {
+            tx.execute(
+                "UPDATE yt_dj_finds SET seen_at = datetime('now') WHERE video_id = ?1 AND seen_at IS NULL",
+                [video_id],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// Mark all seen: every unseen find is seen. Answers the rows it changed,
+    /// so an Undo marks exactly those unseen again.
+    pub fn mark_all_dj_finds_seen(&self) -> Result<Vec<DjFindKey>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let changed = tx
+            .prepare(
+                "UPDATE yt_dj_finds SET seen_at = datetime('now') WHERE seen_at IS NULL
+                 RETURNING name_key, video_id",
+            )?
+            .query_map([], |row| {
+                Ok(DjFindKey {
+                    name_key: row.get(0)?,
+                    video_id: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>>>()?;
+        tx.commit()?;
+        Ok(changed)
+    }
+
+    /// Mark all seen's Undo: these rows are unseen again; no other is touched.
+    pub fn mark_dj_finds_unseen(&self, rows: &[DjFindKey]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for row in rows {
+            tx.execute(
+                "UPDATE yt_dj_finds SET seen_at = NULL WHERE name_key = ?1 AND video_id = ?2",
+                params![row.name_key, row.video_id],
+            )?;
+        }
+        tx.commit()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::YtDjFind;
 
     fn db() -> Database {
         let db = Database::new_in_memory().expect("in-memory db");
@@ -345,5 +465,195 @@ mod tests {
             .map(|k| (k.key, k.count))
             .collect();
         assert_eq!(keys, vec![("8A".to_string(), 3), ("5A".to_string(), 2), ("11B".to_string(), 1)]);
+    }
+
+    /// Finds as a search writes them, with their times given: (name key,
+    /// video, title, channel, published, first seen, seen).
+    fn finds(db: &Database, rows: &[(&str, &str, &str, Option<&str>, &str, &str, Option<&str>)]) {
+        for (name_key, video_id, title, channel, published_at, first_seen_at, seen_at) in rows {
+            db.conn
+                .execute(
+                    "INSERT INTO yt_dj_finds (name_key, video_id, title, channel, published_at, first_seen_at, seen_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![name_key, video_id, title, channel, published_at, first_seen_at, seen_at],
+                )
+                .unwrap();
+        }
+    }
+
+    fn store_set(db: &Database, video_id: &str) {
+        db.conn
+            .execute(
+                "INSERT INTO yt_sets (video_id, url, title, raw_json) VALUES (?1, ?1, ?1, '{}')",
+                [video_id],
+            )
+            .unwrap();
+    }
+
+    fn new_videos(db: &Database) -> Vec<String> {
+        db.get_new_dj_finds(20).unwrap().finds.into_iter().map(|f| f.video_id).collect()
+    }
+
+    fn seen_at(db: &Database, name_key: &str, video_id: &str) -> Option<String> {
+        db.conn
+            .query_row(
+                "SELECT seen_at FROM yt_dj_finds WHERE name_key = ?1 AND video_id = ?2",
+                [name_key, video_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn new_sets_are_the_unseen_videos_once_each_under_their_first_finder_newest_first() {
+        let db = db();
+        db.conn
+            .execute_batch(
+                "INSERT INTO yt_watched_djs (name_key, display_name) VALUES
+                     ('hot since 82', 'Hot Since 82'), ('traumer', 'Traumer'), ('solomun', 'Solomun');",
+            )
+            .unwrap();
+        finds(
+            &db,
+            &[
+                // v1: Traumer's search found it a day before Hot Since 82's.
+                ("traumer", "v1", "Traumer b2b Hot Since 82", Some("Cercle"), "2026-10-01T18:00:00Z", "2026-10-02 08:00:00", None),
+                ("hot since 82", "v1", "Traumer b2b Hot Since 82", Some("Cercle"), "2026-10-01T18:00:00Z", "2026-10-03 08:00:00", None),
+                // v2: found in the same second by two searches: the lowest name key.
+                ("solomun", "v2", "Solomun b2b Hot Since 82", Some("Boiler Room"), "2026-10-04T20:00:00Z", "2026-10-05 09:00:00", None),
+                ("hot since 82", "v2", "Solomun b2b Hot Since 82", Some("Boiler Room"), "2026-10-04T20:00:00Z", "2026-10-05 09:00:00", None),
+                // v3 is seen; v5 has one seen find, so it is not news either.
+                ("solomun", "v3", "Solomun Tulum", Some("Solomun"), "2026-10-03T12:00:00Z", "2026-10-04 13:00:00", Some("2026-10-04 14:00:00")),
+                ("traumer", "v5", "Traumer at Hï", None, "2026-09-30T12:00:00Z", "2026-10-01 00:00:00", None),
+                ("solomun", "v5", "Traumer at Hï", None, "2026-09-30T12:00:00Z", "2026-10-01 00:00:00", Some("2026-10-01 10:00:00")),
+                // v4 was imported automatically: saved, and still news.
+                ("traumer", "v4", "Traumer live", None, "2026-10-05T22:00:00Z", "2026-10-06 07:00:00", None),
+            ],
+        );
+        store_set(&db, "v4");
+
+        let news = db.get_new_dj_finds(20).unwrap();
+
+        assert_eq!(news.total, 3);
+        assert_eq!(new_videos(&db), vec!["v4", "v2", "v1"]);
+        assert_eq!(
+            news.finds[1],
+            NewDjFind {
+                video_id: "v2".into(),
+                name_key: "hot since 82".into(),
+                display_name: "Hot Since 82".into(),
+                title: "Solomun b2b Hot Since 82".into(),
+                channel: Some("Boiler Room".into()),
+                saved: false,
+            }
+        );
+        assert_eq!((news.finds[2].name_key.as_str(), news.finds[2].display_name.as_str()), ("traumer", "Traumer"));
+        assert!(news.finds[0].saved);
+
+        let first_two = db.get_new_dj_finds(2).unwrap();
+        assert_eq!((first_two.total, first_two.finds.len()), (3, 2));
+    }
+
+    #[test]
+    fn a_find_is_written_seen_and_not_news_when_its_set_is_stored_or_another_find_of_it_is_seen() {
+        let db = db();
+        let find = |name_key: &str, video_id: &str| YtDjFind {
+            name_key: name_key.into(),
+            video_id: video_id.into(),
+            title: format!("{video_id} set"),
+            channel: None,
+            published_at: Some("2026-10-07T20:00:00Z".into()),
+        };
+        store_set(&db, "stored");
+
+        assert!(!db.record_yt_dj_find(&find("traumer", "stored")).unwrap(), "in the library: not news");
+        assert!(seen_at(&db, "traumer", "stored").is_some());
+        assert!(db.record_yt_dj_find(&find("traumer", "b2b")).unwrap());
+        assert_eq!(new_videos(&db), vec!["b2b"]);
+
+        // Its set opened, a second DJ's search finds it later: not news again.
+        db.mark_dj_finds_seen(&["b2b".to_string()]).unwrap();
+        assert!(!db.record_yt_dj_find(&find("solomun", "b2b")).unwrap());
+        assert!(seen_at(&db, "solomun", "b2b").is_some());
+        assert!(db.record_yt_dj_find(&find("traumer", "fresh")).unwrap());
+        assert_eq!(new_videos(&db), vec!["fresh"]);
+        // Found again, it is no first sighting and stays as it was.
+        assert!(!db.record_yt_dj_find(&find("traumer", "fresh")).unwrap());
+        assert!(seen_at(&db, "traumer", "fresh").is_none());
+    }
+
+    #[test]
+    fn opening_a_set_marks_every_find_of_its_video_seen_and_no_other() {
+        let db = db();
+        finds(
+            &db,
+            &[
+                ("traumer", "v1", "v1", None, "2026-10-01T18:00:00Z", "2026-10-02 08:00:00", None),
+                ("hot since 82", "v1", "v1", None, "2026-10-01T18:00:00Z", "2026-10-03 08:00:00", None),
+                ("traumer", "v2", "v2", None, "2026-10-02T18:00:00Z", "2026-10-03 08:00:00", None),
+            ],
+        );
+
+        db.mark_dj_finds_seen(&["v1".to_string(), "not found".to_string()]).unwrap();
+
+        assert!(seen_at(&db, "traumer", "v1").is_some());
+        assert!(seen_at(&db, "hot since 82", "v1").is_some());
+        assert_eq!(new_videos(&db), vec!["v2"]);
+    }
+
+    #[test]
+    fn mark_all_seen_answers_the_rows_it_changed_and_its_undo_puts_back_only_those() {
+        let db = db();
+        finds(
+            &db,
+            &[
+                ("traumer", "v1", "v1", None, "2026-10-01T18:00:00Z", "2026-10-02 08:00:00", None),
+                ("hot since 82", "v1", "v1", None, "2026-10-01T18:00:00Z", "2026-10-03 08:00:00", None),
+                ("traumer", "v2", "v2", None, "2026-10-02T18:00:00Z", "2026-10-03 08:00:00", None),
+                ("solomun", "v3", "v3", None, "2026-09-30T18:00:00Z", "2026-10-01 08:00:00", Some("2026-10-01 10:00:00")),
+            ],
+        );
+        let key = |name_key: &str, video_id: &str| DjFindKey {
+            name_key: name_key.into(),
+            video_id: video_id.into(),
+        };
+
+        let mut changed = db.mark_all_dj_finds_seen().unwrap();
+        changed.sort_by(|a, b| (&a.video_id, &a.name_key).cmp(&(&b.video_id, &b.name_key)));
+
+        assert_eq!(changed, vec![key("hot since 82", "v1"), key("traumer", "v1"), key("traumer", "v2")]);
+        assert_eq!(db.get_new_dj_finds(20).unwrap().total, 0);
+        assert!(db.mark_all_dj_finds_seen().unwrap().is_empty());
+
+        db.mark_dj_finds_unseen(&changed).unwrap();
+
+        assert_eq!(new_videos(&db), vec!["v2", "v1"]);
+        assert_eq!(seen_at(&db, "solomun", "v3").as_deref(), Some("2026-10-01 10:00:00"));
+    }
+
+    #[test]
+    fn migration_018_marks_every_find_stored_before_it_seen_once() {
+        let db = db();
+        // As before migration 018: no seen_at, two finds stored.
+        db.conn.execute_batch("ALTER TABLE yt_dj_finds DROP COLUMN seen_at;").unwrap();
+        db.conn
+            .execute_batch(
+                "INSERT INTO yt_dj_finds (name_key, video_id, title) VALUES
+                     ('traumer', 'old1', 'Old one'), ('solomun', 'old2', 'Old two');",
+            )
+            .unwrap();
+
+        db.run_migrations().unwrap();
+
+        assert!(seen_at(&db, "traumer", "old1").is_some());
+        assert!(seen_at(&db, "solomun", "old2").is_some());
+        assert_eq!(db.get_new_dj_finds(20).unwrap().total, 0);
+
+        // The next start leaves a new find unseen.
+        db.conn
+            .execute("INSERT INTO yt_dj_finds (name_key, video_id, title) VALUES ('traumer', 'new', 'New')", [])
+            .unwrap();
+        db.run_migrations().unwrap();
+        assert_eq!(new_videos(&db), vec!["new"]);
     }
 }
