@@ -58,7 +58,12 @@ export function HomeView({
     () => (isLoaded ? layout.map((item) => item.i) : []),
     [isLoaded, layout],
   )
-  const data = useHomeData(shown, dataVersion)
+  // Last playlist reads again when a playlist is renamed or its tracks change.
+  const playlistsKey = useMemo(
+    () => playlists.map((p) => `${p.id}:${p.track_count}:${p.name}`).join('\n'),
+    [playlists],
+  )
+  const data = useHomeData(shown, dataVersion, playlistsKey)
   const facts: HomeFacts = {
     playlists,
     totalTrackCount,

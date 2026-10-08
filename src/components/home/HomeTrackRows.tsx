@@ -17,7 +17,13 @@ import { usePlayerStore } from '../../store/playerStore'
 import type { LibraryFolder, Track } from '../../types/track'
 
 export interface TrackRowActions {
-  onPlay: (track: Track, list: Track[], index: number) => void
+  /** `playlistId`: the playlist the play is recorded under. */
+  onPlay: (
+    track: Track,
+    list: Track[],
+    index: number,
+    playlistId?: number,
+  ) => void
   /** A row dropped on a playlist in the sidebar. */
   onAddToPlaylist: (tracks: Track[], playlistId: number) => void
   /** A row dropped on a library folder in the sidebar. */
