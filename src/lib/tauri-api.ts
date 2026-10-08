@@ -51,6 +51,7 @@ import type {
 } from '../types/spotify'
 import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
 import type { LibraryGroups, RecentlyPlayedTrack, YourDj } from '../types/sections'
+import type { UpcomingGig } from '../types/home'
 import type {
   ArtistCandidate,
   DjCandidates,
@@ -1057,6 +1058,16 @@ export const tauriApi = {
   /** The 6 biggest genres, the count added in the last 30 days and the count never played. */
   async getLibraryGroups(): Promise<LibraryGroups> {
     return await invoke('get_library_groups')
+  },
+
+  /** The gigs on or after `today` ("2026-10-04", the local day) of every DJ with a page, soonest first. */
+  async getUpcomingGigs(today: string, limit: number): Promise<UpcomingGig[]> {
+    return await invoke('get_upcoming_gigs', { today, limit })
+  },
+
+  /** Every track with no BPM: Home's Not analyzed number, and what its Analyze all analyzes. */
+  async getTrackIdsWithoutBpm(): Promise<number[]> {
+    return await invoke('get_track_ids_without_bpm')
   },
 
   async getRecentlyPlayed(limit?: number): Promise<{
