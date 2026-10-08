@@ -602,6 +602,11 @@ pub fn run() {
             commands::dashboard::get_library_insights,
             commands::dashboard::save_dashboard_layout,
             commands::dashboard::get_dashboard_layout,
+            // Search sections (shared with Home)
+            commands::sections::get_recently_played_tracks,
+            commands::sections::get_recently_added_tracks,
+            commands::sections::get_known_djs,
+            commands::sections::get_library_groups,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;

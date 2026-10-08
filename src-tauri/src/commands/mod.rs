@@ -10,6 +10,7 @@ pub mod library;
 pub mod move_tracks;
 pub mod playback;
 pub mod playlists;
+pub mod sections;
 pub mod server;
 pub mod settings;
 pub mod spotify;
