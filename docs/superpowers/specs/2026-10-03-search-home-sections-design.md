@@ -21,9 +21,9 @@ quota). A section with nothing to show is not rendered.
 
 | Section | Shows | Click | Data |
 |---|---|---|---|
-| **Recent searches** | the last 10 searches as chips, each with ×; "Clear" | runs that search again | `localStorage['search_recent']`, this machine only |
-| **Recently played** | 6 tiles: the file's artwork as the track table spec's 72px thumbnail (`artwork_path` is empty for every track), else the track table's quiet square with a small muted music-note icon in its middle (the user, 2026-10-04: a large empty square looks broken, a gradient differs from the table); title, artist; play button on hover | plays the track | new `get_recently_played_tracks(limit)` |
-| **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line | opens the DJ page | new `get_known_djs(today)` + `localStorage['dj_recent']` |
+| **Recent searches** | the last 10 searches as chips (6px corners, not pills), each with ×; "Clear" | runs that search again | `localStorage['search_recent']`, this machine only |
+| **Recently played** | 6 tiles of 150px in a row that scrolls sideways: the file's artwork (`artwork_path` is empty for every track), read whole as the now-playing bar reads it — the table's 72px thumbnail would blur at 150px — else the track table's quiet square with a small muted music-note icon in its middle (the user, 2026-10-04: a large empty square looks broken, a gradient differs from the table); title, artist; play button on hover | plays the track | new `get_recently_played_tracks(limit)` |
+| **Your DJs** | round photos (Spotify image, else initials on a gradient), name, one line; at most 20 | opens the DJ page | new `get_known_djs(today)` + `localStorage['dj_recent']` |
 | **Your library by genre** | tiles for the 6 biggest genres with counts, plus **Recently added** and **Never played** with counts | opens All Tracks with that filter | new `get_library_groups()` |
 | **Recently added** | 6 rows (title, artist, "today" / "2 days ago") | plays the track | new `get_recently_added_tracks(limit)` (full track rows, shared with Home; the old `get_recently_added` returns five fields and cannot be played) |
 | **Sets you saved lately** | 3 rows (title, channel, date saved) | opens the set in Sets | existing `listYouTubeSets()`, newest first |
@@ -69,7 +69,8 @@ Recently Played widget (Home spec).
 - **Customize** — a sliders button at the right of the search field turns the
   sections into a plain list: each row has a switch, and ▲ / ▼ buttons to move
   it. No grid and no drag library (the DJ Overview's packed grid is not
-  reused). **Done** saves. Stored in `localStorage['search_sections']` as an
+  reused). **Done** saves; **Cancel**, or the sliders button again, leaves
+  the page as it was. Stored in `localStorage['search_sections']` as an
   ordered list of `{ id, on }`; unknown ids are dropped, and a section added in
   a later version is appended, off.
 - With an empty library and no history: only the current "Search your
@@ -79,15 +80,21 @@ Recently Played widget (Home spec).
 **Results while typing.** The search field, the DJs row and the Tracks heading
 with its count stay put; **only the track rows scroll**, in their own area, as
 on a DJ page's Tracks tab. The Playlists results, which today come after the
-tracks, move above them as a row of cards like the DJs, so nothing sits below
-the scrolling list. Without a query, the sections scroll under the field as
+tracks, move above them as a row of small cards (the 48px gradient square
+beside the name and count; a 126px square would leave the rows 25px on a
+760px window when DJs show too), so nothing sits below the scrolling list.
+The rows keep at least 200px: on a window too short for that, the results
+scroll as a whole. Without a query, the sections scroll under the field as
 one page, and the field stays.
 
 **Bug to fix with it:** with a long DJs row (7 cards) the page is wider than
 the window — the field and the track rows run off the right edge, and Key,
 Genre and Duration are cut off. The DJs row must scroll sideways inside itself
 and nothing may widen the page (`min-width: 0` down the flex and grid chain to
-the app's main column). Check in WebKit at 1000px wide.
+the app's main column). Check in WebKit at 1000px wide. (By the Search plan
+this no longer happened: the track table plans had set `min-width: 0` on
+App's view wrappers. The plan keeps `min-width: 0` on every new box, and its
+check measures it.)
 
 ## All Tracks filter (new)
 
