@@ -35,3 +35,27 @@ export interface BpmKeyCounts {
   bpm: BpmRangeCount[]
   keys: Array<{ key: string; count: number }>
 }
+
+/** A set a watched DJ's search found that has not been seen, under the DJ whose search found it first. */
+export interface NewDjFind {
+  videoId: string
+  nameKey: string
+  /** The DJ's name as watched. */
+  displayName: string
+  title: string
+  channel: string | null
+  /** In the library: it opens at no cost; else opening it fetches it (5–7 units). */
+  saved: boolean
+}
+
+/** New sets (`get_new_dj_finds`): the newest unseen finds, and how many videos are unseen in all. */
+export interface NewDjFinds {
+  total: number
+  finds: NewDjFind[]
+}
+
+/** One find row: what Mark all seen changed, and what its Undo puts back. */
+export interface DjFindKey {
+  nameKey: string
+  videoId: string
+}

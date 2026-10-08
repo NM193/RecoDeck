@@ -51,7 +51,13 @@ import type {
 } from '../types/spotify'
 import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
 import type { LibraryGroups, RecentlyPlayedTrack, YourDj } from '../types/sections'
-import type { BpmKeyCounts, LastPlayedPlaylist, UpcomingGig } from '../types/home'
+import type {
+  BpmKeyCounts,
+  DjFindKey,
+  LastPlayedPlaylist,
+  NewDjFinds,
+  UpcomingGig,
+} from '../types/home'
 import type {
   ArtistCandidate,
   DjCandidates,
@@ -1078,6 +1084,26 @@ export const tauriApi = {
   /** The tracks per BPM range and per key (Home's BPM & key). */
   async getBpmKeyCounts(): Promise<BpmKeyCounts> {
     return await invoke('get_bpm_key_counts')
+  },
+
+  /** The newest sets watched DJs' searches found that have not been seen, and how many in all (Home's New sets). */
+  async getNewDjFinds(limit: number): Promise<NewDjFinds> {
+    return await invoke('get_new_dj_finds', { limit })
+  },
+
+  /** These sets were opened: their finds are no longer news. */
+  async markDjFindsSeen(videoIds: string[]): Promise<void> {
+    return await invoke('mark_dj_finds_seen', { videoIds })
+  },
+
+  /** Mark all seen; answers the rows it changed, for its Undo. */
+  async markAllDjFindsSeen(): Promise<DjFindKey[]> {
+    return await invoke('mark_all_dj_finds_seen')
+  },
+
+  /** Mark all seen's Undo: exactly these rows are unseen again. */
+  async markDjFindsUnseen(rows: DjFindKey[]): Promise<void> {
+    return await invoke('mark_dj_finds_unseen', { rows })
   },
 
   async saveDashboardLayout(layoutJson: string): Promise<void> {
