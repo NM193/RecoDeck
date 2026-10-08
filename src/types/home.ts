@@ -14,3 +14,24 @@ export interface UpcomingGig {
   /** ISO code. */
   country: string | null
 }
+
+/** The playlist played from most recently (`get_last_played_playlist`), for Last playlist. */
+export interface LastPlayedPlaylist {
+  playlistId: number
+  name: string
+  /** That play's time, unix seconds. */
+  playedAt: number
+}
+
+/** The tracks whose BPM is in `min <= bpm < max`; a missing bound is open. */
+export interface BpmRangeCount {
+  min: number | null
+  max: number | null
+  count: number
+}
+
+/** BPM & key (`get_bpm_key_counts`): every BPM range, lowest first, and each key, biggest first. */
+export interface BpmKeyCounts {
+  bpm: BpmRangeCount[]
+  keys: Array<{ key: string; count: number }>
+}

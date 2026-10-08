@@ -51,7 +51,7 @@ import type {
 } from '../types/spotify'
 import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
 import type { LibraryGroups, RecentlyPlayedTrack, YourDj } from '../types/sections'
-import type { UpcomingGig } from '../types/home'
+import type { BpmKeyCounts, LastPlayedPlaylist, UpcomingGig } from '../types/home'
 import type {
   ArtistCandidate,
   DjCandidates,
@@ -1068,6 +1068,16 @@ export const tauriApi = {
   /** Every track with no BPM: Home's Not analyzed number, and what its Analyze all analyzes. */
   async getTrackIdsWithoutBpm(): Promise<number[]> {
     return await invoke('get_track_ids_without_bpm')
+  },
+
+  /** The playlist played from most recently, while it exists; null when none (Home's Last playlist). */
+  async getLastPlayedPlaylist(): Promise<LastPlayedPlaylist | null> {
+    return await invoke('get_last_played_playlist')
+  },
+
+  /** The tracks per BPM range and per key (Home's BPM & key). */
+  async getBpmKeyCounts(): Promise<BpmKeyCounts> {
+    return await invoke('get_bpm_key_counts')
   },
 
   async saveDashboardLayout(layoutJson: string): Promise<void> {
