@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { confirm } from '@tauri-apps/plugin-dialog'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
 import { check, type Update } from '@tauri-apps/plugin-updater'
@@ -1145,14 +1144,9 @@ function AppContent() {
     }
   }
 
-  // Delete playlist/folder — use Tauri's confirm (native dialog)
-  async function handleDeletePlaylist(id: number, name: string) {
-    const confirmed = await confirm(
-      `Delete "${name}"? This cannot be undone.`,
-      { title: 'Delete', kind: 'warning' },
-    )
-    if (!confirmed) return
-
+  // Delete a playlist or playlist folder: the sidebar's menu asked first,
+  // in its place (it has no Undo).
+  async function handleDeletePlaylist(id: number) {
     try {
       await tauriApi.deletePlaylist(id)
 
@@ -1434,29 +1428,6 @@ function AppContent() {
       await loadTracks()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  // Analyze all tracks — BPM and Key (parallel batch)
-  async function handleAnalyzeAll() {
-    if (analyzing) return
-    try {
-      // Use already-loaded tracks if available, otherwise fetch
-      const trackIds =
-        tracks.length > 0
-          ? tracks.filter((t) => t.id).map((t) => t.id)
-          : (await tauriApi.getAllTracks()).filter((t) => t.id).map((t) => t.id)
-
-      if (trackIds.length === 0) {
-        toast('No tracks in library', { kind: 'info' })
-        return
-      }
-
-      await analyzeTrackIds(trackIds)
-    } catch (err) {
-      // Reading the library failed; analyzeTrackIds reports its own failures.
-      setError(err instanceof Error ? err.message : String(err))
-      toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1785,7 +1756,6 @@ function AppContent() {
       onFolderSelect={handleFolderSelect}
       onPlaylistSelect={handlePlaylistSelect}
       onAnalyzeFolder={handleAnalyzeFolder}
-      onAnalyzeAll={handleAnalyzeAll}
       onCreatePlaylist={handleCreatePlaylist}
       onCreateFolder={handleCreateFolder}
       onRenamePlaylist={handleRenamePlaylist}

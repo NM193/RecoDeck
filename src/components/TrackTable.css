@@ -603,58 +603,6 @@
   cursor: not-allowed;
 }
 
-/* The sidebar's menus (FolderTree) still use these until the Interactions
-   plan moves them to the shared Menu; the track table's menu is Menu. */
-.context-menu-item-active {
-  background: var(--bg-tertiary);
-  font-weight: 500;
-}
-
-.context-menu-checkmark {
-  margin-left: auto;
-  color: var(--accent);
-  font-weight: bold;
-}
-
-button.context-menu-item {
-  width: 100%;
-  border: none;
-  background: transparent;
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: left;
-  color: var(--text-primary);
-  padding: 7px 12px;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: background-color 0.1s ease;
-}
-
-button.context-menu-item:hover {
-  background: var(--accent);
-  color: #fff;
-}
-
-/* Ensure no gaps in context menu */
-.context-menu,
-.context-submenu {
-  padding: 0;
-}
-
-.context-menu > *:first-child,
-.context-submenu > *:first-child {
-  margin-top: 0;
-}
-
-.context-menu > *:last-child,
-.context-submenu > *:last-child {
-  margin-bottom: 0;
-}
-
 /* --- Dragging (track table spec, Dragging) --- */
 
 .data-row--dragging {

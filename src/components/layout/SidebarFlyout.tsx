@@ -1,7 +1,7 @@
 // src/components/layout/SidebarFlyout.tsx
 // A panel beside a rail icon that shows what the expanded section would.
-// No transform on it or its ancestors: FolderTree's own menus are
-// position: fixed, and a transformed ancestor would misplace them.
+// A menu opened from inside it (FolderTree's right-click, the shared Menu)
+// lives in body, and a press on it is not "outside".
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useOverlay } from '../../lib/overlays'
 
@@ -31,6 +31,7 @@ export function SidebarFlyout({
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node
       if (ref.current?.contains(target) || anchor?.contains(target)) return
+      if ((target as Element).closest?.('.menu')) return
       onClose()
     }
     const onKey = (e: KeyboardEvent) => {
