@@ -640,7 +640,7 @@ pub async fn save_youtube_track(
         artist: track.artist,
         title: track.title,
         mix: track.mix,
-        saved_at: None,
+        saved_at: track.saved_at,
         set_title: None,
     };
 
@@ -2111,6 +2111,40 @@ mod tests {
         db.delete_saved_yt_track("bk6Xst6euQk", 1_260_000, "Club Soda")
             .unwrap();
         assert!(db.list_saved_yt_tracks().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_heart_put_back_keeps_its_saved_at_and_its_place() {
+        let db = test_db();
+        let (set, raw) = sample_set();
+        db.save_yt_set(&set, raw).unwrap();
+        let heart = |title: &str, saved_at: Option<&str>| YtSavedTrack {
+            id: None,
+            video_id: "bk6Xst6euQk".to_string(),
+            cue_ms: 1_260_000,
+            cue: Some("21:00".to_string()),
+            artist: None,
+            title: title.to_string(),
+            mix: None,
+            saved_at: saved_at.map(str::to_string),
+            set_title: None,
+        };
+        db.save_yt_track(&heart("Older", Some("2026-01-02 10:00:00"))).unwrap();
+        db.save_yt_track(&heart("Newer", None)).unwrap();
+
+        // Removed, then put back by its Undo with the time it had.
+        db.delete_saved_yt_track("bk6Xst6euQk", 1_260_000, "Older").unwrap();
+        db.save_yt_track(&heart("Older", Some("2026-01-02 10:00:00"))).unwrap();
+
+        let saved = db.list_saved_yt_tracks().unwrap();
+        let titles: Vec<&str> = saved.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["Newer", "Older"]);
+        assert_eq!(saved[1].saved_at.as_deref(), Some("2026-01-02 10:00:00"));
+
+        // Hearted again while still hearted: its time stays.
+        db.save_yt_track(&heart("Older", Some("2026-05-05 05:05:05"))).unwrap();
+        let again = db.list_saved_yt_tracks().unwrap();
+        assert_eq!(again[1].saved_at.as_deref(), Some("2026-01-02 10:00:00"));
     }
 
     fn track(video_id: &str, position: i64, artist: Option<&str>, title: &str, unknown: bool) -> YtTrack {

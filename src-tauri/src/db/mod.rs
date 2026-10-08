@@ -2776,10 +2776,12 @@ impl Database {
 
     // --- saved tracks -------------------------------------------------
 
+    /// Hearts a track: now, or at `saved_at` when given (a removed heart's
+    /// Undo, so it keeps its place). A track hearted already keeps its time.
     pub fn save_yt_track(&self, track: &YtSavedTrack) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO yt_saved_tracks (video_id, cue_ms, cue, artist, title, mix)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO yt_saved_tracks (video_id, cue_ms, cue, artist, title, mix, saved_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(?7, datetime('now')))
              ON CONFLICT(video_id, cue_ms, title) DO UPDATE SET
                 artist = excluded.artist,
                 mix = excluded.mix",
@@ -2790,6 +2792,7 @@ impl Database {
                 track.artist,
                 track.title,
                 track.mix,
+                track.saved_at,
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -2801,7 +2804,7 @@ impl Database {
                     y.title AS set_title
              FROM yt_saved_tracks s
              LEFT JOIN yt_sets y ON y.video_id = s.video_id
-             ORDER BY s.saved_at DESC",
+             ORDER BY s.saved_at DESC, s.id DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(YtSavedTrack {
