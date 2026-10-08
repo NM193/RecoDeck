@@ -123,6 +123,65 @@ hit, an echo, a Saved track) scrolls to that row and plays the set from its
 cue, replacing whatever set was playing; opening from a card or a new find
 does not start playback.
 
+**As built by plan S2:**
+
+- The page is `src/components/sets/SetPage.tsx` with its row
+  (`SetTrackRow.tsx`), `SetPage.css`, and `TrackScrubber` and `StoreLinks`
+  moved out of `SetsView` beside it; its words and numbers are pure functions
+  in `src/lib/sets/setPage.ts` (tested). `SetsView` keeps the data and which
+  page shows; the `'set'` tab is gone and Sets opens on its library.
+- Until plan S3 builds the library home, today's box (the input with
+  "Process" / "Search · 101 units", the quota line, the found list) sits above
+  the tabs, and the Library tab keeps today's list, "Where did I hear this?"
+  and By DJ / Newest first.
+- Back returns to the library's tab, grouping and scroll from a small store
+  (`useSetsView`) that outlives `SetsView`, so a trip through a DJ page keeps
+  them; the scroll comes back once the list has loaded, and another tab
+  starts at its top. The sidebar's Sets, pressed while a set's page shows,
+  goes back to the library too (`requestLibrary`). `SetsStart` is unchanged:
+  no caller opens a set at a cue from outside Sets yet, so it has no cue.
+- One opener, `openSet(videoId, { cueMs, title })`: the page shows at once
+  with the title the opener or the library knows ("Reading the set…" when
+  neither does) and eight skeleton rows; a stored set is stored again (its
+  rows refilled; `added_at` is kept); a set not stored is fetched and stored.
+  A failure says "Couldn't read this set: …" with Try again ("This set" as
+  the title when none is known) and shows an error toast, which a retry
+  replaces. Opened at a track, its row is scrolled to the middle and the set
+  plays from its cue. A newer open, or Back, gives up an open still on its
+  way: it neither shows, nor plays, nor fetches (so React's StrictMode
+  double mount spends 5–7 units once). A pasted link, a found set and a
+  channel's upload open their page only if nothing else was opened since.
+- Look again never takes the page: answering after Back or another set, it
+  is stored (and a playing set gets its rows) and says what it found in a
+  toast ("Looked again at …: 12 → 13 tracks."). Its failures and its "only N
+  units left" warning are toasts too (the page has no error line). Removing a set asks first (the native confirm),
+  from ⋯ and from the library row's bin, says "Removed from your library",
+  and goes back to the library when its page was open; its saved tracks go
+  with it.
+- The hero puts "‹ Sets" above the title, as the mockup; the thumbnail's
+  length sits bottom right. ⋯ is the shared `Menu`: Open on YouTube (at the
+  position playing, when this set plays), Look again for a tracklist (5–7
+  units), Copy missing tracks (its count; a toast says how many were copied),
+  Remove from library (only for a set in it).
+- Playing here, the hero is the mockup's compact one: the numbers and the
+  source line go and the title is 18px. The picture keeps to the top when the
+  text beside it is taller, and both give way on a narrow window (the
+  thumbnail down to 200px, the video to 240px), so at 800×600 the rows keep
+  272px and nothing scrolls sideways.
+- A list assembled from scattered comments has no lists to count: its line
+  reads "assembled from comments", without "from N lists". "Named without a
+  timestamp" shows under a set with no rows too.
+- Rows: the number's ▶ shows on hover and when it has the keyboard (opacity,
+  so it stays reachable; only the keyboard's focus hides the number, as
+  WebView2 focuses a clicked button); the store links follow the title in the
+  spec's order (Beatport · Discogs · Bandcamp · Spotify), on hover and while
+  the row holds the keyboard's focus; the playing row takes the
+  track table's playing colour (the accent drawn toward the text, which reads
+  on the light themes); an ID row is muted, with no "missing" and no ♡.
+- The filter is four buttons with their counts (`aria-pressed`), in the
+  mockup's tab style; another set is another page, so it starts on All.
+- `SetsView.css` loses the rules only the old Set tab and video band used.
+
 ## Playing
 
 **Play set**, or ▶ on a row, opens the video in the hero's box, which grows to
