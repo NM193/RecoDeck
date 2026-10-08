@@ -5,11 +5,11 @@
 **Goal:** One way the app answers. `toast()` replaces App's `Notification` and the sidebar's own toast; the update prompt is restyled with the shared buttons; removing a heart has an Undo that puts it back in its place; a menu item that cannot be undone asks in the menu's place instead of a native dialog (the set page's Remove from library first).
 
 **Architecture:**
-- **Rust** (`db/mod.rs`, `commands/youtube.rs`): `save_yt_track` writes a given `saved_at` (`COALESCE(?7, datetime('now'))`), and `save_youtube_track` passes it on instead of dropping it. A track hearted already keeps its time (the conflict branch leaves `saved_at` alone).
+- **Rust** (`db/mod.rs`, `commands/youtube.rs`): `save_yt_track` writes a given `saved_at` (`COALESCE(?7, datetime('now'))`), and `save_youtube_track` passes it on instead of dropping it. A track hearted already keeps its time (the conflict branch leaves `saved_at` alone). Saved tracks hearted in the same second list the newer row first (`ORDER BY s.saved_at DESC, s.id DESC`).
 - **Menu** (`src/components/menu/Menu.tsx`): `MenuAction.confirm?: { message, label }`. Choosing such an item swaps the panel for `MenuConfirm` at the same place — the question, Cancel (focused) and the answer as `.btn--danger` (new in `src/styles/controls.css`). The panel placement moves into one `place()` used by both.
 - **Pure TypeScript** (tested): `removeQuestion(title)` in `src/lib/sets/setPage.ts`, the one wording for removing a set (the menu's question and the dialog's).
 - **App** (`src/App.tsx`): every `setNotification({ message, type })` becomes `toast(message, { kind })` (success is the default kind); Settings' `onNotification` calls `toast`; the error text in toasts comes from `getErrorMessage` (App's `errorText` printed an AppError as "[object Object]"). `Notification`, `HeaderNotification` and the sidebar's toast go.
-- **Sets** (`src/components/views/SetsView.tsx`): `unheart(track)` — delete, then a toast with Undo that saves the same row back with its `saved_at` — used by the Saved tracks tab and the set page's ♥.
+- **Sets** (`src/components/views/SetsView.tsx`): `unheart(track)` — delete, read the list again, then a toast with Undo that saves the same row back with its `saved_at` — used by the Saved tracks tab and the set page's ♥; a second press on the same heart before the list is read again is dropped.
 
 **Tech Stack:** Rust (rusqlite), React 19, TypeScript, Vitest (jsdom).
 
@@ -21,8 +21,8 @@
 - **The rest of the spec is split** into three plans, so each stays reviewable: **I1** (this one, feedback), **I2** (menus and keys: the sidebar's right-click menus on `Menu` with Delete playlist / Delete folder asking in its place, `useShortcuts` with its sheet and "whichever played last", `Skeleton`), **I3** (the sweep: every `transition:` on the tokens, `.btn--icon` / `.btn--pill`, the `Button` component with its working state, Settings / the DJ pages / the modals on the shared controls).
 - **`UpdateToast` stays apart** from the toasts — top right, until answered — because it waits for an answer and must not be pushed out by a fourth toast. It takes a toast's card (radius, border, shadow) and the shared `.btn` / `.btn--primary`.
 - **The sidebar's "Added to …"** (when the player's ⋯ adds the playing track to a playlist) becomes a success toast; "already in" stays a warning toast.
-- **A heart's Undo** writes the same row back (`save_youtube_track` with its old `saved_at`), so Saved tracks shows it where it was. The toast names the track: `Removed "De La Bass" from Saved tracks`. Saving a heart still has no toast (it shows on the row at once).
-- **The menu's question** keeps Cancel focused, so Enter right after choosing cancels; the answer is a red `.btn--danger`. Esc and a press outside cancel as they close the menu. Only the menu asks in place: the Remove button on a set's error page has no menu, so it still asks with the dialog (same wording, `removeQuestion`). Delete from playlist stays red without a question — it has an Undo.
+- **A heart's Undo** writes the same row back (`save_youtube_track` with its old `saved_at`), so Saved tracks shows it where it was. The toast names the track: `Removed "De La Bass" from Saved tracks`. Saving a heart still has no toast (it shows on the row at once), but a save that fails now says so instead of nothing.
+- **The menu's question** keeps Cancel focused, so Enter right after choosing cancels; the answer is a red `.btn--danger`. Tab moves between the two by hand (WebKit's Tab skips buttons unless macOS's keyboard navigation is on, and leaving them would leave the menu open). It is an `alertdialog` named by its question. Esc and a press outside cancel as they close the menu. Only the menu asks in place: the Remove button on a set's error page has no menu, so it still asks with the dialog (same wording, `removeQuestion`). Delete from playlist stays red without a question — it has an Undo.
 - **Error toasts** use `getErrorMessage`; `setError(...)` lines (the old error banner) are left as they are.
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `25b04d8`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc`, each task's tests and `cargo test` pass at every task's end.
@@ -33,10 +33,18 @@
 - **In WebKit** (the Sets test page of S4, with saved tracks that have a `saved_at`, a save mock that keeps a given one and sorts newest first, and the update prompt), in the dark Midnight and the light Dawn themes:
   - the set page's ⋯ › Remove from library: the menu turns into `Remove "Marco Carola b2b Luciano — KEEZY 2022 Opening" from your library? Its saved tracks go with it.` with Cancel (focused) and a red Remove, in the menu's place; Esc closes it, nothing deleted; from the keys (↑, Enter) it asks too, and Enter then cancels; Remove deletes the set (no dialog asked), "Removed from your library", back on the library;
   - a set that cannot be read: its Remove button asks with the dialog, then deletes;
-  - Saved tracks: ♥ on De La Bass — the row goes, `Removed "De La Bass" from Saved tracks` with Undo; Undo saves it with `2026-10-05 10:00:00` and it is first again, above Babe;
+  - the question is an `alertdialog`, `aria-modal`, named by its text; Tab from Cancel: Remove, Cancel, Remove (Shift+Tab back), the menu still asking;
+  - Saved tracks: ♥ on De La Bass — the row goes, `Removed "De La Bass" from Saved tracks` with Undo; Undo saves it with `2026-10-05 10:00:00` and it is first again, above Babe; two presses on a slow removal: one delete, one toast;
   - the set page's ♥ on a hearted track: off, the same toast; Undo: hearted again, with its time;
   - the update prompt: top right, "Update v0.5.0 available · Later · Install", Later on a tinted button that shows on Dawn's white card; both answer;
   - S4's and S3's scenarios still pass on this copy.
+
+**Reviewed:** an independent review of the first version (committed as `11db9b6`) found no blocker; its points are folded in above and checked:
+- **The question's name and Tab**: it was named "Remove" and Tab could leave it with the menu open → named by its question (`aria-labelledby`), `aria-modal`, Tab cycles Cancel / Remove.
+- **A double press on ♥** before the list read again found the stale row twice: a second "Removed" toast with a second Undo → `unheart` drops a press while the same heart is being removed, until the list is read again.
+- **Saved tracks in the same second** had no order between them → `s.id DESC` breaks the tie (an Undone heart is the newer row).
+- **Saving a heart** swallowed its error → an error toast, as removing one has.
+- Left as is: Undo after the heart's set was removed fails on the foreign key and says "Couldn't undo: …", which is honest.
 
 ---
 
@@ -176,6 +184,18 @@ In `src-tauri/src/db/mod.rs`, replace
     }
 
     pub fn list_saved_yt_tracks(&self) -> Result<Vec<YtSavedTrack>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.id, s.video_id, s.cue_ms, s.cue, s.artist, s.title, s.mix, s.saved_at,
+                    y.title AS set_title
+             FROM yt_saved_tracks s
+             LEFT JOIN yt_sets y ON y.video_id = s.video_id
+             ORDER BY s.saved_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(YtSavedTrack {
+                id: row.get(0)?,
+                video_id: row.get(1)?,
+                cue_ms: row.get(2)?,
 ```
 
 with
@@ -210,6 +230,18 @@ with
     }
 
     pub fn list_saved_yt_tracks(&self) -> Result<Vec<YtSavedTrack>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.id, s.video_id, s.cue_ms, s.cue, s.artist, s.title, s.mix, s.saved_at,
+                    y.title AS set_title
+             FROM yt_saved_tracks s
+             LEFT JOIN yt_sets y ON y.video_id = s.video_id
+             ORDER BY s.saved_at DESC, s.id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(YtSavedTrack {
+                id: row.get(0)?,
+                video_id: row.get(1)?,
+                cue_ms: row.get(2)?,
 ```
 
 In `src-tauri/src/commands/youtube.rs`, replace
@@ -560,7 +592,8 @@ function place(panel: HTMLElement, x: number, y: number, flipX?: number) {
 }
 
 // The question in the menu's place: Cancel, which has the keys, and the red
-// answer. Esc and a press outside cancel, as they close the menu.
+// answer; Tab moves between the two. Esc and a press outside cancel, as they
+// close the menu.
 function MenuConfirm({
   x,
   y,
@@ -588,13 +621,25 @@ function MenuConfirm({
     cancelRef.current?.focus({ preventScroll: true })
   }, [])
 
+  // Tab moves between the two answers, by hand: leaving them would leave the
+  // menu open, and WebKit's Tab skips buttons unless the system says so.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return
+    event.preventDefault()
+    const buttons = [...(panelRef.current?.querySelectorAll('button') ?? [])]
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const next = (at + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length
+    buttons[next]?.focus()
+  }
+
   return (
     <div
       ref={panelRef}
       role="alertdialog"
-      aria-label={answer}
-      aria-describedby={questionId}
+      aria-modal="true"
+      aria-labelledby={questionId}
       className="menu menu--confirm"
+      onKeyDown={onKeyDown}
       onContextMenu={(event) => event.preventDefault()}
     >
       <p id={questionId} className="menu__question">
@@ -2797,6 +2842,42 @@ git commit -m "feat(ui): toasts for every notification; Notification and the sid
 In `src/components/views/SetsView.tsx`, replace
 
 ```tsx
+    return result.tracks
+      .map((t) => matches.byIndex.get(t.index)?.track)
+      .filter((t): t is LibraryTrack => Boolean(t))
+  }, [result, matches])
+
+  const savedKeys = useMemo(() => new Set(saved.map((t) => trackKey(t))), [saved])
+
+  /**
+   * A set just fetched, on its page — unless something else was opened, or
+   * Back pressed, since it was asked for (`claim`).
+   */
+  function show(raw: RawSet, claim: number): TracklistResult {
+```
+
+with
+
+```tsx
+    return result.tracks
+      .map((t) => matches.byIndex.get(t.index)?.track)
+      .filter((t): t is LibraryTrack => Boolean(t))
+  }, [result, matches])
+
+  const savedKeys = useMemo(() => new Set(saved.map((t) => trackKey(t))), [saved])
+  // Hearts being taken off (unheart): a second press waits for the first.
+  const unhearting = useRef(new Set<string>())
+
+  /**
+   * A set just fetched, on its page — unless something else was opened, or
+   * Back pressed, since it was asked for (`claim`).
+   */
+  function show(raw: RawSet, claim: number): TracklistResult {
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
       showLibrary()
     }
     refreshLibrary()
@@ -2842,15 +2923,23 @@ with
 
   /**
    * Takes a heart off, with an Undo that hearts it again at its old
-   * `saved_at`, so it goes back to its place in Saved tracks.
+   * `saved_at`, so it goes back to its place in Saved tracks. A second press
+   * before the list reads again is dropped (one toast, one Undo).
    */
   async function unheart(track: SavedTrack) {
+    const key = trackKey(track)
+    if (unhearting.current.has(key)) return
+    unhearting.current.add(key)
     try {
       await tauriApi.deleteSavedYouTubeTrack(track.video_id, track.cue_ms, track.title)
     } catch (err) {
+      unhearting.current.delete(key)
       toast(`Couldn't remove it: ${getErrorMessage(err)}`, { kind: 'error' })
       return
     }
+    // The list without it, before another press could find it there again.
+    await tauriApi.listSavedYouTubeTracks().then(setSaved).catch(() => {})
+    unhearting.current.delete(key)
     refreshLibrary()
     toast(`Removed "${track.title}" from Saved tracks`, {
       action: {
@@ -2882,7 +2971,7 @@ with
         title: track.title,
         mix: track.mix ?? undefined,
       })
-      .catch(() => {})
+      .catch((err) => toast(`Couldn't save it: ${getErrorMessage(err)}`, { kind: 'error' }))
     refreshLibrary()
   }
 
@@ -3018,10 +3107,13 @@ for the Home plan.
 - Removing a heart, on Saved tracks or on a set's page, says "Removed "…"
   from Saved tracks" with Undo; Undo hearts it again with its old
   `saved_at`, so it goes back to its place (`save_youtube_track` keeps a
-  given `saved_at`; a track hearted already keeps its time).
+  given `saved_at`; a track hearted already keeps its time). A second press
+  before the list reads again is dropped; a heart that could not be saved
+  says so.
 - A menu item with `confirm: { message, label }` asks in the menu's place:
   the question, Cancel (which has the keys) and the red answer
-  (`.btn--danger`, now in `controls.css`); Esc or a press outside cancels.
+  (`.btn--danger`, now in `controls.css`); Tab moves between the two, Esc or
+  a press outside cancels.
   The set page's ⋯ › Remove from library uses it; the Remove button on a set
   that cannot be read still asks with a dialog.
 - The rest of this spec is two more plans. **I2** (menus and keys): the
