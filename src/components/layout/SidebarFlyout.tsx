@@ -3,6 +3,7 @@
 // No transform on it or its ancestors: FolderTree's own menus are
 // position: fixed, and a transformed ancestor would misplace them.
 import { useEffect, useRef, type ReactNode } from 'react'
+import { useOverlay } from '../../lib/overlays'
 
 interface SidebarFlyoutProps {
   title: string
@@ -23,6 +24,8 @@ export function SidebarFlyout({
   children,
 }: SidebarFlyoutProps) {
   const ref = useRef<HTMLDivElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(true, onClose)
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {

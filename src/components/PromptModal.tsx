@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useOverlay } from '../lib/overlays'
 import './PromptModal.css'
 
 interface PromptModalProps {
@@ -18,6 +19,8 @@ export function PromptModal({
 }: PromptModalProps) {
   const [value, setValue] = useState(defaultValue)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(open, onCancel)
 
   useEffect(() => {
     if (open) {

@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { QRCodeSVG } from 'qrcode.react'
 import { Icon } from './Icon'
+import { useOverlay } from '../lib/overlays'
 import './SharePlaylistModal.css'
 
 interface SharePlaylistModalProps {
@@ -26,6 +27,9 @@ export function SharePlaylistModal({
   const handleOpenLink = useCallback(() => {
     openUrl(shareUrl)
   }, [shareUrl])
+
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(open, onClose)
 
   if (!open) return null
 

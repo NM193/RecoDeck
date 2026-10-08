@@ -11,6 +11,7 @@ import {
 } from '../store/folderTreeStore'
 import { Icon } from './Icon'
 import { registerDropOpener } from '../lib/drag/trackDrag'
+import { useOverlay } from '../lib/overlays'
 import './FolderTree.css'
 
 // Dragged tracks land on a playlist (added) or a library folder (moved);
@@ -240,6 +241,8 @@ export function FolderTree({
   const closeContextMenu = () => {
     setContextMenu((prev) => ({ ...prev, visible: false }))
   }
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(contextMenu.visible, closeContextMenu)
 
   useEffect(() => {
     const handleClick = () => {

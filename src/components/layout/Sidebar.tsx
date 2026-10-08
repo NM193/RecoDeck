@@ -21,6 +21,7 @@ import { SpotifyLists } from '../spotify/SpotifyLists'
 import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
 import { YouTubeMusicLists } from '../youtube-music/YouTubeMusicLists'
 import { useFolderTreeStore } from '../../store/folderTreeStore'
+import { useOverlay } from '../../lib/overlays'
 import {
   COLLAPSED_WIDTH,
   SECTION_LABELS,
@@ -284,6 +285,8 @@ export function Sidebar({
     withCreate: boolean
   } | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(ctxMenu !== null, () => setCtxMenu(null))
 
   useEffect(() => {
     if (!ctxMenu) return

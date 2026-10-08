@@ -9,6 +9,7 @@ import type { Playlist, Track } from '../../types/track'
 import { Icon } from '../Icon'
 import { WaveformVisualizer } from '../WaveformVisualizer'
 import { EQModal } from '../eq/EQModal'
+import { useOverlay } from '../../lib/overlays'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -279,6 +280,11 @@ export function NowPlayingBar({
       }
     }
   }, [])
+
+  // The playlist menu and the expanded view are overlays (useOverlay): Esc
+  // closes them, and the set video steps aside while they are open.
+  useOverlay(showPlaylistMenu, () => setShowPlaylistMenu(false))
+  useOverlay(expanded, () => setExpanded(false))
 
   // Close expanded view on Escape key
   useEffect(() => {

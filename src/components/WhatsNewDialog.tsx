@@ -1,4 +1,5 @@
 import type { VersionChanges } from '../lib/changelog'
+import { useOverlay } from '../lib/overlays'
 import './WhatsNewDialog.css'
 
 /**
@@ -24,6 +25,8 @@ interface WhatsNewDialogProps {
 }
 
 export function WhatsNewDialog({ version, changes, onClose }: WhatsNewDialogProps) {
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(true, onClose)
   const sections = [
     { label: 'New', items: changes.added },
     { label: 'Fixed', items: changes.fixed },

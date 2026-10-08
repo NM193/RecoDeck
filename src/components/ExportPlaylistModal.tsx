@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { tauriApi } from '../lib/tauri-api'
+import { useOverlay } from '../lib/overlays'
 import './ExportPlaylistModal.css'
 
 interface ExportProgressEvent {
@@ -32,6 +33,11 @@ export function ExportPlaylistModal({
   const [renameFiles, setRenameFiles] = useState(false)
   const [exportM3u, setExportM3u] = useState(false)
   const [running, setRunning] = useState(false)
+  // Open, it tells the app (useOverlay): Esc closes it — not while the export
+  // runs, as the backdrop and Close do not — and the set video steps aside.
+  useOverlay(true, () => {
+    if (!running) onClose()
+  })
   const [progress, setProgress] = useState<{
     current: number
     total: number
