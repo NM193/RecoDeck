@@ -607,6 +607,8 @@ pub fn run() {
             // Home's cards (Search's sections above are shared)
             commands::home::get_upcoming_gigs,
             commands::home::get_track_ids_without_bpm,
+            commands::home::get_last_played_playlist,
+            commands::home::get_bpm_key_counts,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;
