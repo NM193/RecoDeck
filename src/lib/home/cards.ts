@@ -33,13 +33,18 @@ export interface HomeCardDef {
 /** The catalog. Ids that kept their meaning from the old Home kept their id. */
 export const HOME_CARDS: readonly HomeCardDef[] = [
   { id: 'recently-played', title: 'Recently played', group: 'Jump back in', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 3 },
+  { id: 'recently-added', title: 'Recently added', group: 'Jump back in', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 3 },
+  { id: 'your-djs', title: 'Your DJs', group: 'Jump back in', w: 4, h: 1, minW: 2, minH: 1, maxW: 4, maxH: 2 },
   { id: 'needs-you', title: 'Needs you', group: 'Needs you', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 2 },
+  { id: 'new-likes', title: "New likes you don't own", group: 'Needs you', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 3 },
   { id: 'upcoming-gigs', title: 'Your DJs play next', group: 'Needs you', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 3 },
   { id: 'library-stats', title: 'Library stats', group: 'Your library', w: 1, h: 1, minW: 1, minH: 1, maxW: 4, maxH: 1 },
   { id: 'library-by-genre', title: 'Library by genre', group: 'Your library', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 3 },
+  { id: 'bpm-key', title: 'BPM & key', group: 'Your library', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 2 },
   { id: 'not-analyzed', title: 'Not analyzed', group: 'Your library', w: 1, h: 1, minW: 1, minH: 1, maxW: 2, maxH: 1 },
   { id: 'playlists', title: 'Your playlists', group: 'Gig prep', w: 4, h: 1, minW: 2, minH: 1, maxW: 4, maxH: 3 },
   { id: 'quick-actions', title: 'Quick actions', group: 'Gig prep', w: 2, h: 1, minW: 2, minH: 1, maxW: 4, maxH: 1 },
+  { id: 'last-playlist', title: 'Last playlist', group: 'Gig prep', w: 2, h: 2, minW: 2, minH: 1, maxW: 4, maxH: 3 },
 ]
 
 export function homeCard(id: string): HomeCardDef | undefined {

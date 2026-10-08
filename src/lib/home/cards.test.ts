@@ -17,6 +17,17 @@ describe('the catalog', () => {
     for (const card of HOME_CARDS) expect(HOME_GROUPS).toContain(card.group)
     expect(new Set(HOME_CARDS.map((card) => card.id)).size).toBe(HOME_CARDS.length)
   })
+
+  it('has plan H2’s five cards at the spec’s sizes and limits', () => {
+    const sizes = Object.fromEntries(
+      HOME_CARDS.map(({ id, group, w, h, minW, minH, maxW, maxH }) => [id, [group, w, h, minW, minH, maxW, maxH]]),
+    )
+    expect(sizes['recently-added']).toEqual(['Jump back in', 2, 2, 2, 1, 4, 3])
+    expect(sizes['your-djs']).toEqual(['Jump back in', 4, 1, 2, 1, 4, 2])
+    expect(sizes['new-likes']).toEqual(['Needs you', 2, 2, 2, 1, 4, 3])
+    expect(sizes['bpm-key']).toEqual(['Your library', 2, 2, 2, 1, 4, 2])
+    expect(sizes['last-playlist']).toEqual(['Gig prep', 2, 2, 2, 1, 4, 3])
+  })
 })
 
 describe('defaultLayout', () => {
