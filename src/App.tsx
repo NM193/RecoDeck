@@ -95,7 +95,10 @@ type PromptAction =
   | { kind: 'rename-folder'; folderPath: string; currentName: string }
 
 /** Where a DJ page was first opened from: Back returns there. */
-type DjOrigin = { view: 'search' } | { view: 'sets'; openVideoId: string | null }
+type DjOrigin =
+  | { view: 'search' }
+  | { view: 'sets'; openVideoId: string | null }
+  | { view: 'home' }
 /** The open Spotify or YouTube Music list: 'all', or a list id. */
 type StreamList = { service: 'spotify' | 'youtube-music'; listId: string }
 
@@ -168,9 +171,16 @@ function AppContent() {
   // that opens a view clears it, and Home and Search set it as they open All
   // Tracks; an effect on the view key would wipe the filter they set.
   const [tableFilter, setTableFilter] = useState<TrackFilter | null>(null)
-  // Raised after each play is recorded: the track table's Plays column (and
-  // Home, later) read their counts again.
+  // Raised after each play is recorded: the track table's Plays column and
+  // Home's cards read their counts again.
   const [playVersion, setPlayVersion] = useState(0)
+  // Raised after an analysis finishes and after a rescan: Home's cards read
+  // again (with playVersion, after a play).
+  const [dataVersion, setDataVersion] = useState(0)
+  // All Tracks opened with a filter while `tracks` holds a playlist's or a
+  // folder's tracks: its rows wait for the library, so neither the wrong
+  // rows nor "No tracks match" show for a moment.
+  const [libraryPending, setLibraryPending] = useState(false)
 
   // Genre state
   const [genreDefinitions, setGenreDefinitions] = useState<
@@ -363,6 +373,7 @@ function AppContent() {
           // Reload tracks and rebuild AI context (use ref to avoid stale closure)
           loadTracksRef.current()
           tauriApi.rebuildAIContext().catch(() => {})
+          setDataVersion((version) => version + 1)
         }, delay)
       },
     )
@@ -516,6 +527,8 @@ function AppContent() {
   }
 
   // Load tracks — all, by folder, or by playlist
+  // What `tracks` holds: the whole library, or a playlist's or a folder's.
+  const tracksAreLibraryRef = useRef(false)
   const loadTracks = useCallback(
     async (folderPath?: string | null, playlistId?: number | null) => {
       try {
@@ -541,6 +554,7 @@ function AppContent() {
         }
 
         setTracks(result)
+        tracksAreLibraryRef.current = !playlist && !folder
 
         // Always update total track count
         try {
@@ -573,6 +587,7 @@ function AppContent() {
       try {
         const results = await tauriApi.searchTracks(query)
         setTracks(results)
+        tracksAreLibraryRef.current = false
       } catch (err) {
         console.error('Backend search failed:', err)
       }
@@ -686,6 +701,7 @@ function AppContent() {
       }
       // Reload tracks
       await loadTracksRef.current()
+      setDataVersion((version) => version + 1)
       // New or removed folders and changed counts, in the sidebar's tree
       void useFolderTreeStore
         .getState()
@@ -833,7 +849,8 @@ function AppContent() {
 
   // A DJ page. From another DJ page it replaces that one and keeps its origin,
   // so Back still returns to where the first one was opened. The origin's view
-  // stays set underneath (showSearch / showSets) and keeps its sidebar item lit.
+  // stays set underneath (showSearch / showSets; Home is what shows with
+  // neither) and keeps its sidebar item lit.
   function openDj(name: string, spotifyArtistId: string | null = null, from?: DjOrigin) {
     const origin: DjOrigin =
       djPage?.from ?? from ?? (showSets ? { view: 'sets', openVideoId: null } : { view: 'search' })
@@ -843,7 +860,7 @@ function AppContent() {
   }
 
   // Back: the view the first DJ page was opened from — Search with its query,
-  // or Sets with the set the page was opened from open again. `djPage.from`
+  // Sets with the set the page was opened from open again, or Home. `djPage.from`
   // is gone once the page closes, so the set goes into `setsStart`.
   function closeDj() {
     if (!djPage) return
@@ -851,7 +868,7 @@ function AppContent() {
       openSets({ openVideoId: djPage.from.openVideoId, initialQuery: '' })
       return
     }
-    setShowSearch(true)
+    setShowSearch(djPage.from.view === 'search')
     setShowSets(false)
     setDjPage(null)
   }
@@ -874,8 +891,9 @@ function AppContent() {
   }
 
   // All Tracks, from the sidebar, or with a filter set from Search's genre
-  // tiles. Search holds the whole library already, so the filtered rows show
-  // at once while the tracks load again.
+  // tiles or Home's cards. Search holds the whole library already, so the
+  // filtered rows show at once while the tracks load again; after a playlist
+  // or a folder, filtered rows wait for the library (`libraryPending`).
   function openAllTracks(filter: TrackFilter | null = null) {
     setStreamList(null)
     setDjPage(null)
@@ -887,7 +905,11 @@ function AppContent() {
     setShowSearch(false)
     setShowSets(false)
     setShowAIChat(false)
-    loadTracks(null, null)
+    const waiting = filter !== null && !tracksAreLibraryRef.current
+    if (waiting) setLibraryPending(true)
+    void loadTracks(null, null).finally(() => {
+      if (waiting) setLibraryPending(false)
+    })
   }
 
   // Playlist selection
@@ -905,9 +927,10 @@ function AppContent() {
     await loadTracks(null, playlistId)
   }
 
-  // Settings with its Spotify section open: a DJ page's "Connect Spotify".
-  function openSpotifySettings() {
-    openSettingsSection('spotify')
+  // Settings with one section open: a DJ page's "Connect Spotify", Home's
+  // Import folder (Library).
+  function openSettingsOn(section: string) {
+    openSettingsSection(section)
     setShowSettings(true)
     setStreamList(null)
     setDjPage(null)
@@ -918,6 +941,10 @@ function AppContent() {
     setShowSearch(false)
     setShowSets(false)
     setShowAIChat(false)
+  }
+
+  function openSpotifySettings() {
+    openSettingsOn('spotify')
   }
 
   // Analyze folder — BPM and Key for tracks that don't have them yet (parallel batch)
@@ -1340,6 +1367,8 @@ function AppContent() {
         evictArtworkCache(id)
       }
       await loadTracksRef.current()
+      // Home's track rows hold the old paths until they read again.
+      setDataVersion((version) => version + 1)
       await useFolderTreeStore.getState().invalidateAll(libraryFoldersRef.current)
     }
     return { moved: report.moved, skipped: [...playing, ...report.skipped] }
@@ -1428,6 +1457,34 @@ function AppContent() {
         return
       }
 
+      await analyzeTrackIds(trackIds)
+    } catch (err) {
+      // Reading the library failed; analyzeTrackIds reports its own failures.
+      setError(err instanceof Error ? err.message : String(err))
+      setNotification({
+        message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
+        type: 'error',
+      })
+    }
+  }
+
+  // Home's Analyze all: exactly the tracks without a BPM, which Home read.
+  function handleAnalyzeFromHome(trackIds: number[]) {
+    if (analyzing) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
+    if (trackIds.length === 0) {
+      toast('Everything is analyzed', { kind: 'info' })
+      return
+    }
+    void analyzeTrackIds(trackIds)
+  }
+
+  // BPM and key for these tracks, skipping those that have both (the
+  // sidebar's Analyze All Tracks and Home's Analyze all).
+  async function analyzeTrackIds(trackIds: number[]) {
+    try {
       // Show progress bar immediately with "preparing" state
       setAnalyzing(true)
       setError(null)
@@ -1495,10 +1552,13 @@ function AppContent() {
     console.log('Clicked track:', track)
   }
 
+  // `playlistId`: the playlist the play came from, when it is not the one
+  // open in the table (Home's Your playlists).
   const handlePlayTrack = async (
     track: Track,
     sortedTracks: Track[],
     trackIndex: number,
+    playlistId?: number,
   ) => {
     if (!track.file_path) {
       console.error('[App] Track has no file path')
@@ -1553,7 +1613,7 @@ function AppContent() {
       const trackToPlay = sortedTracks[trackIndex]
       if (trackToPlay?.id) {
         tauriApi
-          .recordPlayEvent(trackToPlay.id, selectedPlaylistId ?? null)
+          .recordPlayEvent(trackToPlay.id, playlistId ?? selectedPlaylistId ?? null)
           .then(() => setPlayVersion((version) => version + 1))
           .catch(console.error)
       }
@@ -1562,6 +1622,22 @@ function AppContent() {
       setPlayerError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // A playlist's ▶ on Home: from its first track, the playlist as the queue.
+  async function playPlaylist(playlistId: number) {
+    try {
+      const list = await tauriApi.getPlaylistTracks(playlistId)
+      if (list.length === 0) {
+        toast('This playlist is empty', { kind: 'info' })
+        return
+      }
+      await handlePlayTrack(list[0], list, 0, playlistId)
+    } catch (err) {
+      toast(`Could not play the playlist: ${err instanceof Error ? err.message : String(err)}`, {
+        kind: 'error',
+      })
     }
   }
 
@@ -1969,39 +2045,45 @@ function AppContent() {
               <ChatView onPlaylistCreated={loadPlaylists} />
             ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
               <HomeView
+                dataVersion={playVersion + dataVersion}
                 playlists={playlists}
                 totalTrackCount={totalTrackCount}
                 folderCount={libraryFolders.length}
-                onPlaylistSelect={handlePlaylistSelect}
-                onNavigateAIChat={
-                  AI_ENABLED
-                    ? () => {
-                        setShowAIChat(true)
-                        setStreamList(null)
-                        setDjPage(null)
-                        setSelectedPlaylistId(null)
-                        setSelectedFolder(null)
-                        setShowAllTracks(false)
-                        setTableFilter(null)
-                        setShowSearch(false)
-                        setShowSets(false)
-                        setShowSettings(false)
+                spotify={
+                  spotifyShown
+                    ? {
+                        total: spotify.newCounts.total,
+                        byList: spotify.newCounts.byList,
+                        lists: spotify.library.lists,
                       }
-                    : undefined
+                    : null
                 }
-                onOpenSettings={() => {
-                  setShowSettings(true)
-                  setStreamList(null)
-                  setDjPage(null)
-                  setShowAIChat(false)
-                  setSelectedPlaylistId(null)
-                  setSelectedFolder(null)
-                  setShowAllTracks(false)
-                  setTableFilter(null)
-                  setShowSearch(false)
-                  setShowSets(false)
-                }}
+                youtubeMusic={
+                  youtubeMusicShown
+                    ? {
+                        total: youtubeMusicMatches.newCounts.total,
+                        byList: youtubeMusicMatches.newCounts.byList,
+                        lists: youtubeMusic.library.lists,
+                      }
+                    : null
+                }
+                onPlay={handlePlayTrack}
+                onPlayPlaylist={(id) => void playPlaylist(id)}
+                onOpenPlaylist={handlePlaylistSelect}
+                onOpenDj={(name) => openDj(name, null, { view: 'home' })}
+                onOpenSets={() => openSets(NO_SETS_START)}
+                onOpenAllTracks={openAllTracks}
+                onOpenStreamList={(service, listId) =>
+                  service === 'spotify' ? openSpotifyList(listId) : openYouTubeMusicList(listId)
+                }
+                onAnalyzeTracks={handleAnalyzeFromHome}
+                onCreatePlaylist={() => handleCreatePlaylist(null)}
+                onImportFolder={() => openSettingsOn('library')}
+                onAddToPlaylist={handleAddToPlaylist}
+                onMoveToFolder={handleMoveToFolder}
               />
+            ) : showAllTracks && libraryPending ? (
+              <div />
             ) : tracks.length === 0 && !allTracksWithLibrary ? (
               <div className="empty-state">
                 <h2>{emptyTitle}</h2>

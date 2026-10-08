@@ -1,75 +1,40 @@
-import { useEffect } from 'react'
+// src/components/views/HomeView.tsx
+// Home: a grid of cards (Home cards spec). react-grid-layout, 4 columns,
+// rows of 120px; while customizing, cards are dragged by their title,
+// resized from their corner and removed with ×, and the catalog adds them.
+import { useEffect, useMemo } from 'react'
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy'
 import type { Layout } from 'react-grid-layout/legacy'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
-import type { Playlist } from '../../types/track'
 import { useDashboardStore } from '../../store/dashboardStore'
-import { getWidgetDefinition } from './widgets/widgetRegistry'
-import { DashboardHeader } from './widgets/DashboardHeader'
-import { WidgetWrapper } from './widgets/WidgetWrapper'
-import { WidgetCatalog } from './widgets/WidgetCatalog'
-import { RecentlyPlayedWidget } from './widgets/RecentlyPlayedWidget'
-import { QuickActionsWidget } from './widgets/QuickActionsWidget'
-import { LibraryStatsWidget } from './widgets/LibraryStatsWidget'
-import { AIRecommendationsWidget } from './widgets/AIRecommendationsWidget'
-import { RecentlyAddedWidget } from './widgets/RecentlyAddedWidget'
-import { LibraryInsightsWidget } from './widgets/LibraryInsightsWidget'
-import { PlaylistsWidget } from './widgets/PlaylistsWidget'
+import { HOME_COLUMNS } from '../../lib/home/cards'
+import { HomeCard, type HomeActions, type HomeFacts } from '../home/HomeCards'
+import { HomeCatalog } from '../home/HomeCatalog'
+import { HomeHeader } from '../home/HomeHeader'
+import { useHomeData } from '../home/useHomeData'
 import './HomeView.css'
 
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
-interface HomeViewProps {
-  playlists: Playlist[]
-  totalTrackCount: number
-  folderCount: number
-  onPlaylistSelect: (id: number) => void
-  onNavigateAIChat?: () => void
-  onOpenSettings: () => void
+/** The grid's row height and the gap between cards, in pixels. */
+const ROW_HEIGHT = 120
+const GAP = 12
+
+interface HomeViewProps extends HomeFacts, HomeActions {
+  /** App raises it after a play, an analysis and a rescan: the cards read again. */
+  dataVersion: number
 }
 
-function renderWidget(
-  widgetId: string,
-  props: HomeViewProps,
-) {
-  switch (widgetId) {
-    case 'recently-played':
-      return <RecentlyPlayedWidget />
-    case 'quick-actions':
-      return (
-        <QuickActionsWidget
-          onNavigateAIChat={props.onNavigateAIChat}
-          onOpenSettings={props.onOpenSettings}
-        />
-      )
-    case 'library-stats':
-      return (
-        <LibraryStatsWidget
-          totalTracks={props.totalTrackCount}
-          playlistCount={props.playlists.filter((p) => p.playlist_type === 'manual' || p.playlist_type === 'ai').length}
-          folderCount={props.folderCount}
-        />
-      )
-    case 'ai-recommendations':
-      return <AIRecommendationsWidget onNavigateAIChat={props.onNavigateAIChat} />
-    case 'recently-added':
-      return <RecentlyAddedWidget />
-    case 'library-insights':
-      return <LibraryInsightsWidget />
-    case 'playlists':
-      return (
-        <PlaylistsWidget
-          playlists={props.playlists}
-          onPlaylistSelect={props.onPlaylistSelect}
-        />
-      )
-    default:
-      return null
-  }
-}
-
-export function HomeView(props: HomeViewProps) {
+export function HomeView({
+  dataVersion,
+  playlists,
+  totalTrackCount,
+  folderCount,
+  spotify,
+  youtubeMusic,
+  ...actions
+}: HomeViewProps) {
   const {
     layout,
     isEditMode,
@@ -81,71 +46,74 @@ export function HomeView(props: HomeViewProps) {
     updateLayout,
     addWidget,
     removeWidget,
+    resetLayout,
   } = useDashboardStore()
 
   useEffect(() => {
-    if (!isLoaded) {
-      loadLayout()
-    }
+    if (!isLoaded) loadLayout()
   }, [isLoaded, loadLayout])
 
-  const handleAddWidget = (widgetId: string) => {
-    const def = getWidgetDefinition(widgetId)
-    if (def) {
-      addWidget(widgetId, def)
-    }
+  // Nothing is read until the stored layout says which cards are on Home.
+  const shown = useMemo(
+    () => (isLoaded ? layout.map((item) => item.i) : []),
+    [isLoaded, layout],
+  )
+  const data = useHomeData(shown, dataVersion)
+  const facts: HomeFacts = {
+    playlists,
+    totalTrackCount,
+    folderCount,
+    spotify,
+    youtubeMusic,
   }
 
   return (
     <div className="home-view">
-      <DashboardHeader
-        isEditMode={isEditMode}
+      <HomeHeader
+        editing={isEditMode}
         onCustomize={enterEditMode}
-        onSave={saveLayout}
+        onReset={resetLayout}
         onCancel={cancelEdit}
+        onSave={saveLayout}
       />
 
       <div className="home-view__body">
-        {isEditMode && (
-          <WidgetCatalog
-            currentLayout={layout}
-            onAddWidget={handleAddWidget}
-          />
-        )}
+        {isEditMode && <HomeCatalog shown={new Set(shown)} onAdd={addWidget} />}
 
         <div className="home-view__grid-container">
-          <ResponsiveGridLayout
-            className="home-view__grid"
-            layouts={{ lg: layout }}
-            breakpoints={{ lg: 0 }}
-            cols={{ lg: 4 }}
-            rowHeight={120}
-            isDraggable={isEditMode}
-            isResizable={isEditMode}
-            draggableHandle=".drag-handle"
-            compactType="vertical"
-            onLayoutChange={(newLayout: Layout) => {
-              if (isEditMode) {
-                updateLayout([...newLayout])
-              }
-            }}
-          >
-            {layout.map((item) => {
-              const def = getWidgetDefinition(item.i)
-              return (
+          {isLoaded && (
+            <ResponsiveGridLayout
+              className="home-view__grid"
+              layouts={{ lg: layout }}
+              breakpoints={{ lg: 0 }}
+              cols={{ lg: HOME_COLUMNS }}
+              rowHeight={ROW_HEIGHT}
+              margin={[GAP, GAP]}
+              containerPadding={[0, 0]}
+              isDraggable={isEditMode}
+              isResizable={isEditMode}
+              draggableHandle=".home-card__head"
+              draggableCancel=".home-card__remove"
+              compactType="vertical"
+              onLayoutChange={(next: Layout) => {
+                if (isEditMode) updateLayout([...next])
+              }}
+            >
+              {layout.map((item) => (
                 <div key={item.i}>
-                  <WidgetWrapper
-                    title={def?.name ?? item.i}
-                    widgetId={item.i}
-                    isEditMode={isEditMode}
+                  <HomeCard
+                    id={item.i}
+                    columns={item.w}
+                    editing={isEditMode}
                     onRemove={removeWidget}
-                  >
-                    {renderWidget(item.i, props)}
-                  </WidgetWrapper>
+                    data={data}
+                    facts={facts}
+                    actions={actions}
+                  />
                 </div>
-              )
-            })}
-          </ResponsiveGridLayout>
+              ))}
+            </ResponsiveGridLayout>
+          )}
         </div>
       </div>
     </div>
