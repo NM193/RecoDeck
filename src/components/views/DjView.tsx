@@ -43,7 +43,7 @@ interface DjViewProps {
   spotify: SpotifyData
   /** Back to where the first DJ page was opened from (Search or Sets). */
   onBack: () => void
-  /** Sets, arriving on a set or with the Set tab's box filled in. */
+  /** Sets, arriving on a set's page or with its box filled in. */
   onOpenSets: (start: {
     openVideoId: string | null
     initialQuery: string

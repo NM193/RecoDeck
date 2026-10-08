@@ -10,6 +10,7 @@ import { NowPlayingBar } from './components/layout/NowPlayingBar'
 import { SetPlayerBar } from './components/sets/SetPlayerBar'
 import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
 import { useOverlay } from './lib/overlays'
+import { useSetsView } from './store/setsViewStore'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
@@ -114,10 +115,10 @@ interface DjPageState {
 }
 
 /**
- * What the Sets view opens with: a stored set to show (Back from a DJ page
- * opened from it, a DJ page's set card) or a DJ's name in the Set tab's box
- * (a DJ page's Find more), or its library (Home's Needs you). SetsView reads
- * them once, when it mounts.
+ * What the Sets view opens with: a set to open on its page (Back from a DJ
+ * page opened from it, a DJ page's set card, Home, Search, the set bar) or a
+ * DJ's name in its box (a DJ page's Find more), or its Library tab (Home's
+ * Needs you). SetsView reads them once, when it mounts.
  */
 interface SetsStart {
   openVideoId: string | null
@@ -889,7 +890,7 @@ function AppContent() {
     setDjPage(null)
   }
 
-  // Sets, arriving on a set or with a DJ's name in the Set tab's box: Back
+  // Sets, arriving on a set's page or with a DJ's name in its box: Back
   // here, and a DJ page's set cards and Find more. Every other view closes,
   // as with the sidebar's Sets.
   function openSets(start: SetsStart) {
@@ -1883,6 +1884,8 @@ function AppContent() {
           shownYouTubeMusicList === null
         setShowSets(true)
         if (!setsShowing) setSetsStart(NO_SETS_START)
+        // Showing already, a set's page goes back to the library.
+        else useSetsView.getState().requestLibrary()
         setStreamList(null)
         setDjPage(null)
         setShowSearch(false)

@@ -16,52 +16,6 @@
   padding: 24px 28px 48px;
 }
 
-.sets-player {
-  flex: 0 0 auto;
-  border-bottom: 1px solid var(--border);
-  background: #000;
-}
-
-.sets-player__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.sets-player__label {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sets-player__close {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.sets-player__close:hover {
-  color: var(--text-primary);
-}
-
-/* Left empty on purpose — the YouTube webview is laid exactly over this box. */
-.sets-player__surface {
-  height: 340px;
-  background: #000;
-}
-
 .sets-view__container {
   max-width: 900px;
   margin: 0 auto;
@@ -118,50 +72,6 @@
   margin-bottom: 16px;
 }
 
-.sets-result__header {
-  border-bottom: 1px solid var(--border-subtle);
-  padding-bottom: 14px;
-  margin-bottom: 6px;
-}
-
-.sets-result__title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-}
-
-.sets-result__meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.sets-badge {
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-
-.sets-badge--ok {
-  background: rgba(var(--color-success-rgb), 0.12);
-  color: var(--color-success);
-}
-
-.sets-badge--assembled {
-  background: rgba(var(--color-warning-rgb), 0.12);
-  color: var(--color-warning);
-}
-
-.sets-badge--weak {
-  background: rgba(var(--color-danger-rgb), 0.12);
-  color: var(--color-danger);
-}
-
 /* --- track rows --- */
 
 .sets-track {
@@ -184,21 +94,6 @@
   font-size: var(--text-xs);
 }
 
-.sets-track__cue-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-xs);
-}
-
-.sets-track__cue-btn:hover {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
 .sets-track__name {
   flex: 1;
   min-width: 0;
@@ -208,10 +103,6 @@
 
 .sets-track__artist {
   color: var(--text-secondary);
-}
-
-.sets-track--unknown .sets-track__name {
-  color: var(--color-danger);
 }
 
 .sets-track__extra {
@@ -227,10 +118,6 @@
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
-}
-
-.sets-track__votes--lonely {
-  color: var(--color-danger);
 }
 
 .sets-loose {
@@ -259,28 +146,6 @@
 }
 
 /* --- library ownership --- */
-
-.sets-track__own {
-  flex: 0 0 auto;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.sets-track__own--have {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(var(--color-success-rgb), 0.35);
-  background: rgba(var(--color-success-rgb), 0.1);
-  color: var(--color-success);
-  cursor: pointer;
-}
-
-.sets-track__own--have:hover {
-  background: rgba(var(--color-success-rgb), 0.2);
-}
 
 .sets-filter {
   display: flex;
@@ -409,42 +274,6 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-/* A row with no timestamp of its own, pointing at a set that has one. */
-.sets-track__echo {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-
-.sets-track__echo:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* The row the video is inside right now. */
-.sets-track--playing {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.sets-track--playing .sets-track__name,
-.sets-track--playing .sets-track__cue {
-  color: var(--text-primary);
-}
-
-.sets-track--playing .sets-track__index {
-  color: var(--accent);
 }
 
 /* The same track, lit up in the strip. */
@@ -704,75 +533,8 @@
   margin: 12px 0 0;
 }
 
-.sets-track__index {
-  flex: 0 0 26px;
-  text-align: right;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-}
-
 .sets-track__cue {
   flex: 0 0 58px;
-}
-
-.sets-track__play {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.sets-track__play:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.sets-player__label {
-  flex: 1;
-  min-width: 0;
-}
-
-.sets-player__cue {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.sets-player__controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.sets-player__ctrl {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.sets-player__ctrl:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.sets-player__ctrl:disabled {
-  opacity: 0.35;
-  cursor: default;
 }
 
 /* --- search hits and statistics --- */
@@ -862,20 +624,6 @@
   flex-shrink: 0;
 }
 
-/* On a row, the links stay out of the way until the row is hovered —
-   otherwise four links on forty rows drown out the tracklist itself. */
-.sets-stores--hover {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-
-.sets-track:hover .sets-stores--hover,
-.sets-stores--hover:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 /* Inside a group the links sit tighter than the single trailing link they
    were originally written for. */
 .sets-stores .sets-store-link {
@@ -925,34 +673,4 @@
   border-left: 2px solid var(--border);
   padding-left: 10px;
   margin-left: 2px;
-}
-
-.sets-dj__chip {
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-/* Each DJ in the chip opens their page. */
-.sets-dj__link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.sets-dj__link:hover {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-/* "b2b" / "vs" between two links. */
-.sets-dj__sep {
-  margin: 0 0.35em;
-  color: var(--text-secondary);
-  font-weight: 400;
 }

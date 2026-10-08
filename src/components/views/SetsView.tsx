@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { confirm } from '@tauri-apps/plugin-dialog'
 import { Icon } from '../Icon'
-import { SetTimeline } from './SetTimeline'
+import { SetPage, type SetOpening } from '../sets/SetPage'
+import { StoreLinks } from '../sets/StoreLinks'
 import { tauriApi } from '../../lib/tauri-api'
-import { analyse, msToCue, type Track, type TracklistResult } from '../../lib/tracklist'
+import { analyse, type Track, type TracklistResult } from '../../lib/tracklist'
 import { storeParsedSet } from '../../lib/tracklist/importSet'
-import { matchTracklist, type LibraryMatch, type MatchSummary } from '../../lib/tracklist/match'
-import { extractDjName, groupByDj } from '../../lib/tracklist/djName'
-import { billingParts } from '../../lib/dj/names'
+import { matchTracklist, type MatchSummary } from '../../lib/tracklist/match'
+import { groupByDj } from '../../lib/tracklist/djName'
 import { describePreview, previewSet } from '../../lib/tracklist/preview'
-import { watchUrl } from '../../lib/youtubeWindow'
 import { looksLikeAChannel } from '../../lib/channelInput'
 import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage, isAppError } from '../../types/ai'
-import { useSetPlayer, videoIsPlaying } from '../../store/setPlayerStore'
-import { playheadTrack, stepCue } from '../../lib/setPlayer/playhead'
+import { useSetPlayer } from '../../store/setPlayerStore'
+import { useSetsView, type SetsTab } from '../../store/setsViewStore'
+import { dismissToast, toast } from '../../lib/toast'
 import type {
   RawSet,
   SavedTrack,
@@ -33,29 +33,6 @@ import type {
 import { CHECK_INTERVALS } from '../../types/youtube'
 import './SetsView.css'
 
-type Tab = 'set' | 'library' | 'saved' | 'channels' | 'stats'
-
-/** The escape hatch: the user's own browser, with their account and history. */
-function openInBrowser(url: string, cueMs = 0) {
-  void openUrl(watchUrl(url, cueMs))
-}
-
-function statusLabel(result: TracklistResult): { text: string; kind: string } {
-  switch (result.status) {
-    case 'ok':
-      return {
-        text: `${result.sourceCount} ${result.sourceCount === 1 ? 'list' : 'lists'} found`,
-        kind: 'ok',
-      }
-    case 'assembled':
-      return { text: 'assembled from comments', kind: 'assembled' }
-    case 'low_confidence':
-      return { text: 'low confidence', kind: 'weak' }
-    default:
-      return { text: 'no tracklist found', kind: 'weak' }
-  }
-}
-
 /**
  * A link or a bare id can be fetched directly; anything else is a name, and
  * finding sets by name is the one call that costs 100 units.
@@ -69,299 +46,22 @@ function looksLikeLink(input: string): boolean {
 const trackKey = (t: { video_id?: string; cue_ms?: number; title: string }) =>
   `${t.video_id ?? ''}|${t.cue_ms ?? 0}|${t.title}`
 
-/** Where a DJ would go looking for a record they do not own yet. */
-function storeLinks(artist: string | null | undefined, title: string, mix?: string | null) {
-  const query = encodeURIComponent([artist, title, mix].filter(Boolean).join(' '))
-  return [
-    { name: 'Spotify', url: `https://open.spotify.com/search/${query}` },
-    { name: 'Beatport', url: `https://www.beatport.com/search?q=${query}` },
-    { name: 'Discogs', url: `https://www.discogs.com/search/?q=${query}&type=release` },
-    { name: 'Bandcamp', url: `https://bandcamp.com/search?q=${query}` },
-  ]
-}
-
-/** Kept out of the way until the row is hovered, so 42 rows stay readable. */
-function StoreLinks({
-  artist,
-  title,
-  mix,
-  className = '',
-}: {
-  artist: string | null | undefined
-  title: string
-  mix?: string | null
-  className?: string
-}) {
-  return (
-    <span className={`sets-stores ${className}`}>
-      {storeLinks(artist, title, mix).map((link) => (
-        <button
-          key={link.name}
-          type="button"
-          className="sets-store-link"
-          onClick={(e) => {
-            e.stopPropagation()
-            void openUrl(link.url)
-          }}
-        >
-          {link.name}
-        </button>
-      ))}
-    </span>
-  )
-}
-
-/**
- * The track that is playing, as one strip you can wind through.
- *
- * The timeline above covers the whole set, which is right for jumping between
- * tracks and useless for moving thirty seconds inside one: five minutes of a
- * two-hour set is four percent of the bar. This gives that one track the full
- * width.
- */
-function TrackScrubber({
-  track,
-  startMs,
-  endMs,
-  positionMs,
-  onSeek,
-}: {
-  track: Track
-  startMs: number
-  endMs: number
-  positionMs: number
-  onSeek: (ms: number) => void
-}) {
-  const length = Math.max(1, endMs - startMs)
-  const elapsed = Math.min(Math.max(0, positionMs - startMs), length)
-  const fraction = elapsed / length
-
-  /** Where in the track a click on the bar landed. */
-  function seekFromEvent(e: React.MouseEvent<HTMLDivElement>) {
-    const box = e.currentTarget.getBoundingClientRect()
-    if (box.width <= 0) return
-    const ratio = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width))
-    onSeek(startMs + ratio * length)
-  }
-
-  return (
-    <div className="sets-scrub">
-      <div className="sets-scrub__head">
-        <span className="sets-scrub__name">
-          {track.artist ? (
-            <>
-              <span className="sets-track__artist">{track.artist}</span> — {track.title}
-            </>
-          ) : (
-            track.title
-          )}
-        </span>
-        {/* Timed from the start of the track, not of the set — the question
-            being answered here is how far into this record we are. */}
-        <span className="sets-scrub__time">
-          {msToCue(elapsed)} / {msToCue(length)}
-        </span>
-      </div>
-
-      <div
-        className="sets-scrub__bar"
-        onClick={seekFromEvent}
-        onMouseDown={(e) => {
-          // Dragging is the same question asked repeatedly.
-          const bar = e.currentTarget
-          const move = (event: MouseEvent) => {
-            const box = bar.getBoundingClientRect()
-            if (box.width <= 0) return
-            const ratio = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width))
-            onSeek(startMs + ratio * length)
-          }
-          const up = () => {
-            window.removeEventListener('mousemove', move)
-            window.removeEventListener('mouseup', up)
-          }
-          window.addEventListener('mousemove', move)
-          window.addEventListener('mouseup', up)
-        }}
-      >
-        <div className="sets-scrub__fill" style={{ width: `${fraction * 100}%` }} />
-        <div className="sets-scrub__knob" style={{ left: `${fraction * 100}%` }} />
-      </div>
-    </div>
-  )
-}
-
-function TrackRow({
-  track,
-  onSeek,
-  match,
-  onPlay,
-  saved,
-  onToggleSave,
-  untimed,
-  nowPlaying,
-  echo,
-  onFollowEcho,
-}: {
-  track: Track
-  onSeek: (cueMs: number) => void
-  match?: LibraryMatch
-  onPlay?: (libraryTrack: LibraryTrack) => void
-  saved: boolean
-  onToggleSave: (track: Track) => void
-  /** The list carries no timestamps, so there is nowhere to send the player. */
-  untimed?: boolean
-  /** The video is inside this track right now. */
-  nowPlaying?: boolean
-  /** The same record in another set, which does know where it sits. */
-  echo?: TrackEcho
-  onFollowEcho?: (echo: TrackEcho) => void
-}) {
-  const name = track.artist ? (
-    <>
-      <span className="sets-track__artist">{track.artist}</span> — {track.title}
-    </>
-  ) : (
-    track.title
-  )
-
-  const suggestion = track.suggestions?.[0]
-
-  return (
-    <div
-      className={`sets-track ${track.isUnknown ? 'sets-track--unknown' : ''} ${
-        nowPlaying ? 'sets-track--playing' : ''
-      }`}
-    >
-      {/* The number is replaced while it plays: a row that is running should
-          say so where the eye already is, not in a corner. */}
-      <span className="sets-track__index">
-        {nowPlaying ? <Icon name="Volume2" size={13} /> : track.index}
-      </span>
-      <span className="sets-track__cue">{track.cue}</span>
-
-      <span className="sets-track__name">
-        {track.isUnknown ? (
-          <>
-            ID{track.asks ? ` — asked ${track.asks}×, no answer` : ''}
-            {suggestion && (
-              <span className="sets-track__extra">
-                maybe: {suggestion.artist ? `${suggestion.artist} — ` : ''}
-                {suggestion.title}
-              </span>
-            )}
-          </>
-        ) : (
-          <>
-            {name}
-            {track.mix && <span className="sets-track__artist"> ({track.mix})</span>}
-            {track.uncertain && ' ?'}
-            {track.disagree.length > 0 && (
-              <span className="sets-track__extra">
-                or:{' '}
-                {track.disagree
-                  .map(
-                    (d) =>
-                      `${d.artist ? `${d.artist} — ${d.title}` : d.title} · ${d.votes} ${
-                        d.votes === 1 ? 'list' : 'lists'
-                      }`,
-                  )
-                  .join('   ')}
-              </span>
-            )}
-          </>
-        )}
-      </span>
-
-      {!track.isUnknown && (
-        <StoreLinks
-          artist={track.artist}
-          title={track.title}
-          mix={track.mix}
-          className="sets-stores--hover"
-        />
-      )}
-
-      {!track.isUnknown && (
-        <button
-          type="button"
-          className={`sets-track__heart ${saved ? 'sets-track__heart--on' : ''}`}
-          onClick={() => onToggleSave(track)}
-          title={saved ? 'Remove from Saved' : 'Save this track'}
-        >
-          <Icon name="Heart" size={13} />
-        </button>
-      )}
-
-      {/* Owned copy of this record, if the library has one. */}
-      {match ? (
-        <button
-          type="button"
-          className="sets-track__own sets-track__own--have"
-          onClick={() => onPlay?.(match.track as LibraryTrack)}
-          title={`Play your file: ${match.track.artist ?? ''} — ${match.track.title ?? ''}`}
-        >
-          <Icon name="Play" size={11} /> have it
-        </button>
-      ) : (
-        !track.isUnknown && <span className="sets-track__own">missing</span>
-      )}
-
-      {/* Agreement between independently typed lists: 4/4 is a fact, 1/4 a guess. */}
-      {!track.isUnknown && track.sourceCount > 0 && (
-        <span
-          className={`sets-track__votes ${
-            track.votes <= 1 && track.sourceCount > 1 ? 'sets-track__votes--lonely' : ''
-          }`}
-        >
-          {track.votes}/{track.sourceCount}
-        </span>
-      )}
-      {track.fromComments && !track.isUnknown && (
-        <span className="sets-track__votes">from comments</span>
-      )}
-
-      {/* This list has no timestamps, so there is nowhere to send the player —
-          but the same record in another set does know where it sits. */}
-      {untimed && echo && onFollowEcho && (
-        <button
-          type="button"
-          className="sets-track__echo"
-          onClick={() => onFollowEcho(echo)}
-          title={`Heard at ${echo.cue ?? ''} in "${echo.set_title ?? 'another set'}"`}
-        >
-          <Icon name="CornerDownRight" size={11} /> {echo.cue}
-        </button>
-      )}
-
-      {!untimed && (
-        <button
-          type="button"
-          className="sets-track__play"
-          onClick={() => onSeek(track.cueMs)}
-          title="Play the set from this point"
-        >
-          <Icon name="Play" size={12} />
-        </button>
-      )}
-    </div>
-  )
-}
-
 interface SetsViewProps {
   onPlayTrack: (track: LibraryTrack, queue: LibraryTrack[], index: number) => void
   /**
-   * A stored set to show on arrival: Back from a DJ page opened from it, or a
-   * DJ page's set card. Read once — App remounts the view (`key`) to change it.
+   * A set to open on its page on arrival: Back from a DJ page opened from it,
+   * a DJ page's set card, Home, Search, the set bar. Read once — App remounts
+   * the view (`key`) to change it.
    */
   openVideoId?: string | null
   /**
-   * Put in the Set tab's box on arrival, not searched: a DJ page's Find more.
-   * The user presses Search here, where its cost is shown first.
+   * Put in the box on arrival, not searched: a DJ page's Find more. The user
+   * presses Search here, where its cost is shown first.
    */
   initialQuery?: string
-  /** Each DJ in the open set's chip opens their page; Back reopens this set. */
+  /** Each DJ on the set's page opens their page; Back reopens this set. */
   onOpenDj?: (name: string, openVideoId: string | null) => void
-  /** Opens on the library instead: Home's Needs you, its New sets row. Read once, as openVideoId. */
+  /** Opens on the Library tab: Home's Needs you, its New sets row. Read once, as openVideoId. */
   initialTab?: 'library'
 }
 
@@ -372,16 +72,29 @@ export function SetsView({
   onOpenDj,
   initialTab,
 }: SetsViewProps) {
-  // Opens on the Set tab, where both an arriving set and initialQuery show,
-  // unless it is asked to open on the library.
-  const [tab, setTab] = useState<Tab>(initialTab ?? 'set')
+  // Sets opens on its library, as it was left (tab, grouping, scroll); a set
+  // opens on a page of its own over it, and Back returns to the library.
+  const tab = useSetsView((s) => s.tab)
+  const setTab = useSetsView((s) => s.setTab)
+  const grouping = useSetsView((s) => s.grouping)
+  const setGrouping = useSetsView((s) => s.setGrouping)
+  const [view, setView] = useState<'library' | 'set'>(openVideoId ? 'set' : 'library')
+  /** The set being read, or one that could not be; null once it is shown. */
+  const [opening, setOpening] = useState<SetOpening | null>(
+    openVideoId ? { videoId: openVideoId, title: null, error: null } : null,
+  )
+  /** Opened at a track (a hit, an echo): the cue its row is scrolled to. */
+  const [focusCue, setFocusCue] = useState<number | null>(null)
+  const [lookingAgain, setLookingAgain] = useState(false)
+  const libraryScroll = useRef<HTMLDivElement>(null)
+  /** The last "Couldn't read this set" toast: a retry replaces it rather than adding one. */
+  const readError = useRef<number | null>(null)
   const [input, setInput] = useState(initialQuery ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<TracklistResult | null>(null)
   const [currentSet, setCurrentSet] = useState<RawSet | null>(null)
   const [quota, setQuota] = useState<YouTubeQuotaStatus | null>(null)
-  const [filter, setFilter] = useState<'all' | 'have' | 'missing'>('all')
   const [sets, setSets] = useState<YtSetSummary[]>([])
   const [saved, setSaved] = useState<SavedTrack[]>([])
   const [search, setSearch] = useState('')
@@ -399,7 +112,7 @@ export function SetsView({
   const [echoes, setEchoes] = useState<Map<number, TrackEcho>>(new Map())
   /** What the last re-fetch changed, said plainly because it cost something. */
   const [reanalysed, setReanalysed] = useState<string | null>(null)
-  /** Counts the sets put on the Set tab: an opening set arriving late yields to a newer one. */
+  /** Counts the sets opened: one arriving late yields to a newer one. */
   const shownSets = useRef(0)
   /** A bare name typed into the Follow box, held back before it costs 100. */
   const [bareName, setBareName] = useState<string | null>(null)
@@ -421,14 +134,6 @@ export function SetsView({
    * be looking at", which is not the question.
    */
   const [libraryTracks, setLibraryTracks] = useState<LibraryTrack[]>([])
-  const [grouping, setGrouping] = useState<'dj' | 'recent'>('dj')
-  // The set playing lives in App (the set player store), so it plays on in
-  // the bar above the player when you leave it; here it is shown big while
-  // its set is open. App's engine opens, places and polls the panel, and
-  // keeps the video and your own files from playing over each other.
-  const playing = useSetPlayer((s) => s.playing)
-  const panel = useSetPlayer((s) => s.panel)
-  const attachPageBox = useSetPlayer((s) => s.attachPageBox)
 
   const refreshQuota = useCallback(() => {
     tauriApi.getYouTubeQuota().then(setQuota).catch(() => {})
@@ -446,62 +151,94 @@ export function SetsView({
     refreshLibrary()
   }, [refreshQuota, refreshLibrary])
 
-  // Arriving on a set: shown as opening it from the Library shows it. A set
-  // that is not stored — YouTube Music's Open in Sets, or one deleted since —
-  // is fetched as a pasted link is: shown, stored, its units counted, and a
-  // failure said in the Set tab. Late, it gives way to whatever the user
-  // fetched or opened meanwhile.
-  useEffect(() => {
-    if (!openVideoId) return
-    let live = true
-    const claim = shownSets.current
-    const current = () => live && shownSets.current === claim
-    // As show() does (it is not a dependency here).
-    const showSet = (raw: RawSet) => {
-      shownSets.current++
-      const parsed = analyse(raw.video, raw.comments)
+  /**
+   * Opens a set on its page: at once with what is known (its title, its
+   * thumbnail) and skeleton rows while it is read. A set that is not stored —
+   * YouTube Music's Open in Sets, a new find, one deleted since — is fetched
+   * (5–7 units) and stored, as a pasted link is; a stored one has its rows
+   * filled in again (sets stored before the tracks table, or reparsed by a
+   * better parser). At a track (a hit, an echo) it plays from that cue,
+   * replacing the set playing, and scrolls to the row. A read that fails says
+   * so on the page, with Try again, and in an error toast. Late, it gives way
+   * to whatever was opened since.
+   */
+  const openSet = useCallback(
+    async (videoId: string, how: { cueMs?: number; title?: string | null } = {}) => {
+      const claim = ++shownSets.current
+      const current = () => shownSets.current === claim
+      setView('set')
+      setOpening({ videoId, title: how.title ?? null, error: null })
+      setFocusCue(how.cueMs ?? null)
       setReanalysed(null)
-      setCurrentSet(raw)
-      setResult(parsed)
-      setTab('set')
-      return parsed
-    }
-
-    tauriApi
-      .getYouTubeSet(openVideoId)
-      .then((raw) => {
-        if (current()) showSet(raw)
-      })
-      .catch(async (err: unknown) => {
-        if (!current()) return
-        if (!isAppError(err) || err.kind !== 'NotFound') {
-          setError(getErrorMessage(err))
-          return
-        }
-        setLoading(true)
-        setError(null)
+      let fetched = false
+      try {
+        let raw: RawSet
         try {
-          const raw = await tauriApi.fetchYouTubeSet(openVideoId)
-          const parsed = current()
-            ? showSet(raw)
-            : analyse(raw.video, raw.comments)
-          // Kept for good, as a pasted link is: reopening it costs nothing.
-          await storeParsedSet(raw, parsed)
-          refreshLibrary()
-        } catch (fetchErr) {
-          if (current()) {
-            setError(getErrorMessage(fetchErr))
-            setResult(null)
-          }
-        } finally {
-          if (live) setLoading(false)
-          refreshQuota()
+          raw = await tauriApi.getYouTubeSet(videoId)
+        } catch (err) {
+          if (!isAppError(err) || err.kind !== 'NotFound') throw err
+          // Given up for a newer open: do not spend 5–7 units on it.
+          if (!current()) return
+          fetched = true
+          raw = await tauriApi.fetchYouTubeSet(videoId)
         }
-      })
-    return () => {
-      live = false
+        const parsed = analyse(raw.video, raw.comments)
+        if (current()) {
+          setCurrentSet(raw)
+          setResult(parsed)
+          setOpening(null)
+          if (how.cueMs !== undefined) useSetPlayer.getState().play(parsed, how.cueMs)
+        }
+        await storeParsedSet(raw, parsed)
+        refreshLibrary()
+      } catch (err) {
+        if (!current()) return
+        const message = getErrorMessage(err)
+        setOpening({ videoId, title: how.title ?? null, error: message })
+        if (readError.current !== null) dismissToast(readError.current)
+        readError.current = toast(`Couldn't read this set: ${message}`, { kind: 'error' })
+      } finally {
+        if (fetched) refreshQuota()
+      }
+    },
+    [refreshLibrary, refreshQuota],
+  )
+
+  // Arriving on a set: opened as from the library.
+  useEffect(() => {
+    if (openVideoId) void openSet(openVideoId)
+    // Read once, when the view mounts (App remounts it for another start).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Home's New sets row opens the Library tab, before the first paint.
+  useLayoutEffect(() => {
+    if (initialTab) setTab(initialTab)
+  }, [initialTab, setTab])
+
+  /** Back to the library; a set still being read for the page is given up. */
+  const showLibrary = useCallback(() => {
+    shownSets.current++
+    setView('library')
+  }, [])
+
+  // The sidebar's Sets, pressed while a set's page shows.
+  useEffect(
+    () =>
+      useSetsView.subscribe((state, before) => {
+        if (state.libraryRequests !== before.libraryRequests) showLibrary()
+      }),
+    [showLibrary],
+  )
+
+  // Back: the library where it was scrolled to, once its list is there to
+  // scroll (on a fresh mount the list is still loading).
+  const libraryLoaded = sets.length > 0
+  useLayoutEffect(() => {
+    if (view === 'library' && libraryLoaded && libraryScroll.current) {
+      libraryScroll.current.scrollTop = useSetsView.getState().scrollTop
     }
-  }, [openVideoId, refreshLibrary, refreshQuota])
+  }, [view, libraryLoaded])
 
   // A set shown here, however it was opened (the library, a link, a search
   // hit, a DJ page, Home), is no longer news on Home's New sets.
@@ -594,20 +331,18 @@ export function SetsView({
   const savedKeys = useMemo(() => new Set(saved.map((t) => trackKey(t))), [saved])
 
   /**
-   * Plays a set from a cue: the set playing is sought, another takes its
-   * place. Leaving the set or Sets keeps it playing, in the bar.
+   * A set just fetched, on its page — unless something else was opened, or
+   * Back pressed, since it was asked for (`claim`).
    */
-  function playAt(parsed: TracklistResult, cueMs: number) {
-    useSetPlayer.getState().play(parsed, cueMs)
-  }
-
-  function show(raw: RawSet): TracklistResult {
-    shownSets.current++
+  function show(raw: RawSet, claim: number): TracklistResult {
     const parsed = analyse(raw.video, raw.comments)
+    if (shownSets.current !== claim) return parsed
     setReanalysed(null)
     setCurrentSet(raw)
     setResult(parsed)
-    setTab('set')
+    setOpening(null)
+    setFocusCue(null)
+    setView('set')
     return parsed
   }
 
@@ -622,14 +357,11 @@ export function SetsView({
     setLoading(true)
     setError(null)
     setFound(null)
+    const claim = ++shownSets.current
     try {
       const raw = await tauriApi.fetchYouTubeSet(input.trim())
-      shownSets.current++
-      const parsed = analyse(raw.video, raw.comments)
-      setCurrentSet(raw)
-      setResult(parsed)
+      const parsed = show(raw, claim)
       setInput('')
-      setTab('set')
 
       // Kept for good: reopening it later costs nothing.
       await storeParsed(raw, parsed)
@@ -672,9 +404,10 @@ export function SetsView({
   async function processFound(hit: SetSearchHit) {
     setLoading(true)
     setError(null)
+    const claim = ++shownSets.current
     try {
       const raw = await tauriApi.fetchYouTubeSet(hit.videoId)
-      const parsed = show(raw)
+      const parsed = show(raw, claim)
       await storeParsed(raw, parsed)
       setFound(null)
       setInput('')
@@ -867,9 +600,10 @@ export function SetsView({
   async function importUpload(videoId: string, channelId?: string) {
     setBusy(videoId)
     setError(null)
+    const claim = ++shownSets.current
     try {
       const raw = await tauriApi.fetchYouTubeSet(videoId)
-      const parsed = show(raw)
+      const parsed = show(raw, claim)
       await storeParsed(raw, parsed)
       if (channelId) await tauriApi.markYouTubeChannelSeen(channelId, videoId).catch(() => {})
       setNews(null)
@@ -897,35 +631,46 @@ export function SetsView({
    * on the button.
    */
   async function reanalyse() {
-    if (!result || loading) return
+    if (!result || lookingAgain) return
     const before = result.trackCount
 
     const quotaLeft = quota?.remaining ?? 0
     if (quotaLeft < 7) {
-      setError(`Fetching a set again costs 5–7 units and only ${quotaLeft} are left today.`)
+      toast(`Fetching a set again costs 5–7 units and only ${quotaLeft} are left today.`, {
+        kind: 'warning',
+      })
       return
     }
 
-    setLoading(true)
-    setError(null)
+    setLookingAgain(true)
     setReanalysed(null)
+    // Look again never takes the page: if another set was opened, or Back
+    // pressed, by the time it answers, it is stored and said in a toast.
+    const claim = shownSets.current
+    const { id: videoId, title } = result.video
     try {
-      const raw = await tauriApi.fetchYouTubeSet(result.video.id)
-      const parsed = show(raw)
+      const raw = await tauriApi.fetchYouTubeSet(videoId)
+      const parsed = analyse(raw.video, raw.comments)
       // Playing, it plays on with the new rows.
       useSetPlayer.getState().replaceResult(parsed)
-      await storeParsed(raw, parsed)
-      refreshLibrary()
       // What it was worth saying plainly, since it just cost something.
-      setReanalysed(
+      const said =
         parsed.trackCount === before
           ? `Nothing new — still ${before} ${before === 1 ? 'track' : 'tracks'}.`
-          : `${before} → ${parsed.trackCount} tracks.`,
-      )
+          : `${before} → ${parsed.trackCount} tracks.`
+      if (shownSets.current === claim) {
+        setCurrentSet(raw)
+        setResult(parsed)
+        setReanalysed(said)
+      } else {
+        toast(`Looked again at ${title}: ${said}`, { kind: 'info' })
+      }
+      await storeParsed(raw, parsed)
+      refreshLibrary()
     } catch (err) {
-      setError(getErrorMessage(err))
+      toast(`Couldn't read this set again: ${getErrorMessage(err)}`, { kind: 'error' })
     } finally {
-      setLoading(false)
+      setLookingAgain(false)
       refreshQuota()
     }
   }
@@ -936,30 +681,8 @@ export function SetsView({
    * The stored copy is reused, so this costs nothing — which is the whole point
    * of keeping the raw fetch.
    */
-  async function followEcho(echo: TrackEcho) {
-    try {
-      setError(null)
-      const raw = await tauriApi.getYouTubeSet(echo.video_id)
-      playAt(show(raw), echo.cue_ms)
-    } catch (err) {
-      setError(getErrorMessage(err))
-    }
-  }
-
-  async function openStored(videoId: string) {
-    try {
-      setError(null)
-      const raw = await tauriApi.getYouTubeSet(videoId)
-      const parsed = show(raw)
-
-      // Sets stored before the tracks table existed have no rows in it, and so
-      // would be invisible to search and statistics. Reopening one fills them
-      // in — and a set reparsed by an improved parser is refreshed the same way.
-      await storeParsed(raw, parsed)
-      refreshLibrary()
-    } catch (err) {
-      setError(getErrorMessage(err))
-    }
+  function followEcho(echo: TrackEcho) {
+    void openSet(echo.video_id, { cueMs: echo.cue_ms, title: echo.set_title })
   }
 
   /** Writes the parsed result next to the stored fetch. Costs no quota. */
@@ -969,25 +692,34 @@ export function SetsView({
   }
 
   /** Opens the set a search hit came from and jumps to the moment. */
-  async function openHit(hit: YtTrackHit) {
-    try {
-      setError(null)
-      const raw = await tauriApi.getYouTubeSet(hit.video_id)
-      playAt(show(raw), hit.cue_ms)
-    } catch (err) {
-      setError(getErrorMessage(err))
-    }
+  function openHit(hit: YtTrackHit) {
+    void openSet(hit.video_id, { cueMs: hit.cue_ms, title: hit.set_title })
   }
 
-  async function removeStored(videoId: string) {
-    // A set that is playing stops first.
+  /**
+   * Removes a set from the library, after asking: it has no Undo. A set that
+   * is playing stops first; its page, if open, goes back to the library.
+   */
+  async function removeSet(videoId: string, title: string) {
+    const sure = await confirm(`Remove "${title}" from your library? Its saved tracks go with it.`, {
+      title: 'Remove from library',
+      kind: 'warning',
+    }).catch(() => false)
+    if (!sure) return
     if (useSetPlayer.getState().playing?.result.video.id === videoId) useSetPlayer.getState().stop()
-    await tauriApi.deleteYouTubeSet(videoId).catch(() => {})
+    try {
+      await tauriApi.deleteYouTubeSet(videoId)
+    } catch (err) {
+      toast(`Couldn't remove it: ${getErrorMessage(err)}`, { kind: 'error' })
+      return
+    }
     if (currentSet?.video.id === videoId) {
       setCurrentSet(null)
       setResult(null)
+      showLibrary()
     }
     refreshLibrary()
+    toast('Removed from your library')
   }
 
   async function toggleSave(track: Track) {
@@ -1049,26 +781,6 @@ export function SetsView({
   /** How many unseen sets the last check turned up, for the tab badge. */
   const newCount = news?.reduce((total, item) => total + item.new_sets.length, 0) ?? 0
 
-  /** The shown set is the one playing: its video sits in the box above the list. */
-  const playingHere = Boolean(result && playing?.result.video.id === result.video.id)
-  const positionMs = panel?.position_ms ?? playing?.startMs ?? 0
-
-  /**
-   * The track the playhead is inside, and where that track begins and ends.
-   * Taken from the position rather than from what was last clicked: the video
-   * runs on into the next track, and a strip that still says the previous one
-   * is worse than none.
-   */
-  const currentTrack =
-    playingHere && result
-      ? playheadTrack(
-          result.tracks,
-          Boolean(result.untimed),
-          positionMs,
-          panel && panel.duration_ms > 0 ? panel.duration_ms : result.video.durationMs,
-        )
-      : null
-
   /** One stored set, whichever way the library is grouped. */
   function StoredSet({ set }: { set: YtSetSummary }) {
     return (
@@ -1076,7 +788,7 @@ export function SetsView({
         <button
           type="button"
           className="sets-stored__main"
-          onClick={() => openStored(set.video_id)}
+          onClick={() => void openSet(set.video_id, { title: set.title })}
         >
           <span className="sets-stored__title">{set.title}</span>
           <span className="sets-stored__meta">
@@ -1087,7 +799,7 @@ export function SetsView({
         <button
           type="button"
           className="sets-stored__remove"
-          onClick={() => removeStored(set.video_id)}
+          onClick={() => void removeSet(set.video_id, set.title)}
           title="Remove from the library"
         >
           <Icon name="Trash2" size={14} />
@@ -1096,347 +808,155 @@ export function SetsView({
     )
   }
 
-  const badge = result ? statusLabel(result) : null
-  const unknownCount = result?.tracks.filter((t) => t.isUnknown).length ?? 0
+  if (view === 'set') {
+    const shownId = opening?.videoId ?? currentSet?.video.id ?? null
+    const summary = shownId ? sets.find((s) => s.video_id === shownId) : undefined
+    return (
+      <div className="sets-view">
+        <SetPage
+          // Another set is another page: its filter starts on All.
+          key={shownId ?? ''}
+          result={opening ? null : result}
+          // While it reads, the title the library knows, if the opener did not.
+          opening={opening && !opening.title && summary ? { ...opening, title: summary.title } : opening}
+          savedAt={summary?.added_at ?? null}
+          matches={opening ? null : matches}
+          echoes={echoes}
+          isSaved={(track) =>
+            savedKeys.has(trackKey({ video_id: currentSet?.video.id, cue_ms: track.cueMs, title: track.title }))
+          }
+          bpmByIndex={bpmByIndex}
+          notice={reanalysed}
+          lookingAgain={lookingAgain}
+          focusCue={focusCue}
+          onBack={showLibrary}
+          onRetry={() => opening && void openSet(opening.videoId, { title: opening.title })}
+          onOpenDj={onOpenDj ? (name) => onOpenDj(name, currentSet?.video.id ?? null) : undefined}
+          onPlayFile={playFromSet}
+          onToggleSave={toggleSave}
+          onFollowEcho={followEcho}
+          onLookAgain={() => void reanalyse()}
+          onRemove={
+            summary && currentSet ? () => void removeSet(summary.video_id, summary.title) : null
+          }
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="sets-view">
-      {playingHere && tab === 'set' && result && (
-        <div className="sets-player">
-          <div className="sets-player__bar">
-            <span className="sets-player__label">{result.video.title}</span>
-            <div className="sets-player__controls">
-              <button
-                type="button"
-                className="sets-player__ctrl"
-                onClick={() => useSetPlayer.getState().step(-1)}
-                disabled={stepCue(result.tracks, Boolean(result.untimed), positionMs, -1) === null}
-                title="Previous track"
-              >
-                <Icon name="SkipBack" size={14} />
-              </button>
-              <button
-                type="button"
-                className="sets-player__ctrl"
-                onClick={() => useSetPlayer.getState().togglePause()}
-                title={videoIsPlaying(panel) ? 'Pause' : 'Play'}
-              >
-                <Icon name={videoIsPlaying(panel) ? 'Pause' : 'Play'} size={14} />
-              </button>
-              <button
-                type="button"
-                className="sets-player__ctrl"
-                onClick={() => useSetPlayer.getState().step(1)}
-                disabled={stepCue(result.tracks, Boolean(result.untimed), positionMs, 1) === null}
-                title="Next track"
-              >
-                <Icon name="SkipForward" size={14} />
-              </button>
-              <button
-                type="button"
-                className="sets-player__close"
-                onClick={() => useSetPlayer.getState().stop()}
-              >
-                <Icon name="X" size={14} /> close
-              </button>
-            </div>
+      <div
+        className="sets-view__scroll"
+        ref={libraryScroll}
+        onScroll={(e) => useSetsView.getState().setScrollTop(e.currentTarget.scrollTop)}
+      >
+        <div className="sets-view__container">
+          {/* One box: a set link opens it, a DJ's name searches YouTube for
+              their sets (101 units, said on the button). */}
+          <div className="sets-form">
+            <input
+              className="sets-form__input"
+              placeholder="Paste a set link, or type a DJ's name"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleProcess()
+              }}
+            />
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleProcess}
+              disabled={loading || !input.trim()}
+            >
+              {loading
+                ? 'Reading...'
+                : looksLikeLink(input)
+                  ? 'Process'
+                  : 'Search · 101 units'}
+            </button>
           </div>
 
-          {/* Deliberately empty: the webview covers exactly this box while
-              it is mounted; elsewhere the video sits in the bar. */}
-          <div className="sets-player__surface" ref={attachPageBox} />
-
-          {currentTrack && (
-            <TrackScrubber
-              track={currentTrack.track}
-              startMs={currentTrack.startMs}
-              endMs={currentTrack.endMs}
-              positionMs={positionMs}
-              onSeek={(ms) => useSetPlayer.getState().seek(ms)}
-            />
+          {quota && (
+            <p className="sets-quota">
+              {quota.remaining.toLocaleString()} of {quota.daily_limit.toLocaleString()} quota
+              units left today · a set costs 5–7 · reopening a saved set costs nothing
+            </p>
           )}
-        </div>
-      )}
 
-      <div className="sets-view__scroll">
-        <div className="sets-view__container">
+          {error && <div className="sets-error">{error}</div>}
+
+          {found && (
+            <>
+              <p className="sets-summary">
+                {found.length === 0
+                  ? 'No long videos found for that name.'
+                  : `${found.length} sets found — opening one costs 5–7 units`}
+              </p>
+              {found.map((hit) => {
+                // Read from the description that came back with the search,
+                // by the same rules that parse a stored set.
+                const preview = previewSet(hit)
+                const stored = sets.some((s) => s.video_id === hit.videoId)
+                return (
+                  <button
+                    type="button"
+                    className="sets-found"
+                    key={hit.videoId}
+                    onClick={() => processFound(hit)}
+                  >
+                    {hit.thumbnail && (
+                      <img className="sets-found__thumb" src={hit.thumbnail} alt="" />
+                    )}
+                    <span className="sets-found__text">
+                      <span className="sets-stored__title">{hit.title}</span>
+                      <span className="sets-stored__meta">
+                        {hit.channel} · {hit.publishedAt.slice(0, 10)}
+                        {preview.durationMs
+                          ? ` · ${Math.round(preview.durationMs / 60000)} min`
+                          : ''}
+                      </span>
+                      <span
+                        className={`sets-found__promise ${
+                          preview.trackCount > 0 ? 'sets-found__promise--found' : ''
+                        }`}
+                      >
+                        {stored ? 'already in your library' : describePreview(preview)}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </>
+          )}
+
+
           <div className="sets-tabs">
-            {(['set', 'library', 'saved', 'channels', 'stats'] as const).map((t) => (
+            {(['library', 'saved', 'channels', 'stats'] as const).map((t: SetsTab) => (
               <button
                 key={t}
                 type="button"
                 className={`sets-tab ${tab === t ? 'sets-tab--active' : ''}`}
-                onClick={() => setTab(t)}
+                onClick={() => {
+                  setTab(t)
+                  // Another tab starts at its top.
+                  if (libraryScroll.current) libraryScroll.current.scrollTop = 0
+                }}
               >
-                {t === 'set'
-                  ? 'Set'
-                  : t === 'library'
-                    ? `Library (${sets.length})`
-                    : t === 'saved'
-                      ? `Saved (${saved.length})`
-                      : t === 'channels'
-                        ? `Following (${channels.length})`
-                        : 'Stats'}
+                {t === 'library'
+                  ? `Library (${sets.length})`
+                  : t === 'saved'
+                    ? `Saved (${saved.length})`
+                    : t === 'channels'
+                      ? `Following (${channels.length})`
+                      : 'Stats'}
                 {t === 'channels' && newCount > 0 && (
                   <span className="sets-tab__badge">{newCount}</span>
                 )}
               </button>
             ))}
           </div>
-
-          {tab === 'set' && (
-            <>
-              <div className="sets-form">
-                <input
-                  className="sets-form__input"
-                  placeholder="Paste a set link, or type a DJ's name"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleProcess()
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleProcess}
-                  disabled={loading || !input.trim()}
-                >
-                  {loading
-                    ? 'Reading...'
-                    : looksLikeLink(input)
-                      ? 'Process'
-                      : 'Search · 101 units'}
-                </button>
-              </div>
-
-              {quota && (
-                <p className="sets-quota">
-                  {quota.remaining.toLocaleString()} of {quota.daily_limit.toLocaleString()} quota
-                  units left today · a set costs 5–7 · reopening a saved set costs nothing
-                </p>
-              )}
-
-              {error && <div className="sets-error">{error}</div>}
-
-              {found && (
-                <>
-                  <p className="sets-summary">
-                    {found.length === 0
-                      ? 'No long videos found for that name.'
-                      : `${found.length} sets found — opening one costs 5–7 units`}
-                  </p>
-                  {found.map((hit) => {
-                    // Read from the description that came back with the search,
-                    // by the same rules that parse a stored set.
-                    const preview = previewSet(hit)
-                    const stored = sets.some((s) => s.video_id === hit.videoId)
-                    return (
-                      <button
-                        type="button"
-                        className="sets-found"
-                        key={hit.videoId}
-                        onClick={() => processFound(hit)}
-                      >
-                        {hit.thumbnail && (
-                          <img className="sets-found__thumb" src={hit.thumbnail} alt="" />
-                        )}
-                        <span className="sets-found__text">
-                          <span className="sets-stored__title">{hit.title}</span>
-                          <span className="sets-stored__meta">
-                            {hit.channel} · {hit.publishedAt.slice(0, 10)}
-                            {preview.durationMs
-                              ? ` · ${Math.round(preview.durationMs / 60000)} min`
-                              : ''}
-                          </span>
-                          <span
-                            className={`sets-found__promise ${
-                              preview.trackCount > 0 ? 'sets-found__promise--found' : ''
-                            }`}
-                          >
-                            {stored ? 'already in your library' : describePreview(preview)}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </>
-              )}
-
-              {result && !found && (
-                <>
-                  <div className="sets-result__header">
-                    <h2 className="sets-result__title">{result.video.title}</h2>
-                    <div className="sets-result__meta">
-                      <span className="sets-dj__chip">
-                        {onOpenDj
-                          ? billingParts(extractDjName(result.video.title, result.video.channel)).map(
-                              (part, i) =>
-                                part.dj ? (
-                                  <button
-                                    key={i}
-                                    type="button"
-                                    className="sets-dj__link"
-                                    onClick={() => onOpenDj(part.text, result.video.id)}
-                                    title={`Open ${part.text}'s page`}
-                                  >
-                                    {part.text}
-                                  </button>
-                                ) : (
-                                  <span key={i} className="sets-dj__sep">
-                                    {part.text}
-                                  </span>
-                                ),
-                            )
-                          : extractDjName(result.video.title, result.video.channel)}
-                      </span>
-                      <span>{result.video.channel}</span>
-                      <span className={`sets-badge sets-badge--${badge!.kind}`}>{badge!.text}</span>
-                      <span>{result.trackCount} tracks</span>
-                      {matches && (
-                        <span>
-                          you have {matches.owned} of {matches.owned + matches.missing}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="sets-track__cue-btn"
-                        onClick={() => playAt(result, 0)}
-                      >
-                        <Icon name="Play" size={12} /> play here
-                      </button>
-                      <button
-                        type="button"
-                        className="sets-track__cue-btn"
-                        onClick={() => openInBrowser(result.video.url)}
-                      >
-                        <Icon name="ExternalLink" size={12} /> open in browser
-                      </button>
-                      <button
-                        type="button"
-                        className="sets-track__cue-btn"
-                        onClick={() => reanalyse()}
-                        disabled={loading}
-                        title="Fetch the video and its comments again. A tracklist somebody posted since is only in the new copy — the stored one is frozen at the moment it was taken."
-                      >
-                        <Icon name="RefreshCw" size={12} />{' '}
-                        {loading ? 'reading again...' : 'look again · 5–7 units'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {reanalysed && <div className="sets-notice">{reanalysed}</div>}
-
-                  <p className="sets-summary">
-                    {result.trackCount} tracks from {result.sourceCount}{' '}
-                    {result.sourceCount === 1 ? 'list' : 'crossed lists'}
-                    {unknownCount > 0 && ` · ${unknownCount} unidentified`}
-                    {result.sourceMeta && (
-                      <>
-                        {' · strongest source: '}
-                        {result.source === 'description' ? 'the description' : 'comment'}{' '}
-                        {result.sourceMeta.author}
-                      </>
-                    )}
-                  </p>
-
-                  {result.untimed ? (
-                    <p className="sets-view__subtitle">
-                      This list came with no timestamps, so there is nothing to seek to — the
-                      order is the uploader's numbering. Everything else works: what you own is
-                      marked, and the tracks are searchable and can be saved.
-                    </p>
-                  ) : (
-                    <SetTimeline
-                      tracks={result.tracks}
-                      durationMs={result.video.durationMs}
-                      onSeek={(cueMs) => playAt(result, cueMs)}
-                      positionMs={playingHere ? positionMs : undefined}
-                      playingIndex={currentTrack?.track.index ?? null}
-                      bpmByIndex={bpmByIndex}
-                    />
-                  )}
-
-                  {matches && matches.owned + matches.missing > 0 && (
-                    <div className="sets-filter">
-                      {(['all', 'have', 'missing'] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`sets-filter__btn ${filter === mode ? 'sets-filter__btn--active' : ''}`}
-                          onClick={() => setFilter(mode)}
-                        >
-                          {mode === 'all' ? 'All' : mode === 'have' ? 'In library' : 'Missing'}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {result.tracks
-                    .filter((track) => {
-                      if (filter === 'all') return true
-                      // An unnamed slot is neither owned nor missing, so it
-                      // belongs only in the unfiltered view.
-                      if (track.isUnknown) return false
-                      const owned = matches?.byIndex.has(track.index) ?? false
-                      return filter === 'have' ? owned : !owned
-                    })
-                    .map((track) => (
-                      <TrackRow
-                        key={track.index}
-                        track={track}
-                        onSeek={(cueMs) => playAt(result, cueMs)}
-                        match={matches?.byIndex.get(track.index)}
-                        onPlay={playFromSet}
-                        untimed={result.untimed}
-                        nowPlaying={currentTrack?.track.index === track.index}
-                        echo={echoes.get(track.index)}
-                        onFollowEcho={followEcho}
-                        saved={savedKeys.has(
-                          trackKey({
-                            video_id: currentSet?.video.id,
-                            cue_ms: track.cueMs,
-                            title: track.title,
-                          }),
-                        )}
-                        onToggleSave={toggleSave}
-                      />
-                    ))}
-
-                  {result.tracks.length === 0 && (
-                    <p className="sets-empty">
-                      Nothing in the description and nothing usable in the comments. On a fresh set
-                      this is worth retrying in a few days — tracklists arrive slowly.
-                    </p>
-                  )}
-
-                  {result.loose.length > 0 && (
-                    <div className="sets-loose">
-                      <h3 className="sets-loose__title">Named without a timestamp</h3>
-                      <p className="sets-loose__hint">
-                        Mentioned in the comments, but nobody said where in the set.
-                      </p>
-                      {result.loose.map((item) => (
-                        <div className="sets-track" key={item.key ?? item.title}>
-                          <span className="sets-track__cue">—</span>
-                          <span className="sets-track__name">
-                            <span className="sets-track__artist">{item.artist}</span> — {item.title}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {!result && !error && (
-                <p className="sets-empty">
-                  A popular set has four to seven tracklists typed out by different people. What one
-                  of them marks as ID, another one names.
-                </p>
-              )}
-            </>
-          )}
 
           {tab === 'library' && (
             <>
@@ -1827,7 +1347,7 @@ export function SetsView({
                       key={item.video_id}
                       onClick={() =>
                         item.already_stored
-                          ? openStored(item.video_id)
+                          ? void openSet(item.video_id, { title: item.title })
                           : importUpload(
                               item.video_id,
                               uploads.channel.channel_id.startsWith('dj:')
@@ -1906,7 +1426,7 @@ export function SetsView({
                           type="button"
                           className="sets-hit"
                           key={videoId}
-                          onClick={() => openStored(videoId)}
+                          onClick={() => void openSet(videoId, { title })}
                         >
                           <span className="sets-track__name">{title}</span>
                           <span className="sets-track__votes">{count} IDs</span>
