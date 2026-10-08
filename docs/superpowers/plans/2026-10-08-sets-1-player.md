@@ -5,9 +5,9 @@
 **Goal:** The set's video keeps playing when you leave it. Playing moves out of `SetsView` into App: the video sits in Sets' video band while the set playing is open there, and anywhere else in a **bar above the bottom player** — the small video, "17:00 Raw Instinct — De La Bass" over the set's title, ⏮ ⏸ ⏭ ✕ — whose text opens the set again. The panel follows its box every frame (a sidebar collapse, a resize), steps off the window while any menu, popover or modal is open, and ⏮ / ⏭ follow the track the playhead is in. Starting your own file pauses the video and the other way round, as today.
 
 **Architecture:**
-- **Pure TypeScript** (tested), `src/lib/setPlayer/`: `playhead.ts` — the playhead's track, ⏮ / ⏭'s cue (timed rows only), the position to believe right after a seek; `panelBounds.ts` — which box the panel sits in, when the bar shows, the panel's bounds (off the window while an overlay is open).
-- **Store** (tested), `src/store/setPlayerStore.ts`: `useSetPlayer` (zustand) — the playing set, the panel's last report, the page and bar boxes (callback refs); `play`, `seek`, `step`, `togglePause`, `stop`, `replaceResult`.
-- **Engine**, `src/lib/setPlayer/useSetPlayerEngine.ts`, mounted once in App: opens the panel at its box, follows the box with a `requestAnimationFrame` check (new bounds only when they change), polls every 400ms, and keeps the video and your files apart (today's latch, moved from `SetsView`).
+- **Pure TypeScript** (tested), `src/lib/setPlayer/`: `playhead.ts` — the playhead's track, ⏮ / ⏭'s cue (timed rows only), the position and the play state to believe right after a seek, play or pause; `panelBounds.ts` — which box the panel sits in, when the bar shows, the panel's bounds (off the window while an overlay is open); `panelQueue.ts` — the webview's create / move / close calls one at a time, in order.
+- **Store** (tested), `src/store/setPlayerStore.ts`: `useSetPlayer` (zustand) — the playing set, the panel's last report, the page and bar boxes (callback refs); `play`, `seek`, `step`, `togglePause`, `stop`, `replaceResult`. It respects the companion server's one instruction slot: a seek is never followed by a play, and a seek before the new page has reported waits for its first report.
+- **Engine**, `src/lib/setPlayer/SetPlayerEngine.ts`, a component App mounts once in its player area: opens the panel at its box, follows the box with a `requestAnimationFrame` check (new bounds only when they change), polls every 400ms, and keeps the video and your files apart (today's latch, moved from `SetsView`, now set only while the video plays; the store stops your file directly when the app starts the video).
 - **Components:** `src/components/sets/SetPlayerBar.tsx` (+ css) in App's player area above `NowPlayingBar`; `SetsView` loses its own panel code and reads the store; every `openSets` mounts a new SetsView.
 - **Overlays:** every overlay the spec names calls `useOverlay`, so the engine (`isOverlayOpen()` each frame) moves the video aside.
 
@@ -24,15 +24,26 @@
 - **A new set** closes the panel before opening, which clears the server's stored position (the backend's `open_youtube_panel` does not); until the video reports a length the store keeps the cue it opened at. After a seek, a report more than 2.5s away is taken as the panel not there yet, for 1.5s — so a second quick ⏭ steps from where the first went.
 - **Opening the set again from the bar** uses `openSets`, which now raises a visit counter in SetsView's key, so it works even from Sets' own library (the same `openVideoId` would not remount it).
 - **Removing the playing set** from the library stops it first; **Look again** on it keeps it playing with the new rows (`replaceResult`).
-- **App's delete-folder modal** reports itself in Task 4 (App's only overlay; its import shares a hunk with the player's); the other ten in Task 5.
+- **App's delete-folder modal** reports itself in Task 4 (App's only overlay; its import shares a hunk with the player's); the other twelve in Task 5 — the spec's list, plus the sidebar's colour menu and YouTube Music's list menu, which open at the pointer and reach into the content (and so under the video). `ExportPlaylistModal`'s Esc waits for a running export, as its backdrop and Close do.
+- **The one instruction slot** (`server/routes.rs`): the page polls the latest of seek / pause / play every 400ms and a new page takes the first one it sees as its baseline. So `play()` on the playing set only seeks (the page's seek plays and unmutes); a seek before the video has reported its length is kept (`deferredSeek`, and `startMs` if the panel has not opened) and sent with the first report; play and pause are believed for 1.2s (`believedState`) so the button does not flicker back; a new set starts as buffering (state 3), so the button offers Pause at once.
+- **The engine is a component** (`<SetPlayerEngine />` in App's player area), so a poll re-renders the bar and the set, not App; on mount it closes a panel left over from before a reload (HMR, a crash).
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `ed104da`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc` and each task's tests pass at every task's end.
+- **Review:** an independent review applied the plan to a clean copy (all 49 blocks matched once; every task's checks passed; eslint identical to the base), drove the author's page and a more realistic one of its own in WebKit — the companion server's single instruction slot, the page's 400ms polls with their baseline, open latency, the shared Menu and SidebarFlyout — and found one blocker and six more. All are fixed here and pass on that page:
+  - **blocker:** ▶ on a row of the set already playing (and the strip, "play here", an echo, a hit) sent a seek and then a play, and the play replaced the seek in the server's one slot: rows no longer moved the video (now: only the seek; the test asserts no play);
+  - ✕ pressed while the panel was still opening left the video playing with nothing to stop it, and two quick opens could race in Rust (now: every create / move / close goes through `queuePanel`, in order);
+  - ⏮ / ⏭ in the first second after opening were dropped by the new page's baseline (now: held until the first report, then sent);
+  - starting a file while the video was paused left the latch set, so Play on the set let both play (now: latched only while the video plays, and the store stops the file when the app starts the video);
+  - the Pause / Play button flickered back for a poll (now: held 1.2s);
+  - the sidebar's colour menu and YouTube Music's list menu did not report themselves; `ExportPlaylistModal`'s Esc closed it mid-export.
+  - Also taken: the button says Pause while the video starts; the engine as its own component; a leftover panel closed on start; the bar's buttons on the shared `.btn` (focus ring 2px out, disabled 40%).
+  - Left as they are: the video sits over the fading page for App's 200ms view fade; the frame check runs while a set is loaded, paused too (as the spec says); focus falls to the page when the bar unmounts under a keyboard press; the old top-right `Notification` / `UpdateToast` sit under the video band on Sets until the Interactions sweep replaces them.
 - **Builds and tests:**
-  - `vitest`: 21 new (16 pure, 5 store). The repo counts 616 after it: 615 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
+  - `vitest`: 27 new (21 pure, 6 store). The repo counts 622 after it: 621 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline, none new; `vite build` passes. No Rust changes (`cargo test --lib`: 459, as before).
 - **In WebKit** (a test page with the real AppShell, SetsView, SetPlayerBar, PromptModal and the engine, IPC mocked; the native panel drawn as an orange box where its bounds put it; the simulated video moves on in real time and takes 600ms to reach a seek):
   - "play here" opens the panel exactly over the video band (240,39 1040×340); two quick ⏭ seek to 05:00 then 12:00 and the scrubber says "Charlie Banks — Dweck's Dungeon";
-  - collapsing the sidebar and opening it again: the panel follows the band each time;
+  - collapsing the sidebar and opening it again: the panel follows the band each time; on the reviewer's page (one instruction slot, polling page): ▶ on a row of the playing set moves the video to 17:01; ⏭ 250ms after "play here" waits for the page and lands on 5:00; ✕ 80ms after "play here" closes the panel once it has opened; a file started while the video is paused, then the set's Play: the file stops; the button holds "Play" through the next polls after Pause; five quick ⏭ land on 26:30; switching sets shows no stale position;
   - a PromptModal open: the panel at −10000 (same size); Esc closes it and the panel is back;
   - the Library tab: the bar shows, the panel on its video box, "12:00 Charlie Banks — Dweck's Dungeon / Marco Carola b2b Luciano — KEEZY 2022 Opening"; Home: the same; the bar's ⏭ → 17:00 Raw Instinct;
   - a file starts: `pause_youtube_panel`, the bar's button turns to Play; the bar's Play: the file stops;
@@ -48,12 +59,13 @@
 |---|---|---|
 | `src/lib/setPlayer/playhead.ts` (+ test) | create | the playhead's track, ⏮ / ⏭'s cue, the position after a seek |
 | `src/lib/setPlayer/panelBounds.ts` (+ test) | create | which box, when the bar shows, the panel's bounds |
+| `src/lib/setPlayer/panelQueue.ts` (+ test) | create | the webview's calls one at a time, in order |
 | `src/store/setPlayerStore.ts` (+ test) | create | `useSetPlayer`: the playing set, the panel's report, the boxes, the actions |
-| `src/lib/setPlayer/useSetPlayerEngine.ts` | create | opens, follows, polls the panel; keeps the two players apart |
+| `src/lib/setPlayer/SetPlayerEngine.ts` | create | opens, follows, polls the panel; keeps the two players apart |
 | `src/components/sets/SetPlayerBar.tsx`, `.css` | create | the bar above the bottom player |
 | `src/App.tsx` | modify | mounts the engine and the bar; a new SetsView per `openSets`; the delete-folder modal's `useOverlay` |
 | `src/components/views/SetsView.tsx`, `.css` | modify | its panel code goes; the video band and every ▶ use the store |
-| `src/components/PromptModal.tsx`, `eq/EQModal.tsx`, `DuplicatesModal.tsx`, `ExportPlaylistModal.tsx`, `SharePlaylistModal.tsx`, `WhatsNewDialog.tsx`, `FolderTree.tsx`, `dj/DjCandidatesMenu.tsx`, `layout/NowPlayingBar.tsx`, `layout/SidebarFlyout.tsx`, `src/lib/overlays.ts` | modify | each overlay calls `useOverlay` |
+| `src/components/PromptModal.tsx`, `eq/EQModal.tsx`, `DuplicatesModal.tsx`, `ExportPlaylistModal.tsx`, `SharePlaylistModal.tsx`, `WhatsNewDialog.tsx`, `FolderTree.tsx`, `dj/DjCandidatesMenu.tsx`, `layout/NowPlayingBar.tsx`, `layout/SidebarFlyout.tsx`, `layout/Sidebar.tsx`, `youtube-music/YouTubeMusicLists.tsx`, `src/lib/overlays.ts` | modify | each overlay calls `useOverlay` |
 | `docs/superpowers/specs/2026-10-04-sets-redesign-design.md` | modify | the decisions above |
 
 ---
@@ -70,7 +82,7 @@
 
 ### Task 1: Where the video is, and where the panel goes
 
-**Files:** Create `src/lib/setPlayer/playhead.ts`, `src/lib/setPlayer/playhead.test.ts`, `src/lib/setPlayer/panelBounds.ts`, `src/lib/setPlayer/panelBounds.test.ts`.
+**Files:** Create `src/lib/setPlayer/playhead.ts`, `src/lib/setPlayer/playhead.test.ts`, `src/lib/setPlayer/panelBounds.ts`, `src/lib/setPlayer/panelBounds.test.ts`, `src/lib/setPlayer/panelQueue.ts`, `src/lib/setPlayer/panelQueue.test.ts`.
 
 - [ ] **Step 1: The failing tests**
 
@@ -78,7 +90,7 @@ Create `src/lib/setPlayer/playhead.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { believedPosition, playheadTrack, stepCue, timedTracks } from './playhead'
+import { believedPosition, believedState, isPlayingState, playheadTrack, stepCue, timedTracks } from './playhead'
 import type { Track } from '../tracklist'
 
 const row = (index: number, cueMs: number): Track =>
@@ -151,6 +163,24 @@ describe('believedPosition', () => {
     expect(stepCue(tracks, false, position, 1)).toBe(1_020_000)
   })
 })
+
+describe('believedState', () => {
+  it('counts buffering as playing', () => {
+    expect([1, 3].map(isPlayingState)).toEqual([true, true])
+    expect([-1, 0, 2, 5].map(isPlayingState)).toEqual([false, false, false, false])
+  })
+
+  it('holds a pause or a play just sent while the panel still reports the old state', () => {
+    expect(believedState(1, { playing: false, until: 10_000 }, 9_000)).toBe(2)
+    expect(believedState(2, { playing: true, until: 10_000 }, 9_000)).toBe(3)
+  })
+
+  it('takes the report once it agrees, or once the hold is over', () => {
+    expect(believedState(2, { playing: false, until: 10_000 }, 9_000)).toBe(2)
+    expect(believedState(1, { playing: false, until: 10_000 }, 10_000)).toBe(1)
+    expect(believedState(1, null, 9_000)).toBe(1)
+  })
+})
 ```
 
 Create `src/lib/setPlayer/panelBounds.test.ts`:
@@ -198,7 +228,31 @@ describe('panelBounds', () => {
 })
 ```
 
-Run `npx vitest run src/lib/setPlayer`: FAIL — `./playhead` and `./panelBounds` do not exist.
+Create `src/lib/setPlayer/panelQueue.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { queuePanel } from './panelQueue'
+
+describe('queuePanel', () => {
+  it('runs the calls in order, a slow open before the close sent after it', async () => {
+    const done: string[] = []
+    const open = queuePanel(() => new Promise<void>((resolve) => setTimeout(() => { done.push('open'); resolve() }, 30)))
+    const close = queuePanel(async () => { done.push('close') })
+    await Promise.all([open, close])
+    expect(done).toEqual(['open', 'close'])
+  })
+
+  it('goes on after a call that failed', async () => {
+    const failed = queuePanel(() => Promise.reject(new Error('no panel')))
+    const next = queuePanel(async () => 'moved')
+    await expect(failed).rejects.toThrow('no panel')
+    await expect(next).resolves.toBe('moved')
+  })
+})
+```
+
+Run `npx vitest run src/lib/setPlayer`: FAIL — `./playhead`, `./panelBounds` and `./panelQueue` do not exist.
 
 - [ ] **Step 2: The playhead**
 
@@ -294,6 +348,30 @@ export function believedPosition(reportedMs: number, pending: PendingSeek | null
   if (!pending || now >= pending.until) return reportedMs
   return Math.abs(reportedMs - pending.ms) > SEEK_NEAR_MS ? pending.ms : reportedMs
 }
+
+/** Playing or buffering: the video means to play. YouTube numbers them 1 and 3. */
+export function isPlayingState(state: number): boolean {
+  return state === 1 || state === 3
+}
+
+/** A play or a pause just sent: what the video was asked to do, and until when that holds. */
+export interface PendingState {
+  playing: boolean
+  until: number
+}
+
+/** How long after a play or pause a report that disagrees is taken as stale. */
+export const STATE_SETTLE_MS = 1200
+
+/**
+ * The player state to believe: the report, unless a play or pause was just
+ * sent and the report does not agree yet — the next poll still says what the
+ * video was doing, and the button would flicker back for a moment.
+ */
+export function believedState(reported: number, pending: PendingState | null, now: number): number {
+  if (!pending || now >= pending.until || isPlayingState(reported) === pending.playing) return reported
+  return pending.playing ? 3 : 2
+}
 ```
 
 - [ ] **Step 3: The panel's place**
@@ -361,11 +439,32 @@ export function sameBounds(a: Bounds | null, b: Bounds): boolean {
 }
 ```
 
-- [ ] **Step 4:** `npx vitest run src/lib/setPlayer`: PASS, 16. Commit:
+- [ ] **Step 4: The panel's calls, one at a time**
+
+Create `src/lib/setPlayer/panelQueue.ts`:
+
+```ts
+// src/lib/setPlayer/panelQueue.ts
+// The YouTube panel's calls that create, move or close the native webview,
+// one at a time and in order: a close sent while an open is still on its way
+// must not land first (or the video plays on with nothing to stop it), and
+// two opens must not race for the panel's one label.
+
+let chain: Promise<unknown> = Promise.resolve()
+
+/** Runs `call` after every panel call queued before it, failed or not. */
+export function queuePanel<T>(call: () => Promise<T>): Promise<T> {
+  const next = chain.then(call, call)
+  chain = next.catch(() => {})
+  return next
+}
+```
+
+- [ ] **Step 5:** `npx vitest run src/lib/setPlayer`: PASS, 21. Commit:
 
 ```bash
-git add src/lib/setPlayer/playhead.ts src/lib/setPlayer/playhead.test.ts src/lib/setPlayer/panelBounds.ts src/lib/setPlayer/panelBounds.test.ts
-git commit -m "feat(sets): the playhead's track, ⏮ / ⏭ from it, and where the set panel goes"
+git add src/lib/setPlayer/playhead.ts src/lib/setPlayer/playhead.test.ts src/lib/setPlayer/panelBounds.ts src/lib/setPlayer/panelBounds.test.ts src/lib/setPlayer/panelQueue.ts src/lib/setPlayer/panelQueue.test.ts
+git commit -m "feat(sets): the playhead's track, ⏮ / ⏭ from it, where the set panel goes, and its calls in order"
 ```
 
 ---
@@ -389,9 +488,12 @@ vi.mock('../lib/tauri-api', () => ({
     closeYouTubePanel: vi.fn(() => Promise.resolve()),
   },
 }))
+vi.mock('../lib/audioPlayer', () => ({ audioPlayer: { pause: vi.fn() } }))
 
 import { tauriApi } from '../lib/tauri-api'
+import { audioPlayer } from '../lib/audioPlayer'
 import { useSetPlayer } from './setPlayerStore'
+import { usePlayerStore } from './playerStore'
 import type { Track, TracklistResult } from '../lib/tracklist'
 
 const row = (index: number, cueMs: number): Track =>
@@ -405,26 +507,60 @@ const set = (id: string): TracklistResult =>
 
 const report = (position_ms: number, player_state = 1) => ({ position_ms, duration_ms: 3_600_000, player_state })
 
+/** A set playing whose page has reported, so instructions go out. */
+function listening(id = 'a', at = 0) {
+  useSetPlayer.getState().play(set(id), at)
+  useSetPlayer.getState().setPanel(report(at))
+  vi.clearAllMocks()
+}
+
 beforeEach(() => {
-  useSetPlayer.setState({ playing: null, panel: null, pendingSeek: null, pageBox: null, barBox: null })
+  useSetPlayer.setState({
+    playing: null,
+    panel: null,
+    reported: false,
+    deferredSeek: null,
+    pendingSeek: null,
+    pendingState: null,
+    pageBox: null,
+    barBox: null,
+  })
+  usePlayerStore.setState({ isPlaying: false })
   vi.clearAllMocks()
 })
 
 describe('the set player', () => {
-  it('plays a set from a cue; a row of the same set seeks instead of reopening', () => {
+  it('plays a set from a cue; a row of the same set only seeks (the page’s seek plays)', () => {
     const a = set('a')
     useSetPlayer.getState().play(a, 300_000)
     expect(useSetPlayer.getState().playing).toEqual({ result: a, startMs: 300_000 })
-    expect(useSetPlayer.getState().panel?.position_ms).toBe(300_000)
+    expect(useSetPlayer.getState().panel).toMatchObject({ position_ms: 300_000, player_state: 3 })
 
+    useSetPlayer.getState().setPanel(report(300_000))
     useSetPlayer.getState().play(a, 720_000)
-    expect(useSetPlayer.getState().playing?.startMs).toBe(300_000)
     expect(tauriApi.seekYouTubePanel).toHaveBeenCalledWith(720)
-    expect(tauriApi.playYouTubePanel).toHaveBeenCalled()
+    // One instruction at a time: a play after it would replace the seek.
+    expect(tauriApi.playYouTubePanel).not.toHaveBeenCalled()
+  })
+
+  it('holds a seek until the new page reports, then sends it', () => {
+    useSetPlayer.getState().play(set('a'), 0)
+    useSetPlayer.getState().step(1)
+    useSetPlayer.getState().step(1)
+    expect(tauriApi.seekYouTubePanel).not.toHaveBeenCalled()
+    expect(useSetPlayer.getState().playing?.startMs).toBe(720_000)
+    expect(useSetPlayer.getState().panel?.position_ms).toBe(720_000)
+
+    // Still loading: no length yet.
+    useSetPlayer.getState().setPanel({ position_ms: 0, duration_ms: 0, player_state: 0 })
+    expect(tauriApi.seekYouTubePanel).not.toHaveBeenCalled()
+    useSetPlayer.getState().setPanel(report(0))
+    expect(tauriApi.seekYouTubePanel).toHaveBeenCalledWith(720)
+    expect(useSetPlayer.getState().panel?.position_ms).toBe(720_000)
   })
 
   it('steps from where a seek went while the panel still reports the old position', () => {
-    useSetPlayer.getState().play(set('a'), 0)
+    listening()
     useSetPlayer.getState().setPanel(report(10_000))
     useSetPlayer.getState().step(1)
     expect(tauriApi.seekYouTubePanel).toHaveBeenLastCalledWith(300)
@@ -436,26 +572,32 @@ describe('the set player', () => {
     expect(tauriApi.seekYouTubePanel).toHaveBeenLastCalledWith(300)
   })
 
-  it('keeps the cue it opened at until the video reports its length', () => {
-    useSetPlayer.getState().play(set('a'), 720_000)
-    useSetPlayer.getState().setPanel({ position_ms: 0, duration_ms: 0, player_state: 0 })
-    expect(useSetPlayer.getState().panel?.position_ms).toBe(720_000)
-    useSetPlayer.getState().setPanel(report(721_000))
-    expect(useSetPlayer.getState().panel?.position_ms).toBe(721_000)
-  })
-
-  it('pauses and plays the video, and ✕ closes it', () => {
-    useSetPlayer.getState().play(set('a'), 0)
+  it('pauses and plays without flickering back while the poll catches up, and ✕ closes it', async () => {
+    listening()
     useSetPlayer.getState().setPanel(report(5_000, 1))
     useSetPlayer.getState().togglePause()
     expect(tauriApi.pauseYouTubePanel).toHaveBeenCalled()
+    useSetPlayer.getState().setPanel(report(5_400, 1))
     expect(useSetPlayer.getState().panel?.player_state).toBe(2)
     useSetPlayer.getState().togglePause()
     expect(tauriApi.playYouTubePanel).toHaveBeenCalled()
 
     useSetPlayer.getState().stop()
     expect(useSetPlayer.getState().playing).toBeNull()
-    expect(tauriApi.closeYouTubePanel).toHaveBeenCalled()
+    await vi.waitFor(() => expect(tauriApi.closeYouTubePanel).toHaveBeenCalled())
+  })
+
+  it('stops your own file when it starts the video', () => {
+    usePlayerStore.setState({ isPlaying: true })
+    useSetPlayer.getState().play(set('a'), 0)
+    expect(audioPlayer.pause).toHaveBeenCalled()
+    expect(usePlayerStore.getState().isPlaying).toBe(false)
+
+    listening()
+    useSetPlayer.getState().togglePause()
+    usePlayerStore.setState({ isPlaying: true })
+    useSetPlayer.getState().togglePause()
+    expect(usePlayerStore.getState().isPlaying).toBe(false)
   })
 
   it('takes Look again’s rows only for the set playing', () => {
@@ -481,17 +623,29 @@ Create `src/store/setPlayerStore.ts`:
 // set, where the video is, and which box the panel sits in. It lives in App,
 // not in Sets, so the video keeps playing in the bar above the player when
 // you leave the set — the bar needs the set's tracks while Sets is closed.
-// `useSetPlayerEngine` (mounted once in App) opens, places, polls and closes
+// `SetPlayerEngine` (mounted once in App) opens, places, polls and closes
 // the panel; everything else reads and acts through this store.
+//
+// The panel takes its orders through the companion server, which keeps ONE
+// instruction (seek, pause or play) that the player page polls every 400ms:
+// so a seek is never followed by a play (the page's seek plays anyway), and
+// nothing is sent until the new page is listening.
 import { create } from 'zustand'
 import { tauriApi } from '../lib/tauri-api'
+import { audioPlayer } from '../lib/audioPlayer'
+import { queuePanel } from '../lib/setPlayer/panelQueue'
 import {
   SEEK_SETTLE_MS,
+  STATE_SETTLE_MS,
   believedPosition,
+  believedState,
+  isPlayingState,
   stepCue,
   type PendingSeek,
+  type PendingState,
 } from '../lib/setPlayer/playhead'
 import type { TracklistResult } from '../lib/tracklist'
+import { usePlayerStore } from './playerStore'
 import { YT_PLAYING, type YouTubePanelState } from '../types/youtube'
 
 export interface PlayingSet {
@@ -503,9 +657,14 @@ export interface PlayingSet {
 
 interface SetPlayerState {
   playing: PlayingSet | null
-  /** What the panel last reported, with a seek just sent already applied. */
+  /** What the panel last reported, with a seek, play or pause just sent applied. */
   panel: YouTubePanelState | null
+  /** The video has reported its length since it opened: the page is listening. */
+  reported: boolean
+  /** A seek asked for before that: sent with the first report. */
+  deferredSeek: number | null
   pendingSeek: PendingSeek | null
+  pendingState: PendingState | null
   /** The playing set's page box, while that page is mounted. */
   pageBox: HTMLElement | null
   /** The bar's box, while the bar shows. */
@@ -530,36 +689,67 @@ interface SetPlayerState {
 
 /** Playing or buffering: the video means to play. */
 export function videoIsPlaying(panel: YouTubePanelState | null): boolean {
-  return panel?.player_state === YT_PLAYING || panel?.player_state === 3
+  return panel !== null && isPlayingState(panel.player_state)
 }
+
+/**
+ * The app starts the video itself (Play set, ▶, a seek, the bar's Play):
+ * your own file stops at once. The engine's latch covers the one start the
+ * app cannot see coming — a click inside the panel.
+ */
+function pauseOwnFile() {
+  if (!usePlayerStore.getState().isPlaying) return
+  audioPlayer.pause()
+  usePlayerStore.getState().setIsPlaying(false)
+}
+
+const holding = (playing: boolean): PendingState => ({ playing, until: Date.now() + STATE_SETTLE_MS })
 
 export const useSetPlayer = create<SetPlayerState>((set, get) => ({
   playing: null,
   panel: null,
+  reported: false,
+  deferredSeek: null,
   pendingSeek: null,
+  pendingState: null,
   pageBox: null,
   barBox: null,
 
   play: (result, cueMs) => {
     if (get().playing?.result.video.id === result.video.id) {
       get().seek(cueMs)
-      void tauriApi.playYouTubePanel().catch(() => {})
       return
     }
-    // The panel opens at the cue (the engine); until it reports, it is there.
+    pauseOwnFile()
+    // The panel opens at the cue (the engine); until it reports, it is there,
+    // starting (buffering), so the button already offers Pause.
     set({
       playing: { result, startMs: cueMs },
-      panel: { position_ms: cueMs, duration_ms: 0, player_state: -1 },
+      panel: { position_ms: cueMs, duration_ms: 0, player_state: 3 },
+      reported: false,
+      deferredSeek: null,
       pendingSeek: null,
+      pendingState: null,
     })
   },
 
   seek: (ms) => {
-    if (!get().playing) return
-    const panel = get().panel
+    const { playing, panel, reported } = get()
+    if (!playing) return
+    pauseOwnFile()
+    // The page's seek plays as well: it is playing from here.
+    const next = { position_ms: ms, duration_ms: panel?.duration_ms ?? 0, player_state: 3 }
+    if (!reported) {
+      // The new page takes the first instruction it sees as its starting
+      // point and would drop this one: it waits for the first report (and
+      // opens there, if the panel is not open yet).
+      set({ panel: next, deferredSeek: ms, playing: { ...playing, startMs: ms } })
+      return
+    }
     set({
-      panel: panel ? { ...panel, position_ms: ms } : { position_ms: ms, duration_ms: 0, player_state: -1 },
+      panel: next,
       pendingSeek: { ms, until: Date.now() + SEEK_SETTLE_MS },
+      pendingState: holding(true),
     })
     void tauriApi.seekYouTubePanel(Math.floor(ms / 1000)).catch(() => {})
   },
@@ -573,20 +763,22 @@ export const useSetPlayer = create<SetPlayerState>((set, get) => ({
 
   togglePause: () => {
     const { playing, panel } = get()
-    if (!playing) return
+    if (!playing || !panel) return
     if (videoIsPlaying(panel)) {
       void tauriApi.pauseYouTubePanel().catch(() => {})
-      if (panel) set({ panel: { ...panel, player_state: 2 } })
+      set({ panel: { ...panel, player_state: 2 }, pendingState: holding(false) })
     } else {
+      pauseOwnFile()
       void tauriApi.playYouTubePanel().catch(() => {})
-      if (panel) set({ panel: { ...panel, player_state: YT_PLAYING } })
+      set({ panel: { ...panel, player_state: YT_PLAYING }, pendingState: holding(true) })
     }
   },
 
   stop: () => {
     if (!get().playing) return
-    set({ playing: null, panel: null, pendingSeek: null })
-    void tauriApi.closeYouTubePanel().catch(() => {})
+    set({ playing: null, panel: null, reported: false, deferredSeek: null, pendingSeek: null, pendingState: null })
+    // After any open still on its way, so it is the one closed.
+    void queuePanel(() => tauriApi.closeYouTubePanel()).catch(() => {})
   },
 
   replaceResult: (result) => {
@@ -598,12 +790,21 @@ export const useSetPlayer = create<SetPlayerState>((set, get) => ({
     // No length yet: the page is still loading (or the state was just
     // cleared), and what it says is not about this video.
     if (state.duration_ms <= 0) return
-    const pending = get().pendingSeek
+    const { pendingSeek, pendingState, deferredSeek, reported } = get()
     const now = Date.now()
     set({
-      panel: { ...state, position_ms: believedPosition(state.position_ms, pending, now) },
-      pendingSeek: pending && now < pending.until ? pending : null,
+      panel: {
+        ...state,
+        position_ms: believedPosition(state.position_ms, pendingSeek, now),
+        player_state: believedState(state.player_state, pendingState, now),
+      },
+      reported: true,
+      deferredSeek: null,
+      pendingSeek: pendingSeek && now < pendingSeek.until ? pendingSeek : null,
+      pendingState: pendingState && now < pendingState.until ? pendingState : null,
     })
+    // The page is listening now: the seek asked for before it was goes out.
+    if (!reported && deferredSeek !== null) get().seek(deferredSeek)
   },
 
   attachPageBox: (el) => set({ pageBox: el }),
@@ -611,7 +812,7 @@ export const useSetPlayer = create<SetPlayerState>((set, get) => ({
 }))
 ```
 
-- [ ] **Step 3:** `npx vitest run src/store/setPlayerStore.test.ts`: PASS, 5. Commit:
+- [ ] **Step 3:** `npx vitest run src/store/setPlayerStore.test.ts`: PASS, 6. Commit:
 
 ```bash
 git add src/store/setPlayerStore.ts src/store/setPlayerStore.test.ts
@@ -622,17 +823,18 @@ git commit -m "feat(sets): the set player store — the playing set, seeks, step
 
 ### Task 3: The engine and the bar
 
-**Files:** Create `src/lib/setPlayer/useSetPlayerEngine.ts`, `src/components/sets/SetPlayerBar.tsx`, `src/components/sets/SetPlayerBar.css`.
+**Files:** Create `src/lib/setPlayer/SetPlayerEngine.ts`, `src/components/sets/SetPlayerBar.tsx`, `src/components/sets/SetPlayerBar.css`.
 
-- [ ] **Step 1: The engine** — opens the panel at its box, follows it every frame, steps off the window while an overlay is open, polls, and keeps the video and your files apart (the latch moves here from `SetsView` unchanged).
+- [ ] **Step 1: The engine** — opens the panel at its box, follows it every frame, steps off the window while an overlay is open, polls, and keeps the video and your files apart (the latch moves here from `SetsView`, set only while the video plays).
 
-Create `src/lib/setPlayer/useSetPlayerEngine.ts`:
+Create `src/lib/setPlayer/SetPlayerEngine.ts`:
 
 ```ts
-// src/lib/setPlayer/useSetPlayerEngine.ts
-// The set player's engine (Sets redesign spec, Playing), mounted once in App.
-// While a set plays it opens the YouTube panel at its box, keeps it there
-// every frame the box moves or resizes (a sidebar collapse, a banner, a
+// src/lib/setPlayer/SetPlayerEngine.ts
+// The set player's engine (Sets redesign spec, Playing), mounted once in App
+// as a component of its own, so a poll re-renders nothing but the bar and the
+// set. While a set plays it opens the YouTube panel at its box, keeps it
+// there every frame the box moves or resizes (a sidebar collapse, a banner, a
 // window resize), moves it off the window while a menu, popover or modal is
 // open, polls where the video is, and keeps the video and your own files
 // from playing over each other.
@@ -643,7 +845,8 @@ import { isOverlayOpen } from '../overlays'
 import { audioPlayer } from '../audioPlayer'
 import { playerPageUrl, watchUrl } from '../youtubeWindow'
 import { panelBounds, panelBox, sameBounds, type Bounds } from './panelBounds'
-import { useSetPlayer, type PlayingSet } from '../../store/setPlayerStore'
+import { queuePanel } from './panelQueue'
+import { useSetPlayer, videoIsPlaying, type PlayingSet } from '../../store/setPlayerStore'
 import { usePlayerStore } from '../../store/playerStore'
 import { YT_PLAYING } from '../../types/youtube'
 
@@ -668,13 +871,20 @@ async function openPanel(playing: PlayingSet, bounds: Bounds): Promise<void> {
   )
 }
 
-export function useSetPlayerEngine(): void {
+export function SetPlayerEngine(): null {
   const videoId = useSetPlayer((s) => s.playing?.result.video.id ?? null)
+
+  // A panel left over from before a reload has no set to belong to.
+  useEffect(() => {
+    void queuePanel(() => tauriApi.closeYouTubePanel()).catch(() => {})
+  }, [])
 
   // Open the panel at its box, then keep it there: a check of the box's
   // rectangle every frame while a set plays, sending new bounds only when
   // they change. No timers in the handoff between the page's box and the
-  // bar's: whichever is registered when the frame runs wins.
+  // bar's: whichever is registered when the frame runs wins. Every call that
+  // creates, moves or closes the webview waits its turn (`queuePanel`), so a
+  // stop or another set never overtakes an open still on its way.
   useEffect(() => {
     if (!videoId) return
     let live = true
@@ -691,8 +901,9 @@ export function useSetPlayerEngine(): void {
       if (!opened) {
         if (!opening && rect && playing) {
           opening = true
-          openPanel(playing, bounds).then(
+          queuePanel(() => openPanel(playing, bounds)).then(
             () => {
+              if (!live) return
               opened = true
               last = bounds
             },
@@ -707,7 +918,9 @@ export function useSetPlayerEngine(): void {
         }
       } else if (!sameBounds(last, bounds)) {
         last = bounds
-        void tauriApi.setYouTubePanelBounds(bounds.x, bounds.y, bounds.width, bounds.height).catch(() => {})
+        void queuePanel(() =>
+          tauriApi.setYouTubePanelBounds(bounds.x, bounds.y, bounds.width, bounds.height),
+        ).catch(() => {})
       }
       frame = requestAnimationFrame(tick)
     }
@@ -742,7 +955,9 @@ export function useSetPlayerEngine(): void {
   // --- two players, one pair of ears -----------------------------------
   //
   // The video and the app's own player are separate engines that know nothing
-  // about each other, so whichever starts hands the other a pause.
+  // about each other, so whichever starts hands the other a pause. When the
+  // app starts the video itself, the store stops your file directly; this is
+  // for the two starts it cannot see coming.
   const isPlayingOwnFile = usePlayerStore((state) => state.isPlaying)
   const setOwnIsPlaying = usePlayerStore((state) => state.setIsPlaying)
   const videoPlaying = useSetPlayer((s) => s.panel?.player_state === YT_PLAYING)
@@ -761,7 +976,7 @@ export function useSetPlayerEngine(): void {
     if (!videoPlaying) waitingForVideoToStop.current = false
   }, [videoPlaying])
 
-  // The video started — Play set, ▶ on a row, or a click inside the panel.
+  // The video started from a click inside the panel.
   useEffect(() => {
     if (videoPlaying && isPlayingOwnFile && !waitingForVideoToStop.current) {
       audioPlayer.pause()
@@ -769,20 +984,21 @@ export function useSetPlayerEngine(): void {
     }
   }, [videoPlaying, isPlayingOwnFile, setOwnIsPlaying])
 
-  // The other direction: a file of your own started, so the video steps back.
+  // A file of your own started, so a playing video steps back. A paused one
+  // needs nothing, and must not leave the latch set with no pause to clear it.
   const wasPlayingOwnFile = useRef(false)
   useEffect(() => {
     const started = isPlayingOwnFile && !wasPlayingOwnFile.current
     wasPlayingOwnFile.current = isPlayingOwnFile
-    if (started && videoId) {
+    if (started && videoId && videoIsPlaying(useSetPlayer.getState().panel)) {
       // Said before the request goes out, so the rule above is already deaf
       // to the reports still in flight.
       waitingForVideoToStop.current = true
-      // (No guessed "paused" here: the latch must hold until the video
-      // itself says it has stopped.)
       void tauriApi.pauseYouTubePanel().catch(() => {})
     }
   }, [isPlayingOwnFile, videoId])
+
+  return null
 }
 ```
 
@@ -845,7 +1061,7 @@ export function SetPlayerBar({ onOpenSet }: { onOpenSet: (videoId: string) => vo
       <div className="set-bar__controls">
         <button
           type="button"
-          className="set-bar__btn"
+          className="btn set-bar__btn"
           aria-label="Previous track"
           disabled={stepCue(result.tracks, untimed, position, -1) === null}
           onClick={() => step(-1)}
@@ -854,7 +1070,7 @@ export function SetPlayerBar({ onOpenSet }: { onOpenSet: (videoId: string) => vo
         </button>
         <button
           type="button"
-          className="set-bar__btn"
+          className="btn set-bar__btn"
           aria-label={playingNow ? 'Pause' : 'Play'}
           onClick={togglePause}
         >
@@ -862,14 +1078,14 @@ export function SetPlayerBar({ onOpenSet }: { onOpenSet: (videoId: string) => vo
         </button>
         <button
           type="button"
-          className="set-bar__btn"
+          className="btn set-bar__btn"
           aria-label="Next track"
           disabled={stepCue(result.tracks, untimed, position, 1) === null}
           onClick={() => step(1)}
         >
           <Icon name="SkipForward" size={14} />
         </button>
-        <button type="button" className="set-bar__btn" aria-label="Stop the set" onClick={stop}>
+        <button type="button" className="btn set-bar__btn" aria-label="Stop the set" onClick={stop}>
           <Icon name="X" size={14} />
         </button>
       </div>
@@ -923,7 +1139,7 @@ Create `src/components/sets/SetPlayerBar.css`:
 
 .set-bar__text:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .set-bar__now,
@@ -953,37 +1169,18 @@ Create `src/components/sets/SetPlayerBar.css`:
   gap: 6px;
 }
 
+/* The shared .btn (controls.css), square. */
 .set-bar__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 30px;
   height: 30px;
-  border: none;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.set-bar__btn:hover:not(:disabled) {
-  color: var(--text-primary);
-}
-
-.set-bar__btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.set-bar__btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  padding: 0;
 }
 ```
 
 - [ ] **Step 3:** `npx tsc --noEmit -p .`: no errors (nothing uses them until Task 4). Commit:
 
 ```bash
-git add src/lib/setPlayer/useSetPlayerEngine.ts src/components/sets/SetPlayerBar.tsx src/components/sets/SetPlayerBar.css
+git add src/lib/setPlayer/SetPlayerEngine.ts src/components/sets/SetPlayerBar.tsx src/components/sets/SetPlayerBar.css
 git commit -m "feat(sets): the set player's engine and the bar above the player"
 ```
 
@@ -1022,7 +1219,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { NowPlayingBar } from './components/layout/NowPlayingBar'
 import { SetPlayerBar } from './components/sets/SetPlayerBar'
-import { useSetPlayerEngine } from './lib/setPlayer/useSetPlayerEngine'
+import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
 import { useOverlay } from './lib/overlays'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
@@ -1064,10 +1261,6 @@ with
    * (the set bar's text, from Sets' library).
    */
   const [setsVisit, setSetsVisit] = useState(0)
-
-  // The set playing: its panel follows the set's page or the bar above the
-  // player, and keeps playing when Sets closes.
-  useSetPlayerEngine()
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
@@ -1240,6 +1433,9 @@ with
 
   const playerEl = (
     <>
+      {/* The set playing: its panel follows the set's page or this bar, and
+          keeps playing when Sets closes. */}
+      <SetPlayerEngine />
       <SetPlayerBar
         onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
       />
@@ -2176,7 +2372,7 @@ with
 .sets-player__cue {
 ```
 
-- [ ] **Step 4:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 615 passed (616)`. Commit:
+- [ ] **Step 4:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 621 passed (622)`. Commit:
 
 ```bash
 git add src/App.tsx src/components/views/SetsView.tsx src/components/views/SetsView.css
@@ -2187,7 +2383,7 @@ git commit -m "feat(sets): the set video plays on in a bar above the player when
 
 ### Task 5: Every overlay moves the video aside
 
-**Files:** Modify `src/components/PromptModal.tsx`, `src/components/eq/EQModal.tsx`, `src/components/DuplicatesModal.tsx`, `src/components/ExportPlaylistModal.tsx`, `src/components/SharePlaylistModal.tsx`, `src/components/WhatsNewDialog.tsx`, `src/components/FolderTree.tsx`, `src/components/dj/DjCandidatesMenu.tsx`, `src/components/layout/NowPlayingBar.tsx`, `src/components/layout/SidebarFlyout.tsx`, `src/lib/overlays.ts`.
+**Files:** Modify `src/components/PromptModal.tsx`, `src/components/eq/EQModal.tsx`, `src/components/DuplicatesModal.tsx`, `src/components/ExportPlaylistModal.tsx`, `src/components/SharePlaylistModal.tsx`, `src/components/WhatsNewDialog.tsx`, `src/components/FolderTree.tsx`, `src/components/dj/DjCandidatesMenu.tsx`, `src/components/layout/NowPlayingBar.tsx`, `src/components/layout/SidebarFlyout.tsx`, `src/components/layout/Sidebar.tsx`, `src/components/youtube-music/YouTubeMusicLists.tsx`, `src/lib/overlays.ts`.
 
 Each calls `useOverlay(open, close)` before any early return (a component rendered only while open passes `true`). Esc then closes it through the overlay stack, which stops the key before the component's own Escape handler, so it closes once.
 
@@ -2422,10 +2618,6 @@ interface ExportProgressEvent {
 In `src/components/ExportPlaylistModal.tsx`, replace
 
 ```tsx
-  playlistId,
-  playlistName,
-  onClose,
-  onSuccess,
   onError,
 }: ExportPlaylistModalProps) {
   const [folderName, setFolderName] = useState(playlistName)
@@ -2434,25 +2626,30 @@ In `src/components/ExportPlaylistModal.tsx`, replace
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<{
     current: number
+    total: number
+    currentFile: string
+  } | null>(null)
 ```
 
 with
 
 ```tsx
-  playlistId,
-  playlistName,
-  onClose,
-  onSuccess,
   onError,
 }: ExportPlaylistModalProps) {
-  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
-  useOverlay(true, onClose)
   const [folderName, setFolderName] = useState(playlistName)
   const [renameFiles, setRenameFiles] = useState(false)
   const [exportM3u, setExportM3u] = useState(false)
   const [running, setRunning] = useState(false)
+  // Open, it tells the app (useOverlay): Esc closes it — not while the export
+  // runs, as the backdrop and Close do not — and the set video steps aside.
+  useOverlay(true, () => {
+    if (!running) onClose()
+  })
   const [progress, setProgress] = useState<{
     current: number
+    total: number
+    currentFile: string
+  } | null>(null)
 ```
 
 In `src/components/SharePlaylistModal.tsx`, replace
@@ -2867,6 +3064,148 @@ with
       onClose()
 ```
 
+In `src/components/layout/Sidebar.tsx`, replace
+
+```tsx
+import type { NavItem, SidebarSpotify, SidebarYouTubeMusic } from './sidebarTypes'
+import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
+import { SpotifyLists } from '../spotify/SpotifyLists'
+import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
+import { YouTubeMusicLists } from '../youtube-music/YouTubeMusicLists'
+import { useFolderTreeStore } from '../../store/folderTreeStore'
+import {
+  COLLAPSED_WIDTH,
+  SECTION_LABELS,
+  type ActiveView,
+  colourFor,
+  sectionForView,
+```
+
+with
+
+```tsx
+import type { NavItem, SidebarSpotify, SidebarYouTubeMusic } from './sidebarTypes'
+import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
+import { SpotifyLists } from '../spotify/SpotifyLists'
+import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
+import { YouTubeMusicLists } from '../youtube-music/YouTubeMusicLists'
+import { useFolderTreeStore } from '../../store/folderTreeStore'
+import { useOverlay } from '../../lib/overlays'
+import {
+  COLLAPSED_WIDTH,
+  SECTION_LABELS,
+  type ActiveView,
+  colourFor,
+  sectionForView,
+```
+
+In `src/components/layout/Sidebar.tsx`, replace
+
+```tsx
+    x: number
+    y: number
+    section: SidebarSection
+    withCreate: boolean
+  } | null>(null)
+  const ctxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node))
+        setCtxMenu(null)
+```
+
+with
+
+```tsx
+    x: number
+    y: number
+    section: SidebarSection
+    withCreate: boolean
+  } | null>(null)
+  const ctxRef = useRef<HTMLDivElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(ctxMenu !== null, () => setCtxMenu(null))
+
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node))
+        setCtxMenu(null)
+```
+
+In `src/components/youtube-music/YouTubeMusicLists.tsx`, replace
+
+```tsx
+// The items under YOUTUBE MUSIC: All playlists, Liked music, then each
+// playlist in the order it was added, and "+ Add playlist" at the end.
+// Right-click a playlist to remove it. Used by the full sidebar and by the
+// rail's flyout; styled with FolderTree's rows, like SpotifyLists.
+import { useEffect, useRef, useState } from 'react'
+import { Icon } from '../Icon'
+import { getErrorMessage } from '../../types/ai'
+import {
+  ALL_YTM_LISTS,
+  LIKED_MUSIC,
+  type YtmList,
+} from '../../types/youtubeMusic'
+```
+
+with
+
+```tsx
+// The items under YOUTUBE MUSIC: All playlists, Liked music, then each
+// playlist in the order it was added, and "+ Add playlist" at the end.
+// Right-click a playlist to remove it. Used by the full sidebar and by the
+// rail's flyout; styled with FolderTree's rows, like SpotifyLists.
+import { useEffect, useRef, useState } from 'react'
+import { Icon } from '../Icon'
+import { useOverlay } from '../../lib/overlays'
+import { getErrorMessage } from '../../types/ai'
+import {
+  ALL_YTM_LISTS,
+  LIKED_MUSIC,
+  type YtmList,
+} from '../../types/youtubeMusic'
+```
+
+In `src/components/youtube-music/YouTubeMusicLists.tsx`, replace
+
+```tsx
+  const [adding, setAdding] = useState(false)
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; listId: string } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenu(null)
+```
+
+with
+
+```tsx
+  const [adding, setAdding] = useState(false)
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; listId: string } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(menu !== null, () => setMenu(null))
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenu(null)
+```
+
 In `src/lib/overlays.ts`, replace
 
 ```ts
@@ -2898,10 +3237,10 @@ type Close = () => void
 const stack: { close: Close }[] = []
 ```
 
-- [ ] **Step 2:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 615 passed (616)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
+- [ ] **Step 2:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 621 passed (622)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
 
 ```bash
-git add src/components/PromptModal.tsx src/components/eq/EQModal.tsx src/components/DuplicatesModal.tsx src/components/ExportPlaylistModal.tsx src/components/SharePlaylistModal.tsx src/components/WhatsNewDialog.tsx src/components/FolderTree.tsx src/components/dj/DjCandidatesMenu.tsx src/components/layout/NowPlayingBar.tsx src/components/layout/SidebarFlyout.tsx src/lib/overlays.ts
+git add src/components/PromptModal.tsx src/components/eq/EQModal.tsx src/components/DuplicatesModal.tsx src/components/ExportPlaylistModal.tsx src/components/SharePlaylistModal.tsx src/components/WhatsNewDialog.tsx src/components/FolderTree.tsx src/components/dj/DjCandidatesMenu.tsx src/components/layout/NowPlayingBar.tsx src/components/layout/SidebarFlyout.tsx src/components/layout/Sidebar.tsx src/components/youtube-music/YouTubeMusicLists.tsx src/lib/overlays.ts
 git commit -m "feat(sets): modals, menus and the flyout report themselves, so the set video steps aside"
 ```
 
@@ -2945,10 +3284,27 @@ library and the box, then Following, Saved and Stats):
 - `useSetPlayer` is a zustand store (`src/store/setPlayerStore.ts`): the
   playing set (its parsed result and the cue it opened at), the panel's last
   report, and the two boxes; `play`, `seek`, `step`, `togglePause`, `stop`,
-  `replaceResult`. `useSetPlayerEngine`, mounted once in App, opens the
+  `replaceResult`. `SetPlayerEngine`, a component App mounts once in its
+  player area (so a poll re-renders only the bar and the set), opens the
   panel at its box, follows the box every frame, polls every 400ms and keeps
-  the two players apart. The pure parts — the playhead's track, ⏮ / ⏭'s cue,
-  which box, the bounds — live in `src/lib/setPlayer/` with their tests.
+  the two players apart; on start it closes a panel left from before a
+  reload. The pure parts — the playhead's track, ⏮ / ⏭'s cue, which box, the
+  bounds, what to believe right after a seek, play or pause — live in
+  `src/lib/setPlayer/` with their tests.
+- The panel takes its orders through the companion server, which keeps one
+  instruction (seek, pause or play) that the player page polls every 400ms,
+  and a new page takes the first one it sees as its starting point. So a seek
+  is never followed by a play (the page's seek plays anyway), and a seek
+  asked for before the video has reported its length waits and goes out with
+  the first report (the panel opens at it if it is not open yet) — ⏭ right
+  after Play set lands. Play and pause are believed for 1.2s while the poll
+  catches up, and a set starts as buffering, so the button says Pause at once.
+- Every call that creates, moves or closes the webview waits its turn, so ✕
+  pressed while the panel is still opening closes it, and two quick sets
+  never race for the panel.
+- When the app starts the video itself (Play set, ▶, a seek, Play) your file
+  stops at once; the latch is only for a click inside the panel, and only
+  while the video is playing.
 - Until plan S2 builds the set page, the page box is Sets' video band above
   the Set tab (today's player, its minimise gone): ⏮, Pause / Play, ⏭ and
   close over the video, the scrubber under it, shown while the set open in
@@ -2967,12 +3323,19 @@ library and the box, then Following, Saved and Stats):
 - Removing the playing set from the library stops it first; Look again on it
   keeps it playing with the new rows.
 - The overlays that report themselves now: `PromptModal`, the delete-folder
-  modal, `EQModal`, `DuplicatesModal`, `ExportPlaylistModal`,
-  `SharePlaylistModal`, `WhatsNewDialog`, the FolderTree menu,
-  `DjCandidatesMenu`, the NowPlayingBar's playlist menu and expanded view, and
-  `SidebarFlyout`, besides the shared `Menu`, `Popover` (the Filter and
-  Columns popovers) and the TrackTable menus that already did. The hero's ⋯
-  menu comes with plan S2, on the shared `Menu`.
+  modal, `EQModal`, `DuplicatesModal`, `ExportPlaylistModal` (Esc waits for a
+  running export, as its backdrop does), `SharePlaylistModal`,
+  `WhatsNewDialog`, the FolderTree menu, `DjCandidatesMenu`, the
+  NowPlayingBar's playlist menu and expanded view, `SidebarFlyout`, and two
+  the list above missed — the sidebar's colour menu and YouTube Music's list
+  menu — besides the shared `Menu`, `Popover` (the Filter and Columns
+  popovers) and the TrackTable menus that already did. The hero's ⋯ menu
+  comes with plan S2, on the shared `Menu`.
+- Left as they are: leaving the set page, the video stays over the fading
+  page for App's 200ms view fade; the frame check runs while a set is loaded,
+  paused too; a keyboard press on the bar's text or ✕ leaves focus on the
+  page, as the bar goes; the old top-right notifications sit under the video
+  band on Sets until the Interactions sweep replaces them with toasts.
 
 ## Saved tracks
 
@@ -2993,11 +3356,12 @@ git commit -m "docs(spec): Sets S1 as built"
 
 ### Task 7: Check
 
-- [ ] **Step 1:** `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 615 passed (616)`; `npx tsc --noEmit -p .`; `npx eslint src mobile 2>&1 | grep problems`: 28; `npx vite build`; `cd src-tauri && cargo test --lib 2>&1 | grep "test result"`: 459.
+- [ ] **Step 1:** `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 621 passed (622)`; `npx tsc --noEmit -p .`; `npx eslint src mobile 2>&1 | grep problems`: 28; `npx vite build`; `cd src-tauri && cargo test --lib 2>&1 | grep "test result"`: 459.
 - [ ] **Step 2 (the user, by hand in `npm run tauri dev`):**
-  - Open a set, "play here": the video plays in the band; ⏭ twice quickly lands two tracks on; let it run into the next track: ⏮ / ⏭ and the scrubber follow it.
+  - Open a set, "play here", and press ⏭ at once: it lands on the next track; ⏭ twice quickly lands two tracks on; ▶ on a row of the playing set jumps there; let it run into the next track: ⏮ / ⏭ and the scrubber follow it.
+  - Press "play here" and close it at once: no video is left playing.
   - Collapse the sidebar and resize the window: the video stays on its band.
-  - Right-click a track in All Tracks, open the EQ, a New playlist prompt, the sidebar's flyout (collapsed rail, hover an icon): the video steps aside and comes back when they close.
+  - Right-click a track in All Tracks, a sidebar section header (colour menu), a YouTube Music list; open the EQ, a New playlist prompt, the sidebar's flyout (collapsed rail, hover an icon): the video steps aside and comes back when they close.
   - Switch to the Library tab, go Home, open a playlist: the video keeps playing in the bar above the player; the bar's ⏮ ⏸ ⏭ work; its text opens the set again with the video back in the band; ✕ stops it.
   - Play a file of your own: the video pauses; press Play on the bar: the file pauses.
   - Open another set while one plays: the playing one stays in the bar until you press "play here" on the new one.
