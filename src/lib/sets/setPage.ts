@@ -100,6 +100,11 @@ export function savedList(saved: ReadonlyArray<{ artist?: string; title: string;
   return saved.map((t) => trackLine({ artist: t.artist ?? null, title: t.title, mix: t.mix ?? null })).join('\n')
 }
 
+/** What removing a set asks first: it has no Undo, and its hearts go with it. */
+export function removeQuestion(title: string): string {
+  return `Remove "${title}" from your library? Its saved tracks go with it.`
+}
+
 /** The missing tracks, one per line, for ⋯ › Copy missing tracks. */
 export function missingTracks(tracks: readonly Track[], matches: MatchSummary | null): string[] {
   return filterRows(tracks, matches, 'missing').map(trackLine)

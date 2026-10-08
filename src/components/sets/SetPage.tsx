@@ -22,6 +22,7 @@ import {
   filterRows,
   heroNumbers,
   missingTracks,
+  removeQuestion,
   savedLabel,
   sourceLine,
   thumbnailUrl,
@@ -64,8 +65,8 @@ interface SetPageProps {
   onToggleSave: (track: Track) => void
   onFollowEcho: (echo: TrackEcho) => void
   onLookAgain: () => void
-  /** Asks first; null when the set is not in the library. */
-  onRemove: (() => void) | null
+  /** Asks first unless `asked` (the menu asked in its place); null when the set is not in the library. */
+  onRemove: ((asked: boolean) => void) | null
 }
 
 const FILTERS: Array<{ key: SetFilter; label: string }> = [
@@ -159,7 +160,14 @@ export function SetPage({
         ...(onRemove
           ? ([
               { kind: 'separator' },
-              { kind: 'action', label: 'Remove from library', icon: 'Trash2', danger: true, onSelect: onRemove },
+              {
+                kind: 'action',
+                label: 'Remove from library',
+                icon: 'Trash2',
+                danger: true,
+                confirm: { message: removeQuestion(video.title), label: 'Remove' },
+                onSelect: () => onRemove(true),
+              },
             ] as MenuEntry[])
           : []),
       ]
@@ -314,7 +322,7 @@ export function SetPage({
               </button>
               {/* A stored set that will not read can still leave the library. */}
               {onRemove && (
-                <button type="button" className="btn" onClick={onRemove}>
+                <button type="button" className="btn" onClick={() => onRemove(false)}>
                   Remove from library
                 </button>
               )}

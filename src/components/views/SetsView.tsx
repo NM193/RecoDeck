@@ -13,6 +13,7 @@ import { analyse, type Track, type TracklistResult } from '../../lib/tracklist'
 import { storeParsedSet } from '../../lib/tracklist/importSet'
 import { matchTracklist, type MatchSummary } from '../../lib/tracklist/match'
 import { describePreview, previewSet } from '../../lib/tracklist/preview'
+import { removeQuestion } from '../../lib/sets/setPage'
 import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { useSetPlayer } from '../../store/setPlayerStore'
@@ -478,15 +479,18 @@ export function SetsView({
   }
 
   /**
-   * Removes a set from the library, after asking: it has no Undo. A set that
-   * is playing stops first; its page, if open, goes back to the library.
+   * Removes a set from the library, after asking: it has no Undo. The page's
+   * menu asks in its place (`asked`); elsewhere a dialog asks. A set that is
+   * playing stops first; its page, if open, goes back to the library.
    */
-  async function removeSet(videoId: string, title: string) {
-    const sure = await confirm(`Remove "${title}" from your library? Its saved tracks go with it.`, {
-      title: 'Remove from library',
-      kind: 'warning',
-    }).catch(() => false)
-    if (!sure) return
+  async function removeSet(videoId: string, title: string, asked = false) {
+    if (!asked) {
+      const sure = await confirm(removeQuestion(title), {
+        title: 'Remove from library',
+        kind: 'warning',
+      }).catch(() => false)
+      if (!sure) return
+    }
     if (useSetPlayer.getState().playing?.result.video.id === videoId) useSetPlayer.getState().stop()
     try {
       await tauriApi.deleteYouTubeSet(videoId)
@@ -621,7 +625,7 @@ export function SetsView({
           onFollowEcho={followEcho}
           onLookAgain={() => void reanalyse()}
           // A set in the library can be removed even when it cannot be read.
-          onRemove={summary ? () => void removeSet(summary.video_id, summary.title) : null}
+          onRemove={summary ? (asked) => void removeSet(summary.video_id, summary.title, asked) : null}
         />
       </div>
     )

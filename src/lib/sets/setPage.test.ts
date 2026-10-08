@@ -4,6 +4,7 @@ import {
   filterRows,
   heroNumbers,
   missingTracks,
+  removeQuestion,
   savedList,
   savedLabel,
   sourceLine,
@@ -84,6 +85,14 @@ describe('copying the missing tracks', () => {
   it('writes the saved tracks the same way', () => {
     expect(savedList([{ artist: 'Tuccillo', title: 'Imagination Engine' }, { title: 'Bomba', mix: 'Dub' }])).toBe(
       'Tuccillo - Imagination Engine\nBomba (Dub)',
+    )
+  })
+})
+
+describe('removing a set', () => {
+  it('asks by its title, and says its hearts go too', () => {
+    expect(removeQuestion('Luciano @ Cadenza')).toBe(
+      'Remove "Luciano @ Cadenza" from your library? Its saved tracks go with it.',
     )
   })
 })
