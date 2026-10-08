@@ -7,6 +7,7 @@
 **Architecture:**
 - **Pure TypeScript** (tested), `src/lib/sets/box.ts`: a link's video id, what the box offers (empty, a link — stored or not —, text), the stored sets the text matches (title, channel, DJ; no case or accents), a card's line.
 - **Components**, `src/components/sets/`: `SetsBox.tsx` (the box, the dropdown, its keys; it runs the free track search itself), `SetsLibrary.tsx` (the Library tab: new finds and set cards), `SetsHome.css`.
+- **Also touched:** `SetPage` offers Remove from library on its error (a stored set that cannot be read), `useSetsView` starts on Newest, `SetsView.css` widens the library to 1180px and loses the rules only the old tabs and list used, `SetPage.css`'s filter buttons get the tabs' visible shade.
 - **`SetsView`**: the box at the top (its link and stored-set rows open through S2's `openSet`, a hit through `openHit`, the YouTube row through `handleSearchSets(query)`); YouTube's results in place of the page; the tabs as buttons; the Library tab renders `SetsLibrary`; the new finds are read with the library (`get_new_dj_finds`), and Mark all seen with Undo as on Home. The old Process button, the library's "Where did I hear this?" input and its list rows go.
 
 **Tech Stack:** React 19, TypeScript, Vitest (jsdom). No Rust: H3 built `get_new_dj_finds`, `mark_all_dj_finds_seen` and `mark_dj_finds_unseen`.
@@ -16,15 +17,19 @@
 **Branch:** `feat/redesign`. No release: the whole redesign ships as one release at the end.
 
 **Decisions, beyond the spec's letter** (Task 5 writes them into the spec):
-- **The box's keys:** ↑ / ↓ move, Enter opens the row lit — the first one, so with text a free result comes before the YouTube search, which never runs on Enter alone unless it is the only row —, Esc closes the dropdown and then clears the box (and YouTube's results). A press chooses a row before the input's blur closes the list. "Reading…" shows in the box while a set is fetched or YouTube searched. The Process / Search button goes; the dropdown's rows are the actions.
+- **The box's keys:** ↑ / ↓ move (the lit row kept in view), Enter opens the row lit — the first one, so with text a free result comes before the YouTube search —, Esc closes the dropdown and then clears the box (and YouTube's results). Enter on a closed dropdown only opens it; on the YouTube row it waits until the free track search has answered this text, so a name typed fast and Enter never spends 101 units before the free results show (the last results stay on screen while the next are read, so the rows do not jump under the pointer). A press anywhere in the list keeps the box focused; a key that ends an input method's composition is ignored. "Reading…" shows in the box while a set is fetched or YouTube searched. The Process / Search button goes; the dropdown's rows are the actions.
+- **One YouTube search at a time** (a second press while one runs does nothing); one answering after Esc, after a set was opened from the dropdown, or after a newer search is dropped (a claim, as S2's opens). The results' heading names the search ("… found on YouTube for "Hot Since 82" …"). With fewer than 101 units left the row says "101 units · 50 left".
 - **No `useOverlay` for the dropdown:** it sits inside the main area, which ends above the player area, so it can never cover the set video (in the bar below; a set's page box is not on the library). Registering would only move the bar's video aside while typing.
 - **YouTube's results** keep today's rows (thumbnail, title, channel, date, length, "12 tracks in the description" / "no tracklist"), under "2 sets found on YouTube — opening one costs 5–7 units" and "Back to your library"; one already in the library says "in your library" and opens at no cost (today it was fetched again).
 - **Tabs**: the mockup's buttons (28px, 6px corners, the one shown in the text colour); "Library 16 · 3 new" (the unseen finds' total), "Saved tracks 4", "Following" with a badge that counts the channels' news only (a DJ's finds show on the Library tab), "Stats". By DJ / Newest on the right, on the Library tab with sets.
 - **New from DJs you watch**: up to 20 unseen finds, newest first, cards in a wrapping grid (at least 260px each): the thumbnail (96px), the DJ in orange, the title, "saved" or "opening costs 5–7". A card opens the set (fetched and stored when it is not, 5–7 units), which marks it seen. Mark all seen: the same toast and Undo as on Home. Read with the library: on arrival, after a check, after a set is opened.
-- **Your sets**: 4 cards to a row, 3 below a 1100px window (a media query, as the spec says "below 1100px"); the length on the thumbnail; the title on two lines; "channel · 41 tracks" or "channel · no tracklist yet". By DJ: a heading per DJ — the name opens the DJ page — with "N sets", DJs with the most sets first (today's `groupByDj`). The list's bin goes: removing a set is on its page's ⋯ (with its confirm).
+- **Your sets**: 4 cards to a row, 3 below a 1100px window (a media query, as the spec says "below 1100px"); the library up to 1180px wide (it was 900px, which left 213px cards on a wide window); the length on the thumbnail; the title on two lines; "channel · 41 tracks" or "channel · no tracklist yet". **Newest** is the grouping Sets starts on, as the mockup draws it: By DJ gives every DJ its own row, which with many one-set DJs is very long. By DJ: a heading per DJ — the name opens the DJ page — with "N sets", DJs with the most sets first (today's `groupByDj`). The list's bin goes: removing a set is on its page's ⋯ (with its confirm), and on its page's error when a stored set cannot be read (before, the bin was the only way to remove one).
+- **A set opened leaves New from DJs you watch at once:** the seen mark (H3's effect) reads the finds again once it has landed — `refreshLibrary` after the open could read them before the mark.
+- **Tabs, By DJ / Newest and the set page's filter** are a shade off the page (`--bg-elevated` mixed with the text colour), so they read as buttons on the light themes, whose elevated colour is the page's white.
 - **Find more** fills the box and focuses it, so the dropdown shows the free results at once; nothing is spent until the YouTube row.
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `438b41a`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc` and each task's tests pass at every task's end.
+- **Review:** an independent review applied the plan to a clean copy (all 15 blocks matched once, byte-identical to the scratch copy; every task's checks passed; eslint at the baseline), drove it in WebKit with twelve scripts of its own (slow track and YouTube searches, many sets, an empty library, low quota, IME, StrictMode) and found no blockers. Its findings are fixed here: Enter typed fast spent 101 units before the free hits arrived; Enter acted on a closed dropdown; the lit row could be off-screen; a YouTube search answering after Esc or an opened set replaced the page; a second click searched again; a new find stayed on the library after its set was opened; the track rows flickered while typing; a stored set that could not be read could no longer be removed; By DJ with many one-set DJs was the default. Also taken: the scroll waits for the finds too; IME Enter; the combobox's and list's labels, group headings as presentation; a press on a heading keeps the focus; a hit clears the box as a set does; the error clears as you type; "1 set found"; the low-quota label; dead CSS; `groupByDj` memoized. Left as they are: an 11-character name reads as a video id (as before); a link that cannot be read is cleared from the box; `loading` is shared with Following's checks, so "Reading…" shows during them too; a long channel name hides "· 12 tracks" on its card.
 - **Builds and tests:**
   - `vitest`: 6 new. The repo counts 638 after it: 637 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline, none new; `vite build` passes. No Rust changes.
@@ -48,7 +53,8 @@
 | `src/components/sets/SetsBox.tsx` | create | the box and its dropdown |
 | `src/components/sets/SetsLibrary.tsx` | create | the Library tab: new finds, set cards |
 | `src/components/sets/SetsHome.css` | create | the box, the tabs, the cards |
-| `src/components/views/SetsView.tsx` | modify | the library home: box, YouTube's results, tabs, cards, Mark all seen |
+| `src/components/views/SetsView.tsx`, `SetsView.css` | modify | the library home: box, YouTube's results, tabs, cards, Mark all seen; wider, dead rules go |
+| `src/components/sets/SetPage.tsx`, `SetPage.css`, `src/store/setsViewStore.ts` | modify | Remove on the page's error; the filter's shade; Newest first |
 | `docs/superpowers/specs/2026-10-04-sets-redesign-design.md` | modify | the decisions above |
 
 ---
@@ -284,6 +290,9 @@ export function SetsBox({
   const storedIds = useMemo(() => new Set(sets.map((s) => s.video_id)), [sets])
   const offer = boxOffer(value, storedIds)
   const query = offer.kind === 'text' ? offer.query : ''
+  /** The free track search has not answered this text yet. */
+  const pending = query !== '' && hits.query !== query
+  const tooFewUnits = quota !== null && quota.remaining < 101
 
   // The tracks in the stored sets: never the network, so as you type; a short
   // wait only spares the database.
@@ -304,8 +313,10 @@ export function SetsBox({
     }
   }, [query])
 
-  const yourSets = query ? matchingSets(sets, query) : []
-  const trackHits = query && hits.query === query ? hits.rows : []
+  const yourSets = useMemo(() => (query ? matchingSets(sets, query) : []), [sets, query])
+  // The last answer stays until the next one comes, so the rows (and the
+  // paid row under them) do not jump while you type.
+  const trackHits = query ? hits.rows : []
   const rows: Row[] =
     offer.kind === 'link'
       ? [offer]
@@ -319,7 +330,14 @@ export function SetsBox({
   const showing = open && rows.length > 0
   const current = Math.min(active, rows.length - 1)
 
+  // The lit row stays in view as ↑ / ↓ move through a long list.
+  useEffect(() => {
+    if (showing) document.getElementById(`${listId}-${current}`)?.scrollIntoView({ block: 'nearest' })
+  }, [showing, current, listId])
+
   const choose = (row: Row) => {
+    // One YouTube search at a time.
+    if (row.kind === 'youtube' && busy) return
     setOpen(false)
     if (row.kind === 'link') onOpenSet(row.videoId, null)
     else if (row.kind === 'set') onOpenSet(row.set.video_id, row.set.title)
@@ -340,8 +358,9 @@ export function SetsBox({
           value={value}
           autoFocus={autoFocus}
           role="combobox"
+          aria-label="Paste a set link, or type a DJ's name"
           aria-expanded={showing}
-          aria-controls={listId}
+          aria-controls={showing ? listId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={showing ? optionId(current) : undefined}
           onChange={(e) => {
@@ -352,6 +371,8 @@ export function SetsBox({
           onFocus={() => setOpen(true)}
           onBlur={() => setOpen(false)}
           onKeyDown={(e) => {
+            // A key that finishes an input method's composition is not ours.
+            if (e.nativeEvent.isComposing) return
             if (e.key === 'ArrowDown' && rows.length > 0) {
               e.preventDefault()
               setOpen(true)
@@ -362,7 +383,12 @@ export function SetsBox({
               setActive((i) => (Math.min(i, rows.length - 1) - 1 + rows.length) % rows.length)
             } else if (e.key === 'Enter' && rows.length > 0 && !busy) {
               e.preventDefault()
-              choose(rows[current])
+              // A closed list only opens: nothing happens out of sight.
+              if (!showing) setOpen(true)
+              // The paid row waits for the free results, so Enter on a name
+              // typed fast does not spend 101 units before they show.
+              else if (rows[current].kind === 'youtube' && pending) return
+              else choose(rows[current])
             } else if (e.key === 'Escape') {
               if (showing) setOpen(false)
               else onClear()
@@ -373,12 +399,25 @@ export function SetsBox({
       </div>
 
       {showing && (
-        <div className="sets-box__menu" id={listId} role="listbox" aria-label="Open">
+        <div
+          className="sets-box__menu"
+          id={listId}
+          role="listbox"
+          aria-label="Sets and tracks"
+          // A press anywhere in the list (a heading, the scrollbar) keeps the box focused.
+          onMouseDown={(e) => e.preventDefault()}
+        >
           {rows.map((row, i) => (
             <div key={i}>
-              {row.kind === 'set' && i === 0 && <div className="sets-box__group">Your sets</div>}
+              {row.kind === 'set' && i === 0 && (
+                <div className="sets-box__group" role="presentation">
+                  Your sets
+                </div>
+              )}
               {row.kind === 'hit' && i === firstHit && (
-                <div className="sets-box__group">Tracks in your sets</div>
+                <div className="sets-box__group" role="presentation">
+                  Tracks in your sets
+                </div>
               )}
               <div
                 id={optionId(i)}
@@ -427,7 +466,9 @@ export function SetsBox({
                   <>
                     <Icon name="Search" size={14} />
                     <span className="sets-box__text">Search YouTube for sets by &ldquo;{row.query}&rdquo;</span>
-                    <span className="sets-box__cost">101 units</span>
+                    <span className="sets-box__cost">
+                      {tooFewUnits ? `101 units · ${quota.remaining.toLocaleString('en-US')} left` : '101 units'}
+                    </span>
                   </>
                 )}
               </div>
@@ -604,7 +645,8 @@ Create `src/components/sets/SetsHome.css`:
   height: 28px;
   padding: 0 12px;
   border: none;
-  background: var(--bg-elevated);
+  /* A shade off the page, so it reads as a button on the light themes too. */
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 7%);
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
@@ -893,6 +935,7 @@ Create `src/components/sets/SetsLibrary.tsx`:
 // searches found that you have not seen, as cards with Mark all seen; then
 // your sets as cards — newest first in one grid, or under each DJ, the DJs
 // with the most sets first, each name opening the DJ's page.
+import { useMemo } from 'react'
 import { msToCue } from '../../lib/tracklist'
 import { groupByDj } from '../../lib/tracklist/djName'
 import { setCardLine } from '../../lib/sets/box'
@@ -926,6 +969,7 @@ function SetCard({ set, onOpen }: { set: YtSetSummary; onOpen: () => void }) {
 }
 
 export function SetsLibrary({ sets, newFinds, grouping, onOpenSet, onOpenDj, onMarkAllSeen }: SetsLibraryProps) {
+  const byDj = useMemo(() => groupByDj(sets), [sets])
   const grid = (list: YtSetSummary[]) => (
     <div className="set-cards">
       {list.map((set) => (
@@ -979,7 +1023,7 @@ export function SetsLibrary({ sets, newFinds, grouping, onOpenSet, onOpenDj, onM
         ) : grouping === 'recent' ? (
           grid(sets)
         ) : (
-          groupByDj(sets).map((group) => (
+          byDj.map((group) => (
             <div className="sets-home__dj" key={group.dj}>
               <div className="sets-home__dj-head">
                 {onOpenDj ? (
@@ -1014,9 +1058,9 @@ git commit -m "feat(sets): the Library tab — new finds from the DJs you watch 
 
 ### Task 4: The library home
 
-**Files:** Modify `src/components/views/SetsView.tsx`.
+**Files:** Modify `src/components/views/SetsView.tsx`, `src/components/views/SetsView.css`, `src/components/sets/SetPage.tsx`, `src/components/sets/SetPage.css`, `src/store/setsViewStore.ts`.
 
-- [ ] **Step 1:** The box at the top; YouTube's results in place of the page; the tabs as buttons with By DJ / Newest; the Library tab as cards; the new finds read with the library, and Mark all seen with Undo. The old Process button, the library's search input and its list rows go.
+- [ ] **Step 1:** The box at the top; YouTube's results in place of the page (one search at a time, a late one dropped); the tabs as buttons with By DJ / Newest; the Library tab as cards; the new finds read with the library and again after a set is marked seen, and Mark all seen with Undo. The old Process button, the library's search input and its list rows go.
 
 In `src/components/views/SetsView.tsx`, replace
 
@@ -1116,6 +1160,45 @@ interface SetsViewProps {
 In `src/components/views/SetsView.tsx`, replace
 
 ```tsx
+   * A set to open on its page on arrival: Back from a DJ page opened from it,
+   * a DJ page's set card, Home, Search, the set bar. Read once — App remounts
+   * the view (`key`) to change it.
+   */
+  openVideoId?: string | null
+  /**
+   * Put in the box on arrival, not searched: a DJ page's Find more. The user
+   * presses Search here, where its cost is shown first.
+   */
+  initialQuery?: string
+  /** Each DJ on the set's page opens their page; Back reopens this set. */
+  onOpenDj?: (name: string, openVideoId: string | null) => void
+  /** Opens on the Library tab: Home's Needs you, its New sets row. Read once, as openVideoId. */
+  initialTab?: 'library'
+```
+
+with
+
+```tsx
+   * A set to open on its page on arrival: Back from a DJ page opened from it,
+   * a DJ page's set card, Home, Search, the set bar. Read once — App remounts
+   * the view (`key`) to change it.
+   */
+  openVideoId?: string | null
+  /**
+   * Put in the box on arrival, not searched: a DJ page's Find more. Its free
+   * results show; YouTube is searched only from the dropdown's last row,
+   * which says what it costs.
+   */
+  initialQuery?: string
+  /** Each DJ on the set's page opens their page; Back reopens this set. */
+  onOpenDj?: (name: string, openVideoId: string | null) => void
+  /** Opens on the Library tab: Home's Needs you, its New sets row. Read once, as openVideoId. */
+  initialTab?: 'library'
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<TracklistResult | null>(null)
   const [currentSet, setCurrentSet] = useState<RawSet | null>(null)
@@ -1130,6 +1213,8 @@ In `src/components/views/SetsView.tsx`, replace
   const [channelInput, setChannelInput] = useState('')
   /**
    * Where else this set's records turn up, by row.
+   *
+   * Read from what is already stored, so it costs nothing and gets better every
 ```
 
 with
@@ -1142,16 +1227,19 @@ with
   const [sets, setSets] = useState<YtSetSummary[]>([])
   const [saved, setSaved] = useState<SavedTrack[]>([])
   /** Unseen finds of watched DJs' searches (Home's New sets), and how many in all. */
-  const [newFinds, setNewFinds] = useState<{ finds: NewDjFind[]; total: number }>({
-    finds: [],
-    total: 0,
-  })
+  const [newFinds, setNewFinds] = useState<{ finds: NewDjFind[]; total: number } | null>(null)
   const [stats, setStats] = useState<YtStats | null>(null)
   const [found, setFound] = useState<SetSearchHit[] | null>(null)
+  /** What YouTube was searched for, for the results' heading. */
+  const [foundQuery, setFoundQuery] = useState('')
+  /** Counts the YouTube searches: one answering after Esc, or a newer one, is dropped. */
+  const searchClaim = useRef(0)
   const [channels, setChannels] = useState<FollowedChannel[]>([])
   const [channelInput, setChannelInput] = useState('')
   /**
    * Where else this set's records turn up, by row.
+   *
+   * Read from what is already stored, so it costs nothing and gets better every
 ```
 
 In `src/components/views/SetsView.tsx`, replace
@@ -1187,6 +1275,70 @@ with
   }, [])
 
   useEffect(() => {
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
+      }),
+    [showLibrary],
+  )
+
+  // Back: the library where it was scrolled to, once its list is there to
+  // scroll (on a fresh mount the list is still loading).
+  const libraryLoaded = sets.length > 0
+  useLayoutEffect(() => {
+    if (view === 'library' && libraryLoaded && libraryScroll.current) {
+      libraryScroll.current.scrollTop = useSetsView.getState().scrollTop
+    }
+  }, [view, libraryLoaded])
+
+  // A set shown here, however it was opened (the library, a link, a search
+  // hit, a DJ page, Home), is no longer news on Home's New sets.
+  const shownVideoId = currentSet?.video.id
+  useEffect(() => {
+    if (shownVideoId) void tauriApi.markDjFindsSeen([shownVideoId]).catch(() => {})
+  }, [shownVideoId])
+
+  // Reloaded whenever the set changes, and whenever the library of sets grows —
+  // a record with nowhere to go today may have somewhere tomorrow.
+  useEffect(() => {
+    const videoId = result?.video.id
+```
+
+with
+
+```tsx
+      }),
+    [showLibrary],
+  )
+
+  // Back: the library where it was scrolled to, once its list is there to
+  // scroll (on a fresh mount the list is still loading).
+  const libraryLoaded = sets.length > 0 && newFinds !== null
+  useLayoutEffect(() => {
+    if (view === 'library' && libraryLoaded && libraryScroll.current) {
+      libraryScroll.current.scrollTop = useSetsView.getState().scrollTop
+    }
+  }, [view, libraryLoaded])
+
+  // A set shown here, however it was opened (the library, a link, a search
+  // hit, a DJ page, Home), is no longer news on Home's New sets.
+  const shownVideoId = currentSet?.video.id
+  useEffect(() => {
+    if (!shownVideoId) return
+    tauriApi
+      .markDjFindsSeen([shownVideoId])
+      // Read again after the mark, so the library's card goes with it.
+      .then(() => tauriApi.getNewDjFinds(NEW_FINDS_MAX))
+      .then(setNewFinds)
+      .catch(() => {})
+  }, [shownVideoId])
+
+  // Reloaded whenever the set changes, and whenever the library of sets grows —
+  // a record with nowhere to go today may have somewhere tomorrow.
+  useEffect(() => {
+    const videoId = result?.video.id
 ```
 
 In `src/components/views/SetsView.tsx`, replace
@@ -1282,29 +1434,7 @@ In `src/components/views/SetsView.tsx`, replace
     if (quotaLeft < 101) {
       setError(
         `Searching by name costs 101 units and only ${quotaLeft.toLocaleString()} are left today.`,
-```
-
-with
-
-```tsx
-    setOpening(null)
-    setFocusCue(null)
-    setView('set')
-    return parsed
-  }
-
-  async function handleSearchSets(query: string) {
-    const quotaLeft = quota?.remaining ?? 0
-    // 100 for the search, and 1 more for the descriptions of everything it
-    // returns — which is what lets the results say whether they hold a list.
-    if (quotaLeft < 101) {
-      setError(
-        `Searching by name costs 101 units and only ${quotaLeft.toLocaleString()} are left today.`,
-```
-
-In `src/components/views/SetsView.tsx`, replace
-
-```tsx
+      )
       return
     }
 
@@ -1318,24 +1448,87 @@ In `src/components/views/SetsView.tsx`, replace
     } finally {
       setLoading(false)
       refreshQuota()
+    }
 ```
 
 with
 
 ```tsx
+    setOpening(null)
+    setFocusCue(null)
+    setView('set')
+    return parsed
+  }
+
+  async function handleSearchSets(query: string) {
+    if (loading) return
+    const quotaLeft = quota?.remaining ?? 0
+    // 100 for the search, and 1 more for the descriptions of everything it
+    // returns — which is what lets the results say whether they hold a list.
+    if (quotaLeft < 101) {
+      setError(
+        `Searching by name costs 101 units and only ${quotaLeft.toLocaleString()} are left today.`,
+      )
       return
     }
 
     setLoading(true)
     setError(null)
+    const claim = ++searchClaim.current
     try {
-      setFound(await tauriApi.searchYouTubeSets(query))
+      const hits = await tauriApi.searchYouTubeSets(query)
+      // Esc, an opened set or a newer search since: not shown.
+      if (searchClaim.current !== claim) return
+      setFound(hits)
+      setFoundQuery(query)
     } catch (err) {
+      if (searchClaim.current !== claim) return
       setError(getErrorMessage(err))
       setFound(null)
     } finally {
       setLoading(false)
       refreshQuota()
+    }
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
+    try {
+      await tauriApi.deleteYouTubeSet(videoId)
+    } catch (err) {
+      toast(`Couldn't remove it: ${getErrorMessage(err)}`, { kind: 'error' })
+      return
+    }
+    if (currentSet?.video.id === videoId) {
+      setCurrentSet(null)
+      setResult(null)
+      showLibrary()
+    }
+    refreshLibrary()
+    toast('Removed from your library')
+  }
+```
+
+with
+
+```tsx
+    try {
+      await tauriApi.deleteYouTubeSet(videoId)
+    } catch (err) {
+      toast(`Couldn't remove it: ${getErrorMessage(err)}`, { kind: 'error' })
+      return
+    }
+    // Its page goes back to the library — also when the page could not read it.
+    if (currentSet?.video.id === videoId || opening?.videoId === videoId) {
+      setCurrentSet(null)
+      setResult(null)
+      setOpening(null)
+      showLibrary()
+    }
+    refreshLibrary()
+    toast('Removed from your library')
+  }
 ```
 
 In `src/components/views/SetsView.tsx`, replace
@@ -1429,6 +1622,7 @@ with
 
   /** The box cleared: YouTube's results go and the library is back. */
   function clearBox() {
+    searchClaim.current++
     setInput('')
     setFound(null)
     setError(null)
@@ -1438,6 +1632,45 @@ with
     const shownId = opening?.videoId ?? currentSet?.video.id ?? null
     const summary = shownId ? sets.find((s) => s.video_id === shownId) : undefined
     return (
+```
+
+In `src/components/views/SetsView.tsx`, replace
+
+```tsx
+          onRetry={() => opening && void openSet(opening.videoId, { title: opening.title })}
+          onOpenDj={onOpenDj ? (name) => onOpenDj(name, currentSet?.video.id ?? null) : undefined}
+          onPlayFile={playFromSet}
+          onToggleSave={toggleSave}
+          onFollowEcho={followEcho}
+          onLookAgain={() => void reanalyse()}
+          onRemove={
+            summary && currentSet ? () => void removeSet(summary.video_id, summary.title) : null
+          }
+        />
+      </div>
+    )
+  }
+
+  return (
+```
+
+with
+
+```tsx
+          onRetry={() => opening && void openSet(opening.videoId, { title: opening.title })}
+          onOpenDj={onOpenDj ? (name) => onOpenDj(name, currentSet?.video.id ?? null) : undefined}
+          onPlayFile={playFromSet}
+          onToggleSave={toggleSave}
+          onFollowEcho={followEcho}
+          onLookAgain={() => void reanalyse()}
+          // A set in the library can be removed even when it cannot be read.
+          onRemove={summary ? () => void removeSet(summary.video_id, summary.title) : null}
+        />
+      </div>
+    )
+  }
+
+  return (
 ```
 
 In `src/components/views/SetsView.tsx`, replace
@@ -2108,6 +2341,7 @@ with
             value={input}
             onChange={(value) => {
               setInput(value)
+              setError(null)
               // Clearing the box returns to the library.
               if (!value.trim()) setFound(null)
             }}
@@ -2120,7 +2354,10 @@ with
               clearBox()
               void openSet(videoId, { title })
             }}
-            onOpenHit={openHit}
+            onOpenHit={(hit) => {
+              clearBox()
+              openHit(hit)
+            }}
             onSearchYouTube={(query) => void handleSearchSets(query)}
             onClear={clearBox}
           />
@@ -2132,8 +2369,8 @@ with
               <div className="sets-home__found-head">
                 <span>
                   {found.length === 0
-                    ? 'No long videos found for that name.'
-                    : `${found.length} sets found on YouTube — opening one costs 5–7 units`}
+                    ? `No long videos found for “${foundQuery}”.`
+                    : `${found.length} ${found.length === 1 ? 'set' : 'sets'} found on YouTube for “${foundQuery}” — opening one costs 5–7 units`}
                 </span>
                 <button type="button" className="link-btn" onClick={clearBox}>
                   Back to your library
@@ -2194,7 +2431,7 @@ with
                   >
                     {t === 'library'
                       ? `Library ${sets.length.toLocaleString('en-US')}${
-                          newFinds.total > 0 ? ` · ${newFinds.total} new` : ''
+                          newFinds && newFinds.total > 0 ? ` · ${newFinds.total} new` : ''
                         }`
                       : t === 'saved'
                         ? `Saved tracks ${saved.length.toLocaleString('en-US')}`
@@ -2232,7 +2469,7 @@ with
               {tab === 'library' && (
                 <SetsLibrary
                   sets={sets}
-                  newFinds={newFinds.finds}
+                  newFinds={newFinds?.finds ?? []}
                   grouping={grouping}
                   onOpenSet={(videoId, title) => void openSet(videoId, { title })}
                   onOpenDj={onOpenDj ? (name) => onOpenDj(name, null) : undefined}
@@ -2699,10 +2936,391 @@ with
   )
 ```
 
-- [ ] **Step 2:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 637 passed (638)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
+- [ ] **Step 2: The library wider; the rules only the old tabs and list used go**
+
+In `src/components/views/SetsView.css`, replace
+
+```css
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px 48px;
+}
+
+.sets-view__container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.sets-view__title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+```
+
+with
+
+```css
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px 48px;
+}
+
+/* Wide enough for the library's four cards a row, as the mockup's full width. */
+.sets-view__container {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.sets-view__title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+```
+
+In `src/components/views/SetsView.css`, replace
+
+```css
+}
+
+.sets-filter__btn:hover {
+  color: var(--text-primary);
+}
+
+.sets-filter__btn--active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- tabs, library, saved --- */
+
+.sets-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sets-tab {
+  padding: 6px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sets-tab:hover {
+  color: var(--text-primary);
+}
+
+.sets-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.sets-stored {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+```
+
+with
+
+```css
+}
+
+.sets-filter__btn:hover {
+  color: var(--text-primary);
+}
+
+/* --- tabs, library, saved --- */
+
+.sets-stored {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+```
+
+In `src/components/views/SetsView.css`, replace
+
+```css
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sets-tab__badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- where to find a record --- */
+
+.sets-stores {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+```
+
+with
+
+```css
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* --- where to find a record --- */
+
+.sets-stores {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+```
+
+In `src/components/views/SetsView.css`, replace
+
+```css
+
+/* --- the library, filed by DJ --- */
+
+.sets-dj {
+  margin-bottom: 26px;
+}
+
+/*
+ * The DJ, not another set.
+ *
+ * It used to be the same size and weight as the titles underneath it, so a
+ * group read as one more row in the list. A heading has to be a different kind
+ * of thing, not a slightly bolder one: smaller, spaced out, and ruled off.
+ */
+.sets-dj__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sets-dj__who {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.sets-dj__count {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  /* Pushed away from the name so the two are not read as one phrase. */
+  margin-left: auto;
+}
+
+/* A rail down the side, so where a group ends is never in question. */
+.sets-dj__sets {
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  margin-left: 2px;
+}
+```
+
+with
+
+```css
+
+/* --- the library, filed by DJ --- */
+
+.sets-dj {
+  margin-bottom: 26px;
+}
+```
+
+- [ ] **Step 3: A stored set that cannot be read can be removed from its page; the filter's shade**
+
+In `src/components/sets/SetPage.tsx`, replace
+
+```tsx
+      {menuAt && <Menu at={menuAt} entries={menu} label="Set" onClose={() => setMenuAt(null)} />}
+
+      <div className="set-page__scroll">
+        {opening?.error ? (
+          <div className="set-page__error">
+            <p>Couldn&apos;t read this set: {opening.error}</p>
+            <button type="button" className="btn" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+        ) : !ready || !result ? (
+          <div className="set-page__rows" aria-busy="true">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="set-row set-row--skeleton">
+                <span />
+```
+
+with
+
+```tsx
+      {menuAt && <Menu at={menuAt} entries={menu} label="Set" onClose={() => setMenuAt(null)} />}
+
+      <div className="set-page__scroll">
+        {opening?.error ? (
+          <div className="set-page__error">
+            <p>Couldn&apos;t read this set: {opening.error}</p>
+            <div className="set-page__error-actions">
+              <button type="button" className="btn" onClick={onRetry}>
+                Try again
+              </button>
+              {/* A stored set that will not read can still leave the library. */}
+              {onRemove && (
+                <button type="button" className="btn" onClick={onRemove}>
+                  Remove from library
+                </button>
+              )}
+            </div>
+          </div>
+        ) : !ready || !result ? (
+          <div className="set-page__rows" aria-busy="true">
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} className="set-row set-row--skeleton">
+                <span />
+```
+
+In `src/components/sets/SetPage.css`, replace
+
+```css
+}
+
+.set-page__filter-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+```
+
+with
+
+```css
+}
+
+.set-page__filter-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  /* A shade off the page, so it reads as a button on the light themes too
+     (their elevated colour is the page's white). */
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 7%);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+```
+
+In `src/components/sets/SetPage.css`, replace
+
+```css
+}
+
+.set-page__error p {
+  margin: 0;
+}
+
+/* ---- Track rows: # · Time · Track · Lists · You own · ♡ ---- */
+
+.set-row {
+  display: grid;
+  grid-template-columns: 34px 56px minmax(0, 1fr) 54px 96px 32px;
+  align-items: center;
+```
+
+with
+
+```css
+}
+
+.set-page__error p {
+  margin: 0;
+}
+
+.set-page__error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Track rows: # · Time · Track · Lists · You own · ♡ ---- */
+
+.set-row {
+  display: grid;
+  grid-template-columns: 34px 56px minmax(0, 1fr) 54px 96px 32px;
+  align-items: center;
+```
+
+- [ ] **Step 4: Newest first**
+
+In `src/store/setsViewStore.ts`, replace
+
+```ts
+  setScrollTop: (scrollTop: number) => void
+  requestLibrary: () => void
+}
+
+export const useSetsView = create<SetsViewState>((set) => ({
+  tab: 'library',
+  grouping: 'dj',
+  scrollTop: 0,
+  libraryRequests: 0,
+  setTab: (tab) => set({ tab, scrollTop: 0 }),
+  setGrouping: (grouping) => set({ grouping }),
+  setScrollTop: (scrollTop) => set({ scrollTop }),
+  requestLibrary: () => set((s) => ({ libraryRequests: s.libraryRequests + 1 })),
+```
+
+with
+
+```ts
+  setScrollTop: (scrollTop: number) => void
+  requestLibrary: () => void
+}
+
+export const useSetsView = create<SetsViewState>((set) => ({
+  tab: 'library',
+  // Newest, as the mockup draws it.
+  grouping: 'recent',
+  scrollTop: 0,
+  libraryRequests: 0,
+  setTab: (tab) => set({ tab, scrollTop: 0 }),
+  setGrouping: (grouping) => set({ grouping }),
+  setScrollTop: (scrollTop) => set({ scrollTop }),
+  requestLibrary: () => set((s) => ({ libraryRequests: s.libraryRequests + 1 })),
+```
+
+- [ ] **Step 5:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 637 passed (638)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
 
 ```bash
-git add src/components/views/SetsView.tsx
+git add src/components/views/SetsView.tsx src/components/views/SetsView.css src/components/sets/SetPage.tsx src/components/sets/SetPage.css src/store/setsViewStore.ts
 git commit -m "feat(sets): Sets opens on its library home — the box, the tabs, new finds and set cards"
 ```
 
@@ -2745,11 +3363,17 @@ through a DJ page.
   `src/lib/sets/box.ts` (tested): a link is any watch, youtu.be, live, shorts
   or embed address or a bare 11-character id; text is matched against the
   title, the channel and the DJ, without case or accents. The old Process /
-  Search button goes: ↑ / ↓ move through the dropdown, Enter opens the row
-  lit (the first, so a free result comes before the YouTube search), a press
-  chooses a row before the box loses focus, Esc closes the dropdown and then
-  clears the box. "Reading…" shows in the box while a set is fetched or
-  YouTube searched. The dropdown sits inside the main area, so it can never
+  Search button goes: ↑ / ↓ move through the dropdown (the lit row kept in
+  view), Enter opens the row lit (the first, so a free result comes before
+  the YouTube search), a press chooses a row before the box loses focus, Esc
+  closes the dropdown and then clears the box. Enter on a closed dropdown
+  only opens it, and on the YouTube row it waits until the free track search
+  has answered, so a name typed fast and Enter never spends 101 units before
+  the free results show; the last results stay while the next are read, so
+  the rows do not jump. One YouTube search runs at a time, and one answering
+  after Esc, an opened set or a newer search is dropped; its heading names
+  what was searched. With fewer than 101 units left, the row says how many.
+  "Reading…" shows in the box while a set is fetched or YouTube searched. The dropdown sits inside the main area, so it can never
   cover the set video (the bar is below the main area, a set's page box is
   not on the library) and does not report itself as an overlay.
 - YouTube's results replace the page below the box under "2 sets found on
@@ -2763,8 +3387,14 @@ through a DJ page.
   title, "saved" or "opening costs 5–7". Mark all seen works as Home's, with
   its toast and Undo. The finds are read with the library: on arrival, after
   a check and after a set is opened (which marks it seen).
-- Your sets: 4 cards to a row, 3 when the window is under 1100px wide. The
-  library list's bin goes; removing a set is on its page's ⋯.
+- Your sets: 4 cards to a row, 3 when the window is under 1100px wide; the
+  library is up to 1180px wide (it was 900px) so the cards have room. Newest
+  is the grouping Sets starts on, as the mockup draws it (By DJ gives every
+  DJ a row, which with many one-set DJs is long). The library list's bin
+  goes; removing a set is on its page's ⋯, and on its page's error when a
+  stored set cannot be read.
+- A set opened from the library leaves New from DJs you watch at once: the
+  finds are read again after it is marked seen.
 - A DJ page's Find more fills the box and focuses it, so the dropdown shows
   the free results at once; nothing is spent until the YouTube row.
 
@@ -2788,8 +3418,9 @@ git commit -m "docs(spec): Sets S3 as built"
 
 - [ ] **Step 1:** `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 637 passed (638)`; `npx tsc --noEmit -p .`; `npx eslint src mobile 2>&1 | grep problems`: 28; `npx vite build`.
 - [ ] **Step 2 (the user, by hand in `npm run tauri dev`):**
-  - Sets opens on the box, the tabs and your sets as cards (4 to a row; 3 in a narrower window); By DJ shows a heading per DJ (the name opens the DJ page), Newest one grid.
+  - Sets opens on the box, the tabs and your sets as cards (4 to a row; 3 in a narrower window), newest first; By DJ shows a heading per DJ (the name opens the DJ page).
+  - Type a DJ's name fast and press Enter: no YouTube search happens before the free results show.
   - Type a DJ's name: your matching sets and the tracks in your sets show as you type; Enter or a click opens one (a track plays from its time); the last row searches YouTube (101 units) and its results replace the page; Esc or clearing the box brings the library back.
   - Paste a link: "In your library · free" for a saved set, else "Open this set · 5–7 units"; Enter opens it.
-  - After a DJ search finds sets: "New from DJs you watch" shows them, "Library N · M new"; a card opens its set; Mark all seen clears them, Undo brings them back.
+  - After a DJ search finds sets: "New from DJs you watch" shows them, "Library N · M new"; a card opens its set, and on Back it is gone from the row; Mark all seen clears them, Undo brings them back.
   - A DJ page's Find more: the name in the box, the free results in the dropdown, nothing spent.
