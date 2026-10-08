@@ -5,10 +5,10 @@
 **Goal:** The last three tabs of Sets, as the spec draws them. **Following**: one box — "Follow a channel, or watch a DJ by name" (a link or @handle follows the channel; a name asks: watch as a DJ, or search for a channel anyway · 100 units) — over **DJs you watch** (Search all now · N×100 units; each row: photo, name → DJ page, when checked, how often, fetch automatically, **Check now · 100 units**, opens to everything found, unwatch) and **Channels you follow** (Check all · 1–2 units each; each row: name, @handle, when checked, how often, **Check now · 1–2 units**, opens to recent uploads, unfollow; this session's news under it until opened or dismissed). **Saved tracks**: rows in the set page's style, the set's title opening the set at the cue. **Stats**: four cards in Home's quiet style.
 
 **Architecture:**
-- **Rust** (`commands/youtube.rs`): what a check covers is one pure function, `covered(items, CheckScope, now)` over a `Checkable` trait for channels and DJs — `All` (the buttons), `Due` (the timer), `One(key)` (a row) — tested as `is_due` is; `run_channel_check` / `run_dj_check` take the scope; new commands `check_youtube_channel(channel_id)` and `check_youtube_dj(name_key)`.
-- **Store** (tested), `src/store/channelNewsStore.ts`: `useChannelNews` — the channels' news of the session by channel, fed by App's `yt-new-sets` listener and Following's checks; a DJ's finds are not kept (they are stored and show on the library).
+- **Rust** (`commands/youtube.rs`): what a check covers is one pure function, `covered(items, CheckScope, now)` over a `Checkable` trait for channels and DJs — `All` (the buttons), `Due` (the timer), `One(key)` (a row) — tested as `is_due` is; `run_channel_check` / `run_dj_check` take the scope; new commands `check_youtube_channel(channel_id)` and `check_youtube_dj(name_key)`; a row's check that cannot reach YouTube answers the error.
+- **Store** (tested), `src/store/channelNewsStore.ts`: `useChannelNews` — the channels' news of the session by channel (and each channel's newest upload, for Dismiss), fed by App's `yt-new-sets` listener and Following's checks, and which of Following's checks is running; a DJ's finds are not kept (they are stored and show on the library).
 - **Pure TypeScript** (tested): `src/lib/sets/following.ts` (when last checked; what a check found, for its toast); `savedList` in `src/lib/sets/setPage.ts` (Copy list).
-- **Components**, `src/components/sets/`: `SetsFollowing.tsx` (the box, the two lists, their checks; it owns its busy state and calls the API), `SetsSaved.tsx`, `SetsStats.tsx`, `SetsTabs.css`. `SetsView` renders them and loses Following's state and handlers, keeping `importUpload` (an upload opens on its page).
+- **Components**, `src/components/sets/`: `SetsFollowing.tsx` (the box, the two lists, their checks; it calls the API, its busy state in the store so it outlives the tab), `SetsSaved.tsx`, `SetsStats.tsx`, `SetsTabs.css`. `SetsView` renders them and loses Following's state and handlers, keeping `importUpload` (an upload opens on its page).
 
 **Tech Stack:** Rust (tokio, rusqlite), React 19, TypeScript, zustand, Vitest (jsdom).
 
@@ -22,7 +22,10 @@
 - **Opening a row** (▾): a DJ's — everything found so far (`listYouTubeDjFinds`, free), with today's note when empty ("Not searched yet — set how often, or press Check now"); a channel's — its recent long uploads (1–2 units, as today). One row is open at a time. An upload in the library opens free; else "get it · 5–7 units" fetches, stores and opens it (on its page), moving a channel's last-seen marker as today.
 - **A channel's news** shows under its row ("2 new sets", Dismiss); Dismiss marks the channel seen up to its newest upload (`markYouTubeChannelSeen`), as today. Opening one takes it out of the news.
 - **What a check found** is said in a toast — "2 new sets from Traumer — see Library", "Nothing new from Traumer", "3 new sets on 2 channels", "Nothing new on your channels" — the DJ's finds being on the library's New from DJs you watch. Search all refuses with a warning toast when the quota is short, as today; so does a DJ's Check now. Failures are error toasts (the box's error line is the library's).
-- **Following's checks keep their own busy state**, so the library box no longer reads "Reading…" while they run (an S3 note).
+- **Following's checks keep their own busy state**, so the library box no longer reads "Reading…" while they run (an S3 note). It lives in `useChannelNews`, so leaving the tab during a check and coming back keeps the buttons disabled.
+- **A row's check that cannot reach YouTube** says the error, not "Nothing new"; Search all and Check all still skip what failed, as today.
+- **The badge** counts only channels still followed; ✕ on a channel clears its news. Dismiss moves the marker to the newest upload the news has seen, even with the row closed. "get it" leaves the news alone when the fetch fails. Watching a DJ already watched, or following a channel already followed, says so and spends nothing; "Search for a channel anyway" refuses with a warning under 100 units left.
+- **App's notification** for a background check's finds says where they are: Sets › Library (DJs' finds), Sets › Following (channels').
 - **Today's explanatory paragraphs** (what a check costs, why a DJ is not a channel) become one line under the box; the costs stay on every button.
 - **Saved tracks**: the cue; the track over its set's title, a button that opens the set playing from the cue; the store links on hover and while the row holds the keyboard; ♥ removes it. Copy list writes "Artist - Title (Mix)" lines (now with the mix) and says how many.
 - **Stats**: the summary line, then four cards two to a row (one under a 900px window): Most played, Doing the rounds, Most gaps (a row opens its set), Quota (spent today, left of the day's units, resets in).
@@ -31,7 +34,7 @@
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `dac8474`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc`, each task's tests and `cargo test` pass at every task's end.
 - **Builds and tests:**
   - `cargo test --lib`: 2 new (461); `cargo build` shows no warning.
-  - `vitest`: 9 new. The repo counts 647 after it: 646 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
+  - `vitest`: 11 new. The repo counts 649 after it: 648 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy lacks `tracklist.test.ts`'s fixtures: 8 of its tests are skipped and 6 not collected there.)
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline, none new; `vite build` passes.
 - **In WebKit** (the S3 test page with two watched DJs — one with a photo, one fetching automatically — two followed channels, two saved tracks, Stats, and each check mocked), at 1280 and at 1100 in the light Dawn theme:
   - Following: "DJs you watch · Search all now · 200 units", "Channels you follow · Check all · 1–2 units each"; Traumer with his photo, "checked Oct 2"; Solomun's initials, "never checked"; Cercle "@cercle · checked 00:35";
@@ -41,7 +44,16 @@
   - the interval set to Daily and the switch on: `set_youtube_dj_interval 24`, `set_youtube_dj_auto_import true`; ✕ unwatches Solomun;
   - Saved tracks: "17:00 · Raw Instinct — De La Bass (Mousse T House Mix) · Marco Carola b2b Luciano …"; the set's title opens the set at 51:00; Copy list: "Copied 2 tracks"; ♥ removes one;
   - Stats: "16 sets · 412 named tracks · 37 still unidentified", the four cards; Most gaps' row opens its set;
+  - the review's cases: leaving the tab during a slow Search all and coming back — the button still "Searching…", disabled, one `check_youtube_djs`; a failing "get it" — Cercle's "2 new sets" and the badge 2 stay; ✕ on Cercle with news — the badge gone; ▾ on Boiler Room (slow) then ▾ on Traumer — only Traumer open when the uploads arrive; ▾ open then closed before they arrive — nothing open; "Traumer" again → "Already watching Traumer", "@cercle" again → "Already following Cercle", neither spending;
   - S3's scenario still passes on this copy.
+
+**Reviewed:** an independent review of the first version (committed as `ecc1d14`) found one blocker and a set of smaller faults, all fixed in the blocks below and checked above:
+- **Blocker — a second spend.** Following kept which check was running in its own state, so leaving the tab during a check and coming back enabled the buttons again: a second Search all spent another 100 units per DJ. The busy key now lives in `useChannelNews`.
+- **A row's check that failed said "Nothing new".** `run_dj_check` / `run_channel_check` with `One(key)` now answer the error when nothing was checked (a channel with no uploads list says so).
+- **The badge** counted channels already unfollowed → it counts only followed ones, and ✕ clears a channel's news. **Dismiss** with the row closed had no upload to mark → the store keeps each channel's newest upload. **"get it"** dropped the news before the fetch, which could fail → the news goes only once it opened (`importUpload` answers whether it did).
+- **A late ▾ answer** reopened a row closed meanwhile, or closed the row opened since → a claim drops it. The empty note is worked out at render. The ▾ rows are disabled during a check, ✕ only for its own row. A settings change to the same value spends no call.
+- **Watching or following twice**, and **Search for a channel anyway** under 100 units left, now say so instead of calling. The Stats card showed the quota of when Stats was read → the live quota. App's notification said "Sets" for every background find → where they are.
+- **Small:** the box's button matched the input's height; a channel row's second line lines up with its name (no photo); the switch's label is clickable; the buttons' accessible names say the cost.
 
 ---
 
@@ -221,6 +233,76 @@ async fn run_channel_check(
 In `src-tauri/src/commands/youtube.rs`, replace
 
 ```rust
+            .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
+    })?;
+
+    let mut news = Vec::new();
+    let mut spent = 0u32;
+    let mut checked: Vec<String> = Vec::new();
+
+    for channel in channels {
+        let Some(uploads_id) = channel.uploads_id.clone() else {
+            continue;
+        };
+
+        let mut items = match youtube::channel_uploads(&key, &uploads_id, 10, &mut spent).await {
+            Ok(items) => items,
+            // One unreachable channel must not sink the whole check.
+            Err(_) => continue,
+        };
+
+        // Reached, so the interval starts again from here — whether or not
+        // anything new turned up.
+        checked.push(channel.channel_id.clone());
+```
+
+with
+
+```rust
+            .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
+    })?;
+
+    let mut news = Vec::new();
+    let mut spent = 0u32;
+    let mut checked: Vec<String> = Vec::new();
+    // What stopped the last channel that could not be reached: a row's check
+    // of that one channel says so rather than "nothing new".
+    let mut unreached: Option<AppError> = None;
+
+    for channel in channels {
+        let Some(uploads_id) = channel.uploads_id.clone() else {
+            unreached = Some(AppError::Validation(
+                "This channel has no uploads list to check".to_string(),
+            ));
+            continue;
+        };
+
+        let mut items = match youtube::channel_uploads(&key, &uploads_id, 10, &mut spent).await {
+            Ok(items) => items,
+            // One unreachable channel must not sink the whole check.
+            Err(e) => {
+                unreached = Some(e);
+                continue;
+            }
+        };
+
+        // Reached, so the interval starts again from here — whether or not
+        // anything new turned up.
+        checked.push(channel.channel_id.clone());
+```
+
+In `src-tauri/src/commands/youtube.rs`, replace
+
+```rust
+                let _ = db.touch_yt_channel_checked(channel_id, &stamp);
+            }
+            Ok(())
+        });
+    }
+
+    Ok(news)
+}
+
 /// Checks every followed channel for sets that were not there last time.
 /// One to two units per channel.
 #[tauri::command]
@@ -239,6 +321,19 @@ pub async fn set_youtube_channel_interval(
 with
 
 ```rust
+                let _ = db.touch_yt_channel_checked(channel_id, &stamp);
+            }
+            Ok(())
+        });
+    }
+
+    if let (CheckScope::One(_), true, Some(error)) = (scope, checked.is_empty(), unreached) {
+        return Err(error);
+    }
+
+    Ok(news)
+}
+
 /// Checks every followed channel for sets that were not there last time.
 /// One to two units per channel.
 #[tauri::command]
@@ -342,6 +437,90 @@ async fn run_dj_check(
 In `src-tauri/src/commands/youtube.rs`, replace
 
 ```rust
+            .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
+    })?;
+
+    let mut news = Vec::new();
+    let mut spent = 0u32;
+    let mut checked: Vec<String> = Vec::new();
+
+    for dj in djs {
+        // A DJ watched for the first time looks back a month, not forever; after
+        // that the window reaches a little behind the last check.
+        let since = dj
+            .last_checked
+```
+
+with
+
+```rust
+            .map_err(|e| AppError::Database(format!("Failed to read the library: {e}")))
+    })?;
+
+    let mut news = Vec::new();
+    let mut spent = 0u32;
+    let mut checked: Vec<String> = Vec::new();
+    // What stopped the last search that failed: a row's search for that one
+    // DJ says so rather than "nothing new".
+    let mut unreached: Option<AppError> = None;
+
+    for dj in djs {
+        // A DJ watched for the first time looks back a month, not forever; after
+        // that the window reaches a little behind the last check.
+        let since = dj
+            .last_checked
+```
+
+In `src-tauri/src/commands/youtube.rs`, replace
+
+```rust
+        )
+        .await
+        {
+            Ok(hits) => hits,
+            // One failed search must not sink the rest, and must not count as
+            // a check — 100 units is too much to silently waste a day over.
+            Err(_) => continue,
+        };
+
+        checked.push(dj.name_key.clone());
+
+        // A set that does not name them in its title is somebody talking about
+        // them, not a set of theirs.
+```
+
+with
+
+```rust
+        )
+        .await
+        {
+            Ok(hits) => hits,
+            // One failed search must not sink the rest, and must not count as
+            // a check — 100 units is too much to silently waste a day over.
+            Err(e) => {
+                unreached = Some(e);
+                continue;
+            }
+        };
+
+        checked.push(dj.name_key.clone());
+
+        // A set that does not name them in its title is somebody talking about
+        // them, not a set of theirs.
+```
+
+In `src-tauri/src/commands/youtube.rs`, replace
+
+```rust
+                let _ = db.touch_yt_dj_checked(name_key, &stamp);
+            }
+            Ok(())
+        });
+    }
+
+    Ok(news)
+}
 
 /// Searches for every watched DJ. 100 units each, and the button says so.
 #[tauri::command]
@@ -360,6 +539,18 @@ pub async fn check_youtube_djs(
 with
 
 ```rust
+                let _ = db.touch_yt_dj_checked(name_key, &stamp);
+            }
+            Ok(())
+        });
+    }
+
+    if let (CheckScope::One(_), true, Some(error)) = (scope, checked.is_empty(), unreached) {
+        return Err(error);
+    }
+
+    Ok(news)
+}
 
 /// Searches for every watched DJ. 100 units each, and the button says so.
 #[tauri::command]
@@ -668,7 +859,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { channelNewsCount, useChannelNews } from './channelNewsStore'
 import type { ChannelNews, ChannelUpload } from '../types/youtube'
 
-const upload = (video_id: string): ChannelUpload => ({ video_id, title: video_id, published_at: '2026-10-01T00:00:00Z', already_stored: false })
+const upload = (video_id: string, published_at = '2026-10-01T00:00:00Z'): ChannelUpload => ({ video_id, title: video_id, published_at, already_stored: false })
 const news = (channel_id: string, source: 'channel' | 'dj', ids: string[]): ChannelNews => ({
   channel_id,
   title: channel_id,
@@ -677,7 +868,7 @@ const news = (channel_id: string, source: 'channel' | 'dj', ids: string[]): Chan
   new_sets: ids.map(upload),
 })
 
-beforeEach(() => useChannelNews.setState({ byChannel: {} }))
+beforeEach(() => useChannelNews.setState({ byChannel: {}, newest: {}, busy: null }))
 
 describe('the channels’ news', () => {
   it('keeps a channel’s news, not a DJ’s, and counts it', () => {
@@ -701,6 +892,20 @@ describe('the channels’ news', () => {
     useChannelNews.getState().dismiss('UC2')
     expect(channelNewsCount(useChannelNews.getState().byChannel)).toBe(0)
   })
+
+  it('counts only the channels still followed', () => {
+    useChannelNews.getState().add([news('UC1', 'channel', ['a', 'b']), news('UC2', 'channel', ['c'])])
+    expect(channelNewsCount(useChannelNews.getState().byChannel, new Set(['UC2']))).toBe(1)
+  })
+
+  it('remembers the newest upload, so Dismiss never marks an older one seen', () => {
+    const late = { ...news('UC1', 'channel', []), new_sets: [upload('old', '2026-09-01T00:00:00Z'), upload('new', '2026-10-05T00:00:00Z')] }
+    useChannelNews.getState().add([late])
+    useChannelNews.getState().take('UC1', 'new')
+    expect(useChannelNews.getState().newest.UC1.video_id).toBe('new')
+    useChannelNews.getState().dismiss('UC1')
+    expect(useChannelNews.getState().newest.UC1).toBeUndefined()
+  })
 })
 ```
 
@@ -712,39 +917,53 @@ Create `src/store/channelNewsStore.ts`:
 
 ```ts
 // src/store/channelNewsStore.ts
-// The channels' news of this session (Sets redesign spec, Following): the
-// new uploads a check turned up, under their channel, until each is opened or
-// the channel's news is dismissed. Kept in App's reach, not in Sets, so news
-// from a background check (App's `yt-new-sets` listener) is there when the
-// toast says "see Sets › Following", and it survives tab switches, set pages
-// and trips out of Sets. A DJ's finds are not kept here: they are stored, and
-// show on the library's New from DJs you watch.
+// Following's state that must outlive the tab (Sets redesign spec,
+// Following): the channels' news of this session — the new uploads a check
+// turned up, under their channel, until each is opened or the channel's
+// news is dismissed — and the check or fetch running now. Kept in App's
+// reach, not in Sets, so news from a background check (App's `yt-new-sets`
+// listener) is there when the toast says "see Sets › Following", it survives
+// tab switches, set pages and trips out of Sets, and a check still running
+// keeps its buttons disabled when you come back (a second press would spend
+// its units again). A DJ's finds are not kept here: they are stored, and show
+// on the library's New from DJs you watch.
 import { create } from 'zustand'
 import type { ChannelNews, ChannelUpload } from '../types/youtube'
 
 interface ChannelNewsState {
   /** By channel id, newest check's uploads first, each video once. */
   byChannel: Record<string, ChannelUpload[]>
+  /** By channel id, the newest upload its checks turned up: what Dismiss marks seen. */
+  newest: Record<string, ChannelUpload>
+  /** What Following is working on: a row's key, an upload's id, 'djs', 'channels', 'follow'. */
+  busy: string | null
   /** A check's news: the channels' is kept; a DJ's is not. */
   add: (news: readonly ChannelNews[]) => void
   /** An upload opened or fetched: it is no longer news. */
   take: (channelId: string, videoId: string) => void
-  /** Dismissed: the channel's news goes. */
+  /** Dismissed, or the channel unfollowed: its news goes. */
   dismiss: (channelId: string) => void
+  setBusy: (busy: string | null) => void
 }
+
+const later = (a: ChannelUpload, b: ChannelUpload) => (a.published_at > b.published_at ? a : b)
 
 export const useChannelNews = create<ChannelNewsState>((set) => ({
   byChannel: {},
+  newest: {},
+  busy: null,
   add: (news) =>
     set((state) => {
       const byChannel = { ...state.byChannel }
+      const newest = { ...state.newest }
       for (const item of news) {
         if (item.source !== 'channel' || item.new_sets.length === 0) continue
         const before = byChannel[item.channel_id] ?? []
         const fresh = item.new_sets.filter((upload) => !before.some((b) => b.video_id === upload.video_id))
         byChannel[item.channel_id] = [...fresh, ...before]
+        newest[item.channel_id] = item.new_sets.reduce(later, newest[item.channel_id] ?? item.new_sets[0])
       }
-      return { byChannel }
+      return { byChannel, newest }
     }),
   take: (channelId, videoId) =>
     set((state) => {
@@ -757,18 +976,30 @@ export const useChannelNews = create<ChannelNewsState>((set) => ({
   dismiss: (channelId) =>
     set((state) => {
       const byChannel = { ...state.byChannel }
+      const newest = { ...state.newest }
       delete byChannel[channelId]
-      return { byChannel }
+      delete newest[channelId]
+      return { byChannel, newest }
     }),
+  setBusy: (busy) => set({ busy }),
 }))
 
-/** How many uploads are news: the Following tab's badge. */
-export function channelNewsCount(byChannel: Record<string, ChannelUpload[]>): number {
-  return Object.values(byChannel).reduce((total, uploads) => total + uploads.length, 0)
+/**
+ * How many uploads are news: the Following tab's badge. Only the channels
+ * still followed count (`followed`, when given).
+ */
+export function channelNewsCount(
+  byChannel: Record<string, ChannelUpload[]>,
+  followed?: ReadonlySet<string>,
+): number {
+  return Object.entries(byChannel).reduce(
+    (total, [channelId, uploads]) => (followed && !followed.has(channelId) ? total : total + uploads.length),
+    0,
+  )
 }
 ```
 
-- [ ] **Step 4:** `npx vitest run src/store/channelNewsStore.test.ts`: PASS, 3. Commit:
+- [ ] **Step 4:** `npx vitest run src/store/channelNewsStore.test.ts`: PASS, 5. Commit:
 
 ```bash
 git add src/lib/tauri-api.ts src/store/channelNewsStore.ts src/store/channelNewsStore.test.ts
@@ -1051,6 +1282,10 @@ Create `src/components/sets/SetsTabs.css`:
   outline: none;
 }
 
+.follow-box .btn {
+  height: 36px;
+}
+
 .follow-choice {
   display: flex;
   flex-wrap: wrap;
@@ -1166,6 +1401,17 @@ button.follow-row__name:focus-visible {
 .follow-row__opened,
 .follow-row__news {
   margin: 8px 0 0 46px;
+}
+
+/* A channel has no photo to line up under. */
+.follow-row--channel .follow-row__settings,
+.follow-row--channel .follow-row__opened,
+.follow-row--channel .follow-row__news {
+  margin-left: 0;
+}
+
+.follow-row__label--click {
+  cursor: pointer;
 }
 
 .follow-row__news-head {
@@ -1432,7 +1678,7 @@ Create `src/components/sets/SetsFollowing.tsx`:
 // row opens to what has been found for it. A DJ's finds land on the
 // library's New from DJs you watch; a channel's news shows under its row for
 // this session (the channel news store), until opened or dismissed.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { SelectMenu } from '../SelectMenu'
 import { ToggleSwitch } from '../settings/ToggleSwitch'
@@ -1467,16 +1713,18 @@ interface SetsFollowingProps {
   onPatchChannel: (channelId: string, patch: Partial<FollowedChannel>) => void
   /** A stored set: its page. */
   onOpenSet: (videoId: string, title: string) => void
-  /** Not stored: fetched (5–7 units), stored and opened; from a channel, its last-seen marker moves there. */
-  onImport: (videoId: string, channelId?: string) => Promise<void>
+  /**
+   * Not stored: fetched (5–7 units), stored and opened; from a channel, its
+   * last-seen marker moves there. Answers whether it worked.
+   */
+  onImport: (videoId: string, channelId?: string) => Promise<boolean>
   onOpenDj?: (name: string) => void
 }
 
-/** A row opened to what has been found for it. */
+/** A row opened to what has been found for it; `items` is null while it reads. */
 interface Opened {
   key: string
   items: ChannelUpload[] | null
-  note?: string
 }
 
 export function SetsFollowing({
@@ -1494,9 +1742,18 @@ export function SetsFollowing({
   const [input, setInput] = useState('')
   /** A bare name in the box: watch it as a DJ, or pay 100 units to look for a channel. */
   const [bareName, setBareName] = useState<string | null>(null)
-  /** What is being worked on: a row's key, an upload's id, 'djs', 'channels', 'follow'. */
-  const [busy, setBusy] = useState<string | null>(null)
-  const [opened, setOpened] = useState<Opened | null>(null)
+  // What is being worked on lives in the store, so a check still running
+  // keeps its buttons disabled after a trip to another tab.
+  const busy = useChannelNews((s) => s.busy)
+  const setBusy = useChannelNews((s) => s.setBusy)
+  const [opened, setOpenedState] = useState<Opened | null>(null)
+  /** Counts the rows opened and closed: an answer for a row since closed, or replaced, is dropped. */
+  const openClaim = useRef(0)
+  const openedKey = useRef<string | null>(null)
+  const setOpened = (next: Opened | null) => {
+    openedKey.current = next?.key ?? null
+    setOpenedState(next)
+  }
   const [photos, setPhotos] = useState<Map<string, string>>(new Map())
   const news = useChannelNews((s) => s.byChannel)
 
@@ -1535,7 +1792,14 @@ export function SetsFollowing({
     setBusy('follow')
     setBareName(null)
     try {
-      await tauriApi.followYouTubeChannel(await tauriApi.resolveYouTubeChannel(text))
+      const channel = await tauriApi.resolveYouTubeChannel(text)
+      // Following again would reset its interval and its last-seen marker.
+      if (channels.some((c) => c.channel_id === channel.channelId)) {
+        toast(`Already following ${channel.title ?? channel.channelId}`, { kind: 'info' })
+        setInput('')
+        return
+      }
+      await tauriApi.followYouTubeChannel(channel)
       setInput('')
       onChanged()
     } catch (err) {
@@ -1546,8 +1810,25 @@ export function SetsFollowing({
     }
   }
 
+  /** A bare name looked up as a channel: 100 units, so the quota is checked first. */
+  async function searchChannelAnyway(name: string) {
+    if (left < 100) {
+      toast(`Searching for a channel costs 100 units and only ${left.toLocaleString('en-US')} are left today.`, {
+        kind: 'warning',
+      })
+      return
+    }
+    await followChannel(name)
+  }
+
   async function watchDj(name: string) {
     setBareName(null)
+    // Watching again would reset their interval, auto-import and last check.
+    if (djs.some((dj) => dj.name_key === name.trim().toLowerCase())) {
+      toast(`Already watching ${name}`, { kind: 'info' })
+      setInput('')
+      return
+    }
     try {
       await tauriApi.watchYouTubeDj(name)
       setInput('')
@@ -1570,7 +1851,8 @@ export function SetsFollowing({
     try {
       const found = dj ? await tauriApi.checkYouTubeDj(dj.name_key) : await tauriApi.checkYouTubeDjs()
       toast(djCheckMessage(found, dj?.display_name ?? null), { kind: 'info' })
-      if (dj && opened?.key === dj.name_key) void openDj(dj)
+      // Its row, if it is open now, shows what this search added.
+      if (dj && openedKey.current === dj.name_key) void openDj(dj)
       onChanged()
     } catch (err) {
       failed("Couldn't search")(err)
@@ -1597,20 +1879,21 @@ export function SetsFollowing({
     }
   }
 
+  function closeRow() {
+    openClaim.current++
+    setOpened(null)
+  }
+
   /** Everything a DJ's searches have turned up, seen or not: free, read from disk. */
   async function openDj(dj: WatchedDj) {
-    setOpened({ key: dj.name_key, items: null })
+    const claim = ++openClaim.current
+    // Already open (a search just ended): its rows stay until the new ones come.
+    if (openedKey.current !== dj.name_key) setOpened({ key: dj.name_key, items: null })
     try {
       const items = await tauriApi.listYouTubeDjFinds(dj.name_key)
-      setOpened({
-        key: dj.name_key,
-        items,
-        // "Nothing found" and "never looked" are not the same answer.
-        note: dj.last_checked
-          ? 'Searched, and nothing has turned up yet.'
-          : `Not searched yet — ${dj.check_interval_hours === 0 ? 'set how often, or press Check now' : 'the next automatic search will pick this up'}.`,
-      })
+      if (openClaim.current === claim) setOpened({ key: dj.name_key, items })
     } catch (err) {
+      if (openClaim.current !== claim) return
       setOpened(null)
       failed("Couldn't read what was found")(err)
     }
@@ -1619,11 +1902,13 @@ export function SetsFollowing({
   /** A channel's recent long uploads (one to two units). */
   async function openChannel(channel: FollowedChannel) {
     if (!channel.uploads_id) return
+    const claim = ++openClaim.current
     setOpened({ key: channel.channel_id, items: null })
     try {
       const items = await tauriApi.listYouTubeChannelUploads(channel.uploads_id, 25)
-      setOpened({ key: channel.channel_id, items, note: 'No long uploads found.' })
+      if (openClaim.current === claim) setOpened({ key: channel.channel_id, items })
     } catch (err) {
+      if (openClaim.current !== claim) return
       setOpened(null)
       failed("Couldn't read its uploads")(err)
     } finally {
@@ -1638,18 +1923,41 @@ export function SetsFollowing({
     }
     setBusy(upload.video_id)
     try {
-      await onImport(upload.video_id, channelId)
-      if (channelId) useChannelNews.getState().take(channelId, upload.video_id)
+      // A fetch that failed leaves it in the news, to try again.
+      if ((await onImport(upload.video_id, channelId)) && channelId) {
+        useChannelNews.getState().take(channelId, upload.video_id)
+      }
     } finally {
       setBusy(null)
     }
   }
 
-  /** Dismissed: the channel is marked seen up to its newest upload, as today. */
+  /**
+   * Dismissed: the channel is marked seen up to the newest upload its checks
+   * turned up, as today — never an older one than a set already opened.
+   */
   async function dismiss(channelId: string, uploads: ChannelUpload[]) {
-    const newest = uploads[0]
+    const newest = useChannelNews.getState().newest[channelId] ?? uploads[0]
     useChannelNews.getState().dismiss(channelId)
     if (newest) await tauriApi.markYouTubeChannelSeen(channelId, newest.video_id).catch(failed("Couldn't dismiss it"))
+  }
+
+  /** What an opened row says when nothing is there: "nothing found" and "never looked" are different answers. */
+  function emptyNote(key: string): string {
+    const dj = djs.find((d) => d.name_key === key)
+    if (!dj) return 'No long uploads found.'
+    if (dj.last_checked) return 'Searched, and nothing has turned up yet.'
+    return `Not searched yet — ${
+      dj.check_interval_hours === 0 ? 'set how often, or press Check now' : 'the next automatic search will pick this up'
+    }.`
+  }
+
+  function setAutoImport(dj: WatchedDj, checked: boolean) {
+    onPatchDj(dj.name_key, { auto_import: checked })
+    void tauriApi.setYouTubeDjAutoImport(dj.name_key, checked).catch((err) => {
+      failed("Couldn't change it")(err)
+      onChanged()
+    })
   }
 
   const uploadRows = (items: ChannelUpload[], channelId?: string) =>
@@ -1658,7 +1966,8 @@ export function SetsFollowing({
         key={item.video_id}
         type="button"
         className="follow-upload"
-        disabled={busy === item.video_id}
+        // One fetch at a time: 5–7 units each.
+        disabled={busy !== null}
         onClick={() => void take(item, channelId)}
       >
         <span className="follow-upload__title" title={item.title}>
@@ -1680,7 +1989,7 @@ export function SetsFollowing({
         {opened.items === null ? (
           <p className="follow-note">Reading…</p>
         ) : opened.items.length === 0 ? (
-          <p className="follow-note">{opened.note}</p>
+          <p className="follow-note">{emptyNote(key)}</p>
         ) : (
           uploadRows(opened.items, channelId)
         )}
@@ -1719,7 +2028,7 @@ export function SetsFollowing({
           <button type="button" className="btn btn--primary" onClick={() => void watchDj(bareName)}>
             Watch &ldquo;{bareName}&rdquo; as a DJ
           </button>
-          <button type="button" className="btn" onClick={() => void followChannel(bareName)}>
+          <button type="button" className="btn" disabled={busy !== null} onClick={() => void searchChannelAnyway(bareName)}>
             Search for a channel anyway · 100 units
           </button>
         </div>
@@ -1760,6 +2069,7 @@ export function SetsFollowing({
                 <button
                   type="button"
                   className="btn btn--sm"
+                  aria-label={`Search for ${dj.display_name} now, 100 units`}
                   disabled={busy !== null}
                   onClick={() => void checkDjs(dj)}
                 >
@@ -1770,7 +2080,7 @@ export function SetsFollowing({
                   className="btn btn--sm follow-row__icon"
                   aria-expanded={opened?.key === dj.name_key}
                   aria-label={`Everything found for ${dj.display_name}`}
-                  onClick={() => (opened?.key === dj.name_key ? setOpened(null) : void openDj(dj))}
+                  onClick={() => (opened?.key === dj.name_key ? closeRow() : void openDj(dj))}
                 >
                   <Icon name={opened?.key === dj.name_key ? 'ChevronUp' : 'ChevronDown'} size={14} />
                 </button>
@@ -1778,6 +2088,7 @@ export function SetsFollowing({
                   type="button"
                   className="btn btn--sm follow-row__icon"
                   aria-label={`Stop watching ${dj.display_name}`}
+                  disabled={busy === dj.name_key}
                   onClick={() => void tauriApi.unwatchYouTubeDj(dj.name_key).then(onChanged, failed("Couldn't stop watching"))}
                 >
                   <Icon name="X" size={14} />
@@ -1790,6 +2101,7 @@ export function SetsFollowing({
                   value={String(dj.check_interval_hours)}
                   options={INTERVAL_OPTIONS}
                   onChange={(value) => {
+                    if (Number(value) === dj.check_interval_hours) return
                     onPatchDj(dj.name_key, { check_interval_hours: Number(value) })
                     void tauriApi.setYouTubeDjInterval(dj.name_key, Number(value)).catch((err) => {
                       failed("Couldn't change it")(err)
@@ -1800,15 +2112,16 @@ export function SetsFollowing({
                 <ToggleSwitch
                   checked={dj.auto_import}
                   label={`Fetch ${dj.display_name}'s new sets automatically`}
-                  onChange={(checked) => {
-                    onPatchDj(dj.name_key, { auto_import: checked })
-                    void tauriApi.setYouTubeDjAutoImport(dj.name_key, checked).catch((err) => {
-                      failed("Couldn't change it")(err)
-                      onChanged()
-                    })
-                  }}
+                  onChange={(checked) => setAutoImport(dj, checked)}
                 />
-                <span className="follow-row__label">fetch new sets automatically</span>
+                {/* The words toggle it too; the switch carries the name for screen readers. */}
+                <span
+                  className="follow-row__label follow-row__label--click"
+                  aria-hidden="true"
+                  onClick={() => setAutoImport(dj, !dj.auto_import)}
+                >
+                  fetch new sets automatically
+                </span>
               </div>
               {openedRows(dj.name_key)}
             </div>
@@ -1830,7 +2143,7 @@ export function SetsFollowing({
           const name = channel.title ?? channel.channel_id
           const fresh = news[channel.channel_id] ?? []
           return (
-            <div className="follow-row" key={channel.channel_id}>
+            <div className="follow-row follow-row--channel" key={channel.channel_id}>
               <div className="follow-row__main">
                 <span className="follow-row__text">
                   <span className="follow-row__name">{name}</span>
@@ -1842,6 +2155,7 @@ export function SetsFollowing({
                 <button
                   type="button"
                   className="btn btn--sm"
+                  aria-label={`Check ${name} now, 1–2 units`}
                   disabled={busy !== null}
                   onClick={() => void checkChannels(channel)}
                 >
@@ -1853,7 +2167,7 @@ export function SetsFollowing({
                   aria-expanded={opened?.key === channel.channel_id}
                   aria-label={`${name}'s recent uploads (1–2 units)`}
                   disabled={!channel.uploads_id}
-                  onClick={() => (opened?.key === channel.channel_id ? setOpened(null) : void openChannel(channel))}
+                  onClick={() => (opened?.key === channel.channel_id ? closeRow() : void openChannel(channel))}
                 >
                   <Icon name={opened?.key === channel.channel_id ? 'ChevronUp' : 'ChevronDown'} size={14} />
                 </button>
@@ -1861,7 +2175,12 @@ export function SetsFollowing({
                   type="button"
                   className="btn btn--sm follow-row__icon"
                   aria-label={`Stop following ${name}`}
-                  onClick={() => void tauriApi.unfollowYouTubeChannel(channel.channel_id).then(onChanged, failed("Couldn't stop following"))}
+                  disabled={busy === channel.channel_id}
+                  onClick={() => {
+                    // Its news goes with it.
+                    useChannelNews.getState().dismiss(channel.channel_id)
+                    void tauriApi.unfollowYouTubeChannel(channel.channel_id).then(onChanged, failed("Couldn't stop following"))
+                  }}
                 >
                   <Icon name="X" size={14} />
                 </button>
@@ -1873,6 +2192,7 @@ export function SetsFollowing({
                   value={String(channel.check_interval_hours)}
                   options={INTERVAL_OPTIONS}
                   onChange={(value) => {
+                    if (Number(value) === channel.check_interval_hours) return
                     onPatchChannel(channel.channel_id, { check_interval_hours: Number(value) })
                     void tauriApi.setYouTubeChannelInterval(channel.channel_id, Number(value)).catch((err) => {
                       failed("Couldn't change it")(err)
@@ -2000,19 +2320,22 @@ Create `src/components/sets/SetsStats.tsx`:
 // Stats (Sets redesign spec, Stats): four cards in Home's quiet style — Most
 // played, Doing the rounds, Most gaps (a row opens the set), Quota — under
 // the summary line.
-import type { YtStats } from '../../types/youtube'
+import type { YouTubeQuotaStatus, YtStats } from '../../types/youtube'
 import './SetsTabs.css'
 
 interface SetsStatsProps {
   stats: YtStats | null
+  /** The quota as Sets knows it now (the stats' copy is from when the tab opened). */
+  quota: YouTubeQuotaStatus | null
   onOpenSet: (videoId: string, title: string) => void
 }
 
 const n = (value: number) => value.toLocaleString('en-US')
 
-export function SetsStats({ stats, onOpenSet }: SetsStatsProps) {
+export function SetsStats({ stats, quota: live, onOpenSet }: SetsStatsProps) {
   if (!stats) return <p className="follow-note">Nothing processed yet.</p>
-  const reset = stats.quota.seconds_until_reset
+  const quota = live ?? stats.quota
+  const reset = quota.seconds_until_reset
   return (
     <>
       <p className="stats-summary">
@@ -2056,10 +2379,10 @@ export function SetsStats({ stats, onOpenSet }: SetsStatsProps) {
           <h3 className="stats-card__title">Quota</h3>
           <div className="stats-quota">
             <span>
-              <b>{n(stats.quota.spent)}</b> spent today
+              <b>{n(quota.spent)}</b> spent today
             </span>
             <span>
-              <b>{n(stats.quota.remaining)}</b> left of {n(stats.quota.daily_limit)}
+              <b>{n(quota.remaining)}</b> left of {n(quota.daily_limit)}
             </span>
             <span>
               resets in {Math.floor(reset / 3600)}h {Math.floor((reset % 3600) / 60)}m
@@ -2520,7 +2843,7 @@ with
    * `channelId` moves the channel's last-seen marker. A watched DJ has none —
    * its news comes from a dated search, not from a position in a listing.
    */
-  async function importUpload(videoId: string, channelId?: string) {
+  async function importUpload(videoId: string, channelId?: string): Promise<boolean> {
     const claim = ++shownSets.current
     try {
       const raw = await tauriApi.fetchYouTubeSet(videoId)
@@ -2528,8 +2851,10 @@ with
       await storeParsed(raw, parsed)
       if (channelId) await tauriApi.markYouTubeChannelSeen(channelId, videoId).catch(() => {})
       refreshLibrary()
+      return true
     } catch (err) {
       toast(`Couldn't read this set: ${getErrorMessage(err)}`, { kind: 'error' })
+      return false
     } finally {
       refreshQuota()
     }
@@ -2612,7 +2937,11 @@ with
   }, [matches])
 
   /** Following's badge: the channels' news only — DJs' finds show in the Library. */
-  const channelNews = channelNewsCount(useChannelNews((state) => state.byChannel))
+  const newsByChannel = useChannelNews((state) => state.byChannel)
+  const channelNews = useMemo(
+    () => channelNewsCount(newsByChannel, new Set(channels.map((c) => c.channel_id))),
+    [newsByChannel, channels],
+  )
 
   /**
    * Mark all seen on the library's new finds, as on Home: its Undo marks
@@ -3117,7 +3446,11 @@ with
               )}
 
               {tab === 'stats' && (
-                <SetsStats stats={stats} onOpenSet={(videoId, title) => void openSet(videoId, { title })} />
+                <SetsStats
+                  stats={stats}
+                  quota={quota}
+                  onOpenSet={(videoId, title) => void openSet(videoId, { title })}
+                />
               )}
 
               {tab === 'saved' && (
@@ -3189,28 +3522,18 @@ In `src/components/views/SetsView.css`, replace
   background: rgba(var(--color-danger-rgb), 0.1);
   border: 1px solid rgba(var(--color-danger-rgb), 0.35);
   color: var(--color-danger);
-```
-
-with
-
-```css
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  margin: 0 0 4px;
-  color: var(--text-primary);
+  font-size: var(--text-sm);
+  margin-bottom: 16px;
 }
 
-.sets-error {
-  padding: 10px 12px;
+/* --- track rows --- */
+
+.sets-track {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 8px;
   border-radius: var(--radius-sm);
-  background: rgba(var(--color-danger-rgb), 0.1);
-  border: 1px solid rgba(var(--color-danger-rgb), 0.35);
-  color: var(--color-danger);
-```
-
-In `src/components/views/SetsView.css`, replace
-
-```css
 }
 
 .sets-track:hover {
@@ -3304,34 +3627,8 @@ In `src/components/views/SetsView.css`, replace
   display: flex;
   align-items: center;
   gap: 8px;
-```
-
-with
-
-```css
-}
-
-.sets-track:hover {
-  background: var(--bg-secondary);
-}
-
-.sets-track__artist {
-  color: var(--text-secondary);
-}
-
-/* --- library ownership --- */
-
-/* --- tabs, library, saved --- */
-
-.sets-stored {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-```
-
-In `src/components/views/SetsView.css`, replace
-
-```css
+  padding: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .sets-stored:hover {
@@ -3362,11 +3659,29 @@ In `src/components/views/SetsView.css`, replace
 with
 
 ```css
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--text-primary);
 }
 
-.sets-stored:hover {
-  background: var(--bg-secondary);
+.sets-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--color-danger-rgb), 0.1);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.35);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  margin-bottom: 16px;
 }
+
+/* --- track rows --- */
+
+.sets-track__artist {
+  color: var(--text-secondary);
+}
+
+/* --- tabs, library, saved --- */
 
 .sets-stored__title {
   color: var(--text-primary);
@@ -3619,8 +3934,6 @@ with
   font-variant-numeric: tabular-nums;
 }
 
-/* --- search hits and statistics --- */
-
 /* --- results of searching YouTube by name --- */
 
 .sets-found {
@@ -3632,6 +3945,8 @@ with
 In `src/components/views/SetsView.css`, replace
 
 ```css
+
+/* Inside a group the links sit tighter than the single trailing link they
    were originally written for. */
 .sets-stores .sets-store-link {
   padding: 0 4px;
@@ -3647,15 +3962,15 @@ In `src/components/views/SetsView.css`, replace
 with
 
 ```css
+
+/* Inside a group the links sit tighter than the single trailing link they
    were originally written for. */
 .sets-stores .sets-store-link {
   padding: 0 4px;
 }
-
-/* --- the library, filed by DJ --- */
 ```
 
-- [ ] **Step 3: App keeps the channels' news from a background check**
+- [ ] **Step 3: App keeps the channels' news from a background check, and says where the finds are**
 
 In `src/App.tsx`, replace
 
@@ -3707,6 +4022,16 @@ In `src/App.tsx`, replace
 
       const who =
         found.length === 1
+          ? (found[0].title ?? 'a channel you follow')
+          : `${found.length} of the channels and DJs you follow`
+      setNotification({
+        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see Sets › Following`,
+        type: 'info',
+      })
+
+      // Automatic import lives here rather than in the background task that
+      // found these, because the parser is TypeScript: the backend can fetch a
+      // set but has nothing to turn it into a tracklist.
 ```
 
 with
@@ -3726,9 +4051,26 @@ with
 
       const who =
         found.length === 1
+          ? (found[0].title ?? 'a channel you follow')
+          : `${found.length} of the channels and DJs you follow`
+      // A channel's news waits under it on Following; a DJ's finds are on
+      // the library's New from DJs you watch.
+      const where = found.every((item) => item.source === 'dj')
+        ? 'Sets › Library'
+        : found.every((item) => item.source !== 'dj')
+          ? 'Sets › Following'
+          : 'Sets'
+      setNotification({
+        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see ${where}`,
+        type: 'info',
+      })
+
+      // Automatic import lives here rather than in the background task that
+      // found these, because the parser is TypeScript: the backend can fetch a
+      // set but has nothing to turn it into a tracklist.
 ```
 
-- [ ] **Step 4:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 646 passed (647)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
+- [ ] **Step 4:** `npx tsc --noEmit -p .`: no errors; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 648 passed (649)`; `npx eslint src mobile 2>&1 | grep problems`: 28, as before; `npx vite build`: passes. Commit:
 
 ```bash
 git add src/components/views/SetsView.tsx src/components/views/SetsView.css src/App.tsx
@@ -3776,11 +4118,23 @@ today's check-all `check_youtube_djs` and `check_youtube_channels`.
   One(key)}` — the buttons, the timer and a row — tested as `is_due` is. A
   row's Check now runs whatever its interval says, Never included, because
   someone asked. The new commands are `check_youtube_channel(channel_id)`
-  and `check_youtube_dj(name_key)`.
+  and `check_youtube_dj(name_key)`. A row's check that could not reach
+  YouTube answers the error (the toast says it) rather than "Nothing new";
+  the buttons and the timer still skip what failed, as today.
 - The channels' news is a small store (`useChannelNews`), fed by App's
   `yt-new-sets` listener and by Following's checks; a DJ's finds are not
-  kept there (they are stored, and show on the library). Following's badge
-  counts it.
+  kept there (they are stored, and show on the library). It keeps each
+  channel's newest upload, so Dismiss moves the marker there even when the
+  row's ▾ is closed. Following's badge counts only the channels still
+  followed; ✕ clears a channel's news. App's notification for a timer's
+  finds names where they are: Sets › Library (DJs), Sets › Following
+  (channels).
+- Which check is running lives in that store too, so leaving the tab and
+  coming back keeps the buttons disabled — a second press cannot spend the
+  units again. An upload's "get it" leaves the news alone when the fetch
+  fails. A row's ▾ that is closed (or another row opened) before its
+  uploads arrive stays closed. Watching a DJ already watched, or following a
+  channel already followed, says so and spends nothing.
 - The box under the tabs (`SetsFollowing.tsx`, with `SetsTabs.css`): a
   channel link or @handle follows it (2 units); a name asks first — Watch "…"
   as a DJ, or Search for a channel anyway (100 units). Today's paragraphs
@@ -3827,7 +4181,7 @@ git commit -m "docs(spec): Sets S4 as built"
 
 ### Task 9: Check
 
-- [ ] **Step 1:** `cd src-tauri && cargo test --lib 2>&1 | grep "test result"`: 461 passed; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 646 passed (647)`; `npx tsc --noEmit -p .`; `npx eslint src mobile 2>&1 | grep problems`: 28; `npx vite build`.
+- [ ] **Step 1:** `cd src-tauri && cargo test --lib 2>&1 | grep "test result"`: 461 passed; `npx vitest run 2>&1 | grep "Tests "`: `1 failed | 648 passed (649)`; `npx tsc --noEmit -p .`; `npx eslint src mobile 2>&1 | grep problems`: 28; `npx vite build`.
 - [ ] **Step 2 (the user, by hand in `npm run tauri dev`):**
   - Following: paste a channel link → it is followed; type a DJ's name → "Watch … as a DJ" watches them.
   - A DJ's Check now (100 units): a toast says what it found; new sets show on the Library tab's New from DJs you watch. ▾ shows everything found for them; an interval and the "fetch automatically" switch stick after a restart.
