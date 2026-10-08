@@ -1070,39 +1070,6 @@ export const tauriApi = {
     return await invoke('get_track_ids_without_bpm')
   },
 
-  async getRecentlyPlayed(limit?: number): Promise<{
-    track_id: number
-    playlist_id: number | null
-    played_at: number
-    title: string | null
-    artist: string | null
-    file_path: string | null
-  }[]> {
-    return await invoke('get_recently_played', { limit: limit ?? 10 })
-  },
-
-  async getRecentlyAdded(limit?: number): Promise<{
-    id: number
-    title: string | null
-    artist: string | null
-    file_path: string
-    date_added: string | null
-  }[]> {
-    return await invoke('get_recently_added', { limit: limit ?? 10 })
-  },
-
-  async getLibraryInsights(): Promise<{
-    top_genre: string | null
-    bpm_min: number | null
-    bpm_max: number | null
-    top_key: string | null
-    avg_energy: number | null
-    total_tracks: number
-    analyzed_tracks: number
-  }> {
-    return await invoke('get_library_insights')
-  },
-
   async saveDashboardLayout(layoutJson: string): Promise<void> {
     return await invoke('save_dashboard_layout', { layoutJson })
   },
