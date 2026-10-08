@@ -2,20 +2,31 @@
    SearchView — Spotify-style sectioned search results
    ============================================================ */
 
-/* Import HomeView card styles unconditionally — SearchView uses .home-view__card,
-   .home-view__card-art, .home-view__card-info, .home-view__card-name, .home-view__card-count
-   for playlist cards. HomeView.css is not a CSS module, but this import guarantees the styles
-   are present even if HomeView is not rendered in the same session. */
-@import '../views/HomeView.css';
-
+/* The field stays at the top; under it either the sections scroll as one
+   page, or the results sit still and only the track rows scroll. Nothing
+   may widen the page: min-width: 0 down every flex child. */
 .search-view {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.search-view__top {
+  flex: none;
+  padding: var(--space-6) var(--space-6) 0;
+}
+
+.search-view__home {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding: var(--space-6);
-  gap: var(--space-6);
-  background: var(--bg-primary);
 }
 
 /* ---- Search input area ---- */
@@ -104,18 +115,33 @@
 
 /* ---- Results container ---- */
 
+/* On a window too short to leave the rows their minimum, the results
+   scroll as a whole instead. */
 .search-view__results {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--space-6);
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-6) 0;
 }
 
 /* ---- Section header ---- */
 
 .search-view__section {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The Tracks section takes the height left; its rows scroll inside it. */
+.search-view__section--tracks {
+  flex: 1;
+  min-height: 0;
 }
 
 .search-view__section-header {
@@ -141,12 +167,19 @@
 
 /* ---- Track list rows (Spotify-style, no virtualizer — short results list) ---- */
 
+/* The rows keep at least 200px; their scroll does not carry on to the results. */
 .search-view__track-list {
+  flex: 1 0 200px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--space-6);
 }
 
 .search-view__track-row {
+  flex: none;
   display: flex;
   align-items: center;
   height: 48px;
@@ -226,23 +259,12 @@
 .search-view__track-genre    { flex: 0 0 90px; }
 .search-view__track-duration { flex: 0 0 56px; }
 
-/* ---- Playlist grid (reuses home-view__card + home-view__card-art, adds grid) ---- */
+/* ---- DJs and Playlists rows: cards that scroll sideways inside the row ---- */
 
-.search-view__playlist-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: var(--space-4);
-}
-
-.search-view__playlist-card {
-  /* Inherits .home-view__card styles — no overrides needed */
-}
-
-/* ---- DJs row: round photo cards, as in the DJ pages mockup's Search ---- */
-
-.search-view__dj-row {
+.search-view__card-row {
   display: flex;
   gap: var(--space-3);
+  min-width: 0;
   overflow-x: auto;
   padding-bottom: var(--space-1);
 }
@@ -283,6 +305,44 @@
     radial-gradient(ellipse 38% 60% at 30% 62%, rgba(255, 255, 255, 0.1), transparent 70%),
     radial-gradient(circle at 30% 34%, rgba(255, 255, 255, 0.14) 0 13%, transparent 14%),
     linear-gradient(135deg, #3b2a5c, #1b1b2f 55%, #0f3b4a);
+}
+
+/* A playlist's card: small, its gradient square beside its name, so the
+   rows under it keep their room. */
+.search-view__playlist-card {
+  flex: 0 0 220px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2);
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.search-view__playlist-card:hover {
+  background: var(--bg-tertiary);
+}
+
+.search-view__playlist-art {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+}
+
+.search-view__playlist-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .search-view__dj-photo img {

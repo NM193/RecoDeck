@@ -46,6 +46,7 @@ import { YouTubeMusicView } from './components/views/YouTubeMusicView'
 import { DjView } from './components/views/DjView'
 import { openSettingsSection } from './components/settings/openSections'
 import { djKey } from './lib/dj/names'
+import { noteDjOpened } from './lib/search/storage'
 import { useFolderTreeStore } from './store/folderTreeStore'
 import { useTrackTableLayout } from './store/trackTableLayoutStore'
 import type { ActiveView } from './lib/sidebarPrefs'
@@ -837,6 +838,8 @@ function AppContent() {
     const origin: DjOrigin =
       djPage?.from ?? from ?? (showSets ? { view: 'sets', openVideoId: null } : { view: 'search' })
     setDjPage({ name, spotifyArtistId, from: origin })
+    // Search's Your DJs shows the pages opened most recently first.
+    noteDjOpened(name)
   }
 
   // Back: the view the first DJ page was opened from — Search with its query,
@@ -868,6 +871,23 @@ function AppContent() {
     setTableFilter(null)
     setShowSettings(false)
     setShowAIChat(false)
+  }
+
+  // All Tracks, from the sidebar, or with a filter set from Search's genre
+  // tiles. Search holds the whole library already, so the filtered rows show
+  // at once while the tracks load again.
+  function openAllTracks(filter: TrackFilter | null = null) {
+    setStreamList(null)
+    setDjPage(null)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(true)
+    setTableFilter(filter)
+    setShowSettings(false)
+    setShowSearch(false)
+    setShowSets(false)
+    setShowAIChat(false)
+    loadTracks(null, null)
   }
 
   // Playlist selection
@@ -1717,19 +1737,7 @@ function AppContent() {
         setShowSets(false)
         setShowAIChat(false)
       }}
-      onShowAllTracks={() => {
-        setStreamList(null)
-        setDjPage(null)
-        setSelectedFolder(null)
-        setSelectedPlaylistId(null)
-        setShowAllTracks(true)
-        setTableFilter(null)
-        setShowSettings(false)
-        setShowSearch(false)
-        setShowSets(false)
-        setShowAIChat(false)
-        loadTracks(null, null)
-      }}
+      onShowAllTracks={() => openAllTracks()}
       onSearch={() => {
         setShowSearch(true)
         setStreamList(null)
@@ -1946,6 +1954,9 @@ function AppContent() {
                 onQueryChange={setSearchQuery}
                 onOpenDj={(name, spotifyArtistId) => openDj(name, spotifyArtistId, { view: 'search' })}
                 spotify={spotify}
+                onOpenAllTracks={openAllTracks}
+                onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+                playVersion={playVersion}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
                   setStreamList(null)

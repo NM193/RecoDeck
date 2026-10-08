@@ -1,9 +1,26 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { useDjSearch } from '../dj/useDjSearch'
+import { CustomizeSections } from '../search/CustomizeSections'
+import { SearchSections } from '../search/SearchSections'
+import { sectionsEmpty } from '../search/sectionContent'
+import { useSectionsData } from '../search/useSectionsData'
+import { djHue } from '../../lib/search/labels'
+import { forgetSearch, rememberSearch } from '../../lib/search/recentSearches'
+import {
+  loadRecentSearches,
+  loadSectionPrefs,
+  saveRecentSearches,
+  saveSectionPrefs,
+} from '../../lib/search/storage'
+import type { SectionPref } from '../../lib/search/sections'
+import type { TrackFilter } from '../../lib/trackTable/filter'
 import type { SpotifyData } from '../spotify/useSpotify'
 import type { Track, Playlist } from '../../types/track'
 import './SearchView.css'
+
+/** A query is remembered when it stays unchanged this long while it has results. */
+const REMEMBER_AFTER_MS = 2000
 
 // Reuse the same gradient helper as HomeView (copied — do not import from HomeView)
 function getPlaylistGradient(name: string): string {
@@ -24,15 +41,6 @@ function getPlaylistGradient(name: string): string {
   return gradients[Math.abs(hash) % gradients.length]
 }
 
-/** A DJ card without a photo: the mockup's gradient, turned to a hue of its own per name. */
-function djHue(name: string): number {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff
-  }
-  return Math.abs(hash) % 360
-}
-
 interface SearchViewProps {
   tracks: Track[]
   playlists: Playlist[]
@@ -45,6 +53,12 @@ interface SearchViewProps {
   onOpenDj: (name: string, spotifyArtistId: string | null) => void
   /** App's Spotify data: whether to ask Spotify, and the index "you own N" is counted with. */
   spotify: SpotifyData
+  /** Opens All Tracks with this filter (a genre tile). */
+  onOpenAllTracks: (filter: TrackFilter) => void
+  /** Opens a saved set in Sets. */
+  onOpenSet: (videoId: string) => void
+  /** Raised after each play: Recently played reads again. */
+  playVersion: number
 }
 
 export function SearchView({
@@ -56,8 +70,19 @@ export function SearchView({
   onQueryChange,
   onOpenDj,
   spotify,
+  onOpenAllTracks,
+  onOpenSet,
+  playVersion,
 }: SearchViewProps) {
   const djCards = useDjSearch(query, spotify)
+  const [prefs, setPrefs] = useState<SectionPref[]>(loadSectionPrefs)
+  const [customizing, setCustomizing] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>(loadRecentSearches)
+  const customizeButton = useRef<HTMLButtonElement>(null)
+  const shownSections = useMemo(
+    () => prefs.filter((pref) => pref.on).map((pref) => pref.id),
+    [prefs],
+  )
 
   const filteredTracks = useMemo(() => {
     if (!query.trim()) return []
@@ -79,6 +104,39 @@ export function SearchView({
 
   const hasResults = djCards.length > 0 || filteredTracks.length > 0 || filteredPlaylists.length > 0
   const hasQuery = query.trim().length > 0
+  // Not read while results show; read again when the field is cleared.
+  const sectionsData = useSectionsData(shownSections, playVersion, !hasQuery)
+
+  // Kept on this machine as the list changes.
+  useEffect(() => {
+    saveRecentSearches(recentSearches)
+  }, [recentSearches])
+
+  // Search spec, Recent searches: a query is remembered when one of its
+  // results is opened or played, or when it rests 2 seconds with results.
+  function rememberQuery() {
+    setRecentSearches((list) => rememberSearch(list, query))
+  }
+
+  useEffect(() => {
+    if (!query.trim() || !hasResults) return
+    const timer = window.setTimeout(() => {
+      setRecentSearches((list) => rememberSearch(list, query))
+    }, REMEMBER_AFTER_MS)
+    return () => window.clearTimeout(timer)
+  }, [query, hasResults])
+
+  // Done and Cancel give the focus back to the button that opened Customize.
+  function closeCustomize() {
+    setCustomizing(false)
+    customizeButton.current?.focus()
+  }
+
+  function saveSections(next: SectionPref[]) {
+    setPrefs(next)
+    saveSectionPrefs(next)
+    closeCustomize()
+  }
 
   // Format duration from ms to MM:SS
   function formatDuration(ms?: number) {
@@ -94,30 +152,72 @@ export function SearchView({
 
   return (
     <div className="search-view">
-      {/* Prominent search input */}
-      <div className="search-view__input-wrapper">
-        <Icon name="Search" size={20} className="search-view__input-icon" />
-        <input
-          type="text"
-          className="search-view__input"
-          placeholder="Search tracks, playlists, artists..."
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          autoFocus
-        />
-        {query && (
-          <button className="search-view__input-clear" onClick={() => onQueryChange('')} type="button">
-            <Icon name="X" size={16} />
-          </button>
-        )}
+      {/* Prominent search input: it stays put while what is under it scrolls */}
+      <div className="search-view__top">
+        <div className="search-view__input-wrapper">
+          <Icon name="Search" size={20} className="search-view__input-icon" />
+          <input
+            type="text"
+            className="search-view__input"
+            placeholder="Search tracks, playlists, artists..."
+            value={query}
+            onChange={(e) => {
+              // Typing leaves Customize unsaved, as Cancel does.
+              setCustomizing(false)
+              onQueryChange(e.target.value)
+            }}
+            autoFocus
+          />
+          {query ? (
+            <button className="search-view__input-clear" onClick={() => onQueryChange('')} type="button">
+              <Icon name="X" size={16} />
+            </button>
+          ) : (
+            <button
+              ref={customizeButton}
+              className="search-view__input-clear"
+              onClick={() => setCustomizing((open) => !open)}
+              type="button"
+              aria-label="Customize Search"
+              aria-pressed={customizing}
+              title="Customize Search"
+            >
+              <Icon name="SlidersHorizontal" size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Empty state — no query */}
+      {/* No query: the sections, scrolling under the field as one page */}
       {!hasQuery && (
-        <div className="search-view__empty">
-          <Icon name="Search" size={48} className="search-view__empty-icon" />
-          <h2 className="search-view__empty-title">Search your library</h2>
-          <p className="search-view__empty-subtitle">Find tracks, playlists, artists, and more</p>
+        <div className="search-view__home">
+          {customizing ? (
+            <CustomizeSections
+              prefs={prefs}
+              onDone={saveSections}
+              onCancel={closeCustomize}
+            />
+          ) : sectionsData === null ? null : sectionsEmpty(prefs, sectionsData, recentSearches) ? (
+            // An empty library and no history: the page as it was.
+            <div className="search-view__empty">
+              <Icon name="Search" size={48} className="search-view__empty-icon" />
+              <h2 className="search-view__empty-title">Search your library</h2>
+              <p className="search-view__empty-subtitle">Find tracks, playlists, artists, and more</p>
+            </div>
+          ) : (
+            <SearchSections
+              prefs={prefs}
+              data={sectionsData}
+              recentSearches={recentSearches}
+              onSearch={onQueryChange}
+              onForgetSearch={(q) => setRecentSearches((list) => forgetSearch(list, q))}
+              onClearSearches={() => setRecentSearches([])}
+              onPlay={onTrackPlay}
+              onOpenDj={(name) => onOpenDj(name, null)}
+              onOpenFilter={onOpenAllTracks}
+              onOpenSet={onOpenSet}
+            />
+          )}
         </div>
       )}
 
@@ -130,7 +230,7 @@ export function SearchView({
         </div>
       )}
 
-      {/* Results */}
+      {/* Results: the DJs, the playlists and the Tracks heading stay put; only the track rows scroll */}
       {hasQuery && hasResults && (
         <div className="search-view__results">
 
@@ -141,13 +241,16 @@ export function SearchView({
                 <h3 className="search-view__section-title">DJs</h3>
                 <span className="search-view__section-count">{djCards.length}</span>
               </div>
-              <div className="search-view__dj-row">
+              <div className="search-view__card-row">
                 {djCards.map((dj) => (
                   <button
                     key={dj.key}
                     type="button"
                     className="search-view__dj-card"
-                    onClick={() => onOpenDj(dj.name, dj.spotifyArtistId)}
+                    onClick={() => {
+                      rememberQuery()
+                      onOpenDj(dj.name, dj.spotifyArtistId)
+                    }}
                   >
                     <span
                       className="search-view__dj-photo"
@@ -167,9 +270,43 @@ export function SearchView({
             </div>
           )}
 
-          {/* Tracks section */}
-          {filteredTracks.length > 0 && (
+          {/* Playlists: a row of small cards, above the tracks, so nothing sits below the rows */}
+          {filteredPlaylists.length > 0 && (
             <div className="search-view__section">
+              <div className="search-view__section-header">
+                <h3 className="search-view__section-title">Playlists</h3>
+                <span className="search-view__section-count">{filteredPlaylists.length}</span>
+              </div>
+              <div className="search-view__card-row">
+                {filteredPlaylists.map((playlist) => (
+                  <button
+                    key={playlist.id}
+                    className="search-view__playlist-card"
+                    onClick={() => {
+                      rememberQuery()
+                      onPlaylistSelect(playlist.id)
+                    }}
+                    type="button"
+                  >
+                    <span
+                      className="search-view__playlist-art"
+                      style={{ background: getPlaylistGradient(playlist.name) }}
+                    >
+                      <Icon name="Music" size={20} style={{ color: 'rgba(255,255,255,0.7)' }} />
+                    </span>
+                    <span className="search-view__playlist-text">
+                      <span className="search-view__dj-name">{playlist.name}</span>
+                      <span className="search-view__dj-subtitle">{playlist.track_count} tracks</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tracks: the heading stays, the rows scroll in their own area */}
+          {filteredTracks.length > 0 && (
+            <div className="search-view__section search-view__section--tracks">
               <div className="search-view__section-header">
                 <h3 className="search-view__section-title">Tracks</h3>
                 <span className="search-view__section-count">{filteredTracks.length}</span>
@@ -179,7 +316,10 @@ export function SearchView({
                   <div
                     key={track.id}
                     className="search-view__track-row"
-                    onDoubleClick={() => onTrackPlay(track, filteredTracks, index)}
+                    onDoubleClick={() => {
+                      rememberQuery()
+                      onTrackPlay(track, filteredTracks, index)
+                    }}
                   >
                     <div className="search-view__track-index">
                       <span className="search-view__track-number">{index + 1}</span>
@@ -196,37 +336,6 @@ export function SearchView({
                     <span className="search-view__track-genre">{track.genre || '—'}</span>
                     <span className="search-view__track-duration">{formatDuration(track.duration_ms)}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Playlists section */}
-          {filteredPlaylists.length > 0 && (
-            <div className="search-view__section">
-              <div className="search-view__section-header">
-                <h3 className="search-view__section-title">Playlists</h3>
-                <span className="search-view__section-count">{filteredPlaylists.length}</span>
-              </div>
-              <div className="search-view__playlist-grid">
-                {filteredPlaylists.map((playlist) => (
-                  <button
-                    key={playlist.id}
-                    className="home-view__card search-view__playlist-card"
-                    onClick={() => onPlaylistSelect(playlist.id)}
-                    type="button"
-                  >
-                    <div
-                      className="home-view__card-art"
-                      style={{ background: getPlaylistGradient(playlist.name) }}
-                    >
-                      <Icon name="Music" size={24} style={{ color: 'rgba(255,255,255,0.7)' }} />
-                    </div>
-                    <div className="home-view__card-info">
-                      <span className="home-view__card-name">{playlist.name}</span>
-                      <span className="home-view__card-count">{playlist.track_count} tracks</span>
-                    </div>
-                  </button>
                 ))}
               </div>
             </div>
