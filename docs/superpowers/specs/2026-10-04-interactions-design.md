@@ -209,6 +209,34 @@ Built by track table plan 6: the whole drag layer (`useTrackDrag`,
 playlists, library folders and rail icons as targets; Home's rows are left
 for the Home plan.
 
+**As built by plan I1** (feedback):
+- `toast()` replaces App's `Notification` everywhere — Settings and the
+  duplicates dialog reach it through their `onNotification` — and the
+  sidebar's own "Added to …" toast. `Notification`, `HeaderNotification`
+  (already unused) and their styles are gone. A toast says an error's own
+  message (`getErrorMessage`), never "[object Object]".
+- `UpdateToast` stays top right, apart from the toasts, because it waits for
+  an answer: a toast's card with Later (`.btn`) and Install (`.btn--primary`).
+- Removing a heart, on Saved tracks or on a set's page, says "Removed "…"
+  from Saved tracks" with Undo; Undo hearts it again with its old
+  `saved_at`, so it goes back to its place (`save_youtube_track` keeps a
+  given `saved_at`; a track hearted already keeps its time). A second press
+  before the list reads again is dropped; a heart that could not be saved
+  says so.
+- A menu item with `confirm: { message, label }` asks in the menu's place:
+  the question, Cancel (which has the keys) and the red answer
+  (`.btn--danger`, now in `controls.css`); Tab moves between the two, Esc or
+  a press outside cancels.
+  The set page's ⋯ › Remove from library uses it; the Remove button on a set
+  that cannot be read still asks with a dialog.
+- The rest of this spec is two more plans. **I2** (menus and keys): the
+  sidebar's right-click menus move to `Menu`, with Delete playlist and
+  Delete folder asking in its place; `useShortcuts`, the shortcuts sheet and
+  "whichever played last"; `Skeleton`. **I3** (the sweep): every
+  `transition:` on the tokens; `.btn--icon`, `.btn--pill` and the `Button`
+  component with its working state; Settings, the DJ pages and the modals on
+  the shared controls.
+
 ## Testing
 
 - TypeScript: the toast queue (max 3, error stays, warning 6s, hover pauses);
