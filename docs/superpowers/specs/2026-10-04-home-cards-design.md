@@ -43,7 +43,7 @@ these groups; on Home a card shows no group.
 | | **Library by genre** | tiles: the 6 biggest genres, Added lately, Never played, with counts | opens All Tracks filtered | 2×2 | 2×1 | 4×3 |
 | | **BPM & key** | BPM bars by range; key counts | a bar or key opens All Tracks filtered | 2×2 | 2×1 | 4×2 |
 | | **Not analyzed** | how many tracks have no BPM; **Analyze all** | Analyze all | 1×1 | 1×1 | 2×1 |
-| Gig prep | **Your playlists** | playlist cards (cover, name, count); ▶ over the cover | opens the playlist; ▶ plays it | 4×1 | 2×1 | 4×3 |
+| Gig prep | **Your playlists** | playlist cards (cover, name, count) for the playlists the sidebar lists, not their folders; ▶ over the cover, none on an empty playlist | opens the playlist; ▶ plays it | 4×1 | 2×1 | 4×3 |
 | | **Quick actions** | Import folder, Analyze all, Open Sets, New playlist | each does its action | 2×1 | 2×1 | 4×1 |
 | | **Last playlist** | the playlist you last played from: cover, name, count, ▶, its tracks | ▶ plays it; a row plays from there | 2×2 | 2×1 | 4×3 |
 
@@ -61,6 +61,15 @@ card's body.
 
 **Titles** ship as the catalog table names the cards ("Library stats", "Library
 by genre", "New sets"); the mockup's titles were drafts.
+
+A playlist's cover is a gradient square picked by its name, as on Search's
+playlist cards and in the approved mockup: no track or artwork is read for it.
+
+**Built in three plans** (the user's choice), each checked by hand before
+the next: **H1** the grid, Customize and the eight default cards; **H2**
+Recently added, Last playlist, Your DJs, New likes you don't own and BPM &
+key; **H3** New sets, Sets you saved lately and Needs you's New sets row.
+The catalog lists only the cards built so far.
 
 ### Default layout
 
@@ -95,7 +104,7 @@ Eight cards, as in the mockup:
 ## Cards in detail
 
 **Track rows** (Recently played, Recently added, Last playlist): number, title
-over artist, BPM, key, and a last column — the time played ("22:39" today,
+over artist, BPM (whole beats), key, and a last column — the time played ("22:39" today,
 "yesterday", else "Oct 2"), the date added (same rule), or the length (Last
 playlist). Missing BPM or key shows "—". Hovering a row turns its number into
 ▶; clicking ▶, or double-clicking the row, plays. The track playing now shows
@@ -105,7 +114,8 @@ the accent colour. Hovering that row shows **pause** while it plays and **▶**
 while it is paused (lucide icons, not text glyphs); clicking does that, as the
 player's button does. The same
 indicator is used in All Tracks and in a set's track list (their specs). The
-mockup's ▮▮ is replaced by it. The queue is the card's list as it was when you pressed play:
+mockup's ▮▮ is replaced by it. Home has no selection: a single click does
+nothing, and a drag carries that one row. The queue is the card's list as it was when you pressed play:
 Recently played then re-reads and the track moves to the top, but the queue
 keeps its order.
 
@@ -123,6 +133,12 @@ card says "Nothing new":
 | New sets | the New sets count (below) | Sets, on its library (`SetsStart` gains a library start) |
 | Tracks not analyzed | tracks with no BPM | Analyze all |
 | Next gig | the earliest upcoming gig of your DJs, as "Tue · Traumer plays Hï Ibiza · Oct 6" | that DJ's page |
+
+The numbers take their kind's colour — Spotify green, YouTube Music red, the
+accent for tracks not analyzed, yellow for the gig's weekday — drawn toward
+the text colour so they read on the light themes too. A gig without a venue
+says the city ("Traumer plays Ibiza"), without either "Traumer has a gig";
+its date shows the year when it is not this one.
 
 **New sets.** News is about a video. A video is new while none of its find
 rows (`yt_dj_finds`) is seen. "Seen" is a new nullable column
@@ -146,7 +162,7 @@ key, as one check stamps its rows with the same second). Newest first means by
 that earliest `first_seen_at`. Followed channels' new uploads are
 not stored until Sets checks them, so they are not on Home.
 
-**Library stats.** At 1×1: the track count, and "N added lately" under it. At
+**Library stats.** At 1×1: the track count, and "tracks · N added lately" under it. At
 2×1 and wider: tracks, playlists and folders, with "N added lately · N never
 played" under them.
 
@@ -165,7 +181,9 @@ tracks without a BPM (`get_track_ids_without_bpm()`). Sending every id would
 not do: `analyze_tracks_batch(ids, force = false)` skips only tracks that have
 both BPM and key, and only 97 have a key. App's analysis code is split so that
 `handleAnalyzeAll` (the sidebar's "Analyze All Tracks", unchanged) and Home's
-Analyze all share one `analyzeTrackIds(ids)`.
+Analyze all share one `analyzeTrackIds(ids)`. With nothing to analyze, Home's
+Analyze all says "Everything is analyzed"; while an analysis runs, "Analysis
+is already running" (one at a time).
 
 **Quick actions:** Import folder opens Settings with its Library section open;
 Analyze all as above; Open Sets opens Sets; New playlist asks for a name, as
@@ -218,6 +236,18 @@ data again when it changes;
 the reads are local and cheap. The Spotify and YouTube Music numbers are App
 state already and follow on their own.
 
+As built by plan H1: App passes `playVersion + dataVersion` — `playVersion`
+rises after a recorded play (as for the table's Plays column), `dataVersion`
+after an analysis finishes, after the folder watcher's rescan and after
+tracks are moved to another folder (the rows hold file paths). The
+`yt-new-sets` raises and Home's own come with plan H3, whose cards are the
+first to read sets. Nothing is read until the stored layout is loaded, and
+each card reads only what it shows.
+
+All Tracks opened with a filter right after a playlist or a folder shows
+nothing until the library has loaded, rather than that playlist's rows
+filtered, or "No tracks match", for a moment.
+
 ## Customize
 
 As today — Customize, then drag, resize, × to remove, Save or Cancel — with:
@@ -225,6 +255,10 @@ As today — Customize, then drag, resize, × to remove, Save or Cancel — with
 - the catalog grouped under Jump back in, Needs you, Your library, Gig prep,
   each card marked "on Home" or "+ Add";
 - **Reset**, which puts back the default layout (Save still needed).
+
+While customizing, the header reads "Customize Home" with Reset, Cancel and
+Save; a card's title row is its handle and holds its ×, and its body cannot
+be clicked.
 
 ## Data
 
@@ -247,7 +281,7 @@ All local: Home makes no network request and spends no YouTube quota.
 | Last playlist | new `get_last_played_playlist()`: the newest `play_history` row with a playlist that still exists, then `getPlaylistTracks` |
 
 `get_recently_played`, `get_recently_added` and `get_library_insights`, used
-only by the old widgets, are removed with them if nothing else calls them.
+only by the old widgets, are removed with them (plan H1).
 
 HomeView gains the props the cards act through, passed by App:
 `onPlayTrack(track, list, index, playlistId?)`, `onPlayPlaylist(id)`,
