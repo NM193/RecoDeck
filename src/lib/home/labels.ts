@@ -1,7 +1,8 @@
 // src/lib/home/labels.ts
 // The words and numbers on Home's cards (Home cards spec, Cards in detail).
 import { ALL_LISTS } from '../../types/spotify'
-import type { UpcomingGig } from '../../types/home'
+import { parseUtcDate, type TrackFilter } from '../trackTable/filter'
+import type { BpmRangeCount, UpcomingGig } from '../../types/home'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -22,6 +23,9 @@ function parseDay(date: string): Date | null {
 
 const dayOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 
+/** Local calendar days from `then` to `now`, 0 on the same day. Rounded: a day across a clock change is 23 or 25 hours. */
+const daysBetween = (then: Date, now: Date) => Math.round((dayOf(now) - dayOf(then)) / DAY_MS)
+
 /** "Oct 2", with the year when it is not `now`'s. */
 function shortDate(date: Date, now: Date): string {
   return date.toLocaleDateString('en-US', {
@@ -37,14 +41,35 @@ function shortDate(date: Date, now: Date): string {
  */
 export function playedLabel(playedAt: number, now: Date): string {
   const then = new Date(playedAt * 1000)
-  // Rounded: a day across a clock change is 23 or 25 hours.
-  const days = Math.round((dayOf(now) - dayOf(then)) / DAY_MS)
+  const days = daysBetween(then, now)
   if (days <= 0) {
     const pad = (n: number) => String(n).padStart(2, '0')
     return `${pad(then.getHours())}:${pad(then.getMinutes())}`
   }
   if (days === 1) return 'yesterday'
   return shortDate(then, now)
+}
+
+/**
+ * When a track was added (`date_added`, SQLite's UTC "2026-10-03 21:14:05"),
+ * as `playedLabel` says when it was played; "—" when it cannot be read.
+ */
+export function addedLabel(dateAdded: string | undefined, now: Date): string {
+  const time = parseUtcDate(dateAdded)
+  return time === null ? '—' : playedLabel(time / 1000, now)
+}
+
+/** Last playlist's line: "10 tracks · played Oct 2", "played at 22:39" today, "played yesterday". */
+export function lastPlaylistLine(tracks: number, playedAt: number, now: Date): string {
+  const then = new Date(playedAt * 1000)
+  const days = daysBetween(then, now)
+  const played =
+    days <= 0
+      ? `played at ${playedLabel(playedAt, now)}`
+      : days === 1
+        ? 'played yesterday'
+        : `played ${shortDate(then, now)}`
+  return `${count(tracks)} ${noun(tracks, 'track')} · ${played}`
 }
 
 /** A service's new likes not owned, as the sidebar counts them. */
@@ -65,6 +90,27 @@ export function busiestList(news: StreamNews): { id: string; name: string } | nu
     }
   }
   return best && { id: best.id, name: best.name }
+}
+
+export interface NewLikeRow {
+  service: 'spotify' | 'youtube-music'
+  listId: string
+  name: string
+  number: string
+}
+
+/**
+ * New likes you don't own: a row per list with new likes, Spotify's then
+ * YouTube Music's, each in the sidebar's order. A service is null when it is
+ * not shown in the sidebar.
+ */
+export function newLikeRows(spotify: StreamNews | null, youtubeMusic: StreamNews | null): NewLikeRow[] {
+  const rows = (service: NewLikeRow['service'], news: StreamNews | null): NewLikeRow[] =>
+    (news?.lists ?? []).flatMap((list) => {
+      const n = news?.byList.get(list.id) ?? 0
+      return n > 0 ? [{ service, listId: list.id, name: list.name, number: count(n) }] : []
+    })
+  return [...rows('spotify', spotify), ...rows('youtube-music', youtubeMusic)]
 }
 
 export type NeedsYouRow =
@@ -174,4 +220,37 @@ export function libraryStats(
     ],
     line: [...added, ...never].join(' · '),
   }
+}
+
+export interface BpmBar {
+  key: string
+  /** "< 115", "115–119", "135+". */
+  label: string
+  count: number
+  /** All Tracks with this filter shows the bar's tracks. */
+  filter: TrackFilter
+}
+
+/** BPM & key's bars, one per range, each with the All Tracks filter whose rows it counts. */
+export function bpmBars(ranges: readonly BpmRangeCount[]): BpmBar[] {
+  return ranges.map(({ min, max, count: tracks }) => {
+    const filter: TrackFilter = {}
+    if (min !== null) filter.bpmMin = min
+    if (max !== null) filter.bpmMax = max
+    const label =
+      min !== null && max !== null
+        ? `${min}–${max - 1}`
+        : min !== null
+          ? `${min}+`
+          : max !== null
+            ? `< ${max}`
+            : 'Any BPM'
+    return { key: `${min ?? ''}-${max ?? ''}`, label, count: tracks, filter }
+  })
+}
+
+/** Under the key counts: "key known for 97 tracks". */
+export function keyKnownLine(keys: ReadonlyArray<{ count: number }>): string {
+  const known = keys.reduce((sum, key) => sum + key.count, 0)
+  return `key known for ${count(known)} ${noun(known, 'track')}`
 }

@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { bpmLabel, busiestList, gigDay, gigLine, gigWhere, libraryStats, needsYouRows, playedLabel, type StreamNews } from './labels'
-import type { UpcomingGig } from '../../types/home'
+import {
+  addedLabel,
+  bpmBars,
+  bpmLabel,
+  busiestList,
+  gigDay,
+  gigLine,
+  gigWhere,
+  keyKnownLine,
+  lastPlaylistLine,
+  libraryStats,
+  needsYouRows,
+  newLikeRows,
+  playedLabel,
+  type StreamNews,
+} from './labels'
+import { matchesTrackFilter } from '../trackTable/filter'
+import type { BpmRangeCount, UpcomingGig } from '../../types/home'
+import type { Track } from '../../types/track'
 
 // Local times, so the tests read the same in any time zone.
 const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime() / 1000
@@ -130,5 +147,86 @@ describe('libraryStats', () => {
 
   it('leaves the line out until the groups are read', () => {
     expect(libraryStats(4, { ...counts, addedLately: null, neverPlayed: null }).line).toBe('')
+  })
+})
+
+describe('addedLabel', () => {
+  // SQLite's UTC text for a local time.
+  const stored = (date: Date) => date.toISOString().slice(0, 19).replace('T', ' ')
+  const now = new Date(2026, 9, 8, 23, 30)
+
+  it('says when a track was added as the played time does', () => {
+    expect(addedLabel(stored(new Date(2026, 9, 8, 9, 5)), now)).toBe('09:05')
+    expect(addedLabel(stored(new Date(2026, 9, 7, 23, 58)), now)).toBe('yesterday')
+    expect(addedLabel(stored(new Date(2026, 9, 2, 9)), now)).toBe('Oct 2')
+  })
+
+  it('shows a dash for a date it cannot read', () => {
+    expect(addedLabel(undefined, now)).toBe('—')
+    expect(addedLabel('soon', now)).toBe('—')
+  })
+})
+
+describe('lastPlaylistLine', () => {
+  const now = new Date(2026, 9, 8, 23, 30)
+
+  it('counts the tracks and says when the playlist was played', () => {
+    expect(lastPlaylistLine(10, at(2026, 10, 2, 9), now)).toBe('10 tracks · played Oct 2')
+    expect(lastPlaylistLine(1, at(2026, 10, 7, 20), now)).toBe('1 track · played yesterday')
+    expect(lastPlaylistLine(1581, at(2026, 10, 8, 22, 39), now)).toBe('1,581 tracks · played at 22:39')
+  })
+})
+
+describe('newLikeRows', () => {
+  it('lists each list with new likes, Spotify first, in the sidebar order', () => {
+    expect(newLikeRows(news(5, { p2: 3, liked: 2 }), news(1, { p1: 1 }))).toEqual([
+      { service: 'spotify', listId: 'liked', name: 'Liked Songs', number: '2' },
+      { service: 'spotify', listId: 'p2', name: 'Peak', number: '3' },
+      { service: 'youtube-music', listId: 'p1', name: 'Warm-up', number: '1' },
+    ])
+  })
+
+  it('leaves out lists with none, and a service not shown in the sidebar', () => {
+    expect(newLikeRows(null, news(0, {}))).toEqual([])
+    expect(newLikeRows(news(2, { p1: 2 }), null)).toEqual([
+      { service: 'spotify', listId: 'p1', name: 'Warm-up', number: '2' },
+    ])
+  })
+})
+
+describe('bpmBars', () => {
+  const ranges: BpmRangeCount[] = [
+    { min: null, max: 115, count: 12 },
+    { min: 115, max: 120, count: 40 },
+    { min: 120, max: 125, count: 0 },
+    { min: 135, max: null, count: 3 },
+  ]
+
+  it('labels each half-open range and sets its filter', () => {
+    expect(bpmBars(ranges).map(({ label, count, filter }) => [label, count, filter])).toEqual([
+      ['< 115', 12, { bpmMax: 115 }],
+      ['115–119', 40, { bpmMin: 115, bpmMax: 120 }],
+      ['120–124', 0, { bpmMin: 120, bpmMax: 125 }],
+      ['135+', 3, { bpmMin: 135 }],
+    ])
+  })
+
+  it('opens All Tracks on the tracks it counts, at the edges', () => {
+    const [below, from115, , from135] = bpmBars(ranges)
+    const shows = (bpm: number) =>
+      [below, from115, from135]
+        .filter((bar) => matchesTrackFilter({ bpm } as Track, bar.filter, { playedIds: null }))
+        .map((bar) => bar.label)
+    expect(shows(114.9)).toEqual(['< 115'])
+    expect(shows(115)).toEqual(['115–119'])
+    expect(shows(119.9)).toEqual(['115–119'])
+    expect(shows(135)).toEqual(['135+'])
+  })
+})
+
+describe('keyKnownLine', () => {
+  it('counts the tracks with a key', () => {
+    expect(keyKnownLine([{ count: 60 }, { count: 37 }])).toBe('key known for 97 tracks')
+    expect(keyKnownLine([{ count: 1 }])).toBe('key known for 1 track')
   })
 })
