@@ -183,8 +183,6 @@ interface SidebarProps {
   colours: ColourOverrides
   onSetColour: (section: SidebarSection, hex: string) => void
   onResetColour: (section: SidebarSection) => void
-  toastMessage?: string | null
-  onToastDismiss?: () => void
   onFolderSelect: (folderPath: string | null) => void
   onPlaylistSelect: (playlistId: number) => void
   onAnalyzeFolder: (folderPath: string) => void
@@ -223,8 +221,6 @@ export function Sidebar({
   colours,
   onSetColour,
   onResetColour,
-  toastMessage,
-  onToastDismiss,
   onFolderSelect,
   onPlaylistSelect,
   onAnalyzeFolder,
@@ -304,13 +300,6 @@ export function Sidebar({
       document.removeEventListener('keydown', onKey)
     }
   }, [ctxMenu])
-
-  // Auto-dismiss toast after 2s
-  useEffect(() => {
-    if (!toastMessage) return
-    const timer = setTimeout(() => onToastDismiss?.(), 2000)
-    return () => clearTimeout(timer)
-  }, [toastMessage, onToastDismiss])
 
   // Drag state
   const isDragging = useRef(false)
@@ -446,22 +435,6 @@ export function Sidebar({
     onDeleteFolder,
   }
 
-  const toastEl = (
-    <AnimatePresence>
-      {toastMessage && (
-        <motion.div
-          className={`sidebar-toast ${collapsed ? 'sidebar-toast--rail' : ''}`}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={{ duration: 0.2 }}
-        >
-          {toastMessage}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-
   const openColourMenu =
     (section: SidebarSection, withCreate = false) =>
     (e: React.MouseEvent) => {
@@ -584,7 +557,6 @@ export function Sidebar({
           }
         />
         {colourMenuEl}
-        {toastEl}
       </>
     )
   }
@@ -754,8 +726,6 @@ export function Sidebar({
       </div>
 
       {colourMenuEl}
-
-      {toastEl}
 
       {/* Drag resize handle */}
       <div

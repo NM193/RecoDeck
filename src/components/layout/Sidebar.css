@@ -242,26 +242,6 @@
   background: rgba(var(--accent-rgb), 0.1);
 }
 
-/* ===== Toast notification ===== */
-
-.sidebar-toast {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
-  font-size: var(--text-xs, 11px);
-  font-weight: 500;
-  text-align: center;
-  pointer-events: none;
-  z-index: 20;
-}
-
 /* ===== Drag resize handle ===== */
 
 .sidebar-drag-handle {
@@ -423,17 +403,6 @@
 
 .sidebar-rail__avatar {
   margin: 10px 0 12px;
-}
-
-/* In the rail the toast would be 60px wide; float it beside the rail instead. */
-.sidebar-toast--rail {
-  position: fixed;
-  left: calc(var(--sidebar-width) + 12px);
-  right: auto;
-  bottom: 96px;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  white-space: nowrap;
 }
 
 /* ===== Tooltip (rail) — fixed, so the sidebar's overflow cannot clip it ===== */

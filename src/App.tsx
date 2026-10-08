@@ -29,7 +29,6 @@ import type { ChannelNews } from './types/youtube'
 import { getErrorMessage } from './types/ai'
 import type { TrackFilter } from './lib/trackTable/filter'
 import appPackage from '../package.json'
-import { Notification } from './components/Notification'
 import { UpdateToast } from './components/UpdateToast'
 import {
   AnalysisProgress,
@@ -269,12 +268,6 @@ function AppContent() {
     name: string
   } | null>(null)
 
-  // Notification state
-  const [notification, setNotification] = useState<{
-    message: string
-    type: 'info' | 'success' | 'warning' | 'error'
-  } | null>(null)
-
   // Pending update from auto-check on launch
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
 
@@ -283,11 +276,6 @@ function AppContent() {
     version: string
     changes: VersionChanges
   } | null>(null)
-
-  // Header notification (small text next to logo, typing animation)
-  const [headerNotification, setHeaderNotification] = useState<string | null>(
-    null,
-  )
 
   // Analysis progress state
   const [analysisProgress, setAnalysisProgress] =
@@ -368,20 +356,15 @@ function AppContent() {
           setAnalyzing(false)
 
           if (e.cancelled) {
-            setNotification({
-              message: `Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`,
-              type: 'warning',
+            toast(`Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`, {
+              kind: 'warning',
             })
           } else if (e.total_analyzed > 0) {
-            setNotification({
-              message: `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
-              type: 'success',
-            })
+            toast(
+              `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
+            )
           } else {
-            setNotification({
-              message: 'All tracks already have BPM and Key analysis',
-              type: 'info',
-            })
+            toast('All tracks already have BPM and Key analysis', { kind: 'info' })
           }
 
           // Reload tracks and rebuild AI context (use ref to avoid stale closure)
@@ -662,9 +645,8 @@ function AppContent() {
         : found.every((item) => item.source !== 'dj')
           ? 'Sets › Following'
           : 'Sets'
-      setNotification({
-        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see ${where}`,
-        type: 'info',
+      toast(`${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see ${where}`, {
+        kind: 'info',
       })
 
       // Automatic import lives here rather than in the background task that
@@ -701,10 +683,7 @@ function AppContent() {
           parts.push(`${imported} ${imported === 1 ? 'set' : 'sets'} imported automatically`)
         }
         if (empty > 0) parts.push(`${empty} had no tracklist and were skipped`)
-        setNotification({
-          message: parts.join(' · '),
-          type: imported > 0 ? 'success' : 'info',
-        })
+        toast(parts.join(' · '), { kind: imported > 0 ? 'success' : 'info' })
       }
     })
     return () => {
@@ -982,10 +961,7 @@ function AppContent() {
       const trackIds = folderTracks.filter((t) => t.id).map((t) => t.id)
 
       if (trackIds.length === 0) {
-        setNotification({
-          message: 'No audio tracks found in this folder',
-          type: 'info',
-        })
+        toast('No audio tracks found in this folder', { kind: 'info' })
         return
       }
 
@@ -1045,10 +1021,7 @@ function AppContent() {
       setAnalyzing(false)
       setAnalysisProgress(null)
       setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
+      toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1101,10 +1074,7 @@ function AppContent() {
       } else if (action.kind === 'create-subfolder') {
         await tauriApi.createFolderOnDisk(action.parentPath, value)
         folderTreeRef.current?.refreshLibraryRoot(action.parentPath)
-        setNotification({
-          message: `Created folder "${value}"`,
-          type: 'success',
-        })
+        toast(`Created folder "${value}"`)
       } else if (action.kind === 'rename-folder') {
         if (value === action.currentName) return
         const newPath = await tauriApi.renameFolderOnDisk(
@@ -1169,10 +1139,7 @@ function AppContent() {
       } else {
         await loadTracks()
       }
-      setNotification({
-        message: deleteFiles ? 'Folder and files deleted' : 'Folder removed',
-        type: 'success',
-      })
+      toast(deleteFiles ? 'Folder and files deleted' : 'Folder removed')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -1207,10 +1174,7 @@ function AppContent() {
     try {
       const status = await tauriApi.getCompanionStatus()
       if (!status.running || !status.url || !status.token) {
-        setNotification({
-          message: 'Enable Companion in Settings first',
-          type: 'warning',
-        })
+        toast('Enable Companion in Settings first', { kind: 'warning' })
         return
       }
       setSharePlaylistModal({
@@ -1221,10 +1185,8 @@ function AppContent() {
         companionToken: status.token,
       })
     } catch (err) {
-      setNotification({
-        message:
-          err instanceof Error ? err.message : 'Failed to get Companion status',
-        type: 'error',
+      toast(err instanceof Error ? err.message : 'Failed to get Companion status', {
+        kind: 'error',
       })
     }
   }
@@ -1232,7 +1194,6 @@ function AppContent() {
   // The track table's right-click menu acts on its selection at once: one
   // call, one toast — with Undo, which puts back exactly what it changed —
   // and one reload of the view.
-  const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
   // An Undo: put it back, then reload the view shown by then.
   function undoing(putBack: () => Promise<unknown>) {
@@ -1241,7 +1202,7 @@ function AppContent() {
       run: () => {
         putBack()
           .then(() => loadTracksRef.current())
-          .catch((err) => toast(`Couldn't undo: ${errorText(err)}`, { kind: 'error' }))
+          .catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' }))
       },
     }
   }
@@ -1266,7 +1227,7 @@ function AppContent() {
         }),
       })
     } catch (err) {
-      toast(`Couldn't add to ${name}: ${errorText(err)}`, { kind: 'error' })
+      toast(`Couldn't add to ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1296,7 +1257,7 @@ function AppContent() {
         }),
       })
     } catch (err) {
-      toast(`Couldn't remove from ${name}: ${errorText(err)}`, { kind: 'error' })
+      toast(`Couldn't remove from ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1331,7 +1292,7 @@ function AppContent() {
       })
     } catch (err) {
       await loadTracksRef.current()
-      toast(`Couldn't reorder ${name}: ${errorText(err)}`, { kind: 'error' })
+      toast(`Couldn't reorder ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1348,7 +1309,7 @@ function AppContent() {
         action: undoing(() => tauriApi.restoreTrackGenres(before)),
       })
     } catch (err) {
-      toast(`Couldn't set the genre: ${errorText(err)}`, { kind: 'error' })
+      toast(`Couldn't set the genre: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1363,7 +1324,7 @@ function AppContent() {
         action: undoing(() => tauriApi.restoreTrackGenres(before)),
       })
     } catch (err) {
-      toast(`Couldn't clear the genre: ${errorText(err)}`, { kind: 'error' })
+      toast(`Couldn't clear the genre: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1454,12 +1415,12 @@ function AppContent() {
                         detail: skipDetail(stayed, titleOf),
                       })
                     }
-                  })().catch((err) => toast(`Couldn't undo: ${errorText(err)}`, { kind: 'error' }))
+                  })().catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' }))
                 },
               },
       })
     } catch (err) {
-      toast(`Couldn't move to ${name}: ${errorText(err)}`, { kind: 'error' })
+      toast(`Couldn't move to ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     } finally {
       clearTimeout(slow)
       if (working !== null) dismissToast(working)
@@ -1487,7 +1448,7 @@ function AppContent() {
           : (await tauriApi.getAllTracks()).filter((t) => t.id).map((t) => t.id)
 
       if (trackIds.length === 0) {
-        setNotification({ message: 'No tracks in library', type: 'info' })
+        toast('No tracks in library', { kind: 'info' })
         return
       }
 
@@ -1495,10 +1456,7 @@ function AppContent() {
     } catch (err) {
       // Reading the library failed; analyzeTrackIds reports its own failures.
       setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
+      toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1565,10 +1523,7 @@ function AppContent() {
       setAnalyzing(false)
       setAnalysisProgress(null)
       setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
+      toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1693,9 +1648,7 @@ function AppContent() {
       }
       await handlePlayTrack(list[0], list, 0, playlistId)
     } catch (err) {
-      toast(`Could not play the playlist: ${err instanceof Error ? err.message : String(err)}`, {
-        kind: 'error',
-      })
+      toast(`Could not play the playlist: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1829,8 +1782,6 @@ function AppContent() {
       colours={sidebarPrefs.colours}
       onSetColour={sidebarPrefs.setColour}
       onResetColour={sidebarPrefs.resetColour}
-      toastMessage={headerNotification}
-      onToastDismiss={() => setHeaderNotification(null)}
       onFolderSelect={handleFolderSelect}
       onPlaylistSelect={handlePlaylistSelect}
       onAnalyzeFolder={handleAnalyzeFolder}
@@ -2078,9 +2029,7 @@ function AppContent() {
               <SettingsView
                 onFoldersChanged={handleFoldersChanged}
                 onThemeChanged={handleThemeChanged}
-                onNotification={(message, type) =>
-                  setNotification({ message, type })
-                }
+                onNotification={(message, type) => toast(message, { kind: type })}
               />
             ) : showSearch ? (
               <SearchView
@@ -2248,18 +2197,12 @@ function AppContent() {
             const playlistName =
               playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
             if (added) {
-              setHeaderNotification(`Added to ${playlistName}`)
+              toast(`Added to ${playlistName}`)
             } else {
-              setNotification({
-                message: `Track is already in ${playlistName}`,
-                type: 'warning',
-              })
+              toast(`Track is already in ${playlistName}`, { kind: 'warning' })
             }
           } catch (err) {
-            setNotification({
-              message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-              type: 'error',
-            })
+            toast(`Failed to add: ${getErrorMessage(err)}`, { kind: 'error' })
           }
         }}
         onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
@@ -2353,13 +2296,13 @@ function AppContent() {
           playlistName={exportModal.playlistName}
           onClose={() => setExportModal(null)}
           onSuccess={(msg, folderPath) => {
-            setNotification({ message: msg, type: 'success' })
+            toast(msg)
             // Refresh tracks + the library tree root that contains the new folder
             // so auto-imported files appear immediately.
             void loadTracks()
             void folderTreeRef.current?.refreshLibraryRoot(folderPath)
           }}
-          onError={(msg) => setNotification({ message: msg, type: 'error' })}
+          onError={(msg) => toast(msg, { kind: 'error' })}
         />
       )}
 
@@ -2370,44 +2313,21 @@ function AppContent() {
           onInstall={async () => {
             const update = pendingUpdate
             setPendingUpdate(null)
-            setNotification({
-              message: `Downloading update v${update.version}...`,
-              type: 'info',
-            })
+            toast(`Downloading update v${update.version}...`, { kind: 'info' })
             try {
               await update.downloadAndInstall()
               const isWindows = navigator.platform.startsWith('Win')
               if (isWindows) {
-                setNotification({
-                  message:
-                    'Update installed. The app will restart automatically.',
-                  type: 'success',
-                })
+                toast('Update installed. The app will restart automatically.')
               } else {
-                setNotification({
-                  message: 'Restarting app...',
-                  type: 'success',
-                })
+                toast('Restarting app...')
                 await relaunch()
               }
             } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err)
-              setNotification({
-                message: `Update failed: ${msg}`,
-                type: 'error',
-              })
+              toast(`Update failed: ${getErrorMessage(err)}`, { kind: 'error' })
             }
           }}
           onLater={() => setPendingUpdate(null)}
-        />
-      )}
-
-      {/* Notification toast */}
-      {notification && (
-        <Notification
-          message={notification.message}
-          type={notification.type}
-          onClose={() => setNotification(null)}
         />
       )}
 
@@ -2430,10 +2350,7 @@ function AppContent() {
           onPlaylistSaved={(_playlistId) => {
             setAiPlaylistSeedTrack(null)
             loadPlaylists()
-            setNotification({
-              message: 'AI playlist created successfully!',
-              type: 'success',
-            })
+            toast('AI playlist created successfully!')
           }}
         />
       )}
@@ -2457,10 +2374,7 @@ function AppContent() {
           onPlaylistReordered={() => {
             const reorderedId = mixPrepPlaylist.id
             setMixPrepPlaylist(null)
-            setNotification({
-              message: 'Playlist order updated!',
-              type: 'success',
-            })
+            toast('Playlist order updated!')
             // Refresh the playlist tracks if we're currently viewing this playlist
             if (selectedPlaylistId === reorderedId) {
               loadTracks(null, reorderedId)
