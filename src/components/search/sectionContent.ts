@@ -39,8 +39,8 @@ export function hasContent(
   }
 }
 
-/** The genre tiles' colours, biggest genre first (the approved mockup's). */
-const GENRE_COLOURS = [
+/** The genre tiles' colours, biggest genre first (the approved mockup's); Home's too. */
+export const GENRE_COLOURS = [
   '#7c3aed',
   '#0e7490',
   '#be185d',
