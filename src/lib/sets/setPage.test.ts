@@ -4,6 +4,7 @@ import {
   filterRows,
   heroNumbers,
   missingTracks,
+  savedList,
   savedLabel,
   sourceLine,
   thumbnailUrl,
@@ -78,6 +79,12 @@ describe('copying the missing tracks', () => {
   it('writes "Artist - Title (Mix)" per line', () => {
     expect(trackLine(tracks[1])).toBe('Artist 2 - Title 2 (Club Mix)')
     expect(missingTracks(tracks, matches)).toEqual(['Artist 2 - Title 2 (Club Mix)', 'Title 4'])
+  })
+
+  it('writes the saved tracks the same way', () => {
+    expect(savedList([{ artist: 'Tuccillo', title: 'Imagination Engine' }, { title: 'Bomba', mix: 'Dub' }])).toBe(
+      'Tuccillo - Imagination Engine\nBomba (Dub)',
+    )
   })
 })
 

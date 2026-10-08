@@ -95,6 +95,11 @@ export function trackLine(track: Pick<Track, 'artist' | 'title' | 'mix'>): strin
   return track.mix ? `${name} (${track.mix})` : name
 }
 
+/** Saved tracks as Copy list writes them: "Artist - Title (Mix)", one per line. */
+export function savedList(saved: ReadonlyArray<{ artist?: string; title: string; mix?: string }>): string {
+  return saved.map((t) => trackLine({ artist: t.artist ?? null, title: t.title, mix: t.mix ?? null })).join('\n')
+}
+
 /** The missing tracks, one per line, for ⋯ › Copy missing tracks. */
 export function missingTracks(tracks: readonly Track[], matches: MatchSummary | null): string[] {
   return filterRows(tracks, matches, 'missing').map(trackLine)
