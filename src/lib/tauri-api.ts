@@ -50,6 +50,7 @@ import type {
   Verdict,
 } from '../types/spotify'
 import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
+import type { LibraryGroups, RecentlyPlayedTrack, YourDj } from '../types/sections'
 import type {
   ArtistCandidate,
   DjCandidates,
@@ -1036,6 +1037,26 @@ export const tauriApi = {
   /** Plays per played track (the track table's Plays column). */
   async getPlayCounts(): Promise<{ track_id: number; plays: number }[]> {
     return await invoke('get_play_counts')
+  },
+
+  /** Distinct tracks by their latest play, newest first (Search's Recently played). */
+  async getRecentlyPlayedTracks(limit: number): Promise<RecentlyPlayedTrack[]> {
+    return await invoke('get_recently_played_tracks', { limit })
+  },
+
+  /** The tracks added lately, newest first, as full rows. */
+  async getRecentlyAddedTracks(limit: number): Promise<Track[]> {
+    return await invoke('get_recently_added_tracks', { limit })
+  },
+
+  /** Every DJ with a page or watched for sets; `today` ("2026-10-04", the local day) picks the next gig. */
+  async getKnownDjs(today: string): Promise<YourDj[]> {
+    return await invoke('get_known_djs', { today })
+  },
+
+  /** The 6 biggest genres, the count added in the last 30 days and the count never played. */
+  async getLibraryGroups(): Promise<LibraryGroups> {
+    return await invoke('get_library_groups')
   },
 
   async getRecentlyPlayed(limit?: number): Promise<{
