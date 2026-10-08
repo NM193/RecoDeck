@@ -515,6 +515,11 @@ export const tauriApi = {
     return await invoke('check_youtube_channels')
   },
 
+  /** One followed channel's new uploads: a row's Check now (1–2 units). */
+  async checkYouTubeChannel(channelId: string): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_channel', { channelId })
+  },
+
   /** How often a channel is checked on its own. 0 never, 24 daily, 168 weekly. */
   async setYouTubeChannelInterval(channelId: string, hours: number): Promise<void> {
     return await invoke('set_youtube_channel_interval', { channelId, hours })
@@ -546,6 +551,11 @@ export const tauriApi = {
   /** Searches for every watched DJ — 100 units each. */
   async checkYouTubeDjs(): Promise<ChannelNews[]> {
     return await invoke('check_youtube_djs')
+  },
+
+  /** One watched DJ searched for: a row's Check now (100 units). */
+  async checkYouTubeDj(nameKey: string): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_dj', { nameKey })
   },
 
   /** Everything a DJ's searches have turned up so far. Costs nothing. */
