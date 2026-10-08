@@ -24,16 +24,29 @@
 **Branch:** `feat/redesign`. No release: the whole redesign ships as one release at the end.
 
 **Decisions, beyond the spec's letter** (Task 9 writes them into the spec):
-- **Playlist covers are gradient squares** picked by the name, as on Search's playlist cards and in the approved mockup — no track or artwork is read per playlist. Your playlists shows the playlists you made (`manual`, `ai`), not folders; an empty playlist has no ▶ (and a ▶ on one that emptied meanwhile says "This playlist is empty").
+- **Playlist covers are gradient squares** picked by the name, as on Search's playlist cards and in the approved mockup — no track or artwork is read per playlist. Your playlists (and Library stats' count) shows every playlist the sidebar lists — any `playlist_type` but `folder`; the backend files AI playlists as `ai_generated`, which Search's own filter (`manual` / `ai`) misses, left for Search. An empty playlist has no ▶ (and a ▶ on one that emptied meanwhile says "This playlist is empty").
 - **Home has no selection:** a single click on a track row does nothing; ▶ (under the mouse, in place of the number) or a double click plays; a drag carries that one row. BPM shows whole beats ("125"), as the mockup.
 - **Needs you's numbers** take their kind's colour — Spotify green, YouTube Music red, the accent, yellow for the gig's weekday — mixed toward `--text-primary`, as `--row-accent` is, so they read on the light themes. The list a likes row opens is the one with the most new likes (the sidebar's first on a tie). A gig without a venue says the city, without either "has a gig"; a date not in this year shows the year.
 - **Analyze all** (Not analyzed, Quick actions, Needs you) sends the ids Home read; with none, "Everything is analyzed"; while an analysis runs, "Analysis is already running" (toasts). The sidebar's Analyze All Tracks is unchanged.
-- **The data-version number** is `playVersion + dataVersion`: `playVersion` already rises after each recorded play; `dataVersion` rises after `analysis-complete` and after the `library-changed` rescan. Nothing is read before the stored layout is loaded, and each card reads only what it shows (moving or resizing reads nothing).
-- **All Tracks with a filter** (a genre tile, Library by genre's header link has none) right after a playlist or a folder shows nothing until the library has loaded, instead of that playlist's rows filtered or "No tracks match" for a moment. From Search, and from the sidebar, nothing changes.
+- **The data-version number** is `playVersion + dataVersion`: `playVersion` already rises after each recorded play; `dataVersion` rises after `analysis-complete`, after the `library-changed` rescan, and after a Move to folder (from the table or a drag from Home; Undo too) — Home's rows hold file paths. Nothing is read before the stored layout is loaded, and each card reads only what it shows (moving or resizing reads nothing).
+- **All Tracks with a filter** (a genre tile, Library by genre's header link has none) right after a playlist, a folder or a search in the table shows nothing until the library has loaded, instead of those rows filtered or "No tracks match" for a moment. From Search, and from the sidebar, nothing changes.
 - **Customize:** the header reads "Customize Home" with a one-line hint, Reset (a link button), Cancel, Save; a card's title row is its drag handle and holds its ×; its body cannot be clicked and is dimmed. Library stats is a single line at 1×1: "tracks · 359 added lately", as the mockup.
 - **Box sizing:** the app has no global `border-box`; `HomeView.css` sets it inside Home, so a card is exactly its grid cell (found in WebKit: without it a 1-row card was 146px tall).
+- **Keyboard:** a track row's ▶ is hidden with `opacity`, not `display`, so Tab reaches it (Home has no selection to play with Enter, as the table does); reached, it takes the number's place. A playlist's ▶ the same.
+- **Narrow cards:** a card body is a size container. Genre tiles are 4 to a row in a 2-column card and fewer when it is narrower; Not analyzed under 200px puts Analyze all under the number (the title says what it is); Quick actions' labels wrap; a long list name in Needs you takes at most 45% of the row.
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `ad20f17`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc`, each task's tests and `cargo test` pass at every task's end.
+- **Review:** an independent review applied the plan to a clean copy (all 55 blocks matched once; every task's checks passed), drove it in WebKit (clicks, Customize add / move / resize / Cancel / Save, dragging rows onto a playlist and a folder, the light Dawn theme) and found no blockers. Its findings are fixed here:
+  - a track could not be played from Home by keyboard (▶ was `display: none` and rows take no focus);
+  - a long Spotify / YouTube Music list name pushed Needs you's text to nothing and made the card scroll sideways (765/556);
+  - after a Move to folder, Home's rows kept the old file paths until the next rescan — `moveFiles` now raises `dataVersion`;
+  - narrow cards (a 900px window with the sidebar open): Analyze all over the number, genre names broken mid-word, Quick actions' labels past their buttons;
+  - focus rings clipped at the top of a card's body;
+  - after a search in the table, a genre tile showed the search's rows filtered — the search now marks `tracks` as not the library;
+  - Quick actions' Analyze all, clicked before the ids were read, said "Everything is analyzed" — it now waits for them;
+  - AI playlists (`ai_generated`) were missing from Your playlists;
+  - "Your DJs play next" was cut in Customize's list — names wrap.
+  - Left as it is: a failed read shows a card's empty text (the spec's "a failure reads as empty"), not an error.
 - **Builds and tests:**
   - `cargo test`: 3 new (449); `cargo build` shows no warning.
   - `vitest`: 30 new. The repo counts 582 after it: 581 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (`localStorage.removeItem is not a function` under Node 25's built-in `localStorage`), not touched here. (A clean `git archive` copy shows 8 of `tracklist.test.ts`'s tests skipped: their fixtures are not in git. It counts 567 passed there.)
@@ -997,9 +1010,14 @@ describe('Your playlists', () => {
     track_count: 3,
   })
 
-  it('shows the playlists a person made, not the folders', () => {
-    const shown = userPlaylists([playlist(1, 'manual'), playlist(2, 'folder'), playlist(3, 'ai'), playlist(4, 'smart')])
-    expect(shown.map((p) => p.id)).toEqual([1, 3])
+  it('shows the playlists the sidebar shows, not their folders', () => {
+    const shown = userPlaylists([
+      playlist(1, 'manual'),
+      playlist(2, 'folder'),
+      playlist(3, 'ai_generated'),
+      playlist(4, 'smart'),
+    ])
+    expect(shown.map((p) => p.id)).toEqual([1, 3, 4])
   })
 
   it('gives a playlist the same cover each time', () => {
@@ -1248,9 +1266,9 @@ export function homeGenreTiles(groups: LibraryGroups): HomeTile[] {
   return tiles
 }
 
-/** The playlists a person made (not the folders), in the sidebar's order. */
+/** The playlists, not their folders, in the sidebar's order (as the sidebar lists them). */
 export function userPlaylists(playlists: readonly Playlist[]): Playlist[] {
-  return playlists.filter((p) => p.playlist_type === 'manual' || p.playlist_type === 'ai')
+  return playlists.filter((p) => p.playlist_type !== 'folder')
 }
 
 const PLAYLIST_GRADIENTS = [
@@ -1895,7 +1913,8 @@ function CardBody({
           <QuickAction
             icon="AudioWaveform"
             label="Analyze all"
-            onClick={() => actions.onAnalyzeTracks(data.withoutBpm ?? [])}
+            // Before Home has read them, there is nothing to send yet.
+            onClick={() => data.withoutBpm && actions.onAnalyzeTracks(data.withoutBpm)}
           />
           <QuickAction
             icon="Radio"
@@ -1978,7 +1997,7 @@ function NeedsYou({
           <span className="home-news__number">{row.number}</span>
           <span className="home-news__text">{row.text}</span>
           <span className="home-news__place">
-            {row.place}
+            <span className="home-news__place-name">{row.place}</span>
             <Icon name="ChevronRight" size={12} />
           </span>
         </button>
@@ -2736,7 +2755,7 @@ Replace the whole of `src/components/views/HomeView.css` with:
   justify-content: space-between;
   gap: var(--space-2);
   min-height: 32px;
-  padding: 0 var(--space-2) 0 var(--space-3);
+  padding: 6px var(--space-2) 6px var(--space-3);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   font-size: var(--text-sm);
@@ -2749,9 +2768,6 @@ Replace the whole of `src/components/views/HomeView.css` with:
 
 .home-catalog__name {
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .home-catalog__on {
@@ -2808,14 +2824,16 @@ Replace the whole of `src/components/views/HomeView.css` with:
   font-size: 11.5px;
 }
 
-/* A long list scrolls inside its card, and the wheel stays there. */
+/* A long list scrolls inside its card, and the wheel stays there. The 4px
+   around it leave room for focus rings, which it would otherwise clip. */
 .home-card__body {
   flex: 1;
   min-height: 0;
-  margin: 0 -6px;
-  padding: 0 6px;
+  margin: -4px -6px;
+  padding: 4px 6px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  container-type: inline-size;
 }
 
 .home-card--editing {
@@ -2866,6 +2884,8 @@ Replace the whole of `src/components/views/HomeView.css` with:
 }
 
 /* ---- Track rows ---- */
+/* Under the mouse, or reached with Tab, ▶ (or pause / play on the row
+   playing) takes the number's place. Hidden, it stays in the Tab order. */
 .home-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) 34px 30px 62px;
@@ -2888,6 +2908,7 @@ Replace the whole of `src/components/views/HomeView.css` with:
 }
 
 .home-row__no {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2901,7 +2922,10 @@ Replace the whole of `src/components/views/HomeView.css` with:
 }
 
 .home-row__action {
-  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
@@ -2911,6 +2935,8 @@ Replace the whole of `src/components/views/HomeView.css` with:
   background: none;
   color: var(--text-primary);
   cursor: pointer;
+  opacity: 0;
+  transform: translate(-50%, -50%);
 }
 
 .home-row__action:focus-visible {
@@ -2919,12 +2945,15 @@ Replace the whole of `src/components/views/HomeView.css` with:
 }
 
 .home-row:hover .home-row__number,
-.home-row:hover .equalizer {
-  display: none;
+.home-row:hover .equalizer,
+.home-row__no:has(.home-row__action:focus-visible) .home-row__number,
+.home-row__no:has(.home-row__action:focus-visible) .equalizer {
+  opacity: 0;
 }
 
-.home-row:hover .home-row__action {
-  display: flex;
+.home-row:hover .home-row__action,
+.home-row__action:focus-visible {
+  opacity: 1;
 }
 
 .home-row__text {
@@ -3050,9 +3079,22 @@ Replace the whole of `src/components/views/HomeView.css` with:
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  flex-shrink: 0;
+  min-width: 0;
+  max-width: 45%;
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* A long list's name gives way; the › stays. */
+.home-news__place-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-news__place svg {
+  flex-shrink: 0;
 }
 
 .home-news:hover .home-news__place {
@@ -3102,7 +3144,8 @@ Replace the whole of `src/components/views/HomeView.css` with:
 /* ---- Library by genre ---- */
 .home-genres {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* 4 to a row in a 2-column card, as the mockup; fewer when it is narrow. */
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   grid-auto-rows: minmax(56px, 1fr);
   gap: var(--space-2);
   min-height: 100%;
@@ -3137,7 +3180,7 @@ Replace the whole of `src/components/views/HomeView.css` with:
 
 .home-genre__name {
   max-width: 100%;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .home-genre__count {
@@ -3281,6 +3324,21 @@ Replace the whole of `src/components/views/HomeView.css` with:
   color: var(--home-accent);
 }
 
+/* A narrow Not analyzed card: the button under the number, and the title
+   says what the number is. */
+@container (max-width: 200px) {
+  .home-stat--action {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .home-stat--action .home-sub {
+    display: none;
+  }
+}
+
 .home-sub {
   overflow: hidden;
   white-space: nowrap;
@@ -3310,7 +3368,8 @@ Replace the whole of `src/components/views/HomeView.css` with:
   color: var(--text-secondary);
   font: inherit;
   font-size: 11.5px;
-  white-space: nowrap;
+  line-height: 1.2;
+  text-align: center;
   cursor: pointer;
   transition:
     background-color var(--motion-fast) var(--ease),
@@ -3524,6 +3583,41 @@ with
           if (total === 0) {
             total = await tauriApi.countTracks()
           }
+```
+
+In `src/App.tsx`, replace
+
+```tsx
+        return
+      }
+
+      try {
+        const results = await tauriApi.searchTracks(query)
+        setTracks(results)
+      } catch (err) {
+        console.error('Backend search failed:', err)
+      }
+    },
+    [selectedFolder, selectedPlaylistId, loadTracks],
+  )
+```
+
+with
+
+```tsx
+        return
+      }
+
+      try {
+        const results = await tauriApi.searchTracks(query)
+        setTracks(results)
+        tracksAreLibraryRef.current = false
+      } catch (err) {
+        console.error('Backend search failed:', err)
+      }
+    },
+    [selectedFolder, selectedPlaylistId, loadTracks],
+  )
 ```
 
 In `src/App.tsx`, replace
@@ -3766,6 +3860,42 @@ with
     try {
       const folderTracks = await tauriApi.getTracksInFolder(folderPath)
       const trackIds = folderTracks.filter((t) => t.id).map((t) => t.id)
+```
+
+In `src/App.tsx`, replace
+
+```tsx
+        .patchTrackPaths(new Map(report.moved.map((m) => [m.id, m.newPath])))
+      for (const { id } of report.moved) {
+        thumbnails.forget(id)
+        evictArtworkCache(id)
+      }
+      await loadTracksRef.current()
+      await useFolderTreeStore.getState().invalidateAll(libraryFoldersRef.current)
+    }
+    return { moved: report.moved, skipped: [...playing, ...report.skipped] }
+  }
+
+  async function handleMoveToFolder(selected: Track[], folder: LibraryFolder) {
+```
+
+with
+
+```tsx
+        .patchTrackPaths(new Map(report.moved.map((m) => [m.id, m.newPath])))
+      for (const { id } of report.moved) {
+        thumbnails.forget(id)
+        evictArtworkCache(id)
+      }
+      await loadTracksRef.current()
+      // Home's track rows hold the old paths until they read again.
+      setDataVersion((version) => version + 1)
+      await useFolderTreeStore.getState().invalidateAll(libraryFoldersRef.current)
+    }
+    return { moved: report.moved, skipped: [...playing, ...report.skipped] }
+  }
+
+  async function handleMoveToFolder(selected: Track[], folder: LibraryFolder) {
 ```
 
 In `src/App.tsx`, replace
@@ -4522,7 +4652,7 @@ with
 | | **Library by genre** | tiles: the 6 biggest genres, Added lately, Never played, with counts | opens All Tracks filtered | 2×2 | 2×1 | 4×3 |
 | | **BPM & key** | BPM bars by range; key counts | a bar or key opens All Tracks filtered | 2×2 | 2×1 | 4×2 |
 | | **Not analyzed** | how many tracks have no BPM; **Analyze all** | Analyze all | 1×1 | 1×1 | 2×1 |
-| Gig prep | **Your playlists** | playlist cards (cover, name, count) for the playlists you made, not their folders; ▶ over the cover, none on an empty playlist | opens the playlist; ▶ plays it | 4×1 | 2×1 | 4×3 |
+| Gig prep | **Your playlists** | playlist cards (cover, name, count) for the playlists the sidebar lists, not their folders; ▶ over the cover, none on an empty playlist | opens the playlist; ▶ plays it | 4×1 | 2×1 | 4×3 |
 | | **Quick actions** | Import folder, Analyze all, Open Sets, New playlist | each does its action | 2×1 | 2×1 | 4×1 |
 | | **Last playlist** | the playlist you last played from: cover, name, count, ▶, its tracks | ▶ plays it; a row plays from there | 2×2 | 2×1 | 4×3 |
 
@@ -4781,7 +4911,8 @@ state already and follow on their own.
 
 As built by plan H1: App passes `playVersion + dataVersion` — `playVersion`
 rises after a recorded play (as for the table's Plays column), `dataVersion`
-after an analysis finishes and after the folder watcher's rescan. The
+after an analysis finishes, after the folder watcher's rescan and after
+tracks are moved to another folder (the rows hold file paths). The
 `yt-new-sets` raises and Home's own come with plan H3, whose cards are the
 first to read sets. Nothing is read until the stored layout is loaded, and
 each card reads only what it shows.
