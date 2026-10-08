@@ -661,6 +661,7 @@ export const tauriApi = {
     return await invoke('delete_youtube_set', { videoId })
   },
 
+  /** Hearts a track; with `saved_at` it keeps that time (a removed heart's Undo). */
   async saveYouTubeTrack(track: SavedTrack): Promise<void> {
     return await invoke('save_youtube_track', { track })
   },

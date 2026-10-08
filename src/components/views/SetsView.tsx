@@ -309,6 +309,8 @@ export function SetsView({
   }, [result, matches])
 
   const savedKeys = useMemo(() => new Set(saved.map((t) => trackKey(t))), [saved])
+  // Hearts being taken off (unheart): a second press waits for the first.
+  const unhearting = useRef(new Set<string>())
 
   /**
    * A set just fetched, on its page — unless something else was opened, or
@@ -509,26 +511,57 @@ export function SetsView({
     toast('Removed from your library')
   }
 
+  /**
+   * Takes a heart off, with an Undo that hearts it again at its old
+   * `saved_at`, so it goes back to its place in Saved tracks. A second press
+   * before the list reads again is dropped (one toast, one Undo).
+   */
+  async function unheart(track: SavedTrack) {
+    const key = trackKey(track)
+    if (unhearting.current.has(key)) return
+    unhearting.current.add(key)
+    try {
+      await tauriApi.deleteSavedYouTubeTrack(track.video_id, track.cue_ms, track.title)
+    } catch (err) {
+      unhearting.current.delete(key)
+      toast(`Couldn't remove it: ${getErrorMessage(err)}`, { kind: 'error' })
+      return
+    }
+    // The list without it, before another press could find it there again.
+    await tauriApi.listSavedYouTubeTracks().then(setSaved).catch(() => {})
+    unhearting.current.delete(key)
+    refreshLibrary()
+    toast(`Removed "${track.title}" from Saved tracks`, {
+      action: {
+        label: 'Undo',
+        run: () =>
+          void tauriApi
+            .saveYouTubeTrack(track)
+            .then(refreshLibrary)
+            .catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' })),
+      },
+    })
+  }
+
   async function toggleSave(track: Track) {
     if (!currentSet) return
     const key = trackKey({ video_id: currentSet.video.id, cue_ms: track.cueMs, title: track.title })
 
-    if (savedKeys.has(key)) {
-      await tauriApi
-        .deleteSavedYouTubeTrack(currentSet.video.id, track.cueMs, track.title)
-        .catch(() => {})
-    } else {
-      await tauriApi
-        .saveYouTubeTrack({
-          video_id: currentSet.video.id,
-          cue_ms: track.cueMs,
-          cue: track.cue,
-          artist: track.artist ?? undefined,
-          title: track.title,
-          mix: track.mix ?? undefined,
-        })
-        .catch(() => {})
+    const hearted = saved.find((t) => trackKey(t) === key)
+    if (hearted) {
+      await unheart(hearted)
+      return
     }
+    await tauriApi
+      .saveYouTubeTrack({
+        video_id: currentSet.video.id,
+        cue_ms: track.cueMs,
+        cue: track.cue,
+        artist: track.artist ?? undefined,
+        title: track.title,
+        mix: track.mix ?? undefined,
+      })
+      .catch((err) => toast(`Couldn't save it: ${getErrorMessage(err)}`, { kind: 'error' }))
     refreshLibrary()
   }
 
@@ -812,11 +845,7 @@ export function SetsView({
                 <SetsSaved
                   saved={saved}
                   onOpenAt={(videoId, cueMs, title) => void openSet(videoId, { cueMs, title })}
-                  onRemove={(track) =>
-                    void tauriApi
-                      .deleteSavedYouTubeTrack(track.video_id, track.cue_ms, track.title)
-                      .then(refreshLibrary, () => {})
-                  }
+                  onRemove={(track) => void unheart(track)}
                 />
               )}
             </>
