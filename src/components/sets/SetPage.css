@@ -1,0 +1,522 @@
+/* src/components/sets/SetPage.css */
+/* A set's own page, after the approved mockup (2026-10-04-sets-redesign-mockup.html, 2 and 3). */
+
+/* The page is the view's height: the hero stays put, only what is under it
+   scrolls — the video panel is laid over the hero and cannot scroll. */
+.set-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+
+/* ---- Hero ---- */
+
+.set-hero {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 20px;
+  padding: 18px 22px 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, #7c3a12 32%, var(--bg-primary)), var(--bg-primary));
+}
+
+/* The picture keeps to the top when the text beside it is taller, and both
+   give way on a narrow window rather than push the page sideways. */
+.set-hero__media {
+  flex: 0 1 300px;
+  align-self: flex-start;
+  min-width: 200px;
+}
+
+.set-hero--playing .set-hero__media {
+  flex-basis: 440px;
+  min-width: 240px;
+}
+
+.set-hero__thumb,
+.set-hero__video {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #222 center / cover no-repeat;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* Left empty on purpose: the YouTube webview is laid exactly over this box. */
+.set-hero__video {
+  background: #000;
+}
+
+.set-hero__length {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The scrubber (styled in SetsView.css, which always loads with this page)
+   under the video, without the old band's frame. */
+.set-hero__media .sets-scrub {
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.set-hero__text {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.set-hero__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 6px -4px;
+  padding: 2px 6px 2px 2px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.set-hero__back:hover {
+  color: var(--text-primary);
+}
+
+.set-hero__back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.set-hero__title {
+  display: -webkit-box;
+  margin: 2px 0 6px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.15;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Playing, the hero is the mockup's compact one: no numbers, a smaller title. */
+.set-hero--playing .set-hero__title {
+  font-size: 18px;
+}
+
+.set-hero__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.set-hero__dj,
+.set-hero__dj-name {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+.set-hero__dj {
+  text-decoration: underline;
+  text-decoration-color: var(--text-muted);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.set-hero__dj:hover {
+  text-decoration-color: var(--text-primary);
+}
+
+.set-hero__dj:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.set-hero__sep {
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: pre-wrap;
+}
+
+.set-hero__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.set-hero__number b {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-hero__number--owned,
+.set-hero__number--owned b {
+  color: color-mix(in srgb, #1ed760 80%, var(--text-primary));
+}
+
+.set-hero__source {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.set-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.set-hero__primary {
+  font-weight: 700;
+}
+
+.set-hero__icon {
+  width: 32px;
+  padding: 0;
+}
+
+/* ---- Under the hero: the strip, the filter, the rows ---- */
+
+.set-page__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 22px 40px;
+}
+
+.set-page__strip .sets-timeline {
+  margin-top: 6px;
+}
+
+.set-page__note,
+.set-page__empty {
+  margin: 12px 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.set-page__filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 6px;
+}
+
+.set-page__filter-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.set-page__filter-btn:hover {
+  color: var(--text-primary);
+}
+
+.set-page__filter-btn[aria-pressed='true'] {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+}
+
+.set-page__filter-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.set-page__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 20px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.set-page__error p {
+  margin: 0;
+}
+
+/* ---- Track rows: # · Time · Track · Lists · You own · ♡ ---- */
+
+.set-row {
+  display: grid;
+  grid-template-columns: 34px 56px minmax(0, 1fr) 54px 96px 32px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 3px 8px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.set-row:not(.set-row--head):not(.set-row--skeleton):hover {
+  background: var(--bg-tertiary);
+}
+
+.set-row--head {
+  min-height: 26px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.set-row--now {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Hovered, it keeps its tint (as specific as the rows' hover, and later). */
+.set-row.set-row--now:not(.set-row--head):hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* The track table's playing colour: the accent drawn toward the text, so it
+   reads on the light themes too. */
+.set-row--now .set-row__name,
+.set-row--now .set-row__no,
+.set-row--now .set-row__time {
+  color: color-mix(in srgb, var(--accent), var(--text-primary) 25%);
+}
+
+.set-row--id .set-row__name {
+  color: var(--text-muted);
+}
+
+.set-row__no {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ▶ waits under the number: shown on hover, and when it has the keyboard. */
+.set-row__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.set-row:hover .set-row__play,
+.set-row__play:focus-visible {
+  opacity: 1;
+}
+
+/* Only the keyboard's focus counts: WebView2 focuses a button on a click,
+   which would leave the cell blank once the mouse moves on. */
+.set-row:hover .set-row__no > :not(.set-row__play),
+.set-row__no:has(.set-row__play:focus-visible) > :not(.set-row__play) {
+  visibility: hidden;
+}
+
+.set-row__play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.set-row__time {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.set-row__echo {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.set-row__echo:hover {
+  text-decoration: underline;
+}
+
+.set-row__track {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.set-row__name,
+.set-row__extra {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.set-row__mix {
+  color: var(--text-muted);
+}
+
+.set-row__extra {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* The store links follow the title, only while the row is hovered (two
+   classes, to win over the shared .sets-stores, which loads later). */
+.set-row .set-row__stores {
+  display: none;
+  margin-left: 6px;
+}
+
+.set-row:hover .set-row__stores,
+.set-row:focus-within .set-row__stores {
+  display: inline-flex;
+}
+
+.set-row__lists {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.set-row__lists--lonely {
+  opacity: 0.55;
+}
+
+.set-row__have {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  background: color-mix(in srgb, #1ed760 15%, transparent);
+  color: color-mix(in srgb, #1ed760 80%, var(--text-primary));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.set-row__have:hover {
+  background: color-mix(in srgb, #1ed760 25%, transparent);
+}
+
+.set-row__missing {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.set-row__heart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.set-row__heart:hover {
+  color: var(--text-primary);
+}
+
+.set-row__heart--on,
+.set-row__heart--on:hover {
+  color: var(--color-danger);
+}
+
+.set-row__have:focus-visible,
+.set-row__heart:focus-visible,
+.set-row__echo:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Rows not read yet. */
+.set-row--skeleton span {
+  height: 10px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+}
+
+.set-row--skeleton span:nth-child(3) {
+  width: 60%;
+}
+
+/* ---- Named without a timestamp ---- */
+
+.set-page__loose {
+  margin-top: 24px;
+}
+
+.set-page__loose h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.set-loose {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+.set-loose__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.set-loose__by {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
