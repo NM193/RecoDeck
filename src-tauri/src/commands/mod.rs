@@ -6,6 +6,7 @@ pub mod conversations;
 pub mod dashboard;
 pub mod dj;
 pub mod genre;
+pub mod home;
 pub mod library;
 pub mod move_tracks;
 pub mod playback;

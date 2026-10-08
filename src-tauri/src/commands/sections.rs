@@ -29,7 +29,8 @@ fn track_dto((track, bpm, bpm_confidence, musical_key, key_confidence): TrackWit
     dto
 }
 
-fn with_db<T>(
+/// Runs a read on the open database; Home's commands use it too.
+pub(crate) fn with_db<T>(
     state: &State<AppState>,
     what: &str,
     read: impl FnOnce(&Database) -> rusqlite::Result<T>,

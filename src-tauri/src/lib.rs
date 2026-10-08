@@ -607,6 +607,9 @@ pub fn run() {
             commands::sections::get_recently_added_tracks,
             commands::sections::get_known_djs,
             commands::sections::get_library_groups,
+            // Home's cards (Search's sections above are shared)
+            commands::home::get_upcoming_gigs,
+            commands::home::get_track_ids_without_bpm,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;
