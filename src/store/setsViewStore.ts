@@ -21,7 +21,8 @@ interface SetsViewState {
 
 export const useSetsView = create<SetsViewState>((set) => ({
   tab: 'library',
-  grouping: 'dj',
+  // Newest, as the mockup draws it.
+  grouping: 'recent',
   scrollTop: 0,
   libraryRequests: 0,
   setTab: (tab) => set({ tab, scrollTop: 0 }),

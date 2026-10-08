@@ -308,9 +308,17 @@ export function SetPage({
         {opening?.error ? (
           <div className="set-page__error">
             <p>Couldn&apos;t read this set: {opening.error}</p>
-            <button type="button" className="btn" onClick={onRetry}>
-              Try again
-            </button>
+            <div className="set-page__error-actions">
+              <button type="button" className="btn" onClick={onRetry}>
+                Try again
+              </button>
+              {/* A stored set that will not read can still leave the library. */}
+              {onRemove && (
+                <button type="button" className="btn" onClick={onRemove}>
+                  Remove from library
+                </button>
+              )}
+            </div>
           </div>
         ) : !ready || !result ? (
           <div className="set-page__rows" aria-busy="true">

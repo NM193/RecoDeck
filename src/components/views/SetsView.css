@@ -16,8 +16,9 @@
   padding: 24px 28px 48px;
 }
 
+/* Wide enough for the library's four cards a row, as the mockup's full width. */
 .sets-view__container {
-  max-width: 900px;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
@@ -167,38 +168,7 @@
   color: var(--text-primary);
 }
 
-.sets-filter__btn--active {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 /* --- tabs, library, saved --- */
-
-.sets-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.sets-tab {
-  padding: 6px 14px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.sets-tab:hover {
-  color: var(--text-primary);
-}
-
-.sets-tab--active {
-  color: var(--text-primary);
-  border-bottom-color: var(--accent);
-}
 
 .sets-stored {
   display: flex;
@@ -606,16 +576,6 @@
   min-width: 0;
 }
 
-.sets-tab__badge {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: var(--color-danger);
-  color: #fff;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* --- where to find a record --- */
 
 .sets-stores {
@@ -634,43 +594,4 @@
 
 .sets-dj {
   margin-bottom: 26px;
-}
-
-/*
- * The DJ, not another set.
- *
- * It used to be the same size and weight as the titles underneath it, so a
- * group read as one more row in the list. A heading has to be a different kind
- * of thing, not a slightly bolder one: smaller, spaced out, and ruled off.
- */
-.sets-dj__name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
-  padding: 0 0 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.sets-dj__who {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.sets-dj__count {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 400;
-  /* Pushed away from the name so the two are not read as one phrase. */
-  margin-left: auto;
-}
-
-/* A rail down the side, so where a group ends is never in question. */
-.sets-dj__sets {
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
-  margin-left: 2px;
 }

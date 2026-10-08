@@ -231,7 +231,9 @@
   height: 28px;
   padding: 0 12px;
   border: none;
-  background: var(--bg-elevated);
+  /* A shade off the page, so it reads as a button on the light themes too
+     (their elevated colour is the page's white). */
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 7%);
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
@@ -266,6 +268,11 @@
 
 .set-page__error p {
   margin: 0;
+}
+
+.set-page__error-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ---- Track rows: # · Time · Track · Lists · You own · ♡ ---- */
