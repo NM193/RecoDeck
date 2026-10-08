@@ -1,0 +1,78 @@
+/* src/components/sets/SetPlayerBar.css */
+/* The playing set, small, above the bottom player. */
+
+.set-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 54px;
+  padding: 0 14px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Left empty on purpose: the YouTube webview is laid exactly over this box. */
+.set-bar__video {
+  flex: 0 0 auto;
+  width: 84px;
+  height: 47px;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.set-bar__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 6px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.set-bar__text:hover .set-bar__now {
+  text-decoration: underline;
+}
+
+.set-bar__text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.set-bar__now,
+.set-bar__set {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.set-bar__now {
+  font-size: var(--text-sm);
+}
+
+.set-bar__cue {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-bar__set {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.set-bar__controls {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+/* The shared .btn (controls.css), square. */
+.set-bar__btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
