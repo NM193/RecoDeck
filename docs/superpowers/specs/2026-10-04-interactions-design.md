@@ -237,6 +237,39 @@ for the Home plan.
   component with its working state; Settings, the DJ pages and the modals on
   the shared controls.
 
+**As built by plan I2** (menus and keys):
+- The sidebar's right-click menus (Folders, Playlists) are the shared
+  `Menu`, with a muted heading naming what was right-clicked (`heading`, new
+  on `Menu`). Delete — a playlist or a playlist folder — asks in the menu's
+  place (`Delete "Warm Up"? This cannot be undone.`), and App's native
+  dialog for it goes; Delete Folder still opens its dialog, which asks
+  whether the files go too. In the rail's flyouts the menu works the same:
+  the flyout counts a press on a menu as inside. FolderTree's old
+  two-section render, unused since the sidebar redesign, goes with its All
+  Tracks menu (App's `handleAnalyzeAll`) and the old `.context-menu`
+  styles.
+- `useShortcuts` (in App) reads keys through `shortcutFor`: Space, ⌘→ / ⌘←,
+  ⌘K, ⌘F and ⌘/ (with or without Shift: "/" is Shift+7 on some layouts); ⌘
+  is Ctrl too. They give way while typing, while any overlay is open, while
+  tracks are dragged, and to a key a component already handled. Space stays
+  a control's only when Tab brought focus there and it shows the keyboard
+  ring — a button just clicked never keeps it (WebView2 can call it
+  :focus-visible once a key is pressed). Held keys are ignored.
+- Whichever played last: `trackLastPlayed` notes which player starts
+  playing — the bottom player's `isPlaying`, or the set video's state (a
+  click inside the video counts). Space and ⌘→ / ⌘← drive the set
+  (`togglePause`, `step`) while it played last and is open, else the bottom
+  player's buttons, which NowPlayingBar hands over (`registerFileControls`).
+- ⌘K opens Search; on Search (the view shown, not a DJ page opened from
+  it) it goes to its box. ⌘F focuses the page's
+  search box — the inputs marked `data-page-search` (the track table,
+  Search, Sets' box, a DJ's tracks, a streaming list) — its text selected.
+- ⌘/ opens the shortcuts sheet (`ShortcutsSheet`): the table above, ⌘
+  written as Ctrl on Windows; Esc, a press outside, ✕ or ⌘/ closes it.
+- Esc keeps its order through what exists: the drag layer hears it first,
+  then the overlay stack (`useOverlay`), then the focused track table.
+- `Skeleton` moves to I3, with the loading states it replaces.
+
 ## Testing
 
 - TypeScript: the toast queue (max 3, error stays, warning 6s, hover pauses);
