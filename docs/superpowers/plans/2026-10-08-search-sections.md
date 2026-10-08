@@ -12,9 +12,9 @@
   - `get_recently_played_tracks(limit)`: distinct tracks by their latest play, as full rows with analysis and `played_at`; deleted files drop out (inner join).
   - `get_recently_added_tracks(limit)`: full rows, newest `date_added` first.
   - `get_known_djs(today)`: `dj_profiles` ∪ `yt_watched_djs` by name key, with the photo and the next gig on or after `today`.
-  - `get_library_groups()`: the 6 biggest genres, the count added in the last 30 days (UTC), the count with no play in `play_history`.
+  - `get_library_groups()`: the 6 biggest genres, the count added in the last 30 days (UTC), the count with no play in `play_history` (`NOT IN`, not a correlated `NOT EXISTS`: `play_history.track_id` has no index).
 - **Pure TypeScript** (tested): the recent-searches list, the section order and its stored form, the DJ pages opened lately (`dj_recent`), the small lines ("next gig Sat, Oct 12", "2 days ago", "1,581 tracks"), and what each section shows.
-- **Components:** `components/search/` — `useSectionsData` reads the switched-on sections' data (again after each play), `SearchSections` draws them, `CustomizeSections` is the list.
+- **Components:** `components/search/` — `useSectionsData` reads the switched-on sections' data (again after each play, and when the field is cleared; nothing while results show), `SearchSections` draws them, `CustomizeSections` is the list. `ToggleSwitch` gains an optional accessible name.
 - **SearchView:** the field on top; under it the sections scroll as one page, or the results sit still with only the rows scrolling. It remembers a query when a result is opened or played, or after it rests 2 seconds with results.
 - **App:** `openAllTracks(filter?)` (the sidebar's handler, extracted) for the genre tiles; `openSets({ openVideoId })` for a saved set; `playVersion` to Search; `openDj` notes the DJ in `dj_recent`.
 
@@ -30,13 +30,22 @@
 - **Your DJs:** the DJ pages opened most recently first (`dj_recent`, max 20, written by `openDj`), then the rest by name; at most 20 cards. The line: the next gig, else "watching for sets" for a watched DJ, else nothing. Initials: the first letters of the first two words ("JC").
 - **Genre tiles:** the mockup's six colours by rank; Recently added says "N tracks · last 30 days"; a tile for 0 tracks is left out.
 - **The Playlists results are small cards** (a 48px gradient square beside the name and count) in a row that scrolls sideways. Found in WebKit: with 126px squares like the DJ cards, the rows were left 25px on a 760px-tall window when DJs show too. **The rows keep at least 200px;** on a shorter window the results scroll as a whole.
-- **Customize** has Cancel beside Done; the sliders button again also cancels. The button sits where the field's ✕ is, and shows only with an empty query.
+- **Customize** has Cancel beside Done; the sliders button again also cancels, and so does typing in the field. The button sits where the field's ✕ is, and shows only with an empty query. Each switch is named ("Show Your DJs"); ▲ / ▼ at the ends are `aria-disabled`, not `disabled`, and the arrow used keeps the focus as its row moves; Done and Cancel give the focus back to the sliders button.
 - **Recent searches:** a chip's text runs the search; its × forgets it; Clear forgets all (no Undo: nothing is lost but a shortcut).
 - **No loading flag for the genre tiles:** Search's opener loads the whole library into App's `tracks`, so All Tracks filters it at once while it loads again; a Never played filter shows no rows until the played ids arrive (the table's `filterPending`).
 - **The 1000px width bug** no longer happened on `0b675a4` (9 DJ cards: nothing past the right edge) — the track table plans set `min-width: 0` on App's view wrappers. Every new box keeps `min-width: 0`, and the WebKit check measures it.
 - **Recently added** (off by default) shows the table's 36px cover thumbnail; Sets you saved lately shows a quiet square with a radio icon (a YouTube thumbnail would be a network request).
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at 0b675a4; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc`, each task's tests and `cargo test` pass at every task's end.
+- **Review:** an independent review applied the plan, re-ran everything and found no blockers. Its findings are fixed here:
+  - the Never played count scanned the history once per track (125 ms at 800 plays, 360 ms at 3,000, under the database lock) — now `NOT IN`, about 1 ms;
+  - the 200px minimum was on the Tracks section with its heading, so the rows got 158px — now on the rows, with `overscroll-behavior: contain` so their scroll does not carry on to the results;
+  - Customize: unnamed switches, focus lost to the page when a section reached the top or bottom, and after Done or Cancel;
+  - "Search your library" was no longer centred;
+  - the sections were read again while results showed (after a play from the results, or Back from a DJ page);
+  - `localStorage` was written inside a state updater — now an effect on the list;
+  - Customize came back after typing and clearing the field — typing now closes it.
+  - Left as they are: `--text-muted` for the small lines (the approved mockup's, as elsewhere in the app); the empty cover square matching the hover colour (as in the table); press states and loading skeletons (the Interactions plan).
 - **Builds and tests:**
   - `cargo test`: 8 new (446).
   - `vitest`: 29 new. The repo counts 552 after it: 551 passed and 1 failed — `aiStore.test.ts` "clearHistory resets chat state" fails on the repo already (`localStorage.removeItem is not a function` under Node 25's built-in `localStorage`), not touched here.
@@ -45,9 +54,11 @@
   - Empty query: Recent searches, Recently played, Your DJs, Your library by genre, in that order. Nothing reaches past the main column's right edge; the page does not scroll sideways; the tiles row (970/884) and the DJs row (1400/884) scroll inside themselves.
   - Scrolling the sections leaves the field where it was (top 24 before and after).
   - A tile plays its track with the 6 tiles as the queue (`play 2 of 1,2,3,4,5,6 at 1`); Tech House opens All Tracks with `{"genre":"Tech House"}`, Never played with `{"played":"never"}`; a DJ opens their page; a chip's × removes it; a chip runs its search.
-  - Query "a" (9 DJs, 3 playlists, 115 tracks): nothing past the right edge; the rows scroll in their own area (5544/158) while the Tracks heading stays at the same place (501 before and after scrolling the rows).
+  - Query "a" (9 DJs, 3 playlists, 115 tracks): nothing past the right edge. At 1000×1000 the rows scroll in their own area (384px) and the results do not scroll. At 1000×760 the rows keep 200px (224 with their bottom padding) and the results scroll 80px as a whole; the wheel at the end of the rows leaves the DJs heading in place. No section is read while the results show; clearing the field reads them again.
   - Resting 2 seconds with results puts "a" first in `search_recent`.
   - Customize: moving Your library by genre up twice, switching Recent searches off and Recently added on, then Done stores the order and the page shows Genre, Recently played, Your DJs, Recently added — the same after a reload.
+  - Customize by keyboard: Enter twice on "Move Your DJs up" brings it to the top with the focus still on that arrow (`aria-disabled` now); Enter again changes nothing; "Move Recently played down" keeps the focus too. The switches are named "Show …". Done puts the focus on the sliders button. Typing a letter closes Customize.
+  - The empty "Search your library" sits in the middle of the area under the field, as before.
   - An empty library and no history: "Search your library", as before.
   - Recently added and Sets you saved lately rows ("today", "yesterday", "2 days ago", "Sep 26"); a set row opens it in Sets (`set v2`); a row plays its track. In Dawn the chips, rows and tiles read.
 
@@ -63,6 +74,7 @@
 | `src/lib/search/recentSearches.ts`, `sections.ts`, `storage.ts`, `src/lib/dj/recent.ts` (+ tests) | create | recent searches, the section order, `dj_recent`, and where they are stored |
 | `src/lib/search/labels.ts` (+ test) | create | the small lines and initials |
 | `src/components/search/useSectionsData.ts`, `sectionContent.ts` (+ test), `SearchSections.tsx`, `SearchSections.css`, `CustomizeSections.tsx` | create | reading, choosing and drawing the sections; Customize |
+| `src/components/settings/ToggleSwitch.tsx` | modify | an optional accessible name |
 | `src/components/views/SearchView.tsx`, `.css` | modify | sections before typing, the sliders button, remembering queries, results where only the rows scroll |
 | `src/App.tsx` | modify | `openAllTracks(filter)`, a saved set, `playVersion`, `dj_recent` |
 | `docs/superpowers/specs/2026-10-03-search-home-sections-design.md` | modify | the decisions above |
@@ -260,9 +272,12 @@ impl Database {
             [],
             |row| row.get(0),
         )?;
+        // NOT IN, not a correlated NOT EXISTS: play_history has no index on
+        // track_id, so that would scan the history once per track. The
+        // IS NOT NULL keeps a NULL from making NOT IN match nothing.
         let never_played = self.conn.query_row(
-            "SELECT COUNT(*) FROM tracks t
-             WHERE NOT EXISTS (SELECT 1 FROM play_history p WHERE p.track_id = t.id)",
+            "SELECT COUNT(*) FROM tracks
+             WHERE id NOT IN (SELECT track_id FROM play_history WHERE track_id IS NOT NULL)",
             [],
             |row| row.get(0),
         )?;
@@ -1504,18 +1519,19 @@ git commit -m "feat(search): a DJ's line and initials, when something was added,
 
 ### Task 6: The sections
 
-**Files:** Create `src/components/search/useSectionsData.ts`, `src/components/search/sectionContent.ts` (+ test), `src/components/search/SearchSections.tsx`, `src/components/search/SearchSections.css`, `src/components/search/CustomizeSections.tsx`.
+**Files:** Create `src/components/search/useSectionsData.ts`, `src/components/search/sectionContent.ts` (+ test), `src/components/search/SearchSections.tsx`, `src/components/search/SearchSections.css`, `src/components/search/CustomizeSections.tsx`; modify `src/components/settings/ToggleSwitch.tsx`.
 
-- [ ] **Step 1: Reading them** (each section's data, only for the sections switched on; again after each play)
+- [ ] **Step 1: Reading them** (each section's data, only for the sections switched on; again after each play and when the field is cleared; nothing while results show)
 
 Create `src/components/search/useSectionsData.ts`:
 
 ```ts
 // src/components/search/useSectionsData.ts
 // What the switched-on sections show (Search spec, Sections), all local:
-// read when the Search page opens, when a section is switched on, and after
-// each play (Recently played and the Never played count change). Null until
-// the first read answers, so the page does not flash "Search your library".
+// read when the Search page opens, when a section is switched on, after each
+// play (Recently played and the Never played count change), and when the
+// field is cleared again. Null until the first read answers, so the page does
+// not flash "Search your library".
 import { useEffect, useState } from 'react'
 import { tauriApi } from '../../lib/tauri-api'
 import { localDay } from '../../lib/dj/gigs'
@@ -1561,15 +1577,18 @@ async function read<T>(
   }
 }
 
+/** `active` false (results on screen) reads nothing and keeps what was read. */
 export function useSectionsData(
   shown: ReadonlyArray<SearchSectionId>,
   playVersion: number,
+  active: boolean,
 ): SectionsData | null {
   const [data, setData] = useState<SectionsData | null>(null)
   // A string, so a new array with the same sections reads nothing again.
   const shownKey = [...shown].sort().join(',')
 
   useEffect(() => {
+    if (!active) return
     let current = true
     const on = new Set(shownKey.split(','))
     const today = localDay(new Date())
@@ -1604,7 +1623,7 @@ export function useSectionsData(
     return () => {
       current = false
     }
-  }, [shownKey, playVersion])
+  }, [shownKey, playVersion, active])
 
   return data
 }
@@ -2576,9 +2595,10 @@ Create `src/components/search/SearchSections.css`:
   color: var(--text-primary);
 }
 
-.search-customize__move:disabled {
+.search-customize__move[aria-disabled='true'] {
   opacity: 0.4;
-  pointer-events: none;
+  background: none;
+  cursor: default;
 }
 
 .search-customize__move:focus-visible {
@@ -2591,7 +2611,56 @@ Create `src/components/search/SearchSections.css`:
 }
 ```
 
-- [ ] **Step 5: Customize**
+- [ ] **Step 5: Customize** — the switch first gets an accessible name
+
+In `src/components/settings/ToggleSwitch.tsx`, replace
+
+```tsx
+interface ToggleSwitchProps {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+}
+
+export function ToggleSwitch({ checked, onChange, disabled }: ToggleSwitchProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`toggle-switch ${checked ? 'toggle-switch--on' : ''} ${disabled ? 'toggle-switch--disabled' : ''}`}
+      onClick={() => !disabled && onChange(!checked)}
+      disabled={disabled}
+    >
+      <span className="toggle-switch__thumb" />
+    </button>
+```
+
+with
+
+```tsx
+interface ToggleSwitchProps {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+  /** Its accessible name, where no visible label is tied to it. */
+  label?: string
+}
+
+export function ToggleSwitch({ checked, onChange, disabled, label }: ToggleSwitchProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={`toggle-switch ${checked ? 'toggle-switch--on' : ''} ${disabled ? 'toggle-switch--disabled' : ''}`}
+      onClick={() => !disabled && onChange(!checked)}
+      disabled={disabled}
+    >
+      <span className="toggle-switch__thumb" />
+    </button>
+```
 
 Create `src/components/search/CustomizeSections.tsx`:
 
@@ -2600,13 +2669,14 @@ Create `src/components/search/CustomizeSections.tsx`:
 // Search's Customize (Search spec): the sections as a plain list, each with
 // ▲ / ▼ to move it and a switch. No grid and no drag. Done saves; Cancel
 // leaves the page as it was.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { ToggleSwitch } from '../settings/ToggleSwitch'
 import {
   moveSection,
   sectionLabel,
   setSectionOn,
+  type SearchSectionId,
   type SectionPref,
 } from '../../lib/search/sections'
 
@@ -2622,6 +2692,29 @@ export function CustomizeSections({
   onCancel,
 }: CustomizeSectionsProps) {
   const [draft, setDraft] = useState(prefs)
+  // The arrow just used keeps the focus as its row moves (moving a row's node
+  // drops it). At the top or bottom it stays focusable: aria-disabled.
+  const [moved, setMoved] = useState<{
+    id: SearchSectionId
+    by: -1 | 1
+  } | null>(null)
+  const list = useRef<HTMLUListElement>(null)
+
+  useEffect(() => {
+    if (!moved) return
+    list.current
+      ?.querySelector<HTMLButtonElement>(
+        `[data-move="${moved.id}:${moved.by}"]`,
+      )
+      ?.focus()
+  }, [moved])
+
+  function move(index: number, by: -1 | 1) {
+    const next = moveSection(draft, index, by)
+    if (next === draft) return
+    setDraft(next)
+    setMoved({ id: draft[index].id, by })
+  }
 
   return (
     <div className="search-customize">
@@ -2640,7 +2733,7 @@ export function CustomizeSections({
           </button>
         </div>
       </div>
-      <ul className="search-customize__list">
+      <ul ref={list} className="search-customize__list">
         {draft.map((pref, index) => {
           const label = sectionLabel(pref.id)
           return (
@@ -2658,8 +2751,9 @@ export function CustomizeSections({
                 type="button"
                 className="search-customize__move"
                 aria-label={`Move ${label} up`}
-                disabled={index === 0}
-                onClick={() => setDraft(moveSection(draft, index, -1))}
+                aria-disabled={index === 0}
+                data-move={`${pref.id}:-1`}
+                onClick={() => move(index, -1)}
               >
                 <Icon name="ChevronUp" size={16} />
               </button>
@@ -2667,13 +2761,15 @@ export function CustomizeSections({
                 type="button"
                 className="search-customize__move"
                 aria-label={`Move ${label} down`}
-                disabled={index === draft.length - 1}
-                onClick={() => setDraft(moveSection(draft, index, 1))}
+                aria-disabled={index === draft.length - 1}
+                data-move={`${pref.id}:1`}
+                onClick={() => move(index, 1)}
               >
                 <Icon name="ChevronDown" size={16} />
               </button>
               <ToggleSwitch
                 checked={pref.on}
+                label={`Show ${label}`}
                 onChange={(on) => setDraft(setSectionOn(draft, pref.id, on))}
               />
             </li>
@@ -2688,7 +2784,7 @@ export function CustomizeSections({
 - [ ] **Step 6:** `npx tsc --noEmit -p .`: no errors. Commit:
 
 ```bash
-git add src/components/search
+git add src/components/search src/components/settings/ToggleSwitch.tsx
 git commit -m "feat(search): the sections before you type, and Customize"
 ```
 
@@ -2721,7 +2817,7 @@ function getPlaylistGradient(name: string): string {
 with
 
 ```tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { useDjSearch } from '../dj/useDjSearch'
 import { CustomizeSections } from '../search/CustomizeSections'
@@ -2850,11 +2946,11 @@ export function SearchView({
   const [prefs, setPrefs] = useState<SectionPref[]>(loadSectionPrefs)
   const [customizing, setCustomizing] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>(loadRecentSearches)
+  const customizeButton = useRef<HTMLButtonElement>(null)
   const shownSections = useMemo(
     () => prefs.filter((pref) => pref.on).map((pref) => pref.id),
     [prefs],
   )
-  const sectionsData = useSectionsData(shownSections, playVersion)
 
   const filteredTracks = useMemo(() => {
     if (!query.trim()) return []
@@ -2866,6 +2962,7 @@ export function SearchView({
 In `src/components/views/SearchView.tsx`, replace
 
 ```tsx
+      p.name.toLowerCase().includes(q)
     )
   }, [playlists, query])
 
@@ -2877,44 +2974,49 @@ In `src/components/views/SearchView.tsx`, replace
     if (!ms) return '--:--'
     const minutes = Math.floor(ms / 60000)
     const seconds = Math.floor((ms % 60000) / 1000)
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`
 ```
 
 with
 
 ```tsx
+      p.name.toLowerCase().includes(q)
     )
   }, [playlists, query])
 
   const hasResults = djCards.length > 0 || filteredTracks.length > 0 || filteredPlaylists.length > 0
   const hasQuery = query.trim().length > 0
+  // Not read while results show; read again when the field is cleared.
+  const sectionsData = useSectionsData(shownSections, playVersion, !hasQuery)
 
-  function changeRecentSearches(change: (list: string[]) => string[]) {
-    setRecentSearches((list) => {
-      const next = change(list)
-      saveRecentSearches(next)
-      return next
-    })
-  }
+  // Kept on this machine as the list changes.
+  useEffect(() => {
+    saveRecentSearches(recentSearches)
+  }, [recentSearches])
 
   // Search spec, Recent searches: a query is remembered when one of its
   // results is opened or played, or when it rests 2 seconds with results.
   function rememberQuery() {
-    changeRecentSearches((list) => rememberSearch(list, query))
+    setRecentSearches((list) => rememberSearch(list, query))
   }
 
   useEffect(() => {
     if (!query.trim() || !hasResults) return
     const timer = window.setTimeout(() => {
-      changeRecentSearches((list) => rememberSearch(list, query))
+      setRecentSearches((list) => rememberSearch(list, query))
     }, REMEMBER_AFTER_MS)
     return () => window.clearTimeout(timer)
   }, [query, hasResults])
 
+  // Done and Cancel give the focus back to the button that opened Customize.
+  function closeCustomize() {
+    setCustomizing(false)
+    customizeButton.current?.focus()
+  }
+
   function saveSections(next: SectionPref[]) {
     setPrefs(next)
     saveSectionPrefs(next)
-    setCustomizing(false)
+    closeCustomize()
   }
 
   // Format duration from ms to MM:SS
@@ -2922,7 +3024,6 @@ with
     if (!ms) return '--:--'
     const minutes = Math.floor(ms / 60000)
     const seconds = Math.floor((ms % 60000) / 1000)
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`
 ```
 
 In `src/components/views/SearchView.tsx`, replace
@@ -3014,7 +3115,11 @@ with
             className="search-view__input"
             placeholder="Search tracks, playlists, artists..."
             value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
+            onChange={(e) => {
+              // Typing leaves Customize unsaved, as Cancel does.
+              setCustomizing(false)
+              onQueryChange(e.target.value)
+            }}
             autoFocus
           />
           {query ? (
@@ -3023,6 +3128,7 @@ with
             </button>
           ) : (
             <button
+              ref={customizeButton}
               className="search-view__input-clear"
               onClick={() => setCustomizing((open) => !open)}
               type="button"
@@ -3043,7 +3149,7 @@ with
             <CustomizeSections
               prefs={prefs}
               onDone={saveSections}
-              onCancel={() => setCustomizing(false)}
+              onCancel={closeCustomize}
             />
           ) : sectionsData === null ? null : sectionsEmpty(prefs, sectionsData, recentSearches) ? (
             // An empty library and no history: the page as it was.
@@ -3058,8 +3164,8 @@ with
               data={sectionsData}
               recentSearches={recentSearches}
               onSearch={onQueryChange}
-              onForgetSearch={(q) => changeRecentSearches((list) => forgetSearch(list, q))}
-              onClearSearches={() => changeRecentSearches(() => [])}
+              onForgetSearch={(q) => setRecentSearches((list) => forgetSearch(list, q))}
+              onClearSearches={() => setRecentSearches([])}
               onPlay={onTrackPlay}
               onOpenDj={(name) => onOpenDj(name, null)}
               onOpenFilter={onOpenAllTracks}
@@ -3267,7 +3373,7 @@ with
 }
 ```
 
-- [ ] **Step 2: Its layout** — the field on top; the sections scroll as one page; in results only the rows scroll (at least 200px); small playlist cards; `HomeView.css` is no longer imported (no `home-view__` class is used here now)
+- [ ] **Step 2: Its layout** — the field on top; the sections scroll as one page (the empty text centred in it); in results only the rows scroll (at least 200px, their scroll contained); small playlist cards; `HomeView.css` is no longer imported (no `home-view__` class is used here now)
 
 In `src/components/views/SearchView.css`, replace
 
@@ -3326,6 +3432,8 @@ with
   flex: 1;
   min-height: 0;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding: var(--space-6);
 }
@@ -3400,7 +3508,7 @@ with
 /* The Tracks section takes the height left; its rows scroll inside it. */
 .search-view__section--tracks {
   flex: 1;
-  min-height: 200px;
+  min-height: 0;
 }
 
 .search-view__section-header {
@@ -3412,6 +3520,7 @@ with
 In `src/components/views/SearchView.css`, replace
 
 ```css
+  padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
 }
 
@@ -3434,17 +3543,20 @@ In `src/components/views/SearchView.css`, replace
 with
 
 ```css
+  padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
 }
 
 /* ---- Track list rows (Spotify-style, no virtualizer — short results list) ---- */
 
+/* The rows keep at least 200px; their scroll does not carry on to the results. */
 .search-view__track-list {
-  flex: 1;
+  flex: 1 0 200px;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-bottom: var(--space-6);
 }
 
@@ -3954,7 +4066,7 @@ git commit -m "docs(spec): Search as built — full-size tiles, small playlist c
   - **A genre tile** opens All Tracks with "Tech House ✕" on the Filter button; the text search works inside it; ✕ clears it. **Never played** shows the never-played tracks (none for a moment, then the rows); **Recently added** shows "Added 30 days".
   - **Your DJs:** open a DJ page, go Back: that DJ is now first. The line shows the next gig or "watching for sets".
   - **Recent searches:** type a query that finds something and wait 2 seconds, or play a result: it shows as a chip after clearing the field. A chip runs it; × removes it; Clear removes all.
-  - **Customize:** the sliders button → move a section, switch Recently added and Sets you saved lately on → Done. Restart the app: the order and switches stay. Cancel leaves it as it was.
+  - **Customize:** the sliders button → move a section, switch Recently added and Sets you saved lately on → Done. Restart the app: the order and switches stay. Cancel leaves it as it was. With the keyboard (Tab, Enter) a section moves to the top and the focus stays on its arrow.
   - **Results:** type a query matching DJs, a playlist and many tracks. The field, the DJs, the playlists and the Tracks heading stay; only the rows scroll. On a short window the whole results area scrolls and the rows keep their room.
   - **1000px wide:** with a long DJs row, nothing is cut off on the right; the DJs row scrolls sideways.
   - **Sets you saved lately** (when on): a row opens that set in Sets.
