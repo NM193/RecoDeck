@@ -28,6 +28,31 @@ describe('the catalog', () => {
     expect(sizes['bpm-key']).toEqual(['Your library', 2, 2, 2, 1, 4, 2])
     expect(sizes['last-playlist']).toEqual(['Gig prep', 2, 2, 2, 1, 4, 3])
   })
+
+  it('has plan H3’s two cards at the spec’s sizes and limits: all 15, in the spec’s order', () => {
+    const sizes = Object.fromEntries(
+      HOME_CARDS.map(({ id, group, w, h, minW, minH, maxW, maxH }) => [id, [group, w, h, minW, minH, maxW, maxH]]),
+    )
+    expect(sizes['saved-sets']).toEqual(['Jump back in', 2, 2, 2, 1, 4, 3])
+    expect(sizes['new-sets']).toEqual(['Needs you', 2, 2, 2, 1, 4, 3])
+    expect(HOME_CARDS.map((card) => card.title)).toEqual([
+      'Recently played',
+      'Recently added',
+      'Sets you saved lately',
+      'Your DJs',
+      'Needs you',
+      "New likes you don't own",
+      'New sets',
+      'Your DJs play next',
+      'Library stats',
+      'Library by genre',
+      'BPM & key',
+      'Not analyzed',
+      'Your playlists',
+      'Quick actions',
+      'Last playlist',
+    ])
+  })
 })
 
 describe('defaultLayout', () => {
