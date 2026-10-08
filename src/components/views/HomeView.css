@@ -364,14 +364,15 @@
   color: var(--text-muted);
 }
 
-/* ---- Lists of buttons (Needs you, gigs) ---- */
+/* ---- Lists of buttons (Needs you, gigs, sets) ---- */
 .home-list {
   display: flex;
   flex-direction: column;
 }
 
 .home-news,
-.home-gig {
+.home-gig,
+.home-set {
   width: calc(100% + 12px);
   margin: 0 -6px;
   padding: 5px 6px;
@@ -385,17 +386,20 @@
 }
 
 .home-news:last-child,
-.home-gig:last-child {
+.home-gig:last-child,
+.home-set:last-child {
   border-bottom-color: transparent;
 }
 
 .home-news:hover,
-.home-gig:hover {
+.home-gig:hover,
+.home-set:hover {
   background: var(--bg-tertiary);
 }
 
 .home-news:focus-visible,
-.home-gig:focus-visible {
+.home-gig:focus-visible,
+.home-set:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -425,6 +429,10 @@
 
 .home-news--not-analyzed .home-news__number {
   color: var(--home-accent);
+}
+
+.home-news--new-sets .home-news__number {
+  color: color-mix(in srgb, #fb923c 80%, var(--text-primary));
 }
 
 .home-news--next-gig .home-news__number {
@@ -504,6 +512,39 @@
 .home-gig__where {
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* A set: its title over "DJ · channel" (or the channel), and on the right
+   what opening it costs (New sets) or when it was saved. */
+.home-set {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-set__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home-set__title,
+.home-set__line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-set__line,
+.home-set__side {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.home-set__side {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Library by genre ---- */

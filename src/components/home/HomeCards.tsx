@@ -16,6 +16,8 @@ import {
   libraryStats,
   needsYouRows,
   newLikeRows,
+  newSetCost,
+  newSetLine,
   playedLabel,
   type NeedsYouRow,
   type StreamNews,
@@ -143,6 +145,17 @@ function headerLink(
         onClick={() => actions.onOpenPlaylist(last.id)}
       >
         Open
+      </button>
+    )
+  }
+  if (id === 'new-sets' && data.newSets !== null && data.newSets.total > 0) {
+    return (
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => actions.onMarkAllSetsSeen()}
+      >
+        Mark all seen
       </button>
     )
   }
@@ -283,6 +296,42 @@ function CardBody({
                 <Icon name="ChevronRight" size={12} />
               </span>
             </button>
+          ))}
+        </div>
+      )
+    }
+    case 'new-sets': {
+      const news = data.newSets
+      if (news === null) return null
+      if (news.finds.length === 0) return <Empty>No new sets</Empty>
+      return (
+        <div className="home-list">
+          {news.finds.map((find) => (
+            <SetRow
+              key={find.videoId}
+              title={find.title}
+              line={newSetLine(find)}
+              side={newSetCost(find)}
+              onOpen={() => actions.onOpenSet(find.videoId)}
+            />
+          ))}
+        </div>
+      )
+    }
+    case 'saved-sets': {
+      if (data.savedSets === null) return null
+      if (data.savedSets.length === 0) return <Empty>No saved sets yet</Empty>
+      const now = new Date()
+      return (
+        <div className="home-list">
+          {data.savedSets.map((set) => (
+            <SetRow
+              key={set.video_id}
+              title={set.title}
+              line={set.channel ?? ''}
+              side={addedLabel(set.added_at, now)}
+              onOpen={() => actions.onOpenSet(set.video_id)}
+            />
           ))}
         </div>
       )
@@ -521,6 +570,38 @@ function QuickAction({
     <button type="button" className="home-action" onClick={onClick}>
       <Icon name={icon} size={16} />
       {label}
+    </button>
+  )
+}
+
+/**
+ * A set's row (New sets, Sets you saved lately): its title over a line, a
+ * note on the right; it opens the set in Sets.
+ */
+function SetRow({
+  title,
+  line,
+  side,
+  onOpen,
+}: {
+  title: string
+  line: string
+  side: string
+  onOpen: () => void
+}) {
+  return (
+    <button type="button" className="home-set" onClick={onOpen}>
+      <span className="home-set__text">
+        <span className="home-set__title" title={title}>
+          {title}
+        </span>
+        {line && (
+          <span className="home-set__line" title={line}>
+            {line}
+          </span>
+        )}
+      </span>
+      <span className="home-set__side">{side}</span>
     </button>
   )
 }
