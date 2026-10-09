@@ -107,7 +107,7 @@ are not.
   B major; 12–23 = the same roots minor. Checked against a real Traktor export
   before phase 2 is done.
 
-A missing or unreadable key writes no key attribute.
+A missing or unreadable key writes an empty `Tonality` (and no BPM writes `AverageBpm="0.00"`), as Rekordbox's own exports do for unanalysed tracks (to be confirmed against a real export).
 
 ### Paths
 

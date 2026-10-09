@@ -29,7 +29,7 @@
   - Rust compile: `cd src-tauri && cargo check`.
   - Frontend tests: `npx vitest run <path>`.
   - Types: `npx tsc --noEmit`.
-  - Lint: `npx eslint src`. The baseline is 28 problems; add none.
+  - Lint: `npx eslint src mobile`. The baseline is 28 problems; add none.
 - **Commit messages:** English, `type(scope): …`, ending with:
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -266,6 +266,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `src-tauri/src/formats/mod.rs`
+
+`ExportNode::Playlist` has no `id` yet. Phase 2 adds it for Traktor's playlist UUIDs; adding it now would be an unused field.
 
 The database API used here, all in `src-tauri/src/db/mod.rs`:
 - `Database::get_all_playlists() -> rusqlite::Result<Vec<Playlist>>`, ordered by name, with `playlist_type` (`"folder"` for folders) and `parent_id`.
@@ -937,6 +939,8 @@ fn write_node(out: &mut String, node: &ExportNode, present: &HashSet<i64>, depth
 }
 ```
 
+A track without BPM or key gets `AverageBpm="0.00"` and `Tonality=""`. These are the values Rekordbox's own exports write for unanalysed tracks. Task 11, Step 4 checks them against a real export; if Rekordbox writes them differently, update the writer, the golden file and the spec.
+
 - [ ] **Step 4: Run the tests**
 
 Run: `cd src-tauri && cargo test --lib formats`
@@ -964,7 +968,7 @@ Context:
 - Commands lock it with `state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?` and then `.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?`.
 - `Database::get_setting(&str) -> rusqlite::Result<Option<String>>` and `set_setting(&str, &str)`.
 - `AppError` (`crate::error::AppError`) has `Database(String)`, `Internal(String)` and `Validation(String)`.
-- The export runs as an `async` command so the file checks and the write do not hold the main thread.
+- Both commands are `async`, so the file checks and the write do not hold the main thread. Neither awaits while it holds the DB lock.
 
 - [ ] **Step 1: Write the module with its helper tests**
 
@@ -1095,9 +1099,10 @@ fn not_yet(target: DjTarget) -> AppError {
 }
 
 /// What the dialog opens with for a program: the remembered playlists, and the
-/// remembered or default file and whether it exists.
+/// remembered or default file and whether it exists. Async, so looking at a
+/// remembered file on a sleeping drive does not hold the main thread.
 #[tauri::command]
-pub fn dj_export_defaults(
+pub async fn dj_export_defaults(
     target: DjTarget,
     state: State<'_, AppState>,
     app: AppHandle,
@@ -1621,7 +1626,7 @@ export function resultToast(
 - [ ] **Step 3: Run the tests**
 
 Run: `npx vitest run src/lib/djExport/selection.test.ts`
-Expected: 11 tests PASS.
+Expected: 10 tests PASS.
 
 - [ ] **Step 4: Commit**
 
@@ -1646,6 +1651,7 @@ Context:
   - `useOverlay(true, …)` from `../lib/overlays` (Esc closes; not while running);
   - `Button` from `./Button` with `variant="primary"`, `working` and `workingLabel`.
 - `toast(message, { kind, action: { label, run }, detail })` comes from `../lib/toast`.
+- A rejected `invoke` gives an `AppError` object (`{ kind, message }`), not an `Error`. `getErrorMessage` from `../types/ai` turns it, or a plain string, into the text to show.
 - `revealItemInDir(path)` comes from `@tauri-apps/plugin-opener`.
 - `Icon` comes from `./Icon` and takes Lucide names.
 
@@ -1766,7 +1772,8 @@ describe('DjExportModal', () => {
   })
 
   it('stays open and says why when the export fails', async () => {
-    vi.mocked(tauriApi.exportToDj).mockRejectedValue('Couldn’t write /x: Permission denied')
+    // AppError reaches JS as { kind, message } (#[serde(tag = "kind", content = "message")]).
+    vi.mocked(tauriApi.exportToDj).mockRejectedValue({ kind: 'Internal', message: 'Couldn’t write /x: Permission denied' })
     await open(2)
     await act(async () => {
       exportButton().click()
@@ -1794,6 +1801,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { tauriApi } from '../lib/tauri-api'
 import { useOverlay } from '../lib/overlays'
 import { toast } from '../lib/toast'
+import { getErrorMessage } from '../types/ai'
 import {
   buildTree,
   checkState,
@@ -1842,7 +1850,7 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
         setFirstTime(!defaults.remembered)
       })
       .catch((err) => {
-        if (live) setLoadError(err instanceof Error ? err.message : String(err))
+        if (live) setLoadError(getErrorMessage(err))
       })
     return () => {
       live = false
@@ -1850,8 +1858,12 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
   }, [openedFrom])
 
   async function changePath() {
-    const picked = await tauriApi.pickDjExportFile('rekordbox', path)
-    if (picked) setPath(picked)
+    try {
+      const picked = await tauriApi.pickDjExportFile('rekordbox', path)
+      if (picked) setPath(picked)
+    } catch (err) {
+      toast(getErrorMessage(err), { kind: 'error' })
+    }
   }
 
   async function handleExport() {
@@ -1869,7 +1881,7 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
       onClose()
     } catch (err) {
       setRunning(false)
-      toast(err instanceof Error ? err.message : String(err), { kind: 'error' })
+      toast(getErrorMessage(err), { kind: 'error' })
     }
   }
 
@@ -2200,7 +2212,7 @@ def sidebar(s):
 edit('src/components/FolderTree.tsx', folder_tree)
 edit('src/components/layout/Sidebar.tsx', sidebar)
 EOF
-git diff --stat
+git diff --stat -- src/components
 ```
 
 Expected: only `FolderTree.tsx` and `Sidebar.tsx` change, a few lines each.
@@ -2255,7 +2267,7 @@ Expected: `src/App.tsx | 9 +++++++++` or close to it.
 
 - [ ] **Step 3: Type-check, lint, and run the whole frontend suite**
 
-Run: `npx tsc --noEmit && npx eslint src && npx vitest run`
+Run: `npx tsc --noEmit && npx eslint src mobile && npx vitest run`
 Expected:
 - `tsc`: no errors.
 - `eslint`: 28 problems, as before.
@@ -2307,7 +2319,12 @@ Ask the user (in Serbian) for a small export from their own Rekordbox:
 - exported through *File → Export Collection in xml format*;
 - and where they saved it.
 
-Copy the file to `src-tauri/src/formats/fixtures/rekordbox_real.xml`, then compare it with our output:
+The user's file holds their real paths and track names, so **do not commit it as is**. Keep it in the session scratchpad. Commit only a sanitized copy, `src-tauri/src/formats/fixtures/rekordbox_real.xml`:
+- the `PRODUCT`, `COLLECTION` and `PLAYLISTS` structure;
+- one `TRACK` line with every attribute kept in its order and every value replaced by `x`;
+- except `Tonality`, which keeps its value as a spelling sample.
+
+Then compare the user's file with our output:
 - **Attribute set and order** of `TRACK`: make `write_track` match. If Rekordbox leaves out empty attributes, or orders them differently, follow it and update `rekordbox_sample.xml`.
 - **`Tonality` spelling** (`Abm`/`G#m`, `Db`/`C#`): make `keys.rs` match.
 - **`Location` encoding**: which characters Rekordbox leaves unencoded (for example `(`, `)`, `,`), and the Unicode normalization of a name with č. If Rekordbox leaves characters unencoded, encode them the same way.
