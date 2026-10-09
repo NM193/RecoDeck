@@ -270,6 +270,26 @@ for the Home plan.
   then the overlay stack (`useOverlay`), then the focused track table.
 - `Skeleton` moves to I3, with the loading states it replaces.
 
+**As built by plan I3a** (motion):
+- Every `transition:` in the CSS is on the tokens, with `--ease`: hover,
+  press, colour and border changes at fast; chevrons, switches, things
+  collapsing (the sidebar's width, the bar's height) and a modal, flyout or
+  menu opening at base; panels (the playlist header shrinking) and progress
+  fills at slow. Kept as they are: looping animations (spinners, shimmers,
+  the equalizer, pulses), which are not transitions, and the players' seek
+  fill (`width 0.05s linear`), which follows the playhead.
+- framer-motion's literal durations use `MOTION` and `EASE`
+  (`src/lib/motion.ts`): the page fade and a sidebar section collapsing at
+  base, the expanded now-playing view at slow, and the AI panels (unused in
+  this build) the same way.
+- Reduced motion: `--motion-base` and `--motion-slow` become fast, and
+  framer-motion follows the system (`MotionConfig reducedMotion="user"`
+  around App): no movement, fades only. The old modal and the AI context
+  menu fade instead of sliding or growing, as the menus and toasts do.
+- I3 is two plans: **I3a** (this one, motion) and **I3b** (controls and
+  loading: `.btn--icon`, `.btn--pill`, `Button` with its working state,
+  Settings, the DJ pages and the modals on the shared controls, `Skeleton`).
+
 ## Testing
 
 - TypeScript: the toast queue (max 3, error stays, warning 6s, hover pauses);
