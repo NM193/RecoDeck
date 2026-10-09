@@ -7,6 +7,7 @@ use crate::commands::library::AppState;
 use crate::error::AppError;
 use crate::formats::{self, rekordbox, ExportLibrary};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 
@@ -80,8 +81,9 @@ fn default_file(music_dir: &Path, target: DjTarget) -> Option<PathBuf> {
     Some(music_dir.join("RecoDeck").join(name))
 }
 
-/// Writes beside the target, then renames over it, so a failed write leaves
-/// the previous export whole. Creates the folders on the way.
+/// Writes a synced temp file (named with the process id) beside the target, then
+/// renames it over, so a failed write or a crash leaves the previous export whole.
+/// Creates the folders on the way.
 fn write_atomically(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
@@ -90,8 +92,12 @@ fn write_atomically(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "export".to_string());
-    let temp = target.with_file_name(format!(".{name}.tmp"));
-    if let Err(e) = std::fs::write(&temp, bytes).and_then(|_| std::fs::rename(&temp, target)) {
+    let temp = target.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let written = std::fs::File::create(&temp).and_then(|mut f| {
+        f.write_all(bytes)?;
+        f.sync_all()
+    });
+    if let Err(e) = written.and_then(|_| std::fs::rename(&temp, target)) {
         let _ = std::fs::remove_file(&temp);
         return Err(e);
     }
@@ -144,11 +150,19 @@ pub async fn dj_export_defaults(
         .or_else(|| default_file(&music_dir(&app), target))
         .ok_or_else(|| not_yet(target))?;
     Ok(DjExportDefaults {
-        exists: path.exists(),
+        exists: path.is_file(),
         path: path.to_string_lossy().to_string(),
         playlist_ids: choice.as_ref().map(|c| c.playlist_ids.clone()).unwrap_or_default(),
         remembered: choice.is_some(),
     })
+}
+
+/// Saves a program's choice in the settings table.
+fn remember(state: &AppState, target: DjTarget, choice: &DjExportChoice) -> Result<(), String> {
+    let db_lock = state.db.lock().map_err(|_| "State lock failed".to_string())?;
+    let db = db_lock.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+    let raw = serde_json::to_string(choice).map_err(|e| e.to_string())?;
+    db.set_setting(&target.setting_key(), &raw).map_err(|e| e.to_string())
 }
 
 /// Writes the picked playlists for a program and remembers the choice.
@@ -165,7 +179,8 @@ pub async fn export_to_dj(
     if playlist_ids.is_empty() {
         return Err(AppError::Validation("Choose at least one playlist".to_string()));
     }
-    if path.trim().is_empty() {
+    let path = path.trim().to_string();
+    if path.is_empty() || !Path::new(&path).is_absolute() {
         return Err(AppError::Validation("Choose where to save the file".to_string()));
     }
 
@@ -176,6 +191,9 @@ pub async fn export_to_dj(
         formats::collect(db, &playlist_ids)
             .map_err(|e| AppError::Database(format!("Failed to read the playlists: {e}")))?
     };
+    if lib.playlist_count() == 0 {
+        return Err(AppError::Validation("The chosen playlists no longer exist".to_string()));
+    }
     formats::mark_missing(&mut lib);
 
     let file = PathBuf::from(&path);
@@ -184,12 +202,9 @@ pub async fn export_to_dj(
         .map_err(|e| AppError::Internal(format!("Couldn't write {}: {e}", file.display())))?;
 
     let choice = DjExportChoice { playlist_ids, path: Some(path.clone()) };
-    {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        let raw = serde_json::to_string(&choice).map_err(|e| AppError::Internal(e.to_string()))?;
-        db.set_setting(&target.setting_key(), &raw)
-            .map_err(|e| AppError::Database(format!("Failed to remember the export: {e}")))?;
+    // The file is written: failing to remember the choice must not turn that into an error.
+    if let Err(e) = remember(&state, target, &choice) {
+        eprintln!("[export_to_dj] Couldn't remember the export: {e}");
     }
 
     Ok(DjExportResult {
@@ -258,7 +273,23 @@ mod tests {
         std::fs::create_dir(&target).unwrap();
         std::fs::write(target.join("inside"), b"x").unwrap();
         assert!(write_atomically(&target, b"data").is_err());
-        assert!(!dir.path().join(".RecoDeck.xml.tmp").exists());
+        let leftovers: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with(".RecoDeck.xml."))
+            .collect();
+        assert!(leftovers.is_empty(), "temp left behind: {leftovers:?}");
+    }
+
+    #[test]
+    fn a_failed_write_keeps_the_previous_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("RecoDeck.xml");
+        std::fs::write(&target, b"first").unwrap();
+        // A folder where the temp file would go: creating it fails.
+        std::fs::create_dir(dir.path().join(format!(".RecoDeck.xml.{}.tmp", std::process::id()))).unwrap();
+        assert!(write_atomically(&target, b"second").is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"first");
     }
 
     #[test]
