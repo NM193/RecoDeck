@@ -300,6 +300,8 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     const libraryFolders = useLibraryFolders(menuAt !== null && onMoveToFolder !== undefined)
 
     const HEADER_HEIGHT = 30
+    // Room between the column heads and the first row.
+    const BODY_GAP = 8
     const ROW_HEIGHT = 46
 
     const virtualizer = useVirtualizer({
@@ -307,9 +309,9 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
       getScrollElement: () => parentRef.current,
       estimateSize: () => ROW_HEIGHT,
       overscan: 10,
-      scrollMargin: HEADER_HEIGHT,
+      scrollMargin: HEADER_HEIGHT + BODY_GAP,
       // A row moved to with the keys stays out from under the column heads.
-      scrollPaddingStart: HEADER_HEIGHT,
+      scrollPaddingStart: HEADER_HEIGHT + BODY_GAP,
     })
 
     // The focused table's keys (Interactions spec, Keyboard): ↑ ↓ move the
@@ -349,12 +351,12 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
     const gapAt = (clientY: number) => {
       const area = parentRef.current
       if (!area) return 0
-      const y = clientY - area.getBoundingClientRect().top + area.scrollTop - HEADER_HEIGHT
+      const y = clientY - area.getBoundingClientRect().top + area.scrollTop - HEADER_HEIGHT - BODY_GAP
       return Math.max(0, Math.min(sortedTracks.length, Math.round(y / ROW_HEIGHT)))
     }
     // The line's place in the body: at that gap, kept below the sticky heads.
     const lineAt = (clientY: number) =>
-      Math.max(gapAt(clientY) * ROW_HEIGHT - 1, (parentRef.current?.scrollTop ?? 0) + 1)
+      Math.max(gapAt(clientY) * ROW_HEIGHT - 1, (parentRef.current?.scrollTop ?? 0) - BODY_GAP + 1)
     const startDrag = useTrackDrag({
       begin: (track) => {
         // A row not selected is dragged alone, selected first.
@@ -583,7 +585,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
             />
           </div>
           {/* Virtualized body */}
-          <div className="track-table-body">
+          <div className="track-table-body" style={{ paddingTop: BODY_GAP }}>
             <div
               style={{
                 height: `${virtualizer.getTotalSize()}px`,
