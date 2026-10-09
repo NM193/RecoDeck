@@ -4,4 +4,5 @@
 // program's writer turns into its own format. collect reads the database,
 // mark_missing looks at the disk, and the writers touch neither.
 
+pub mod keys;
 mod xml;
