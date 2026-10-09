@@ -1,7 +1,7 @@
 // Tauri API wrapper for invoking backend commands
 
 import { invoke } from '@tauri-apps/api/core'
-import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import type {
   YouTubeQuotaStatus,
   WatchedDj,
@@ -18,6 +18,7 @@ import type {
   ChannelUpload,
   ChannelNews,
 } from '../types/youtube'
+import type { DjExportDefaults, DjExportResult, DjTarget } from '../types/djExport'
 import type {
   Track,
   ScanResult,
@@ -158,6 +159,25 @@ export const tauriApi = {
       folderPath,
       deleteFiles,
     })
+  },
+
+  // Export to DJ software
+  async djExportDefaults(target: DjTarget): Promise<DjExportDefaults> {
+    return await invoke('dj_export_defaults', { target })
+  },
+
+  async pickDjExportFile(target: DjTarget, current: string): Promise<string | null> {
+    // The JS-side dialog, as pickExportFolder: the Rust picker can hang on macOS.
+    const filters =
+      target === 'traktor'
+        ? [{ name: 'Traktor NML', extensions: ['nml'] }]
+        : [{ name: 'Rekordbox XML', extensions: ['xml'] }]
+    const picked = await saveDialog({ defaultPath: current || undefined, filters })
+    return typeof picked === 'string' ? picked : null
+  },
+
+  async exportToDj(target: DjTarget, playlistIds: number[], path: string): Promise<DjExportResult> {
+    return await invoke('export_to_dj', { target, playlistIds, path })
   },
 
   async pickExportFolder(): Promise<string | null> {
