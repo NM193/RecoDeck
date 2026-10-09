@@ -1,6 +1,12 @@
 /* Export to DJ software: the playlist tree with boxes, where the file goes,
    and how to load it in the program. Sits in the shared .modal-content. */
 
+/* The box takes focus only so keyboard and screen-reader users start inside
+   it; its controls keep their own focus rings. */
+.dj-export:focus {
+  outline: none;
+}
+
 .dj-export__label {
   margin: 0 0 6px;
   color: var(--text-secondary);
