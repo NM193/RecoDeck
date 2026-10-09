@@ -429,23 +429,15 @@
   opacity: 0.55;
 }
 
+/* "have it": the shared .btn--pill, in green. */
 .set-row__have {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: none;
   background: color-mix(in srgb, #1ed760 15%, transparent);
   color: color-mix(in srgb, #1ed760 80%, var(--text-primary));
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
 }
 
 .set-row__have:hover {
   background: color-mix(in srgb, #1ed760 25%, transparent);
+  color: color-mix(in srgb, #1ed760 80%, var(--text-primary));
 }
 
 .set-row__missing {
@@ -486,7 +478,6 @@
 .set-row--skeleton span {
   height: 10px;
   border-radius: 4px;
-  background: var(--bg-tertiary);
 }
 
 .set-row--skeleton span:nth-child(3) {

@@ -31,6 +31,7 @@ import {
 import { watchUrl } from '../../lib/youtubeWindow'
 import { toast } from '../../lib/toast'
 import { useSetPlayer, videoIsPlaying } from '../../store/setPlayerStore'
+import { useShowAfter } from '../../lib/useShowAfter'
 import type { Track as LibraryTrack } from '../../types/track'
 import type { TrackEcho } from '../../types/youtube'
 import './SetPage.css'
@@ -329,15 +330,7 @@ export function SetPage({
             </div>
           </div>
         ) : !ready || !result ? (
-          <div className="set-page__rows" aria-busy="true">
-            {Array.from({ length: 8 }, (_, i) => (
-              <div key={i} className="set-row set-row--skeleton">
-                <span />
-                <span />
-                <span />
-              </div>
-            ))}
-          </div>
+          <RowsSkeleton />
         ) : result.tracks.length === 0 ? (
           <p className="set-page__empty">
             Nothing in the description and nothing usable in the comments. On a fresh set this is
@@ -426,6 +419,22 @@ export function SetPage({
           </section>
         )}
       </div>
+    </div>
+  )
+}
+
+/** The rows while the set reads: grey bars in their columns, shown after 150ms, holding their place until then. */
+function RowsSkeleton() {
+  const shown = useShowAfter()
+  return (
+    <div className="set-page__rows" aria-busy="true" style={{ visibility: shown ? undefined : 'hidden' }}>
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="set-row set-row--skeleton">
+          <span className="skeleton" />
+          <span className="skeleton" />
+          <span className="skeleton" />
+        </div>
+      ))}
     </div>
   )
 }

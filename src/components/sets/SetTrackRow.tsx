@@ -129,7 +129,7 @@ export function SetTrackRow({
         {match ? (
           <button
             type="button"
-            className="set-row__have"
+            className="btn btn--pill set-row__have"
             onClick={() => onPlayFile(match.track as LibraryTrack)}
             title={`Play your file: ${match.track.artist ?? ''} — ${match.track.title ?? ''}`}
           >
