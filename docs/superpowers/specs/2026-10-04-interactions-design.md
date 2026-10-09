@@ -290,6 +290,33 @@ for the Home plan.
   loading: `.btn--icon`, `.btn--pill`, `Button` with its working state,
   Settings, the DJ pages and the modals on the shared controls, `Skeleton`).
 
+**As built by plan I3b** (controls and loading):
+- `controls.css` gains `.btn--icon` (square, quiet until hovered), `.btn--pill`
+  (22px, the small ones in a row: "have it"), a toggle that is on
+  (`aria-pressed`), a quiet destructive icon (`.btn--icon.btn--danger`, red
+  only while hovered), and `--btn-bg`: a theme whose raised colour is its
+  page's sets it, so buttons show on white (Dawn: its tertiary grey).
+- `Button` renders them, with `working`: a spinner in the icon's place,
+  `workingLabel` ("Saving…"), disabled until done (`aria-busy`). A disabled
+  button keeps its pointer events, so a title saying why it is disabled
+  still shows (Connect: "Save the Client ID first"). Settings'
+  Save, Test Connection, Rescan All, Start / Stop Server, Check for Updates
+  and Choose client file, and the export dialog's Export, use it.
+- Settings, the DJ pages and the modals (the name prompt, What's New, Share,
+  Export, Duplicates, the track table's genre and comment dialogs, Delete
+  folder) are on the shared classes; Delete folder and all files and Delete
+  selected (duplicates) are `.btn--danger`. The DJ hero's buttons keep their
+  glass over the photo (a rule on `.dj-hero__acts .btn`), and Watch is
+  `aria-pressed`. `btn-primary`, `btn-secondary`, `btn-icon`, `btn-small`,
+  `modal-button`, `dj-btn` and `dj-pill` and their styles are gone. Left as
+  they are: the AI panels' own buttons (not shown in this build).
+- Loading: `useShowAfter` (150ms), `Skeleton` and `SkeletonRows` on the shared
+  `.skeleton` shimmer (still under reduced motion); `.content-in` fades in
+  what replaces them. Skeletons hold their place while they wait (drawn but
+  hidden), so nothing shifts when they appear. A DJ's Tracks table and
+  Overview tracks card, the set page's rows and the Companion's QR code use
+  them.
+
 ## Testing
 
 - TypeScript: the toast queue (max 3, error stays, warning 6s, hover pauses);
