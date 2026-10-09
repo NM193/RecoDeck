@@ -307,7 +307,11 @@ Settled against the real exports or by hand, before the phase that needs it
 is done:
 
 - Rekordbox: attribute order and shape; `Tonality` spelling (`Abm` or `G#m`);
-  Unicode normalization of paths.
+  Unicode normalization of paths; which characters Rekordbox leaves
+  unencoded in `Location` (RecoDeck encodes everything outside the RFC 3986
+  unreserved set, so `(` `)` `'` `!` `,` become `%28`… — harmless if Rekordbox
+  decodes before matching, duplicates if it compares raw strings); and what
+  Rekordbox does with formats it cannot play (OGG), which the scanner accepts.
 - Rekordbox and Traktor: whether data (BPM, key, rating, comments) reaches
   tracks the program **already has**, or only new ones. If only new ones, the
   help text and "What it does not do" say so.
