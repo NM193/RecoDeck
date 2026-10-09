@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
+### Added
+- **A new look across the app** — the sidebar, the track tables, Search, Home and Sets are redesigned, with the same buttons, menus, notifications and movement everywhere
+- **Home** is a grid of cards you arrange with Customize: what's playing, Needs you (new likes you don't own, new sets, tracks not analyzed, the next gig of a DJ you follow), recently played and added, Last playlist, Your DJs and their upcoming gigs, BPM & key, Library stats, genres, New sets and Sets you saved lately
+- **Search** shows sections before you type — recent searches, tracks played and added lately, your DJs, your genres — which you can reorder and hide in Customize; while results show, only the rows scroll
+- **Track tables**: choose, order and resize the columns (Label, Added, Plays and more), artwork thumbnails, an equalizer on the track playing, a Filter panel (BPM, key, genre, rating, played or never played) and a count of what is shown
+- Select several tracks (click, ⌘-click, Shift-click, ⌘A, ↑ ↓) and act on all of them from the right-click menu — add to or delete from a playlist, set or clear the genre, Move to folder — each with Undo
+- **Move to folder** moves the files into any library folder (the list can be searched), and the track playing and the queue keep up
+- **Drag and drop**: drag tracks onto a playlist or a library folder in the sidebar, or reorder a playlist by dragging; a closed folder opens when you rest on it
+- **Sets** opens on your library: one box for a link, your sets and the tracks in them, or a YouTube search; new sets from the DJs you watch; your sets as cards. Each set has a page of its own, with a strip of its tracks and a filter for what you own, what is missing and the IDs
+- The set video keeps playing in a bar above the player when you leave the set, with ⏮ ⏭ between its tracks
+- **Following**: watch DJs and follow channels from one box, check one of them now, and see what each check found; Saved tracks open their set at the track; Stats as four cards
+- **Keyboard shortcuts**: Space plays or pauses whichever played last, your track or the set; ⌘→ / ⌘← next and previous; ⌘K Search; ⌘F the page's search box; ⌘/ lists them all (Ctrl on Windows)
+- Removing a heart from a saved track has an Undo that puts it back in its place
+
+### Changed
+- One kind of notification: toasts at the bottom, above the player, with Undo where an action can be put back; errors stay until you close them
+- Menus are the same everywhere; deleting a playlist or removing a set asks in the menu itself instead of a system dialog
+- The sidebar's section headers stay in view and each long list scrolls inside; the collapsed sidebar opens a section beside it
+- Buttons look and behave the same on every page; a button that starts work shows a spinner and what it is doing ("Saving…", "Scanning…")
+- A list that is still loading shows grey rows instead of a blank area, only when loading takes a moment
+- Movement is quicker and the same everywhere, and follows the system's Reduce motion setting
+- In the light Dawn theme buttons are light grey on white instead of white on white
+
+### Fixed
+- Error messages say what went wrong instead of "[object Object]"
+- A playlist opens in its own order, and a third click on a column head goes back to it
+- Search finds playlists made by the AI assistant too, and the player's Add to playlist offers them
+- Home's Last playlist stays quick with a long playlist: it shows the first 100 tracks, with "and 1,900 more · Open the playlist" under them, and playing from it still queues the whole playlist
+
 ## [0.4.1] - 2026-10-03
 
 ### Changed

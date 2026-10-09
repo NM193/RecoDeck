@@ -4,6 +4,7 @@
 // part shows only while Spotify is connected.
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../Icon'
+import { useOverlay } from '../../lib/overlays'
 import { raPick } from '../../lib/dj/page'
 import type { ArtistCandidate, DjCandidates, RaPick } from '../../types/dj'
 
@@ -82,6 +83,8 @@ export function DjCandidatesMenu({
 }: DjCandidatesMenuProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(open, () => setOpen(false))
 
   // A click outside or Escape closes it.
   useEffect(() => {
@@ -120,7 +123,7 @@ export function DjCandidatesMenu({
     <div className="dj-menu" ref={root}>
       <button
         type="button"
-        className="dj-btn dj-btn--icon"
+        className="btn btn--icon"
         title="Not this artist?"
         aria-label="More"
         aria-haspopup="menu"

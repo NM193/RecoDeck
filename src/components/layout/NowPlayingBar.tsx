@@ -9,6 +9,9 @@ import type { Playlist, Track } from '../../types/track'
 import { Icon } from '../Icon'
 import { WaveformVisualizer } from '../WaveformVisualizer'
 import { EQModal } from '../eq/EQModal'
+import { useOverlay } from '../../lib/overlays'
+import { registerFileControls } from '../../lib/shortcuts/players'
+import { EASE, MOTION } from '../../lib/motion'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -36,6 +39,7 @@ export function NowPlayingBar({
     error,
     queue,
     currentTrackIndex,
+    playRequest,
     repeatMode,
     isShuffle,
     setPosition,
@@ -279,6 +283,11 @@ export function NowPlayingBar({
     }
   }, [])
 
+  // The playlist menu and the expanded view are overlays (useOverlay): Esc
+  // closes them, and the set video steps aside while they are open.
+  useOverlay(showPlaylistMenu, () => setShowPlaylistMenu(false))
+  useOverlay(expanded, () => setExpanded(false))
+
   // Close expanded view on Escape key
   useEffect(() => {
     if (!expanded) return
@@ -294,7 +303,14 @@ export function NowPlayingBar({
   // Load and play track when currentTrackIndex changes
   const loadGenRef = useRef(0)
   const crossfadeCompletedRef = useRef(false)
+  // The track loads when a play is asked for (playRequest), or when the track
+  // at the queue's index is another one — not when only the queue around it
+  // changes (shuffled, added to, its paths patched after a move), which would
+  // restart the song from 0:00. A moved track playing from its old path goes
+  // on: the stream handler follows the move.
+  const queuedTrackId = currentTrackIndex >= 0 ? (queue[currentTrackIndex]?.id ?? null) : null
   useEffect(() => {
+    const { queue, currentTrackIndex } = usePlayerStore.getState()
     if (currentTrackIndex >= 0 && queue[currentTrackIndex]) {
       const track = queue[currentTrackIndex]
       const gen = ++loadGenRef.current
@@ -351,8 +367,8 @@ export function NowPlayingBar({
       console.warn(`[NowPlayingBar] useEffect: invalid state - currentTrackIndex=${currentTrackIndex} but no track in queue`)
     }
   }, [
-    currentTrackIndex,
-    queue,
+    playRequest,
+    queuedTrackId,
     setCurrentTrack,
     setIsLoading,
     setError,
@@ -504,6 +520,17 @@ export function NowPlayingBar({
   handlePreviousRef.current = handlePrevious
   handleNextRef.current = handleNext
 
+  // Space and ⌘→ / ⌘← (useShortcuts) reach these buttons while the bar is here.
+  useEffect(
+    () =>
+      registerFileControls({
+        playPause: () => handlePlayPauseRef.current(),
+        next: () => handleNextRef.current(),
+        previous: () => handlePreviousRef.current(),
+      }),
+    [],
+  )
+
   // Emit player state for mini player window
   useEffect(() => {
     const unReq = listen('request-player-state', () => {
@@ -646,7 +673,8 @@ export function NowPlayingBar({
 
   const progress = duration > 0 ? (position / duration) * 100 : 0
 
-  const manualPlaylists = playlists.filter((p) => p.playlist_type === 'manual')
+  // Every playlist a track can go in: manual and AI-made alike, not folders.
+  const addablePlaylists = playlists.filter((p) => p.playlist_type !== 'folder')
 
   const getVolumeIcon = () => {
     if (isMuted || volume === 0) return 'VolumeX'
@@ -677,7 +705,7 @@ export function NowPlayingBar({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: MOTION.slow, ease: EASE }}
             onClick={() => setExpanded(false)}
           >
             <button
@@ -1007,8 +1035,8 @@ export function NowPlayingBar({
                 <div className="now-playing-bar__playlist-header">
                   Add to playlist
                 </div>
-                {manualPlaylists.length > 0 ? (
-                  manualPlaylists.map((p) => (
+                {addablePlaylists.length > 0 ? (
+                  addablePlaylists.map((p) => (
                     <button
                       key={p.id}
                       className="now-playing-bar__playlist-item"

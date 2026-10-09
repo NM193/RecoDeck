@@ -4,6 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
 pub mod dj;
+pub mod home;
+pub mod sections;
 pub mod spotify;
 pub mod youtube_music;
 
@@ -355,6 +357,19 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/017_youtube_music.sql"))?;
+
+        // Migration 018: which DJ finds have been seen (Home's New sets)
+        // ALTER TABLE is not idempotent, and the finds stored before it are
+        // marked seen only once, so the column is checked for first.
+        let has_seen_at: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('yt_dj_finds') WHERE name = 'seen_at'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_seen_at {
+            self.conn
+                .execute_batch(include_str!("migrations/018_yt_dj_finds_seen.sql"))?;
+        }
 
         Ok(())
     }
@@ -776,6 +791,75 @@ impl Database {
         sql.push_str("COMMIT;\n");
         self.conn.execute_batch(&sql)?;
         Ok(())
+    }
+
+    /// Add tracks to the end of a playlist, in the order given, in one
+    /// transaction. Answers the ids it added (what an Undo removes) and those
+    /// already in the playlist; an id given twice counts once.
+    pub fn add_tracks_to_playlist(
+        &self,
+        playlist_id: i64,
+        track_ids: &[i64],
+    ) -> Result<(Vec<i64>, Vec<i64>)> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut position: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(position), 0) FROM playlist_tracks WHERE playlist_id = ?",
+            [playlist_id],
+            |row| row.get(0),
+        )?;
+        let mut seen = std::collections::HashSet::new();
+        let mut added = Vec::new();
+        let mut already = Vec::new();
+        for &track_id in track_ids {
+            if !seen.insert(track_id) {
+                continue;
+            }
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?)",
+                params![playlist_id, track_id],
+                |row| row.get(0),
+            )?;
+            if exists {
+                already.push(track_id);
+                continue;
+            }
+            position += 1;
+            tx.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+                params![playlist_id, track_id, position],
+            )?;
+            added.push(track_id);
+        }
+        tx.commit()?;
+        Ok((added, already))
+    }
+
+    /// Point a track at its file's new place (Move to folder). Its id, and so
+    /// its analysis, history, playlists and cues, stay.
+    pub fn set_track_file_path(&self, track_id: i64, file_path: &str) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE tracks SET file_path = ? WHERE id = ?",
+            params![file_path, track_id],
+        )?;
+        if changed == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    /// Remove tracks from a playlist in one transaction. Answers how many were
+    /// in it.
+    pub fn remove_tracks_from_playlist(&self, playlist_id: i64, track_ids: &[i64]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut removed = 0;
+        for &track_id in track_ids {
+            removed += tx.execute(
+                "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+                params![playlist_id, track_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(removed)
     }
 
     /// Count tracks in a playlist.
@@ -1954,13 +2038,49 @@ impl Database {
         Ok(())
     }
 
-    /// Bulk set genre for multiple tracks
+    /// Bulk set genre for multiple tracks, in one transaction: a whole
+    /// library's worth is one write, not thousands.
     pub fn bulk_set_genre(&self, track_ids: &[i64], genre: &str) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
         let mut count = 0;
         for &track_id in track_ids {
             self.save_track_genre(track_id, genre, "user")?;
             count += 1;
         }
+        tx.commit()?;
+        Ok(count)
+    }
+
+    /// Clear the genre of several tracks in one transaction.
+    pub fn bulk_clear_genre(&self, track_ids: &[i64]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut count = 0;
+        for &track_id in track_ids {
+            count += tx.execute(
+                "UPDATE tracks SET genre = NULL, genre_source = NULL WHERE id = ?",
+                [track_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
+
+    /// Write each track's genre and its source as given, none included and
+    /// over a user genre: the Undo of setting or clearing genres puts back
+    /// what was there (save_track_genre would keep a user genre).
+    pub fn restore_track_genres(
+        &self,
+        genres: &[(i64, Option<String>, Option<String>)],
+    ) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut count = 0;
+        for (track_id, genre, source) in genres {
+            count += tx.execute(
+                "UPDATE tracks SET genre = ?, genre_source = ? WHERE id = ?",
+                params![genre, source, track_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(count)
     }
 
@@ -2088,105 +2208,29 @@ impl Database {
         Ok(())
     }
 
-    /// Get recently played tracks (joined with track data), ordered by most recent first.
-    pub fn get_recently_played(&self, limit: i64) -> Result<Vec<(i64, Option<i64>, i64, Option<String>, Option<String>, Option<String>)>> {
+    /// Every track played at least once, each once, for the track table's
+    /// Played filter.
+    pub fn get_played_track_ids(&self) -> Result<Vec<i64>> {
         let mut stmt = self.conn.prepare(
-            "SELECT ph.track_id, ph.playlist_id, ph.played_at, t.title, t.artist, t.file_path
-             FROM play_history ph
-             LEFT JOIN tracks t ON t.id = ph.track_id
-             ORDER BY ph.played_at DESC
-             LIMIT ?1",
+            "SELECT DISTINCT track_id FROM play_history
+             WHERE track_id IS NOT NULL
+             ORDER BY track_id",
         )?;
-        let rows = stmt.query_map(params![limit], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-            ))
-        })?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
         rows.collect()
     }
 
-    /// Get recently added tracks ordered by date_added DESC.
-    pub fn get_recently_added(&self, limit: i64) -> Result<Vec<(i64, Option<String>, Option<String>, String, Option<String>)>> {
+    /// How many times each played track was played, for the track table's
+    /// Plays column. Tracks never played are left out.
+    pub fn get_play_counts(&self) -> Result<Vec<(i64, i64)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, artist, file_path, date_added
-             FROM tracks
-             ORDER BY date_added DESC
-             LIMIT ?1",
+            "SELECT track_id, COUNT(*) FROM play_history
+             WHERE track_id IS NOT NULL
+             GROUP BY track_id
+             ORDER BY track_id",
         )?;
-        let rows = stmt.query_map(params![limit], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-            ))
-        })?;
+        let rows = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
         rows.collect()
-    }
-
-    /// Get library insight statistics.
-    pub fn get_library_insights(&self) -> Result<(i64, i64, Option<String>, Option<f64>, Option<f64>, Option<String>, Option<f64>)> {
-        let total_tracks: i64 = self.conn
-            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get::<_, i64>(0))
-            .unwrap_or(0);
-
-        let analyzed_tracks: i64 = self.conn
-            .query_row(
-                "SELECT COUNT(*) FROM track_analysis WHERE bpm IS NOT NULL",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0);
-
-        let top_genre: Option<String> = self.conn
-            .query_row(
-                "SELECT genre FROM tracks WHERE genre IS NOT NULL
-                 GROUP BY genre ORDER BY COUNT(*) DESC LIMIT 1",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok();
-
-        let bpm_min: Option<f64> = self.conn
-            .query_row(
-                "SELECT MIN(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
-                [],
-                |row| row.get::<_, f64>(0),
-            )
-            .ok();
-
-        let bpm_max: Option<f64> = self.conn
-            .query_row(
-                "SELECT MAX(bpm) FROM track_analysis WHERE bpm IS NOT NULL",
-                [],
-                |row| row.get::<_, f64>(0),
-            )
-            .ok();
-
-        let top_key: Option<String> = self.conn
-            .query_row(
-                "SELECT musical_key FROM track_analysis WHERE musical_key IS NOT NULL
-                 GROUP BY musical_key ORDER BY COUNT(*) DESC LIMIT 1",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok();
-
-        let avg_energy: Option<f64> = self.conn
-            .query_row(
-                "SELECT AVG(energy_arousal) FROM track_deep_analysis WHERE energy_arousal IS NOT NULL",
-                [],
-                |row| row.get::<_, f64>(0),
-            )
-            .ok();
-
-        Ok((total_tracks, analyzed_tracks, top_genre, bpm_min, bpm_max, top_key, avg_energy))
     }
 
     /// Save the dashboard layout JSON (upsert with fixed id=1).
@@ -2732,10 +2776,12 @@ impl Database {
 
     // --- saved tracks -------------------------------------------------
 
+    /// Hearts a track: now, or at `saved_at` when given (a removed heart's
+    /// Undo, so it keeps its place). A track hearted already keeps its time.
     pub fn save_yt_track(&self, track: &YtSavedTrack) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO yt_saved_tracks (video_id, cue_ms, cue, artist, title, mix)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO yt_saved_tracks (video_id, cue_ms, cue, artist, title, mix, saved_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(?7, datetime('now')))
              ON CONFLICT(video_id, cue_ms, title) DO UPDATE SET
                 artist = excluded.artist,
                 mix = excluded.mix",
@@ -2746,6 +2792,7 @@ impl Database {
                 track.artist,
                 track.title,
                 track.mix,
+                track.saved_at,
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -2757,7 +2804,7 @@ impl Database {
                     y.title AS set_title
              FROM yt_saved_tracks s
              LEFT JOIN yt_sets y ON y.video_id = s.video_id
-             ORDER BY s.saved_at DESC",
+             ORDER BY s.saved_at DESC, s.id DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(YtSavedTrack {
@@ -2929,21 +2976,36 @@ impl Database {
 
     /// One set a DJ search turned up. New to the user exactly once.
     ///
-    /// Returns true when this was the first sighting, which is what makes it
-    /// news — the caller does not have to read the table back to find out.
+    /// It is written already seen when its video is in the library or another
+    /// DJ's find of it is seen: a set opened before any search found it, or a
+    /// b2b set a second DJ's search finds later, is not news on Home.
+    ///
+    /// Returns true when it is news — a first sighting, written unseen — so
+    /// what is announced is what Home's New sets shows, and the caller does
+    /// not have to read the table back to find out.
     pub fn record_yt_dj_find(&self, find: &YtDjFind) -> Result<bool> {
-        let inserted = self.conn.execute(
-            "INSERT OR IGNORE INTO yt_dj_finds (name_key, video_id, title, channel, published_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                find.name_key,
-                find.video_id,
-                find.title,
-                find.channel,
-                find.published_at,
-            ],
-        )?;
-        Ok(inserted > 0)
+        // A row when it was inserted (holding its seen_at), none when it was
+        // there already.
+        let written: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "INSERT OR IGNORE INTO yt_dj_finds (name_key, video_id, title, channel, published_at, seen_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5,
+                         CASE WHEN EXISTS (SELECT 1 FROM yt_sets WHERE video_id = ?2)
+                                OR EXISTS (SELECT 1 FROM yt_dj_finds WHERE video_id = ?2 AND seen_at IS NOT NULL)
+                              THEN datetime('now') END)
+                 RETURNING seen_at",
+                params![
+                    find.name_key,
+                    find.video_id,
+                    find.title,
+                    find.channel,
+                    find.published_at,
+                ],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(matches!(written, Some(None)))
     }
 
     pub fn list_yt_dj_finds(&self, name_key: &str) -> Result<Vec<YtDjFind>> {
@@ -4484,5 +4546,137 @@ mod tests {
         let convs = db.list_conversations().unwrap();
         assert_eq!(convs[0].title.len(), 50, "Title should be exactly 50 chars");
         assert_eq!(convs[0].title, &long_content[..50]);
+    }
+
+    #[test]
+    fn test_get_played_track_ids_lists_each_played_track_once() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let mut ids = Vec::new();
+        for n in 0..3 {
+            let mut track = create_test_track();
+            track.file_path = format!("/path/to/played-{}.mp3", n);
+            track.file_hash = format!("played-{}", n);
+            ids.push(db.create_track(&track).unwrap());
+        }
+        db.record_play_event(ids[2], None).unwrap();
+        db.record_play_event(ids[0], Some(7)).unwrap();
+        db.record_play_event(ids[2], None).unwrap();
+
+        assert_eq!(db.get_played_track_ids().unwrap(), vec![ids[0], ids[2]]);
+    }
+
+    #[test]
+    fn test_get_play_counts_counts_each_played_track() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+
+        let mut ids = Vec::new();
+        for n in 0..3 {
+            let mut track = create_test_track();
+            track.file_path = format!("/path/to/counted-{}.mp3", n);
+            track.file_hash = format!("counted-{}", n);
+            ids.push(db.create_track(&track).unwrap());
+        }
+        db.record_play_event(ids[2], None).unwrap();
+        db.record_play_event(ids[0], Some(7)).unwrap();
+        db.record_play_event(ids[2], None).unwrap();
+        db.record_play_event(ids[2], Some(7)).unwrap();
+
+        assert_eq!(db.get_play_counts().unwrap(), vec![(ids[0], 1), (ids[2], 3)]);
+    }
+
+    // Three tracks with distinct paths, for the bulk operations' tests.
+    fn create_three_tracks(db: &Database, name: &str) -> Vec<i64> {
+        (0..3)
+            .map(|n| {
+                let mut track = create_test_track();
+                track.file_path = format!("/path/to/{}-{}.mp3", name, n);
+                track.file_hash = format!("{}-{}", name, n);
+                db.create_track(&track).unwrap()
+            })
+            .collect()
+    }
+
+    fn playlist_ids(db: &Database, playlist_id: i64) -> Vec<i64> {
+        db.get_playlist_tracks(playlist_id)
+            .unwrap()
+            .into_iter()
+            .map(|(track, ..)| track.id.unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_add_tracks_to_playlist_answers_added_and_already_there() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "add");
+        let playlist = db.create_playlist("Peak Time", "playlist", None).unwrap();
+        db.add_track_to_playlist(playlist, ids[0]).unwrap();
+
+        let (added, already) = db
+            .add_tracks_to_playlist(playlist, &[ids[1], ids[0], ids[2], ids[1]])
+            .unwrap();
+
+        assert_eq!(added, vec![ids[1], ids[2]]);
+        assert_eq!(already, vec![ids[0]]);
+        assert_eq!(playlist_ids(&db, playlist), vec![ids[0], ids[1], ids[2]]);
+    }
+
+    #[test]
+    fn test_remove_tracks_from_playlist_counts_those_it_held() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "remove");
+        let playlist = db.create_playlist("Warm Up", "playlist", None).unwrap();
+        db.add_tracks_to_playlist(playlist, &[ids[0], ids[1]]).unwrap();
+
+        let removed = db
+            .remove_tracks_from_playlist(playlist, &[ids[0], ids[2]])
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        assert_eq!(playlist_ids(&db, playlist), vec![ids[1]]);
+    }
+
+    #[test]
+    fn test_bulk_clear_genre_clears_only_those_given() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "clear");
+        db.bulk_set_genre(&ids, "House").unwrap();
+
+        assert_eq!(db.bulk_clear_genre(&[ids[0], ids[1]]).unwrap(), 2);
+
+        assert_eq!(db.get_track_genre(ids[0]).unwrap(), None);
+        assert_eq!(db.get_track_genre(ids[1]).unwrap(), None);
+        assert_eq!(
+            db.get_track_genre(ids[2]).unwrap(),
+            Some(("House".to_string(), "user".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_restore_track_genres_writes_genre_and_source_as_given() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let ids = create_three_tracks(&db, "restore");
+        db.save_track_genre(ids[0], "Deep House", "tag").unwrap();
+        db.bulk_set_genre(&[ids[0], ids[1]], "Techno").unwrap();
+
+        let count = db
+            .restore_track_genres(&[
+                (ids[0], Some("Deep House".to_string()), Some("tag".to_string())),
+                (ids[1], None, None),
+            ])
+            .unwrap();
+
+        assert_eq!(count, 2);
+        assert_eq!(
+            db.get_track_genre(ids[0]).unwrap(),
+            Some(("Deep House".to_string(), "tag".to_string()))
+        );
+        assert_eq!(db.get_track_genre(ids[1]).unwrap(), None);
     }
 }

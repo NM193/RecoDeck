@@ -13,6 +13,7 @@ import type { EnergyDirection, GeneratedPlaylist } from '../../types/ai'
 import { getErrorMessage } from '../../types/ai'
 import { useAIStore } from '../../store/aiStore'
 import { getKeyCompatibilityScore } from '../../lib/musicUtils'
+import { EASE, MOTION } from '../../lib/motion'
 import './AIPlaylistDialog.css'
 
 interface AIPlaylistDialogProps {
@@ -225,7 +226,7 @@ export function AIPlaylistDialog({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.15 }}
+        transition={{ duration: MOTION.base, ease: EASE }}
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose()
         }}
@@ -235,7 +236,7 @@ export function AIPlaylistDialog({
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
+          transition={{ duration: MOTION.base, ease: EASE }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

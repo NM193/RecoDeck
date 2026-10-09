@@ -4,6 +4,7 @@
 // release first, then "Load older releases" when Spotify lists more.
 import { useMemo, useState } from 'react'
 import { Icon } from '../Icon'
+import { useShowAfter } from '../../lib/useShowAfter'
 import { SpotifyRowActions } from '../spotify/SpotifyRowActions'
 import {
   countByStatus,
@@ -138,21 +139,31 @@ export function DjTrackRow({
   )
 }
 
-/** Grey bars where rows will be, while a first fetch has nothing to show yet. */
-function SkeletonRows() {
+/**
+ * Grey bars where rows will be, in the table's own columns, while a first
+ * fetch has nothing to show yet — shown after 150ms, so a quick one never
+ * flashes, and holding their place until then.
+ */
+function TrackRowsSkeleton() {
+  const shown = useShowAfter()
   return (
     <>
       {[62, 48, 70, 55, 66, 40, 58, 50].map((width, i) => (
-        <div key={i} className="spotify-row dj-skeleton" aria-hidden="true">
+        <div
+          key={i}
+          className="spotify-row dj-skeleton"
+          aria-hidden="true"
+          style={{ visibility: shown ? undefined : 'hidden' }}
+        >
           <span className="spotify-cell--num">{i + 1}</span>
           <span>
-            <i style={{ width: `${width}%` }} />
+            <i className="skeleton" style={{ width: `${width}%` }} />
           </span>
           <span>
-            <i style={{ width: `${width - 15}%` }} />
+            <i className="skeleton" style={{ width: `${width - 15}%` }} />
           </span>
           <span>
-            <i style={{ width: '60%' }} />
+            <i className="skeleton" style={{ width: '60%' }} />
           </span>
           <span />
         </div>
@@ -217,7 +228,7 @@ export function DjTracksTab({
     return (
       <div className="dj-connect">
         Connect Spotify to see their tracks
-        <button type="button" className="dj-btn" onClick={onOpenSettings}>
+        <button type="button" className="btn btn--sm" onClick={onOpenSettings}>
           Settings → Spotify
         </button>
       </div>
@@ -263,6 +274,7 @@ export function DjTracksTab({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search their tracks…"
+              data-page-search
               spellCheck={false}
             />
           </label>
@@ -297,7 +309,7 @@ export function DjTracksTab({
             </span>
           </div>
           {state === 'skeleton' ? (
-            <SkeletonRows />
+            <TrackRowsSkeleton />
           ) : (
             shown.map((row, index) => (
               <DjTrackRow

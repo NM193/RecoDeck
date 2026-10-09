@@ -31,6 +31,28 @@ export interface Track {
   key_confidence?: number
 }
 
+/** A folder of the library, for Move to folder ▸: its path as tracks store it. */
+export interface LibraryFolder {
+  path: string
+  /** "Music / House / Deep" */
+  label: string
+}
+
+/** Why Move to folder left a track where it was. */
+export type MoveSkipReason = 'already_there' | 'name_taken' | 'missing' | 'failed'
+
+export interface MoveReport {
+  moved: Array<{ id: number; newPath: string }>
+  skipped: Array<{ id: number; reason: MoveSkipReason }>
+}
+
+/** A track's genre and its source, as the Undo of a genre change puts them back. */
+export interface TrackGenre {
+  id: number
+  genre: string | null
+  source: string | null
+}
+
 export interface ScanResult {
   total_files: number
   imported: number

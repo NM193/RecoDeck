@@ -5,6 +5,7 @@
 // rows show ghosted.
 import { useState, type CSSProperties } from 'react'
 import { Icon, type IconName } from '../Icon'
+import { SkeletonRows } from '../Skeleton'
 import { GigRow, RaLinkCard } from './DjGigsTab'
 import { PlayBar, PlayStatus } from './DjPlaysTab'
 import { SetCard } from './DjSetsTab'
@@ -182,17 +183,13 @@ function TracksBody({
     return (
       <div className="dj-connect">
         Connect Spotify to see their tracks
-        <button
-          type="button"
-          className="dj-btn"
-          onClick={actions.onOpenSettings}
-        >
+        <button type="button" className="btn btn--sm" onClick={actions.onOpenSettings}>
           Settings → Spotify
         </button>
       </div>
     )
   }
-  if (data.tracksState === 'skeleton') return <Note>Loading their tracks…</Note>
+  if (data.tracksState === 'skeleton') return <SkeletonRows rows={4} label="Loading their tracks" />
   if (data.tracksState === 'empty') return <Note>{data.tracksEmpty}</Note>
   const shown = filterRows(data.rows, filter, '').slice(0, limit)
   if (shown.length === 0) {
@@ -214,7 +211,7 @@ function TracksBody({
   }
   return (
     <div
-      className={`spotify-table dj-table dj-card__table${scroll ? ' dj-card__table--scroll' : ''}`}
+      className={`spotify-table dj-table dj-card__table content-in${scroll ? ' dj-card__table--scroll' : ''}`}
       role="table"
     >
       {shown.map((row, index) => (

@@ -38,12 +38,12 @@
   border: none;
   color: var(--text-secondary);
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 
 .dup-modal__close:hover {
@@ -74,13 +74,13 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-primary);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--motion-fast) var(--ease);
 }
 
 .dup-tab:hover {
@@ -117,7 +117,7 @@
   border-radius: 6px;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease);
   white-space: nowrap;
 }
 
@@ -229,7 +229,7 @@
   gap: 10px;
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .dup-row:last-child {

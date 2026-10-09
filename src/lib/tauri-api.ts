@@ -29,6 +29,9 @@ import type {
   GenreCount,
   GenreDefinition,
   DuplicateGroup,
+  TrackGenre,
+  LibraryFolder,
+  MoveReport,
 } from '../types/track'
 import type {
   ChatMessage,
@@ -47,6 +50,14 @@ import type {
   Verdict,
 } from '../types/spotify'
 import type { YtmLibrary, YtmStatus } from '../types/youtubeMusic'
+import type { LibraryGroups, RecentlyPlayedTrack, YourDj } from '../types/sections'
+import type {
+  BpmKeyCounts,
+  DjFindKey,
+  LastPlayedPlaylist,
+  NewDjFinds,
+  UpcomingGig,
+} from '../types/home'
 import type {
   ArtistCandidate,
   DjCandidates,
@@ -300,6 +311,29 @@ export const tauriApi = {
     return await invoke('remove_track_from_playlist', { playlistId, trackId })
   },
 
+  /** Adds several tracks at once; answers which it added and which were there. */
+  async addTracksToPlaylist(
+    playlistId: number,
+    trackIds: number[],
+  ): Promise<{ added: number[]; already: number[] }> {
+    return await invoke('add_tracks_to_playlist', { playlistId, trackIds })
+  },
+
+  /** Removes several tracks at once; answers how many the playlist held. */
+  async removeTracksFromPlaylist(playlistId: number, trackIds: number[]): Promise<number> {
+    return await invoke('remove_tracks_from_playlist', { playlistId, trackIds })
+  },
+
+  /** Every folder of the library, the roots included (Move to folder ▸). */
+  async listLibraryFolders(): Promise<LibraryFolder[]> {
+    return await invoke('list_library_folders')
+  },
+
+  /** Moves the tracks' files into `folder`; answers what moved and what was skipped. */
+  async moveTracksToFolder(trackIds: number[], folder: string): Promise<MoveReport> {
+    return await invoke('move_tracks_to_folder', { trackIds, folder })
+  },
+
   async reorderPlaylistTracks(
     playlistId: number,
     orderedTrackIds: number[],
@@ -481,6 +515,11 @@ export const tauriApi = {
     return await invoke('check_youtube_channels')
   },
 
+  /** One followed channel's new uploads: a row's Check now (1–2 units). */
+  async checkYouTubeChannel(channelId: string): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_channel', { channelId })
+  },
+
   /** How often a channel is checked on its own. 0 never, 24 daily, 168 weekly. */
   async setYouTubeChannelInterval(channelId: string, hours: number): Promise<void> {
     return await invoke('set_youtube_channel_interval', { channelId, hours })
@@ -512,6 +551,11 @@ export const tauriApi = {
   /** Searches for every watched DJ — 100 units each. */
   async checkYouTubeDjs(): Promise<ChannelNews[]> {
     return await invoke('check_youtube_djs')
+  },
+
+  /** One watched DJ searched for: a row's Check now (100 units). */
+  async checkYouTubeDj(nameKey: string): Promise<ChannelNews[]> {
+    return await invoke('check_youtube_dj', { nameKey })
   },
 
   /** Everything a DJ's searches have turned up so far. Costs nothing. */
@@ -617,6 +661,7 @@ export const tauriApi = {
     return await invoke('delete_youtube_set', { videoId })
   },
 
+  /** Hearts a track; with `saved_at` it keeps that time (a removed heart's Undo). */
   async saveYouTubeTrack(track: SavedTrack): Promise<void> {
     return await invoke('save_youtube_track', { track })
   },
@@ -948,6 +993,15 @@ export const tauriApi = {
     return await invoke('bulk_set_genre', { trackIds, genre })
   },
 
+  async bulkClearGenre(trackIds: number[]): Promise<number> {
+    return await invoke('bulk_clear_genre', { trackIds })
+  },
+
+  /** Puts genres and their sources back exactly as given (a genre Undo). */
+  async restoreTrackGenres(genres: TrackGenre[]): Promise<number> {
+    return await invoke('restore_track_genres', { genres })
+  },
+
   // Artwork command
   async getTrackArtwork(trackId: number): Promise<ArrayBuffer> {
     return await invoke<ArrayBuffer>('get_track_artwork', { trackId })
@@ -993,37 +1047,74 @@ export const tauriApi = {
     return await invoke('record_play_event', { trackId, playlistId })
   },
 
-  async getRecentlyPlayed(limit?: number): Promise<{
-    track_id: number
-    playlist_id: number | null
-    played_at: number
-    title: string | null
-    artist: string | null
-    file_path: string | null
-  }[]> {
-    return await invoke('get_recently_played', { limit: limit ?? 10 })
+  /** Every track played at least once (the track table's Played filter). */
+  async getPlayedTrackIds(): Promise<number[]> {
+    return await invoke('get_played_track_ids')
   },
 
-  async getRecentlyAdded(limit?: number): Promise<{
-    id: number
-    title: string | null
-    artist: string | null
-    file_path: string
-    date_added: string | null
-  }[]> {
-    return await invoke('get_recently_added', { limit: limit ?? 10 })
+  /** Plays per played track (the track table's Plays column). */
+  async getPlayCounts(): Promise<{ track_id: number; plays: number }[]> {
+    return await invoke('get_play_counts')
   },
 
-  async getLibraryInsights(): Promise<{
-    top_genre: string | null
-    bpm_min: number | null
-    bpm_max: number | null
-    top_key: string | null
-    avg_energy: number | null
-    total_tracks: number
-    analyzed_tracks: number
-  }> {
-    return await invoke('get_library_insights')
+  /** Distinct tracks by their latest play, newest first (Search's Recently played). */
+  async getRecentlyPlayedTracks(limit: number): Promise<RecentlyPlayedTrack[]> {
+    return await invoke('get_recently_played_tracks', { limit })
+  },
+
+  /** The tracks added lately, newest first, as full rows. */
+  async getRecentlyAddedTracks(limit: number): Promise<Track[]> {
+    return await invoke('get_recently_added_tracks', { limit })
+  },
+
+  /** Every DJ with a page or watched for sets; `today` ("2026-10-04", the local day) picks the next gig. */
+  async getKnownDjs(today: string): Promise<YourDj[]> {
+    return await invoke('get_known_djs', { today })
+  },
+
+  /** The 6 biggest genres, the count added in the last 30 days and the count never played. */
+  async getLibraryGroups(): Promise<LibraryGroups> {
+    return await invoke('get_library_groups')
+  },
+
+  /** The gigs on or after `today` ("2026-10-04", the local day) of every DJ with a page, soonest first. */
+  async getUpcomingGigs(today: string, limit: number): Promise<UpcomingGig[]> {
+    return await invoke('get_upcoming_gigs', { today, limit })
+  },
+
+  /** Every track with no BPM: Home's Not analyzed number, and what its Analyze all analyzes. */
+  async getTrackIdsWithoutBpm(): Promise<number[]> {
+    return await invoke('get_track_ids_without_bpm')
+  },
+
+  /** The playlist played from most recently, while it exists; null when none (Home's Last playlist). */
+  async getLastPlayedPlaylist(): Promise<LastPlayedPlaylist | null> {
+    return await invoke('get_last_played_playlist')
+  },
+
+  /** The tracks per BPM range and per key (Home's BPM & key). */
+  async getBpmKeyCounts(): Promise<BpmKeyCounts> {
+    return await invoke('get_bpm_key_counts')
+  },
+
+  /** The newest sets watched DJs' searches found that have not been seen, and how many in all (Home's New sets). */
+  async getNewDjFinds(limit: number): Promise<NewDjFinds> {
+    return await invoke('get_new_dj_finds', { limit })
+  },
+
+  /** These sets were opened: their finds are no longer news. */
+  async markDjFindsSeen(videoIds: string[]): Promise<void> {
+    return await invoke('mark_dj_finds_seen', { videoIds })
+  },
+
+  /** Mark all seen; answers the rows it changed, for its Undo. */
+  async markAllDjFindsSeen(): Promise<DjFindKey[]> {
+    return await invoke('mark_all_dj_finds_seen')
+  },
+
+  /** Mark all seen's Undo: exactly these rows are unseen again. */
+  async markDjFindsUnseen(rows: DjFindKey[]): Promise<void> {
+    return await invoke('mark_dj_finds_unseen', { rows })
   },
 
   async saveDashboardLayout(layoutJson: string): Promise<void> {

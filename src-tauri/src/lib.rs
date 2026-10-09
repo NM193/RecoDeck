@@ -249,6 +249,11 @@ pub fn run() {
                 if err.kind() != std::io::ErrorKind::NotFound {
                     return Err(err);
                 }
+                // Moved this session (Move to folder): asked for by its old path.
+                if let Some(moved) = commands::move_tracks::moved_to(path) {
+                    eprintln!("[stream] Moved to: {:?}", moved);
+                    return std::fs::read(&moved);
+                }
                 // Fallback 0: on Windows, try with backslashes (frontend may send forward slashes)
                 #[cfg(target_os = "windows")]
                 {
@@ -440,6 +445,7 @@ pub fn run() {
             commands::youtube::list_youtube_channels,
             commands::youtube::unfollow_youtube_channel,
             commands::youtube::check_youtube_channels,
+            commands::youtube::check_youtube_channel,
             commands::youtube::set_youtube_channel_interval,
             commands::youtube::watch_youtube_dj,
             commands::youtube::list_youtube_djs,
@@ -447,6 +453,7 @@ pub fn run() {
             commands::youtube::set_youtube_dj_interval,
             commands::youtube::set_youtube_dj_auto_import,
             commands::youtube::check_youtube_djs,
+            commands::youtube::check_youtube_dj,
             commands::youtube::list_youtube_dj_finds,
             commands::youtube::mark_youtube_channel_seen,
             // Spotify
@@ -535,6 +542,10 @@ pub fn run() {
             commands::playlists::get_playlist_tracks,
             commands::playlists::add_track_to_playlist,
             commands::playlists::remove_track_from_playlist,
+            commands::playlists::add_tracks_to_playlist,
+            commands::playlists::remove_tracks_from_playlist,
+            commands::move_tracks::list_library_folders,
+            commands::move_tracks::move_tracks_to_folder,
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::export_playlist_to_folder,
             commands::playlists::pick_export_folder,
@@ -548,6 +559,8 @@ pub fn run() {
             commands::genre::delete_genre_definition,
             commands::genre::rename_genre_definition,
             commands::genre::bulk_set_genre,
+            commands::genre::bulk_clear_genre,
+            commands::genre::restore_track_genres,
             // Settings commands
             commands::settings::get_setting,
             commands::settings::set_setting,
@@ -584,11 +597,24 @@ pub fn run() {
             commands::server::regenerate_companion_token,
             // Dashboard commands
             commands::dashboard::record_play_event,
-            commands::dashboard::get_recently_played,
-            commands::dashboard::get_recently_added,
-            commands::dashboard::get_library_insights,
+            commands::dashboard::get_played_track_ids,
+            commands::dashboard::get_play_counts,
             commands::dashboard::save_dashboard_layout,
             commands::dashboard::get_dashboard_layout,
+            // Search sections (shared with Home)
+            commands::sections::get_recently_played_tracks,
+            commands::sections::get_recently_added_tracks,
+            commands::sections::get_known_djs,
+            commands::sections::get_library_groups,
+            // Home's cards (Search's sections above are shared)
+            commands::home::get_upcoming_gigs,
+            commands::home::get_track_ids_without_bpm,
+            commands::home::get_last_played_playlist,
+            commands::home::get_bpm_key_counts,
+            commands::home::get_new_dj_finds,
+            commands::home::mark_dj_finds_seen,
+            commands::home::mark_all_dj_finds_seen,
+            commands::home::mark_dj_finds_unseen,
         ])
         .on_window_event(|window, event| {
             use tauri::Manager;

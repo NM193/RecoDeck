@@ -1,4 +1,5 @@
 import { useSettingsContext } from './SettingsContext'
+import { Button } from '../Button'
 
 export function AboutSection() {
   const { appVersion, updateChecking, updateProgress, handleCheckForUpdates } = useSettingsContext()
@@ -8,15 +9,15 @@ export function AboutSection() {
 
       <p className="settings-description">RecoDeck v{appVersion || '—'}</p>
 
-      <button
+      <Button
+        variant="primary"
+        size="sm"
         onClick={handleCheckForUpdates}
-        disabled={updateChecking}
-        className="btn-primary btn-small"
+        working={updateChecking}
+        workingLabel={updateProgress?.status === 'checking' ? 'Checking…' : 'Downloading…'}
       >
-        {updateChecking
-          ? updateProgress?.status === 'checking' ? 'Checking...' : 'Downloading...'
-          : 'Check for Updates'}
-      </button>
+        Check for Updates
+      </Button>
 
       <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
         Manually check for app updates from GitHub Releases.

@@ -1,0 +1,317 @@
+/* src/styles/controls.css */
+/* Shared controls (Interactions spec). Every button has a 6px corner; hover
+   is one step lighter, press scales to 0.97 one step darker, keyboard focus
+   shows a 2px accent ring with a 2px gap, disabled is 40% opacity. Lighter
+   mixes in --text-primary, not white, so it reads in the light themes; a
+   theme whose raised colour is its page's (Dawn) sets --btn-bg. Variants:
+   --primary, --danger (a menu's answer to "Remove …?"), --sm, --icon (square,
+   an icon alone), --pill (the small ones in a row, "have it"); a toggle that
+   is on carries aria-pressed. The Button component renders these, with its
+   working state. Loading's skeletons and the fade-in after them are here
+   too. */
+
+/* Every button's corner, the page-specific ones too (they keep their own
+   shape only where they are not buttons: a switch, a checkbox, a colour dot). */
+button,
+[role='button'],
+[role='tab'] {
+  border-radius: var(--radius-md);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--btn-bg, var(--bg-elevated));
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+
+.btn:hover {
+  background: color-mix(in srgb, var(--btn-bg, var(--bg-elevated)), var(--text-primary) 6%);
+  color: var(--text-primary);
+}
+
+.btn:active {
+  transform: scale(0.97);
+  background: color-mix(in srgb, var(--btn-bg, var(--bg-elevated)), black 15%);
+}
+
+.btn[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--btn-bg, var(--bg-elevated)), var(--text-primary) 10%);
+  color: var(--text-primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Disabled keeps its pointer events, so a title saying why still shows. */
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn:disabled:active {
+  transform: none;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.btn--primary:active {
+  background: color-mix(in srgb, var(--accent), black 15%);
+}
+
+.btn--sm {
+  height: 28px;
+}
+
+/* A destructive answer: Remove, Delete */
+.btn--danger {
+  background: var(--color-danger);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn--danger:hover {
+  background: color-mix(in srgb, var(--color-danger), white 12%);
+  color: #fff;
+}
+
+.btn--danger:active {
+  background: color-mix(in srgb, var(--color-danger), black 15%);
+}
+
+/* Square, an icon alone (its name in aria-label or title): quiet until
+   hovered, as it often sits in a row. */
+.btn--icon {
+  width: 32px;
+  padding: 0;
+  background: none;
+}
+
+.btn--icon.btn--sm {
+  width: 28px;
+}
+
+.btn--icon:hover {
+  background: color-mix(in srgb, var(--btn-bg, var(--bg-elevated)), var(--text-primary) 8%);
+}
+
+/* A destructive icon (Remove ✕) is red only while hovered. */
+.btn--icon.btn--danger {
+  background: none;
+  color: var(--text-secondary);
+  font-weight: inherit;
+}
+
+.btn--icon.btn--danger:hover {
+  background: rgba(var(--color-danger-rgb), 0.15);
+  color: var(--color-danger);
+}
+
+/* The small ones in a row: "have it" */
+.btn--pill {
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* A toggle that is on (Watching) */
+.btn[aria-pressed='true'] {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  color: var(--accent-hover);
+}
+
+/* Working (Button's `working`): a spinner in the icon's place, disabled but
+   plainly there. */
+.btn[aria-busy='true']:disabled {
+  opacity: 0.75;
+}
+
+.btn__spinner {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.7s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A button that reads as a link: Clear all, Reset */
+.link-btn {
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease);
+}
+
+.link-btn:hover {
+  color: var(--text-primary);
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Segmented control: follows the buttons */
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.segmented__item {
+  flex: 1;
+  padding: 5px 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+
+.segmented__item:hover {
+  color: var(--text-primary);
+}
+
+.segmented__item[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 10%);
+  color: var(--text-primary);
+}
+
+.segmented__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Loading (Interactions spec): grey shapes of what is coming, shimmering —
+   Skeleton shows them only after 150ms (useShowAfter). */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    color-mix(in srgb, var(--bg-tertiary), var(--text-primary) 7%) 50%,
+    var(--bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* SkeletonRows: a cover and two lines per row. */
+.skeleton-rows__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 8px;
+}
+
+.skeleton-rows__cover {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.skeleton-rows__lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.skeleton-rows__line {
+  height: 9px;
+}
+
+.skeleton-rows__line--short {
+  width: 30%;
+}
+
+/* What replaces a skeleton fades in with a 4px rise. */
+.content-in {
+  animation: content-in var(--motion-slow) var(--ease);
+}
+
+@keyframes content-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes content-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active {
+    transform: none;
+  }
+
+  .skeleton {
+    animation: none;
+  }
+
+  .content-in {
+    animation-name: content-fade-in;
+  }
+}

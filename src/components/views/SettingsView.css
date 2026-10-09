@@ -98,7 +98,7 @@
 .sv-collapsible__chevron {
   flex: 0 0 auto;
   color: var(--text-muted);
-  transition: transform 0.15s ease-out;
+  transition: transform var(--motion-base) var(--ease);
 }
 
 .sv-collapsible--open .sv-collapsible__chevron {
@@ -191,7 +191,7 @@
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
-  transition: background 0.2s ease;
+  transition: background var(--motion-base) var(--ease);
 }
 
 .toggle-switch--on {
@@ -211,7 +211,7 @@
   height: 16px;
   border-radius: 50%;
   background: white;
-  transition: transform 0.2s ease;
+  transition: transform var(--motion-base) var(--ease);
   pointer-events: none;
 }
 
@@ -257,7 +257,7 @@
   background: var(--bg-tertiary);
   border-radius: 6px;
   border: 1px solid transparent;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) var(--ease);
 }
 
 .folder-item:hover {
@@ -315,41 +315,6 @@
   font-style: italic;
 }
 
-/* Icon buttons */
-.btn-icon {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: all 0.15s ease;
-}
-
-.btn-icon:hover {
-  background: var(--surface);
-  color: var(--text-primary);
-  border-color: var(--border);
-}
-
-.btn-icon:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-icon-danger:hover {
-  background: rgba(var(--color-danger-rgb), 0.15);
-  color: var(--color-danger);
-  border-color: rgba(var(--color-danger-rgb), 0.3);
-}
-
-/* Small button variant */
-.btn-small {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-
 /* Theme grid */
 .theme-grid {
   display: grid;
@@ -366,7 +331,7 @@
   border: 2px solid transparent;
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) var(--ease);
   text-align: left;
 }
 
@@ -446,7 +411,7 @@
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 13px;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) var(--ease);
 }
 
 .settings-number-input:focus {
@@ -472,7 +437,7 @@
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 13px;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) var(--ease);
   font-family: inherit;
 }
 
@@ -552,7 +517,7 @@
   height: 100%;
   background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   border-radius: 3px;
-  transition: width 0.2s ease;
+  transition: width var(--motion-slow) var(--ease);
 }
 
 .settings-update-progress-bar--indeterminate .settings-update-progress-fill {
@@ -586,7 +551,7 @@
   height: 100%;
   background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   border-radius: 2px;
-  transition: width 0.15s ease;
+  transition: width var(--motion-slow) var(--ease);
 }
 
 .scan-progress__info {

@@ -1,0 +1,38 @@
+/* src/components/DragGhost.css
+   Dragging tracks (Interactions spec, Drag and drop): the label at the
+   pointer, the grabbing cursor (not-allowed where they cannot land), and a
+   valid target lit with an accent tint and outline. */
+
+.drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10001;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.5);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+html.track-drag,
+html.track-drag * {
+  cursor: grabbing !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html.track-drag--refused,
+html.track-drag--refused * {
+  cursor: not-allowed !important;
+}
+
+/* A table's own rows show where the tracks land with a line instead. */
+[data-drop-over]:not([data-drop='rows']) {
+  background: color-mix(in srgb, transparent, var(--accent) 18%) !important;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}

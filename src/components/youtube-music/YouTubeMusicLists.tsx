@@ -4,6 +4,7 @@
 // rail's flyout; styled with FolderTree's rows, like SpotifyLists.
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../Icon'
+import { useOverlay } from '../../lib/overlays'
 import { getErrorMessage } from '../../types/ai'
 import {
   ALL_YTM_LISTS,
@@ -40,6 +41,8 @@ export function YouTubeMusicLists({
   const [error, setError] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; listId: string } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(menu !== null, () => setMenu(null))
 
   useEffect(() => {
     if (!menu) return

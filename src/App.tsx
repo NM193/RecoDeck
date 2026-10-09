@@ -1,12 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { confirm } from '@tauri-apps/plugin-dialog'
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { TrackTable, type TrackTableRef } from './components/TrackTable'
 import { NowPlayingBar } from './components/layout/NowPlayingBar'
+import { SetPlayerBar } from './components/sets/SetPlayerBar'
+import { SetPlayerEngine } from './lib/setPlayer/SetPlayerEngine'
+import { useOverlay } from './lib/overlays'
+import { useSetsView } from './store/setsViewStore'
+import { useChannelNews } from './store/channelNewsStore'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
@@ -21,9 +25,11 @@ import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
 import type { ChannelNews } from './types/youtube'
+import { getErrorMessage } from './types/ai'
+import type { TrackFilter } from './lib/trackTable/filter'
 import appPackage from '../package.json'
-import { Notification } from './components/Notification'
 import { UpdateToast } from './components/UpdateToast'
+import { ShortcutsSheet } from './components/ShortcutsSheet'
 import {
   AnalysisProgress,
   type AnalysisProgressData,
@@ -45,18 +51,45 @@ import { YouTubeMusicView } from './components/views/YouTubeMusicView'
 import { DjView } from './components/views/DjView'
 import { openSettingsSection } from './components/settings/openSections'
 import { djKey } from './lib/dj/names'
+import { noteDjOpened } from './lib/search/storage'
 import { useFolderTreeStore } from './store/folderTreeStore'
+import { useTrackTableLayout } from './store/trackTableLayoutStore'
 import type { ActiveView } from './lib/sidebarPrefs'
 import type { FolderTreeRef } from './components/FolderTree'
 import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
+import { dismissToast, toast } from './lib/toast'
+import { useShortcuts } from './lib/shortcuts/useShortcuts'
+import { focusPageSearch } from './lib/shortcuts/shortcuts'
+import { audioPlayer } from './lib/audioPlayer'
+import { evictArtworkCache } from './lib/artworkCache'
+import { thumbnails } from './lib/thumbnails/thumbnails'
+import {
+  folderName,
+  movedMessage,
+  skipDetail,
+  undoGroups,
+  type Skip,
+} from './lib/trackTable/moveMessages'
+import {
+  addedMessage,
+  alreadyMessage,
+  genreClearedMessage,
+  genreSetMessage,
+  genreSnapshot,
+  removedMessage,
+  tracksSubject,
+} from './lib/trackTable/bulkMessages'
 import type {
   Track,
   Playlist,
+  LibraryFolder,
+  MoveReport,
   AnalysisProgressEvent,
   AnalysisCompleteEvent,
 } from './types/track'
+import { EASE, MOTION } from './lib/motion'
 import './App.css'
 import './components/TrackTable.css'
 
@@ -70,7 +103,10 @@ type PromptAction =
   | { kind: 'rename-folder'; folderPath: string; currentName: string }
 
 /** Where a DJ page was first opened from: Back returns there. */
-type DjOrigin = { view: 'search' } | { view: 'sets'; openVideoId: string | null }
+type DjOrigin =
+  | { view: 'search' }
+  | { view: 'sets'; openVideoId: string | null }
+  | { view: 'home' }
 /** The open Spotify or YouTube Music list: 'all', or a list id. */
 type StreamList = { service: 'spotify' | 'youtube-music'; listId: string }
 
@@ -82,13 +118,15 @@ interface DjPageState {
 }
 
 /**
- * What the Sets view opens with: a stored set to show (Back from a DJ page
- * opened from it, a DJ page's set card) or a DJ's name in the Set tab's box
- * (a DJ page's Find more). SetsView reads both once, when it mounts.
+ * What the Sets view opens with: a set to open on its page (Back from a DJ
+ * page opened from it, a DJ page's set card, Home, Search, the set bar) or a
+ * DJ's name in its box (a DJ page's Find more), or its Library tab (Home's
+ * Needs you). SetsView reads them once, when it mounts.
  */
 interface SetsStart {
   openVideoId: string | null
   initialQuery: string
+  tab?: 'library'
 }
 
 const NO_SETS_START: SetsStart = { openVideoId: null, initialQuery: '' }
@@ -102,11 +140,12 @@ function App() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
-  if (hash === '#mini-player') {
-    return <MiniPlayer />
-  }
-
-  return <AppContent />
+  // framer-motion follows the system's reduced motion: no movement, only fades.
+  return (
+    <MotionConfig reducedMotion="user">
+      {hash === '#mini-player' ? <MiniPlayer /> : <AppContent />}
+    </MotionConfig>
+  )
 }
 
 function AppContent() {
@@ -136,9 +175,29 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('')
   /** How Sets opens next; the sidebar's Sets opens it plain. */
   const [setsStart, setSetsStart] = useState<SetsStart>(NO_SETS_START)
+  /**
+   * Raised by every openSets: SetsView reads its start only when it mounts,
+   * so each is a new SetsView — even one asking for the set already shown
+   * (the set bar's text, from Sets' library).
+   */
+  const [setsVisit, setSetsVisit] = useState(0)
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(
     null,
   )
+  // The filter on the track table on screen (track table spec). Every handler
+  // that opens a view clears it, and Home and Search set it as they open All
+  // Tracks; an effect on the view key would wipe the filter they set.
+  const [tableFilter, setTableFilter] = useState<TrackFilter | null>(null)
+  // Raised after each play is recorded: the track table's Plays column and
+  // Home's cards read their counts again.
+  const [playVersion, setPlayVersion] = useState(0)
+  // Raised after an analysis finishes and after a rescan: Home's cards read
+  // again (with playVersion, after a play).
+  const [dataVersion, setDataVersion] = useState(0)
+  // All Tracks opened with a filter while `tracks` holds a playlist's or a
+  // folder's tracks: its rows wait for the library, so neither the wrong
+  // rows nor "No tracks match" show for a moment.
+  const [libraryPending, setLibraryPending] = useState(false)
 
   // Genre state
   const [genreDefinitions, setGenreDefinitions] = useState<
@@ -213,12 +272,6 @@ function AppContent() {
     name: string
   } | null>(null)
 
-  // Notification state
-  const [notification, setNotification] = useState<{
-    message: string
-    type: 'info' | 'success' | 'warning' | 'error'
-  } | null>(null)
-
   // Pending update from auto-check on launch
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
 
@@ -228,10 +281,15 @@ function AppContent() {
     changes: VersionChanges
   } | null>(null)
 
-  // Header notification (small text next to logo, typing animation)
-  const [headerNotification, setHeaderNotification] = useState<string | null>(
-    null,
-  )
+  // The global keys (Interactions spec, Keyboard): ⌘K opens Search (on
+  // Search, its box), ⌘/ the shortcuts sheet; Space and ⌘→ / ⌘← drive
+  // whichever player played last.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  useShortcuts({
+    // The view shown, not showSearch: that stays true under a DJ page opened from Search.
+    openSearch: () => (activeView === 'search' ? void focusPageSearch() : openSearch()),
+    toggleSheet: () => setShortcutsOpen((open) => !open),
+  })
 
   // Analysis progress state
   const [analysisProgress, setAnalysisProgress] =
@@ -312,25 +370,21 @@ function AppContent() {
           setAnalyzing(false)
 
           if (e.cancelled) {
-            setNotification({
-              message: `Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`,
-              type: 'warning',
+            toast(`Analysis cancelled. ${e.total_analyzed} of ${e.total_requested} tracks analyzed.`, {
+              kind: 'warning',
             })
           } else if (e.total_analyzed > 0) {
-            setNotification({
-              message: `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
-              type: 'success',
-            })
+            toast(
+              `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
+            )
           } else {
-            setNotification({
-              message: 'All tracks already have BPM and Key analysis',
-              type: 'info',
-            })
+            toast('All tracks already have BPM and Key analysis', { kind: 'info' })
           }
 
           // Reload tracks and rebuild AI context (use ref to avoid stale closure)
           loadTracksRef.current()
           tauriApi.rebuildAIContext().catch(() => {})
+          setDataVersion((version) => version + 1)
         }, delay)
       },
     )
@@ -355,6 +409,7 @@ function AppContent() {
       setSelectedFolder(null)
       setSelectedPlaylistId(null)
       setShowAllTracks(false)
+      setTableFilter(null)
       setShowSets(false)
       setShowSearch(false)
       setShowAIChat(false)
@@ -384,6 +439,10 @@ function AppContent() {
       const dbPath = await join(dataDir, 'recodeck.db')
       await tauriApi.initDatabase(dbPath)
       setDbReady(true)
+
+      // The track table's columns, before any table shows (no flash of the
+      // default layout); the table remounts on every view, so it reads them here.
+      await useTrackTableLayout.getState().load()
 
       // PERFORMANCE: Skip expensive path normalization on startup
       // This operation loads all tracks into memory - users can run it manually via settings if needed
@@ -479,6 +538,8 @@ function AppContent() {
   }
 
   // Load tracks — all, by folder, or by playlist
+  // What `tracks` holds: the whole library, or a playlist's or a folder's.
+  const tracksAreLibraryRef = useRef(false)
   const loadTracks = useCallback(
     async (folderPath?: string | null, playlistId?: number | null) => {
       try {
@@ -504,6 +565,7 @@ function AppContent() {
         }
 
         setTracks(result)
+        tracksAreLibraryRef.current = !playlist && !folder
 
         // Always update total track count
         try {
@@ -536,6 +598,7 @@ function AppContent() {
       try {
         const results = await tauriApi.searchTracks(query)
         setTracks(results)
+        tracksAreLibraryRef.current = false
       } catch (err) {
         console.error('Backend search failed:', err)
       }
@@ -577,6 +640,10 @@ function AppContent() {
   // closed. The Following tab carries the same event and shows the sets themselves.
   useEffect(() => {
     const stop = listen<ChannelNews[]>('yt-new-sets', async (event) => {
+      // Home's New sets read again: the search has written its finds.
+      setDataVersion((version) => version + 1)
+      // The channels' news waits under each channel on Sets' Following tab.
+      useChannelNews.getState().add(event.payload)
       const found = event.payload
       const total = found.reduce((sum, c) => sum + c.new_sets.length, 0)
       if (total === 0) return
@@ -585,9 +652,15 @@ function AppContent() {
         found.length === 1
           ? (found[0].title ?? 'a channel you follow')
           : `${found.length} of the channels and DJs you follow`
-      setNotification({
-        message: `${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see Sets › Following`,
-        type: 'info',
+      // A channel's news waits under it on Following; a DJ's finds are on
+      // the library's New from DJs you watch.
+      const where = found.every((item) => item.source === 'dj')
+        ? 'Sets › Library'
+        : found.every((item) => item.source !== 'dj')
+          ? 'Sets › Following'
+          : 'Sets'
+      toast(`${total} new ${total === 1 ? 'set' : 'sets'} from ${who} — see ${where}`, {
+        kind: 'info',
       })
 
       // Automatic import lives here rather than in the background task that
@@ -615,6 +688,8 @@ function AppContent() {
           // One set that will not fetch must not stop the rest.
         }
       }
+      // And again with the sets it filed: "saved", Sets you saved lately.
+      setDataVersion((version) => version + 1)
 
       if (imported > 0 || empty > 0) {
         const parts: string[] = []
@@ -622,10 +697,7 @@ function AppContent() {
           parts.push(`${imported} ${imported === 1 ? 'set' : 'sets'} imported automatically`)
         }
         if (empty > 0) parts.push(`${empty} had no tracklist and were skipped`)
-        setNotification({
-          message: parts.join(' · '),
-          type: imported > 0 ? 'success' : 'info',
-        })
+        toast(parts.join(' · '), { kind: imported > 0 ? 'success' : 'info' })
       }
     })
     return () => {
@@ -649,6 +721,7 @@ function AppContent() {
       }
       // Reload tracks
       await loadTracksRef.current()
+      setDataVersion((version) => version + 1)
       // New or removed folders and changed counts, in the sidebar's tree
       void useFolderTreeStore
         .getState()
@@ -755,6 +828,7 @@ function AppContent() {
     setDjPage(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -770,6 +844,7 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -784,6 +859,7 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -793,15 +869,18 @@ function AppContent() {
 
   // A DJ page. From another DJ page it replaces that one and keeps its origin,
   // so Back still returns to where the first one was opened. The origin's view
-  // stays set underneath (showSearch / showSets) and keeps its sidebar item lit.
+  // stays set underneath (showSearch / showSets; Home is what shows with
+  // neither) and keeps its sidebar item lit.
   function openDj(name: string, spotifyArtistId: string | null = null, from?: DjOrigin) {
     const origin: DjOrigin =
       djPage?.from ?? from ?? (showSets ? { view: 'sets', openVideoId: null } : { view: 'search' })
     setDjPage({ name, spotifyArtistId, from: origin })
+    // Search's Your DJs shows the pages opened most recently first.
+    noteDjOpened(name)
   }
 
   // Back: the view the first DJ page was opened from — Search with its query,
-  // or Sets with the set the page was opened from open again. `djPage.from`
+  // Sets with the set the page was opened from open again, or Home. `djPage.from`
   // is gone once the page closes, so the set goes into `setsStart`.
   function closeDj() {
     if (!djPage) return
@@ -809,16 +888,32 @@ function AppContent() {
       openSets({ openVideoId: djPage.from.openVideoId, initialQuery: '' })
       return
     }
-    setShowSearch(true)
+    setShowSearch(djPage.from.view === 'search')
     setShowSets(false)
     setDjPage(null)
   }
 
-  // Sets, arriving on a set or with a DJ's name in the Set tab's box: Back
+  // Search, from the sidebar or ⌘K: the other views close.
+  function openSearch() {
+    setShowSearch(true)
+    setStreamList(null)
+    setDjPage(null)
+    setShowSets(false)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(false)
+    setTableFilter(null)
+    setShowSettings(false)
+    setShowAIChat(false)
+    loadTracks(null, null)
+  }
+
+  // Sets, arriving on a set's page or with a DJ's name in its box: Back
   // here, and a DJ page's set cards and Find more. Every other view closes,
   // as with the sidebar's Sets.
   function openSets(start: SetsStart) {
     setSetsStart(start)
+    setSetsVisit((visit) => visit + 1)
     setDjPage(null)
     setStreamList(null)
     setShowSets(true)
@@ -826,8 +921,31 @@ function AppContent() {
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowAIChat(false)
+  }
+
+  // All Tracks, from the sidebar, or with a filter set from Search's genre
+  // tiles or Home's cards. Search holds the whole library already, so the
+  // filtered rows show at once while the tracks load again; after a playlist
+  // or a folder, filtered rows wait for the library (`libraryPending`).
+  function openAllTracks(filter: TrackFilter | null = null) {
+    setStreamList(null)
+    setDjPage(null)
+    setSelectedFolder(null)
+    setSelectedPlaylistId(null)
+    setShowAllTracks(true)
+    setTableFilter(filter)
+    setShowSettings(false)
+    setShowSearch(false)
+    setShowSets(false)
+    setShowAIChat(false)
+    const waiting = filter !== null && !tracksAreLibraryRef.current
+    if (waiting) setLibraryPending(true)
+    void loadTracks(null, null).finally(() => {
+      if (waiting) setLibraryPending(false)
+    })
   }
 
   // Playlist selection
@@ -837,6 +955,7 @@ function AppContent() {
     setDjPage(null)
     setSelectedFolder(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSettings(false)
     setShowSearch(false)
     setShowSets(false)
@@ -844,18 +963,24 @@ function AppContent() {
     await loadTracks(null, playlistId)
   }
 
-  // Settings with its Spotify section open: a DJ page's "Connect Spotify".
-  function openSpotifySettings() {
-    openSettingsSection('spotify')
+  // Settings with one section open: a DJ page's "Connect Spotify", Home's
+  // Import folder (Library).
+  function openSettingsOn(section: string) {
+    openSettingsSection(section)
     setShowSettings(true)
     setStreamList(null)
     setDjPage(null)
     setSelectedFolder(null)
     setSelectedPlaylistId(null)
     setShowAllTracks(false)
+    setTableFilter(null)
     setShowSearch(false)
     setShowSets(false)
     setShowAIChat(false)
+  }
+
+  function openSpotifySettings() {
+    openSettingsOn('spotify')
   }
 
   // Analyze folder — BPM and Key for tracks that don't have them yet (parallel batch)
@@ -865,10 +990,7 @@ function AppContent() {
       const trackIds = folderTracks.filter((t) => t.id).map((t) => t.id)
 
       if (trackIds.length === 0) {
-        setNotification({
-          message: 'No audio tracks found in this folder',
-          type: 'info',
-        })
+        toast('No audio tracks found in this folder', { kind: 'info' })
         return
       }
 
@@ -898,31 +1020,37 @@ function AppContent() {
     }
   }
 
-  // Analyze a single track (BPM + Key) — uses batch for decode-once benefit
-  async function handleAnalyzeTrack(track: Track) {
+  // Analyze the selected tracks (BPM + Key) in one batch — decoded once each
+  async function handleAnalyzeTracks(selected: Track[]) {
+    // One analysis at a time: a second would reset the first one's cancel flag.
+    if (analyzing) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
+    const first = selected[0]
     try {
       setAnalyzing(true)
       setError(null)
       analysisStartTimeRef.current = Date.now()
       setAnalysisProgress({
         currentIndex: 0,
-        totalTracks: 1,
+        totalTracks: selected.length,
         currentTrackName:
-          track.title || track.file_path.split('/').pop() || 'Unknown',
+          first.title || first.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: 0,
         totalSizeBytes: 0,
         startTime: Date.now(),
       })
       await new Promise((r) => setTimeout(r, 0))
-      await tauriApi.analyzeTracksBatch([track.id], true)
+      await tauriApi.analyzeTracksBatch(
+        selected.map((t) => t.id),
+        true,
+      )
     } catch (err) {
       setAnalyzing(false)
       setAnalysisProgress(null)
       setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
+      toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -975,10 +1103,7 @@ function AppContent() {
       } else if (action.kind === 'create-subfolder') {
         await tauriApi.createFolderOnDisk(action.parentPath, value)
         folderTreeRef.current?.refreshLibraryRoot(action.parentPath)
-        setNotification({
-          message: `Created folder "${value}"`,
-          type: 'success',
-        })
+        toast(`Created folder "${value}"`)
       } else if (action.kind === 'rename-folder') {
         if (value === action.currentName) return
         const newPath = await tauriApi.renameFolderOnDisk(
@@ -1019,6 +1144,12 @@ function AppContent() {
   }
 
   // Delete folder — open confirmation modal with "empty only" / "delete all files" choice
+  // The delete-folder modal is an overlay (useOverlay): Esc closes it, and
+  // the set video steps aside while it is open.
+  useOverlay(deleteFolderModal.open, () =>
+    setDeleteFolderModal({ open: false, folderPath: '', folderName: '' }),
+  )
+
   function handleDeleteFolder(folderPath: string, folderName: string) {
     setDeleteFolderModal({ open: true, folderPath, folderName })
   }
@@ -1032,33 +1163,27 @@ function AppContent() {
       folderTreeRef.current?.refreshLibraryRoot(folderPath)
       if (selectedFolder === folderPath) {
         setSelectedFolder(null)
+        setTableFilter(null)
         await loadTracks(null, null)
       } else {
         await loadTracks()
       }
-      setNotification({
-        message: deleteFiles ? 'Folder and files deleted' : 'Folder removed',
-        type: 'success',
-      })
+      toast(deleteFiles ? 'Folder and files deleted' : 'Folder removed')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  // Delete playlist/folder — use Tauri's confirm (native dialog)
-  async function handleDeletePlaylist(id: number, name: string) {
-    const confirmed = await confirm(
-      `Delete "${name}"? This cannot be undone.`,
-      { title: 'Delete', kind: 'warning' },
-    )
-    if (!confirmed) return
-
+  // Delete a playlist or playlist folder: the sidebar's menu asked first,
+  // in its place (it has no Undo).
+  async function handleDeletePlaylist(id: number) {
     try {
       await tauriApi.deletePlaylist(id)
 
       if (selectedPlaylistId === id) {
         setSelectedPlaylistId(null)
         setSelectedFolder(null)
+        setTableFilter(null)
         await loadTracks(null, null)
       }
 
@@ -1073,10 +1198,7 @@ function AppContent() {
     try {
       const status = await tauriApi.getCompanionStatus()
       if (!status.running || !status.url || !status.token) {
-        setNotification({
-          message: 'Enable Companion in Settings first',
-          type: 'warning',
-        })
+        toast('Enable Companion in Settings first', { kind: 'warning' })
         return
       }
       setSharePlaylistModal({
@@ -1087,79 +1209,245 @@ function AppContent() {
         companionToken: status.token,
       })
     } catch (err) {
-      setNotification({
-        message:
-          err instanceof Error ? err.message : 'Failed to get Companion status',
-        type: 'error',
+      toast(err instanceof Error ? err.message : 'Failed to get Companion status', {
+        kind: 'error',
       })
     }
   }
 
-  // Add track to playlist
-  async function handleAddToPlaylist(track: Track, playlistId: number) {
+  // The track table's right-click menu acts on its selection at once: one
+  // call, one toast — with Undo, which puts back exactly what it changed —
+  // and one reload of the view.
+
+  // An Undo: put it back, then reload the view shown by then.
+  function undoing(putBack: () => Promise<unknown>) {
+    return {
+      label: 'Undo',
+      run: () => {
+        putBack()
+          .then(() => loadTracksRef.current())
+          .catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' }))
+      },
+    }
+  }
+
+  async function handleAddToPlaylist(selected: Track[], playlistId: number) {
+    const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
     try {
-      const added = await tauriApi.addTrackToPlaylist(playlistId, track.id)
+      const { added, already } = await tauriApi.addTracksToPlaylist(
+        playlistId,
+        selected.map((t) => t.id),
+      )
       await loadPlaylists()
-      const playlistName =
-        playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
-      if (added) {
-        setHeaderNotification(`Added to ${playlistName}`)
-      } else {
-        setNotification({
-          message: `Track is already in ${playlistName}`,
-          type: 'warning',
-        })
+      if (added.length === 0) {
+        toast(alreadyMessage(selected, name), { kind: 'warning' })
+        return
       }
-    } catch (err) {
-      setNotification({
-        message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
+      const addedTracks = selected.filter((t) => added.includes(t.id))
+      toast(addedMessage(addedTracks, already.length, name), {
+        action: undoing(async () => {
+          await tauriApi.removeTracksFromPlaylist(playlistId, added)
+          await loadPlaylists()
+        }),
       })
+    } catch (err) {
+      toast(`Couldn't add to ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
-  // Remove track from playlist (when viewing a playlist)
-  async function handleRemoveFromPlaylist(track: Track) {
+  // Delete from the playlist shown; Undo adds them back in their old places.
+  async function handleRemoveFromPlaylist(selected: Track[]) {
     if (selectedPlaylistId == null) return
+    const playlistId = selectedPlaylistId
+    const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
+    const ids = selected.map((t) => t.id)
     try {
-      await tauriApi.removeTrackFromPlaylist(selectedPlaylistId, track.id)
-      await loadTracks(null, selectedPlaylistId) // Refresh playlist tracks
-      await loadPlaylists() // Refresh playlist counts
-      setHeaderNotification(`Removed from playlist`)
-    } catch (err) {
-      setNotification({
-        message: `Failed to remove: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
+      // The playlist's own order, not the table's sorted view.
+      const before = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+      await tauriApi.removeTracksFromPlaylist(playlistId, ids)
+      await loadTracks(null, playlistId)
+      await loadPlaylists()
+      toast(removedMessage(selected, name), {
+        action: undoing(async () => {
+          await tauriApi.addTracksToPlaylist(playlistId, ids)
+          // The old order first; tracks added since keep their places after it.
+          const now = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+          const old = new Set(before)
+          await tauriApi.reorderPlaylistTracks(playlistId, [
+            ...before,
+            ...now.filter((id) => !old.has(id)),
+          ])
+          await loadPlaylists()
+        }),
       })
+    } catch (err) {
+      toast(`Couldn't remove from ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
-  // Set genre for track
-  async function handleSetGenre(track: Track, genre: string) {
+  // Dragged to another place in the playlist's own order: shown at once, then
+  // stored; Undo puts the order before the drop back.
+  async function handleReorderPlaylist(order: readonly number[]) {
+    if (selectedPlaylistId == null) return
+    const playlistId = selectedPlaylistId
+    const name = playlists.find((p) => p.id === playlistId)?.name ?? 'the playlist'
+    const byId = new Map(tracks.map((t) => [t.id, t]))
+    setTracks(order.flatMap((id) => byId.get(id) ?? []))
     try {
-      await tauriApi.setTrackGenre(track.id, genre)
-      await loadTracks() // Refresh tracks to show updated genre
-      await loadGenreDefinitions() // Refresh in case it's a new genre
-      setNotification({
-        message: `Genre set to "${genre}" for ${track.title || 'track'}`,
-        type: 'success',
+      // Stored only when the table held exactly the playlist's tracks (not
+      // the last view's, still showing while it loads).
+      const before = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+      const shown = new Set(order)
+      if (before.length !== order.length || !before.every((id) => shown.has(id))) {
+        await loadTracksRef.current()
+        return
+      }
+      await tauriApi.reorderPlaylistTracks(playlistId, [...order])
+      toast(`Reordered ${name}`, {
+        action: undoing(async () => {
+          // The old order; tracks added since keep their places after it.
+          const now = (await tauriApi.getPlaylistTracks(playlistId)).map((t) => t.id)
+          const old = new Set(before)
+          await tauriApi.reorderPlaylistTracks(playlistId, [
+            ...before.filter((id) => now.includes(id)),
+            ...now.filter((id) => !old.has(id)),
+          ])
+        }),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      await loadTracksRef.current()
+      toast(`Couldn't reorder ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
-  // Clear genre for track
-  async function handleClearGenre(track: Track) {
+  async function handleSetGenre(selected: Track[], genre: string) {
+    const before = genreSnapshot(selected)
     try {
-      await tauriApi.clearTrackGenre(track.id)
-      await loadTracks() // Refresh tracks to show cleared genre
-      setNotification({
-        message: `Genre cleared for ${track.title || 'track'}`,
-        type: 'info',
+      await tauriApi.bulkSetGenre(
+        selected.map((t) => t.id),
+        genre,
+      )
+      await loadTracks()
+      await loadGenreDefinitions() // in case it is a new genre
+      toast(genreSetMessage(selected, genre), {
+        action: undoing(() => tauriApi.restoreTrackGenres(before)),
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      toast(`Couldn't set the genre: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
+
+  async function handleClearGenre(selected: Track[]) {
+    const withGenre = selected.filter((t) => t.genre)
+    const before = genreSnapshot(withGenre)
+    try {
+      await tauriApi.bulkClearGenre(withGenre.map((t) => t.id))
+      await loadTracks()
+      toast(genreClearedMessage(withGenre), {
+        kind: 'info',
+        action: undoing(() => tauriApi.restoreTrackGenres(before)),
+      })
+    } catch (err) {
+      toast(`Couldn't clear the genre: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
+
+  // Move to folder (track table spec): the files move on disk. The track
+  // playing — and during a crossfade the one coming in — stays where it is:
+  // the player streams it from its path.
+  function tracksInUse(): Set<number> {
+    const ids = new Set<number>()
+    const current = usePlayerStore.getState().currentTrack
+    if (current) ids.add(current.id)
+    if (audioPlayer.incomingTrackId !== null) ids.add(audioPlayer.incomingTrackId)
+    return ids
+  }
+
+  // Moves the tracks' files, then gives the player's queue their new paths,
+  // forgets their covers (a folder's cover.jpg may differ), and reloads the
+  // view and the sidebar's folder tree. Answers what moved and what stayed.
+  async function moveFiles(
+    ids: number[],
+    folder: string,
+  ): Promise<{ moved: MoveReport['moved']; skipped: Skip[] }> {
+    const inUse = tracksInUse()
+    const playing: Skip[] = ids.filter((id) => inUse.has(id)).map((id) => ({ id, reason: 'playing' }))
+    const movable = ids.filter((id) => !inUse.has(id))
+    const report: MoveReport =
+      movable.length > 0
+        ? await tauriApi.moveTracksToFolder(movable, folder)
+        : { moved: [], skipped: [] }
+    if (report.moved.length > 0) {
+      usePlayerStore
+        .getState()
+        .patchTrackPaths(new Map(report.moved.map((m) => [m.id, m.newPath])))
+      for (const { id } of report.moved) {
+        thumbnails.forget(id)
+        evictArtworkCache(id)
+      }
+      await loadTracksRef.current()
+      // Home's track rows hold the old paths until they read again.
+      setDataVersion((version) => version + 1)
+      await useFolderTreeStore.getState().invalidateAll(libraryFoldersRef.current)
+    }
+    return { moved: report.moved, skipped: [...playing, ...report.skipped] }
+  }
+
+  async function handleMoveToFolder(selected: Track[], folder: LibraryFolder) {
+    const name = folderName(folder.label)
+    const byId = new Map(selected.map((t) => [t.id, t]))
+    const titleOf = (id: number) => byId.get(id)?.title
+    // A copy across disks takes a while: say so when it does.
+    let working: number | null = null
+    const slow = setTimeout(() => {
+      working = toast(`Moving ${tracksSubject(selected)} to ${name}…`, { kind: 'info' })
+    }, 400)
+    try {
+      const { moved, skipped } = await moveFiles(
+        selected.map((t) => t.id),
+        folder.path,
+      )
+      toast(movedMessage(moved.map((m) => byId.get(m.id)!), skipped, name), {
+        kind: skipped.length > 0 ? 'warning' : 'success',
+        detail: skipped.length > 0 ? skipDetail(skipped, titleOf) : undefined,
+        // Undo: back to the folders they came from, once per folder; what
+        // stays is reported as a move reports it.
+        action:
+          moved.length === 0
+            ? undefined
+            : {
+                label: 'Undo',
+                run: () => {
+                  const oldPath = (id: number) => byId.get(id)!.file_path
+                  ;(async () => {
+                    const back: MoveReport['moved'] = []
+                    const stayed: Skip[] = []
+                    for (const group of undoGroups(moved, oldPath)) {
+                      try {
+                        const result = await moveFiles(group.ids, group.folder)
+                        back.push(...result.moved)
+                        stayed.push(...result.skipped)
+                      } catch {
+                        // Its folder is gone, or no longer in the library:
+                        // these stay; the other folders still get theirs.
+                        stayed.push(...group.ids.map((id) => ({ id, reason: 'failed' as const })))
+                      }
+                    }
+                    if (stayed.length > 0) {
+                      toast(movedMessage(back.map((m) => byId.get(m.id)!), stayed, 'where they were'), {
+                        kind: 'warning',
+                        detail: skipDetail(stayed, titleOf),
+                      })
+                    }
+                  })().catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' }))
+                },
+              },
+      })
+    } catch (err) {
+      toast(`Couldn't move to ${name}: ${getErrorMessage(err)}`, { kind: 'error' })
+    } finally {
+      clearTimeout(slow)
+      if (working !== null) dismissToast(working)
     }
   }
 
@@ -1173,21 +1461,47 @@ function AppContent() {
     }
   }
 
-  // Analyze all tracks — BPM and Key (parallel batch)
-  async function handleAnalyzeAll() {
-    if (analyzing) return
+  // Home's New sets: Mark all seen. Its Undo marks exactly the rows it
+  // changed unseen again; Home reads again after each.
+  async function handleMarkAllSetsSeen() {
     try {
-      // Use already-loaded tracks if available, otherwise fetch
-      const trackIds =
-        tracks.length > 0
-          ? tracks.filter((t) => t.id).map((t) => t.id)
-          : (await tauriApi.getAllTracks()).filter((t) => t.id).map((t) => t.id)
+      const rows = await tauriApi.markAllDjFindsSeen()
+      setDataVersion((version) => version + 1)
+      const sets = new Set(rows.map((row) => row.videoId)).size
+      if (sets === 0) return
+      toast(`${sets.toLocaleString('en-US')} ${sets === 1 ? 'set' : 'sets'} marked seen`, {
+        action: {
+          label: 'Undo',
+          run: () => {
+            tauriApi
+              .markDjFindsUnseen(rows)
+              .then(() => setDataVersion((version) => version + 1))
+              .catch((err) => toast(`Couldn't undo: ${getErrorMessage(err)}`, { kind: 'error' }))
+          },
+        },
+      })
+    } catch (err) {
+      toast(`Couldn't mark the sets seen: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
 
-      if (trackIds.length === 0) {
-        setNotification({ message: 'No tracks in library', type: 'info' })
-        return
-      }
+  // Home's Analyze all: exactly the tracks without a BPM, which Home read.
+  function handleAnalyzeFromHome(trackIds: number[]) {
+    if (analyzing) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
+    if (trackIds.length === 0) {
+      toast('Everything is analyzed', { kind: 'info' })
+      return
+    }
+    void analyzeTrackIds(trackIds)
+  }
 
+  // BPM and key for these tracks, skipping those that have both (the
+  // sidebar's Analyze All Tracks and Home's Analyze all).
+  async function analyzeTrackIds(trackIds: number[]) {
+    try {
       // Show progress bar immediately with "preparing" state
       setAnalyzing(true)
       setError(null)
@@ -1210,10 +1524,7 @@ function AppContent() {
       setAnalyzing(false)
       setAnalysisProgress(null)
       setError(err instanceof Error ? err.message : String(err))
-      setNotification({
-        message: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      })
+      toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1255,10 +1566,13 @@ function AppContent() {
     console.log('Clicked track:', track)
   }
 
+  // `playlistId`: the playlist the play came from, when it is not the one
+  // open in the table (Home's Your playlists).
   const handlePlayTrack = async (
     track: Track,
     sortedTracks: Track[],
     trackIndex: number,
+    playlistId?: number,
   ) => {
     if (!track.file_path) {
       console.error('[App] Track has no file path')
@@ -1313,7 +1627,8 @@ function AppContent() {
       const trackToPlay = sortedTracks[trackIndex]
       if (trackToPlay?.id) {
         tauriApi
-          .recordPlayEvent(trackToPlay.id, selectedPlaylistId ?? null)
+          .recordPlayEvent(trackToPlay.id, playlistId ?? selectedPlaylistId ?? null)
+          .then(() => setPlayVersion((version) => version + 1))
           .catch(console.error)
       }
     } catch (err) {
@@ -1321,6 +1636,20 @@ function AppContent() {
       setPlayerError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // A playlist's ▶ on Home: from its first track, the playlist as the queue.
+  async function playPlaylist(playlistId: number) {
+    try {
+      const list = await tauriApi.getPlaylistTracks(playlistId)
+      if (list.length === 0) {
+        toast('This playlist is empty', { kind: 'info' })
+        return
+      }
+      await handlePlayTrack(list[0], list, 0, playlistId)
+    } catch (err) {
+      toast(`Could not play the playlist: ${getErrorMessage(err)}`, { kind: 'error' })
     }
   }
 
@@ -1359,6 +1688,12 @@ function AppContent() {
       </div>
     )
   }
+
+  // All Tracks keeps its table, and the search box in it, while the library
+  // has tracks: no rows there is a search that found nothing, or the tracks
+  // still loading.
+  const allTracksWithLibrary =
+    showAllTracks && !selectedFolder && !selectedPlaylistId && totalTrackCount > 0
 
   // Determine empty state message
   const emptyTitle = selectedPlaylistId
@@ -1448,12 +1783,9 @@ function AppContent() {
       colours={sidebarPrefs.colours}
       onSetColour={sidebarPrefs.setColour}
       onResetColour={sidebarPrefs.resetColour}
-      toastMessage={headerNotification}
-      onToastDismiss={() => setHeaderNotification(null)}
       onFolderSelect={handleFolderSelect}
       onPlaylistSelect={handlePlaylistSelect}
       onAnalyzeFolder={handleAnalyzeFolder}
-      onAnalyzeAll={handleAnalyzeAll}
       onCreatePlaylist={handleCreatePlaylist}
       onCreateFolder={handleCreateFolder}
       onRenamePlaylist={handleRenamePlaylist}
@@ -1473,6 +1805,7 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSearch(false)
         setShowSets(false)
         setShowAIChat(false)
@@ -1483,35 +1816,14 @@ function AppContent() {
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSettings(false)
         setShowSearch(false)
         setShowSets(false)
         setShowAIChat(false)
       }}
-      onShowAllTracks={() => {
-        setStreamList(null)
-        setDjPage(null)
-        setSelectedFolder(null)
-        setSelectedPlaylistId(null)
-        setShowAllTracks(true)
-        setShowSettings(false)
-        setShowSearch(false)
-        setShowSets(false)
-        setShowAIChat(false)
-        loadTracks(null, null)
-      }}
-      onSearch={() => {
-        setShowSearch(true)
-        setStreamList(null)
-        setDjPage(null)
-        setShowSets(false)
-        setSelectedFolder(null)
-        setSelectedPlaylistId(null)
-        setShowAllTracks(false)
-        setShowSettings(false)
-        setShowAIChat(false)
-        loadTracks(null, null)
-      }}
+      onShowAllTracks={() => openAllTracks()}
+      onSearch={openSearch}
       onNavigateSets={() => {
         // Sets already showing keeps its start: a new one would remount it and lose its state.
         const setsShowing =
@@ -1521,12 +1833,15 @@ function AppContent() {
           shownYouTubeMusicList === null
         setShowSets(true)
         if (!setsShowing) setSetsStart(NO_SETS_START)
+        // Showing already, a set's page goes back to the library.
+        else useSetsView.getState().requestLibrary()
         setStreamList(null)
         setDjPage(null)
         setShowSearch(false)
         setSelectedFolder(null)
         setSelectedPlaylistId(null)
         setShowAllTracks(false)
+        setTableFilter(null)
         setShowSettings(false)
         setShowAIChat(false)
       }}
@@ -1576,6 +1891,7 @@ function AppContent() {
               setSelectedFolder(null)
               setSelectedPlaylistId(null)
               setShowAllTracks(false)
+              setTableFilter(null)
             }
           : undefined
       }
@@ -1654,7 +1970,7 @@ function AppContent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            transition={{ duration: MOTION.base, ease: EASE }}
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
             {djPage !== null ? (
@@ -1690,19 +2006,18 @@ function AppContent() {
             ) : showSets ? (
               <SetsView
                 // A new start is a new SetsView: it reads these props only when it mounts.
-                key={`sets-${setsStart.openVideoId ?? ''}-${setsStart.initialQuery}`}
+                key={`sets-${setsVisit}`}
                 onPlayTrack={handlePlayTrack}
                 openVideoId={setsStart.openVideoId}
                 initialQuery={setsStart.initialQuery}
+                initialTab={setsStart.tab}
                 onOpenDj={(name, openVideoId) => openDj(name, null, { view: 'sets', openVideoId })}
               />
             ) : showSettings ? (
               <SettingsView
                 onFoldersChanged={handleFoldersChanged}
                 onThemeChanged={handleThemeChanged}
-                onNotification={(message, type) =>
-                  setNotification({ message, type })
-                }
+                onNotification={(message, type) => toast(message, { kind: type })}
               />
             ) : showSearch ? (
               <SearchView
@@ -1713,6 +2028,9 @@ function AppContent() {
                 onQueryChange={setSearchQuery}
                 onOpenDj={(name, spotifyArtistId) => openDj(name, spotifyArtistId, { view: 'search' })}
                 spotify={spotify}
+                onOpenAllTracks={openAllTracks}
+                onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+                playVersion={playVersion}
                 onPlaylistSelect={(id) => {
                   handlePlaylistSelect(id)
                   setStreamList(null)
@@ -1725,38 +2043,49 @@ function AppContent() {
               <ChatView onPlaylistCreated={loadPlaylists} />
             ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
               <HomeView
+                dataVersion={playVersion + dataVersion}
                 playlists={playlists}
                 totalTrackCount={totalTrackCount}
                 folderCount={libraryFolders.length}
-                onPlaylistSelect={handlePlaylistSelect}
-                onNavigateAIChat={
-                  AI_ENABLED
-                    ? () => {
-                        setShowAIChat(true)
-                        setStreamList(null)
-                        setDjPage(null)
-                        setSelectedPlaylistId(null)
-                        setSelectedFolder(null)
-                        setShowAllTracks(false)
-                        setShowSearch(false)
-                        setShowSets(false)
-                        setShowSettings(false)
+                spotify={
+                  spotifyShown
+                    ? {
+                        total: spotify.newCounts.total,
+                        byList: spotify.newCounts.byList,
+                        lists: spotify.library.lists,
                       }
-                    : undefined
+                    : null
                 }
-                onOpenSettings={() => {
-                  setShowSettings(true)
-                  setStreamList(null)
-                  setDjPage(null)
-                  setShowAIChat(false)
-                  setSelectedPlaylistId(null)
-                  setSelectedFolder(null)
-                  setShowAllTracks(false)
-                  setShowSearch(false)
-                  setShowSets(false)
-                }}
+                youtubeMusic={
+                  youtubeMusicShown
+                    ? {
+                        total: youtubeMusicMatches.newCounts.total,
+                        byList: youtubeMusicMatches.newCounts.byList,
+                        lists: youtubeMusic.library.lists,
+                      }
+                    : null
+                }
+                onPlay={handlePlayTrack}
+                onPlayPlaylist={(id) => void playPlaylist(id)}
+                onOpenPlaylist={handlePlaylistSelect}
+                onOpenDj={(name) => openDj(name, null, { view: 'home' })}
+                onOpenSets={() => openSets(NO_SETS_START)}
+                onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+                onOpenSetsLibrary={() => openSets({ ...NO_SETS_START, tab: 'library' })}
+                onMarkAllSetsSeen={() => void handleMarkAllSetsSeen()}
+                onOpenAllTracks={openAllTracks}
+                onOpenStreamList={(service, listId) =>
+                  service === 'spotify' ? openSpotifyList(listId) : openYouTubeMusicList(listId)
+                }
+                onAnalyzeTracks={handleAnalyzeFromHome}
+                onCreatePlaylist={() => handleCreatePlaylist(null)}
+                onImportFolder={() => openSettingsOn('library')}
+                onAddToPlaylist={handleAddToPlaylist}
+                onMoveToFolder={handleMoveToFolder}
               />
-            ) : tracks.length === 0 ? (
+            ) : showAllTracks && libraryPending ? (
+              <div />
+            ) : tracks.length === 0 && !allTracksWithLibrary ? (
               <div className="empty-state">
                 <h2>{emptyTitle}</h2>
                 <p>{emptySubtitle}</p>
@@ -1799,11 +2128,13 @@ function AppContent() {
                     selectedPlaylistId={selectedPlaylistId}
                     onTrackClick={handleTrackClick}
                     onTrackDoubleClick={handlePlayTrack}
-                    onAnalyzeTrack={handleAnalyzeTrack}
+                    onAnalyzeTracks={handleAnalyzeTracks}
                     onAddToPlaylist={handleAddToPlaylist}
                     onRemoveFromPlaylist={handleRemoveFromPlaylist}
                     onSetGenre={handleSetGenre}
                     onClearGenre={handleClearGenre}
+                    onMoveToFolder={handleMoveToFolder}
+                    onReorderPlaylist={handleReorderPlaylist}
                     onUpdateTrack={handleUpdateTrack}
                     genreDefinitions={genreDefinitions}
                     onGenerateAIPlaylist={
@@ -1818,6 +2149,14 @@ function AppContent() {
                         ? handleSearch
                         : undefined
                     }
+                    filter={tableFilter}
+                    onFilterChange={setTableFilter}
+                    playVersion={playVersion}
+                    totalCount={
+                      !selectedFolder && !selectedPlaylistId
+                        ? totalTrackCount
+                        : undefined
+                    }
                   />
                 </div>
               </div>
@@ -1829,33 +2168,35 @@ function AppContent() {
   )
 
   const playerEl = (
-    <NowPlayingBar
-      playlists={playlists}
-      onTrackMetaClick={handleScrollToCurrentTrack}
-      onAddToPlaylist={async (trackId, playlistId) => {
-        try {
-          const added = await tauriApi.addTrackToPlaylist(playlistId, trackId)
-          await loadPlaylists()
-          const playlistName =
-            playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
-          if (added) {
-            setHeaderNotification(`Added to ${playlistName}`)
-          } else {
-            setNotification({
-              message: `Track is already in ${playlistName}`,
-              type: 'warning',
-            })
+    <>
+      {/* The set playing: its panel follows the set's page or this bar, and
+          keeps playing when Sets closes. */}
+      <SetPlayerEngine />
+      <SetPlayerBar
+        onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+      />
+      <NowPlayingBar
+        playlists={playlists}
+        onTrackMetaClick={handleScrollToCurrentTrack}
+        onAddToPlaylist={async (trackId, playlistId) => {
+          try {
+            const added = await tauriApi.addTrackToPlaylist(playlistId, trackId)
+            await loadPlaylists()
+            const playlistName =
+              playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+            if (added) {
+              toast(`Added to ${playlistName}`)
+            } else {
+              toast(`Track is already in ${playlistName}`, { kind: 'warning' })
+            }
+          } catch (err) {
+            toast(`Failed to add: ${getErrorMessage(err)}`, { kind: 'error' })
           }
-        } catch (err) {
-          setNotification({
-            message: `Failed to add: ${err instanceof Error ? err.message : String(err)}`,
-            type: 'error',
-          })
-        }
-      }}
-      onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
-      onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
-    />
+        }}
+        onGenerateAIPlaylist={AI_ENABLED ? handleGenerateAIPlaylist : undefined}
+        onGetRecommendations={AI_ENABLED ? handleGetRecommendations : undefined}
+      />
+    </>
   )
 
   return (
@@ -1892,23 +2233,15 @@ function AppContent() {
               className="modal-actions"
               style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}
             >
-              <button
-                type="button"
-                className="modal-button modal-button-secondary"
-                onClick={() => confirmDeleteFolder(false)}
-              >
+              <button type="button" className="btn" onClick={() => confirmDeleteFolder(false)}>
                 Remove from library only
               </button>
-              <button
-                type="button"
-                className="modal-button modal-button-primary"
-                onClick={() => confirmDeleteFolder(true)}
-              >
+              <button type="button" className="btn btn--danger" onClick={() => confirmDeleteFolder(true)}>
                 Delete folder and all files
               </button>
               <button
                 type="button"
-                className="modal-button modal-button-secondary"
+                className="btn"
                 onClick={() =>
                   setDeleteFolderModal({
                     open: false,
@@ -1943,13 +2276,13 @@ function AppContent() {
           playlistName={exportModal.playlistName}
           onClose={() => setExportModal(null)}
           onSuccess={(msg, folderPath) => {
-            setNotification({ message: msg, type: 'success' })
+            toast(msg)
             // Refresh tracks + the library tree root that contains the new folder
             // so auto-imported files appear immediately.
             void loadTracks()
             void folderTreeRef.current?.refreshLibraryRoot(folderPath)
           }}
-          onError={(msg) => setNotification({ message: msg, type: 'error' })}
+          onError={(msg) => toast(msg, { kind: 'error' })}
         />
       )}
 
@@ -1960,46 +2293,25 @@ function AppContent() {
           onInstall={async () => {
             const update = pendingUpdate
             setPendingUpdate(null)
-            setNotification({
-              message: `Downloading update v${update.version}...`,
-              type: 'info',
-            })
+            toast(`Downloading update v${update.version}...`, { kind: 'info' })
             try {
               await update.downloadAndInstall()
               const isWindows = navigator.platform.startsWith('Win')
               if (isWindows) {
-                setNotification({
-                  message:
-                    'Update installed. The app will restart automatically.',
-                  type: 'success',
-                })
+                toast('Update installed. The app will restart automatically.')
               } else {
-                setNotification({
-                  message: 'Restarting app...',
-                  type: 'success',
-                })
+                toast('Restarting app...')
                 await relaunch()
               }
             } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err)
-              setNotification({
-                message: `Update failed: ${msg}`,
-                type: 'error',
-              })
+              toast(`Update failed: ${getErrorMessage(err)}`, { kind: 'error' })
             }
           }}
           onLater={() => setPendingUpdate(null)}
         />
       )}
 
-      {/* Notification toast */}
-      {notification && (
-        <Notification
-          message={notification.message}
-          type={notification.type}
-          onClose={() => setNotification(null)}
-        />
-      )}
+      {shortcutsOpen && <ShortcutsSheet onClose={() => setShortcutsOpen(false)} />}
 
       {/* What's New dialog */}
       {whatsNew && (
@@ -2020,10 +2332,7 @@ function AppContent() {
           onPlaylistSaved={(_playlistId) => {
             setAiPlaylistSeedTrack(null)
             loadPlaylists()
-            setNotification({
-              message: 'AI playlist created successfully!',
-              type: 'success',
-            })
+            toast('AI playlist created successfully!')
           }}
         />
       )}
@@ -2047,10 +2356,7 @@ function AppContent() {
           onPlaylistReordered={() => {
             const reorderedId = mixPrepPlaylist.id
             setMixPrepPlaylist(null)
-            setNotification({
-              message: 'Playlist order updated!',
-              type: 'success',
-            })
+            toast('Playlist order updated!')
             // Refresh the playlist tracks if we're currently viewing this playlist
             if (selectedPlaylistId === reorderedId) {
               loadTracks(null, reorderedId)

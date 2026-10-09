@@ -52,8 +52,8 @@
   font-size: 16px;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  transition: color 0.15s, background 0.15s;
+  border-radius: var(--radius-md);
+  transition: color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
   padding: 0;
   line-height: 1;
 }
@@ -94,7 +94,7 @@
   height: 20px;
   background: var(--border);
   border-radius: 10px;
-  transition: background 0.2s;
+  transition: background var(--motion-base) var(--ease);
   flex-shrink: 0;
 }
 
@@ -107,7 +107,7 @@
   height: 16px;
   background: #fff;
   border-radius: 50%;
-  transition: transform 0.2s;
+  transition: transform var(--motion-base) var(--ease);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
@@ -135,7 +135,7 @@
   font-size: 13px;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--motion-fast) var(--ease);
 }
 
 .eq-modal__preset-select:hover,
@@ -204,7 +204,7 @@
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  transition: transform 0.1s;
+  transition: transform var(--motion-fast) var(--ease);
 }
 
 .eq-modal__slider::-webkit-slider-thumb:hover {
@@ -227,7 +227,7 @@
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  transition: transform 0.1s;
+  transition: transform var(--motion-fast) var(--ease);
 }
 
 .eq-modal__slider::-moz-range-thumb:hover {

@@ -1,5 +1,6 @@
 import { useSettingsContext } from './SettingsContext'
 import { Icon } from '../Icon'
+import { Button } from '../Button'
 
 export function AISection() {
   const {
@@ -29,24 +30,28 @@ export function AISection() {
           />
           <button
             onClick={() => setShowApiKey(!showApiKey)}
-            className="btn-icon"
+            className="btn btn--icon"
             title={showApiKey ? 'Hide' : 'Show'}
+            aria-label={showApiKey ? 'Hide the key' : 'Show the key'}
             type="button"
           >
-            <Icon name={showApiKey ? 'EyeOff' : 'Eye'} size={20} />
+            <Icon name={showApiKey ? 'EyeOff' : 'Eye'} size={16} />
           </button>
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             onClick={handleSaveApiKey}
-            disabled={aiSaving || !apiKeyInput.trim()}
-            className="btn-primary btn-small"
+            disabled={!apiKeyInput.trim()}
+            working={aiSaving}
+            workingLabel="Saving…"
           >
-            {aiSaving ? 'Saving...' : isApiKeyConfigured ? 'Update Key' : 'Save Key'}
-          </button>
+            {isApiKeyConfigured ? 'Update Key' : 'Save Key'}
+          </Button>
           {isApiKeyConfigured && (
-            <button onClick={handleDeleteApiKey} className="btn-secondary btn-small">
+            <button type="button" onClick={handleDeleteApiKey} className="btn btn--sm">
               Delete Key
             </button>
           )}

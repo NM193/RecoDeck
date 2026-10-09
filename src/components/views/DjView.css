@@ -45,7 +45,7 @@
   height: 28px;
   padding: 0 10px 0 6px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: rgba(30, 30, 30, 0.85);
   color: var(--text-primary);
   font-size: 12px;
@@ -138,47 +138,24 @@
   flex-shrink: 0;
 }
 
-/* ---- Buttons on the hero (and the page's small buttons) ---- */
+/* ---- The hero's buttons: the shared .btn, as glass over the photo ---- */
 
-.dj-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+.dj-hero__acts .btn,
+.dj-hero__acts .btn:hover {
+  border-color: var(--border);
   background: rgba(30, 30, 30, 0.85);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
-.dj-btn:hover:not(:disabled) {
+.dj-hero__acts .btn:hover:not(:disabled) {
   border-color: var(--text-muted);
 }
 
-.dj-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.dj-btn--icon {
-  padding: 0 9px;
-}
-
-.dj-btn--on {
+.dj-hero__acts .btn[aria-pressed='true'] {
   border-color: rgba(var(--accent-rgb), 0.6);
   color: var(--accent-hover);
-}
-
-.dj-btn--primary {
-  height: 26px;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 /* ---- "Not this artist?" ---- */
@@ -499,7 +476,7 @@
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   cursor: pointer;
@@ -517,7 +494,7 @@
   gap: 8px;
   padding: 14px 16px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 13px;
@@ -586,17 +563,8 @@
 }
 
 .dj-skeleton i {
-  display: block;
   height: 10px;
   border-radius: 5px;
-  background: var(--bg-tertiary);
-  animation: dj-skeleton-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes dj-skeleton-pulse {
-  50% {
-    opacity: 0.45;
-  }
 }
 
 .dj-older {
@@ -836,7 +804,7 @@
   flex: 1;
 }
 
-.dj-editbar .dj-btn {
+.dj-editbar .btn {
   height: 26px;
 }
 
@@ -878,7 +846,7 @@
   margin-left: auto;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -919,22 +887,4 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.dj-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 13px;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.dj-pill:hover {
-  background: var(--bg-elevated);
 }

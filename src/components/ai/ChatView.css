@@ -43,7 +43,7 @@
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid rgba(99, 102, 241, 0.2);
   color: #a5b4fc;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -51,7 +51,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .conv-list__new-chat-btn:hover {
@@ -128,7 +128,7 @@
   cursor: pointer;
   border-radius: 6px;
   margin-bottom: 2px;
-  transition: background 0.12s;
+  transition: background var(--motion-fast) var(--ease);
   position: relative;
 }
 
@@ -229,7 +229,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 
 .chat-header__action-btn:hover {
@@ -321,12 +321,12 @@
   padding: 7px 14px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   color: #94a3b8;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 
 .chat-chip:hover {
@@ -425,13 +425,13 @@
 .chat-input__send-btn {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 
@@ -507,10 +507,10 @@
   padding: 8px 16px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid rgba(99, 102, 241, 0.25);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-top: 12px;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .chat-pending-playlist:hover {
@@ -647,13 +647,20 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   opacity: 0;
   transform: scale(0.95);
-  animation: conv-ctx-in 120ms ease-out forwards;
+  animation: conv-ctx-in var(--motion-base) var(--ease) forwards;
 }
 
 @keyframes conv-ctx-in {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* Reduced motion: the menu fades in, it does not grow. */
+@media (prefers-reduced-motion: reduce) {
+  .conv-ctx-menu {
+    transform: none;
   }
 }
 
@@ -669,7 +676,7 @@
   font-size: var(--text-sm);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .conv-ctx-menu__item:hover {

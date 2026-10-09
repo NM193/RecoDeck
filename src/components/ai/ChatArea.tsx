@@ -8,6 +8,7 @@ import { Icon } from '../Icon'
 import { tauriApi } from '../../lib/tauri-api'
 import { useAIStore } from '../../store/aiStore'
 import type { ActionResult, ChatMessage as ChatMessageType, Conversation, GeneratedPlaylist } from '../../types/ai'
+import { EASE, MOTION } from '../../lib/motion'
 
 function ActionCard({ action }: { action: ActionResult }) {
   const iconMap: Record<string, string> = {
@@ -212,7 +213,7 @@ export function ChatArea({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: MOTION.base, ease: EASE }}
             >
               {chatHistory.map((msg, index) => (
                 <div key={index}>

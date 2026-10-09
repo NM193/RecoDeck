@@ -1,6 +1,8 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { useSettingsContext } from './SettingsContext'
 import { ToggleSwitch } from './ToggleSwitch'
+import { Button } from '../Button'
+import { Skeleton } from '../Skeleton'
 
 export function CompanionSection() {
   const {
@@ -39,16 +41,16 @@ export function CompanionSection() {
       )}
 
       {/* Start/Stop button */}
-      <button
+      <Button
+        variant={companionRunning ? undefined : 'primary'}
+        size="sm"
         onClick={companionRunning ? handleStopCompanion : handleStartCompanion}
-        disabled={companionLoading}
-        className={companionRunning ? 'btn-secondary btn-small' : 'btn-primary btn-small'}
+        working={companionLoading}
+        workingLabel={companionRunning ? 'Stopping…' : 'Starting…'}
         style={{ width: '100%' }}
       >
-        {companionLoading
-          ? companionRunning ? 'Stopping...' : 'Starting...'
-          : companionRunning ? 'Stop Server' : 'Start Server'}
-      </button>
+        {companionRunning ? 'Stop Server' : 'Start Server'}
+      </Button>
 
       {/* Connection info (shown when running) */}
       {companionRunning && companionUrl && (
@@ -75,13 +77,7 @@ export function CompanionSection() {
             {companionUrl && companionToken ? (
               <QRCodeSVG value={`${companionUrl}/?token=${companionToken}`} size={180} level="M" />
             ) : (
-              <div style={{
-                width: 180, height: 180, display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                color: '#999', fontSize: '0.75rem',
-              }}>
-                Loading...
-              </div>
+              <Skeleton width={180} height={180} />
             )}
             <span style={{ color: '#666', fontSize: '0.7rem', marginTop: '0.5rem' }}>
               {companionUrl?.startsWith('http://127.0.0.1')
@@ -117,7 +113,7 @@ export function CompanionSection() {
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={handleRegenerateToken} disabled={companionLoading} className="btn-secondary btn-small">
+            <button type="button" onClick={handleRegenerateToken} disabled={companionLoading} className="btn btn--sm">
               Regenerate Token
             </button>
           </div>

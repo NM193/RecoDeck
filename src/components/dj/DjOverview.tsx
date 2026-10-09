@@ -130,14 +130,14 @@ function OverviewEditor({
         <span className="dj-editbar__gap" />
         <button
           type="button"
-          className="dj-btn"
+          className="btn"
           onClick={() => repack(DEFAULT_OVERVIEW)}
         >
           Reset
         </button>
         <button
           type="button"
-          className="dj-btn dj-btn--primary"
+          className="btn btn--primary"
           onClick={() => onDone(order)}
         >
           Done
@@ -185,7 +185,7 @@ function OverviewEditor({
               <button
                 type="button"
                 key={card.id}
-                className="dj-pill"
+                className="btn btn--sm"
                 onClick={() => repack(addCard(order, card.id))}
               >
                 <Icon name="Plus" size={12} />

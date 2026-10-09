@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { tauriApi } from '../lib/tauri-api'
+import { useOverlay } from '../lib/overlays'
 import type { DuplicateGroup, DuplicateReason, Track } from '../types/track'
 import { Icon } from './Icon'
 import './DuplicatesModal.css'
@@ -47,6 +48,8 @@ export function DuplicatesModal({
   onTracksChanged,
   onNotification,
 }: DuplicatesModalProps) {
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(true, onClose)
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -245,7 +248,7 @@ export function DuplicatesModal({
         <footer className="dup-modal__footer">
           <button
             type="button"
-            className="modal-button modal-button-secondary"
+            className="btn"
             onClick={onClose}
             disabled={deleting}
           >
@@ -253,7 +256,7 @@ export function DuplicatesModal({
           </button>
           <button
             type="button"
-            className="modal-button modal-button-primary dup-modal__delete"
+            className="btn btn--danger dup-modal__delete"
             onClick={deleteSelected}
             disabled={deleting || selectedIds.size === 0}
           >

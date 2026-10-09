@@ -38,7 +38,7 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .share-playlist-close:hover {

@@ -43,7 +43,7 @@ interface DjViewProps {
   spotify: SpotifyData
   /** Back to where the first DJ page was opened from (Search or Sets). */
   onBack: () => void
-  /** Sets, arriving on a set or with the Set tab's box filled in. */
+  /** Sets, arriving on a set's page or with its box filled in. */
   onOpenSets: (start: {
     openVideoId: string | null
     initialQuery: string
@@ -222,7 +222,8 @@ export function DjView({
           <div className="dj-hero__acts">
             <button
               type="button"
-              className={`dj-btn${dj.watched ? ' dj-btn--on' : ''}`}
+              className="btn"
+              aria-pressed={dj.watched === true}
               disabled={dj.watched === null}
               onClick={dj.toggleWatch}
               title={
@@ -237,7 +238,7 @@ export function DjView({
             {profile?.spotifyArtistId && (
               <button
                 type="button"
-                className="dj-btn"
+                className="btn"
                 title="Open on Spotify"
                 onClick={() => {
                   if (profile.spotifyArtistId)
@@ -254,7 +255,7 @@ export function DjView({
             {profile && (
               <button
                 type="button"
-                className="dj-btn"
+                className="btn"
                 title="Open on Resident Advisor"
                 onClick={() => void openUrl(profile.raUrl)}
               >

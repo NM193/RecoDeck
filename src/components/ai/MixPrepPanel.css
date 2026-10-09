@@ -70,8 +70,8 @@
   padding: 4px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 .mix-prep-header__close:hover {
@@ -234,7 +234,7 @@
     rgba(var(--accent-rgb), 0.3) 100%
   );
   border: 1px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 12px 20px;
   color: var(--text-primary);
   font-size: var(--text-base);
@@ -245,8 +245,8 @@
   justify-content: center;
   gap: 8px;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
 }
 
 .mix-prep-suggested__generate-btn:hover:not(:disabled) {
@@ -353,7 +353,7 @@
   flex: 1;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 10px 16px;
   color: #fff;
   font-size: var(--text-base);
@@ -364,8 +364,8 @@
   justify-content: center;
   gap: 6px;
   transition:
-    background 0.15s,
-    opacity 0.15s;
+    background var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease);
 }
 
 .mix-prep-btn-primary:hover:not(:disabled) {
@@ -380,7 +380,7 @@
 .mix-prep-btn-secondary {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 10px 16px;
   color: var(--text-secondary);
   font-size: var(--text-base);
@@ -391,8 +391,8 @@
   justify-content: center;
   gap: 6px;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 .mix-prep-btn-secondary:hover:not(:disabled) {

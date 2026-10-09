@@ -1,6 +1,6 @@
 // src/components/dj/DjSetsTab.tsx
 // The Sets tab: the DJ's saved sets as cards, each opening in Sets, then
-// "Find more", which opens Sets' Set tab with the name typed in (not run).
+// "Find more", which opens Sets with the name typed in its box (not run).
 import { Icon } from '../Icon'
 import { setMeta, setThumbnail } from '../../lib/dj/page'
 import type { YtSetSummary } from '../../types/youtube'

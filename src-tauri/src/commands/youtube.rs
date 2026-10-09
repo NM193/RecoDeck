@@ -640,7 +640,7 @@ pub async fn save_youtube_track(
         artist: track.artist,
         title: track.title,
         mix: track.mix,
-        saved_at: None,
+        saved_at: track.saved_at,
         set_title: None,
     };
 
@@ -900,17 +900,74 @@ pub fn is_due(interval_hours: i64, last_checked: Option<&str>, now: i64) -> bool
     }
 }
 
-/// The body of a check, shared by the button and by the automatic run.
+/// What a check covers: everything followed or watched (the check-all
+/// buttons), only what its own interval says is due (the timer), or one
+/// channel or DJ (a row's Check now).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CheckScope<'a> {
+    All,
+    Due,
+    One(&'a str),
+}
+
+/// A followed channel or a watched DJ, as a check sees it.
+pub(crate) trait Checkable {
+    /// The channel id, or the DJ's name key.
+    fn key(&self) -> &str;
+    fn interval_hours(&self) -> i64;
+    fn last_checked(&self) -> Option<&str>;
+}
+
+impl Checkable for YtChannel {
+    fn key(&self) -> &str {
+        &self.channel_id
+    }
+    fn interval_hours(&self) -> i64 {
+        self.check_interval_hours
+    }
+    fn last_checked(&self) -> Option<&str> {
+        self.last_checked.as_deref()
+    }
+}
+
+impl Checkable for YtWatchedDj {
+    fn key(&self) -> &str {
+        &self.name_key
+    }
+    fn interval_hours(&self) -> i64 {
+        self.check_interval_hours
+    }
+    fn last_checked(&self) -> Option<&str> {
+        self.last_checked.as_deref()
+    }
+}
+
+/// The items a check covers, in their order. Pure, as `is_due` is: the scope
+/// is the one thing that separates the buttons, the timer and a row. A row's
+/// check runs whatever the interval says — Never included — because someone
+/// asked for it.
+pub(crate) fn covered<T: Checkable>(items: Vec<T>, scope: CheckScope, now: i64) -> Vec<T> {
+    match scope {
+        CheckScope::All => items,
+        CheckScope::Due => items
+            .into_iter()
+            .filter(|item| is_due(item.interval_hours(), item.last_checked(), now))
+            .collect(),
+        CheckScope::One(key) => items.into_iter().filter(|item| item.key() == key).collect(),
+    }
+}
+
+/// The body of a check, shared by the buttons, a row and the automatic run.
 ///
-/// `due_only` is what separates them: the button checks everything the user is
-/// following, the timer only what its own interval says is due.
+/// `scope` is what separates them: a button checks everything the user is
+/// following, a row one channel, the timer only what its interval says is due.
 ///
 /// `last_checked` is written per channel, and only when the channel was
 /// actually reached. A channel that is temporarily unreachable stays due, or a
 /// network blip would silently skip it for a whole day.
 async fn run_channel_check(
     state: &AppState,
-    due_only: bool,
+    scope: CheckScope<'_>,
     now: i64,
 ) -> Result<Vec<ChannelNewsDTO>, AppError> {
     let key = read_key(state)?;
@@ -920,14 +977,7 @@ async fn run_channel_check(
             .map_err(|e| AppError::Database(format!("Failed to list channels: {e}")))
     })?;
 
-    let channels: Vec<YtChannel> = if due_only {
-        channels
-            .into_iter()
-            .filter(|c| is_due(c.check_interval_hours, c.last_checked.as_deref(), now))
-            .collect()
-    } else {
-        channels
-    };
+    let channels = covered(channels, scope, now);
 
     if channels.is_empty() {
         return Ok(Vec::new());
@@ -942,16 +992,25 @@ async fn run_channel_check(
     let mut news = Vec::new();
     let mut spent = 0u32;
     let mut checked: Vec<String> = Vec::new();
+    // What stopped the last channel that could not be reached: a row's check
+    // of that one channel says so rather than "nothing new".
+    let mut unreached: Option<AppError> = None;
 
     for channel in channels {
         let Some(uploads_id) = channel.uploads_id.clone() else {
+            unreached = Some(AppError::Validation(
+                "This channel has no uploads list to check".to_string(),
+            ));
             continue;
         };
 
         let mut items = match youtube::channel_uploads(&key, &uploads_id, 10, &mut spent).await {
             Ok(items) => items,
             // One unreachable channel must not sink the whole check.
-            Err(_) => continue,
+            Err(e) => {
+                unreached = Some(e);
+                continue;
+            }
         };
 
         // Reached, so the interval starts again from here — whether or not
@@ -1009,6 +1068,10 @@ async fn run_channel_check(
         });
     }
 
+    if let (CheckScope::One(_), true, Some(error)) = (scope, checked.is_empty(), unreached) {
+        return Err(error);
+    }
+
     Ok(news)
 }
 
@@ -1018,7 +1081,16 @@ async fn run_channel_check(
 pub async fn check_youtube_channels(
     state: State<'_, AppState>,
 ) -> Result<Vec<ChannelNewsDTO>, AppError> {
-    run_channel_check(&state, false, now_unix()).await
+    run_channel_check(&state, CheckScope::All, now_unix()).await
+}
+
+/// Checks one followed channel: a row's Check now. One to two units.
+#[tauri::command]
+pub async fn check_youtube_channel(
+    state: State<'_, AppState>,
+    channel_id: String,
+) -> Result<Vec<ChannelNewsDTO>, AppError> {
+    run_channel_check(&state, CheckScope::One(&channel_id), now_unix()).await
 }
 
 /// How often a channel is checked on its own. 0 never, 24 daily, 168 weekly.
@@ -1239,13 +1311,13 @@ fn djs_within_budget(
     due.into_iter().take(affordable).collect()
 }
 
-/// The body of a DJ check, shared by the button and by the automatic run.
+/// The body of a DJ check, shared by the buttons, a row and the automatic run.
 ///
-/// `budget` caps how much the run may spend. The button passes `None` — a
+/// `budget` caps how much the run may spend. The buttons pass `None` — a
 /// person asking is allowed to spend what they have.
 async fn run_dj_check(
     state: &AppState,
-    due_only: bool,
+    scope: CheckScope<'_>,
     now: i64,
     budget: Option<u32>,
 ) -> Result<Vec<ChannelNewsDTO>, AppError> {
@@ -1256,13 +1328,7 @@ async fn run_dj_check(
             .map_err(|e| AppError::Database(format!("Failed to list watched DJs: {e}")))
     })?;
 
-    let mut djs: Vec<YtWatchedDj> = if due_only {
-        djs.into_iter()
-            .filter(|d| is_due(d.check_interval_hours, d.last_checked.as_deref(), now))
-            .collect()
-    } else {
-        djs
-    };
+    let mut djs = covered(djs, scope, now);
 
     if let Some(remaining) = budget {
         djs = djs_within_budget(djs, remaining, AUTOMATIC_QUOTA_RESERVE);
@@ -1281,6 +1347,9 @@ async fn run_dj_check(
     let mut news = Vec::new();
     let mut spent = 0u32;
     let mut checked: Vec<String> = Vec::new();
+    // What stopped the last search that failed: a row's search for that one
+    // DJ says so rather than "nothing new".
+    let mut unreached: Option<AppError> = None;
 
     for dj in djs {
         // A DJ watched for the first time looks back a month, not forever; after
@@ -1304,7 +1373,10 @@ async fn run_dj_check(
             Ok(hits) => hits,
             // One failed search must not sink the rest, and must not count as
             // a check — 100 units is too much to silently waste a day over.
-            Err(_) => continue,
+            Err(e) => {
+                unreached = Some(e);
+                continue;
+            }
         };
 
         checked.push(dj.name_key.clone());
@@ -1378,6 +1450,10 @@ async fn run_dj_check(
         });
     }
 
+    if let (CheckScope::One(_), true, Some(error)) = (scope, checked.is_empty(), unreached) {
+        return Err(error);
+    }
+
     Ok(news)
 }
 
@@ -1386,7 +1462,16 @@ async fn run_dj_check(
 pub async fn check_youtube_djs(
     state: State<'_, AppState>,
 ) -> Result<Vec<ChannelNewsDTO>, AppError> {
-    run_dj_check(&state, false, now_unix(), None).await
+    run_dj_check(&state, CheckScope::All, now_unix(), None).await
+}
+
+/// Searches for one watched DJ: a row's Check now. 100 units.
+#[tauri::command]
+pub async fn check_youtube_dj(
+    state: State<'_, AppState>,
+    name_key: String,
+) -> Result<Vec<ChannelNewsDTO>, AppError> {
+    run_dj_check(&state, CheckScope::One(&name_key), now_unix(), None).await
 }
 
 // --- automatic checking ------------------------------------------------
@@ -1423,12 +1508,12 @@ pub fn spawn_channel_watcher(app: AppHandle) {
             let state = app.state::<AppState>();
             let now = now_unix();
 
-            let mut news = run_channel_check(&state, true, now).await.unwrap_or_default();
+            let mut news = run_channel_check(&state, CheckScope::Due, now).await.unwrap_or_default();
 
             // Only what is left after the channel checks may go on searches,
             // and only down to the reserve.
             let remaining = get_quota(&state).map(|q| q.remaining).unwrap_or(0);
-            if let Ok(dj_news) = run_dj_check(&state, true, now, Some(remaining)).await {
+            if let Ok(dj_news) = run_dj_check(&state, CheckScope::Due, now, Some(remaining)).await {
                 news.extend(dj_news);
             }
 
@@ -1514,6 +1599,58 @@ mod tests {
         // announce itself, so the cheap mistake is the one to make.
         assert!(is_due(24, Some("whenever"), DAY_ONE));
         assert!(is_due(24, Some(""), DAY_ONE));
+    }
+
+    fn dj(name_key: &str, interval: i64, last_checked: Option<&str>) -> YtWatchedDj {
+        YtWatchedDj {
+            name_key: name_key.into(),
+            display_name: name_key.into(),
+            check_interval_hours: interval,
+            last_checked: last_checked.map(String::from),
+            auto_import: false,
+        }
+    }
+
+    fn channel(channel_id: &str, interval: i64, last_checked: Option<&str>) -> YtChannel {
+        YtChannel {
+            channel_id: channel_id.into(),
+            handle: None,
+            title: None,
+            uploads_id: None,
+            last_checked: last_checked.map(String::from),
+            last_seen_video: None,
+            check_interval_hours: interval,
+        }
+    }
+
+    fn keys<T: Checkable>(items: &[T]) -> Vec<&str> {
+        items.iter().map(Checkable::key).collect()
+    }
+
+    #[test]
+    fn a_check_covers_everything_only_what_is_due_or_one() {
+        let djs = || {
+            vec![
+                dj("solomun", 0, None),
+                dj("traumer", 24, Some(DAY_ONE_ISO)),
+                dj("hot since 82", 168, None),
+            ]
+        };
+        assert_eq!(keys(&covered(djs(), CheckScope::All, DAY_TWO)), vec!["solomun", "traumer", "hot since 82"]);
+        // Never is never due; daily a day later is; never checked is at once.
+        assert_eq!(keys(&covered(djs(), CheckScope::Due, DAY_TWO)), vec!["traumer", "hot since 82"]);
+        assert_eq!(keys(&covered(djs(), CheckScope::Due, DAY_ONE + 60)), vec!["hot since 82"]);
+        // A row asked for: whatever its interval says, Never included.
+        assert_eq!(keys(&covered(djs(), CheckScope::One("solomun"), DAY_ONE)), vec!["solomun"]);
+        assert!(covered(djs(), CheckScope::One("nobody"), DAY_ONE).is_empty());
+    }
+
+    #[test]
+    fn a_channel_check_covers_the_same_way() {
+        let channels = vec![channel("UC1", 24, Some(DAY_ONE_ISO)), channel("UC2", 0, None)];
+        assert_eq!(keys(&covered(channels.clone(), CheckScope::Due, DAY_ONE + 3_600)), Vec::<&str>::new());
+        assert_eq!(keys(&covered(channels.clone(), CheckScope::One("UC2"), DAY_ONE)), vec!["UC2"]);
+        assert_eq!(keys(&covered(channels, CheckScope::All, DAY_ONE)), vec!["UC1", "UC2"]);
     }
 
     #[test]
@@ -1974,6 +2111,40 @@ mod tests {
         db.delete_saved_yt_track("bk6Xst6euQk", 1_260_000, "Club Soda")
             .unwrap();
         assert!(db.list_saved_yt_tracks().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_heart_put_back_keeps_its_saved_at_and_its_place() {
+        let db = test_db();
+        let (set, raw) = sample_set();
+        db.save_yt_set(&set, raw).unwrap();
+        let heart = |title: &str, saved_at: Option<&str>| YtSavedTrack {
+            id: None,
+            video_id: "bk6Xst6euQk".to_string(),
+            cue_ms: 1_260_000,
+            cue: Some("21:00".to_string()),
+            artist: None,
+            title: title.to_string(),
+            mix: None,
+            saved_at: saved_at.map(str::to_string),
+            set_title: None,
+        };
+        db.save_yt_track(&heart("Older", Some("2026-01-02 10:00:00"))).unwrap();
+        db.save_yt_track(&heart("Newer", None)).unwrap();
+
+        // Removed, then put back by its Undo with the time it had.
+        db.delete_saved_yt_track("bk6Xst6euQk", 1_260_000, "Older").unwrap();
+        db.save_yt_track(&heart("Older", Some("2026-01-02 10:00:00"))).unwrap();
+
+        let saved = db.list_saved_yt_tracks().unwrap();
+        let titles: Vec<&str> = saved.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, ["Newer", "Older"]);
+        assert_eq!(saved[1].saved_at.as_deref(), Some("2026-01-02 10:00:00"));
+
+        // Hearted again while still hearted: its time stays.
+        db.save_yt_track(&heart("Older", Some("2026-05-05 05:05:05"))).unwrap();
+        let again = db.list_saved_yt_tracks().unwrap();
+        assert_eq!(again[1].saved_at.as_deref(), Some("2026-01-02 10:00:00"));
     }
 
     fn track(video_id: &str, position: i64, artist: Option<&str>, title: &str, unknown: bool) -> YtTrack {

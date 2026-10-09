@@ -144,3 +144,49 @@ describe('playerStore - reset', () => {
     expect(state.currentTrackIndex).toBe(-1)
   })
 })
+
+describe('playerStore - what loads the track', () => {
+  const request = () => usePlayerStore.getState().playRequest
+
+  it('a play, next, previous and a pick ask for a load', () => {
+    const store = usePlayerStore.getState()
+    store.setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 0)
+    expect(request()).toBe(1)
+    usePlayerStore.getState().playNext()
+    usePlayerStore.getState().playPrevious()
+    usePlayerStore.getState().playTrackAtIndex(2)
+    usePlayerStore.getState().applyQueueAction([makeTrack(4)], 'play_now')
+    expect(request()).toBe(5)
+  })
+
+  it('shuffling and adding to the queue leave the track playing as it is', () => {
+    usePlayerStore.getState().setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 1)
+    usePlayerStore.getState().setShuffle(true)
+    usePlayerStore.getState().setShuffle(false)
+    usePlayerStore.getState().applyQueueAction([makeTrack(4)], 'play_next')
+    usePlayerStore.getState().applyQueueAction([makeTrack(5)], 'append')
+    expect(request()).toBe(1)
+  })
+})
+
+describe('playerStore - moved files', () => {
+  it('patches paths in the queue and the unshuffled queue, loading nothing', () => {
+    usePlayerStore.getState().setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 0)
+    usePlayerStore.getState().setCurrentTrack(makeTrack(1))
+    usePlayerStore.getState().setShuffle(true)
+    usePlayerStore.getState().patchTrackPaths(new Map([[2, '/House/track2.mp3']]))
+    const state = usePlayerStore.getState()
+    expect(state.queue.find((t) => t.id === 2)?.file_path).toBe('/House/track2.mp3')
+    expect(state.originalQueue[1].file_path).toBe('/House/track2.mp3')
+    expect(state.currentTrack?.file_path).toBe('/test/track1.mp3')
+    expect(state.currentTrackIndex).toBe(0)
+    expect(state.playRequest).toBe(1)
+  })
+
+  it('keeps the same queue when none of its tracks moved', () => {
+    usePlayerStore.getState().setQueue([makeTrack(1)], 0)
+    const before = usePlayerStore.getState().queue
+    usePlayerStore.getState().patchTrackPaths(new Map([[9, '/elsewhere.mp3']]))
+    expect(usePlayerStore.getState().queue).toBe(before)
+  })
+})

@@ -15,6 +15,7 @@ import type { RecommendedOrder } from '../../types/ai'
 import { getErrorMessage } from '../../types/ai'
 import { useAIStore } from '../../store/aiStore'
 import { getKeyCompatibilityScore, getBpmIssue, type KeyCompatibilityTier } from '../../lib/musicUtils'
+import { EASE, MOTION } from '../../lib/motion'
 import './MixPrepPanel.css'
 
 interface MixPrepPanelProps {
@@ -232,7 +233,7 @@ export function MixPrepPanel({
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: MOTION.slow, ease: EASE }}
         >
           {/* Header */}
           <div className="mix-prep-header">

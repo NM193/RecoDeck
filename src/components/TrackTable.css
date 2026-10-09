@@ -9,23 +9,41 @@
   color: var(--text-primary);
 }
 
-/* --- Search Bar (integrated into table header area) --- */
+/* --- Toolbar: search, Filter, the AI buttons, the count --- */
 
-.track-table-search {
+.track-table-toolbar {
   flex-shrink: 0;
-  padding: 28px 0 0;
+  padding: 28px 12px 12px;
   background: var(--bg-secondary);
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
-.track-table-search .search-input-wrapper {
-  flex: 1;
-  border-radius: 0;
-  border-left: none;
-  border-right: none;
-  border-top: none;
+.track-table-toolbar .search-input-wrapper {
+  flex: 0 1 340px;
+  min-width: 160px;
+}
+
+.track-table-count {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.track-table-no-match {
+  padding: 48px 16px;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  text-align: center;
+}
+
+.track-table-no-match .link-btn {
+  color: var(--accent-hover);
 }
 
 .track-table-ai-rec-btn {
@@ -43,8 +61,8 @@
   cursor: pointer;
   flex-shrink: 0;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
 }
 
 .track-table-ai-rec-btn:hover {
@@ -60,7 +78,7 @@
   border-radius: 6px;
   padding: 0 10px;
   height: 32px;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease);
 }
 
 .search-input-wrapper:focus-within {
@@ -99,12 +117,12 @@
   font-size: 13px;
   cursor: pointer;
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   line-height: 1;
   flex-shrink: 0;
   transition:
-    color 0.1s ease,
-    background-color 0.1s ease;
+    color var(--motion-fast) var(--ease),
+    background-color var(--motion-fast) var(--ease);
 }
 
 .search-clear:hover {
@@ -112,198 +130,319 @@
   background: var(--bg-tertiary);
 }
 
-/* --- Column Headers (sortable) --- */
+/* --- Column heads and rows: one grid (--tt-grid, from the column layout) --- */
 
 .track-table-header {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
   position: sticky;
   top: 0;
   z-index: 10;
+  background: var(--bg-secondary);
+  box-shadow: inset 0 -1px 0 var(--border);
 }
 
-
-/* Scroll area: header + body scroll together (horizontal + vertical) */
+/* Scroll area: heads and rows scroll together, sideways too. It takes the
+   keys when a row is clicked; the selected rows show it, not a ring. */
 .track-table-scroll-area {
   position: relative;
   min-height: 0;
   min-width: 0;
 }
 
-/* Holder must be at least as wide as the row content (fit-content).
-   This prevents rows from overflowing the holder and leaving the sticky header
-   background short of the visible content edge when scrolled right.
-   On wide windows, width:auto (block fill) still expands the holder to 100% of
-   the scroll area — fit-content only kicks in when column content is wider. */
+.track-table-scroll-area:focus {
+  outline: none;
+}
+
+/* As wide as the area, or as the columns (--tt-min) when they need more: the
+   area then scrolls sideways, and the heads' background spans them all. */
 .track-table-holder {
-  display: inline-block;
-  min-width: 100%;
+  min-width: var(--tt-min, 100%);
 }
 
 .track-table-body {
   position: relative;
 }
 
-.track-table-footer {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-secondary);
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.footer-sort-info {
-  color: var(--text-secondary);
-  opacity: 0.7;
-}
-
 .track-table-row {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: var(--tt-grid);
   align-items: center;
-  min-width: 100%;
 }
 
-.header-row {
-  height: 36px;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Sortable header cells */
-.header-row .sortable {
-  cursor: pointer;
-  user-select: none;
-  transition:
-    color 0.1s ease,
-    background-color 0.1s ease;
-  gap: 4px;
-}
-
-.header-row .sortable:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-}
-
-.header-row .sortable.sorted {
-  color: var(--accent);
-}
-
-.sort-indicator {
-  font-size: 9px;
-  line-height: 1;
-  opacity: 0.9;
-}
-
-/* --- Data Rows --- */
-
-.data-row {
-  height: 32px;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background-color 0.1s ease;
-}
-
-.data-row:hover {
-  background: var(--bg-tertiary);
-}
-
-.data-row:active {
-  background: var(--bg-secondary);
-}
-
-.data-row--playing {
-  background: rgba(var(--accent-rgb), 0.1);
-  font-weight: 500;
-}
-
-.data-row--playing:hover {
-  background: rgba(var(--accent-rgb), 0.15);
-}
-
-.data-row--selected {
-  background: rgba(var(--accent-rgb), 0.08);
-}
-
-.data-row--selected:hover {
-  background: rgba(var(--accent-rgb), 0.13);
-}
-
-/* --- Table Cells --- */
-
-.table-cell {
-  box-sizing: border-box;
-  padding: 0 12px;
+/* Named tt-cell: the plain "table" + "-cell" name is also a Tailwind utility,
+   which globals.css, loaded last, would put over these rules. */
+.tt-cell {
+  min-width: 0;
+  padding: 0 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* --- Heads --- */
+
+.header-row {
+  height: 30px;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.head-cell {
+  position: relative;
   display: flex;
   align-items: center;
+  gap: 6px;
+  height: 100%;
+  overflow: visible;
 }
 
-/* Column widths */
-
-/* # column */
-.cell-index {
-  flex: 0 0 44px;
-  justify-content: center;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  padding: 0 8px;
+.head-cell--end {
+  justify-content: flex-end;
 }
 
-/* Default state: show number, hide play icon */
-.row-number { display: flex; align-items: center; }
-.row-play   { display: none; color: var(--text-primary); align-items: center; }
-.row-playing { color: var(--accent); display: flex; align-items: center; }
-
-/* Hover: hide number, show play icon */
-.data-row:hover .row-number { display: none; }
-.data-row:hover .row-play   { display: flex; }
-
-/* Playing: always show speaker, regardless of hover */
-.data-row--playing .row-number { display: none; }
-.data-row--playing .row-play   { display: none; }
-.data-row--playing .cell-index .row-playing { display: flex; }
-
-/* Title column */
-.cell-title {
-  flex: 3 1 220px;
-  min-width: 150px;
-}
-
-/* Artist column */
-.cell-artist {
-  flex: 2 1 160px;
-  min-width: 100px;
-}
-
-.cell-bpm {
-  flex: 0 0 76px;
-  justify-content: center;
-}
-
-.cell-key {
-  flex: 0 0 56px;
-  justify-content: center;
-}
-
-.cell-genre {
-  flex: 1 1 130px;
-  min-width: 90px;
-}
-
-.cell-comment {
-  flex: 1 1 160px;
-  min-width: 100px;
-  color: var(--text-secondary);
+.head-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  white-space: nowrap;
   cursor: pointer;
+  transition: color var(--motion-fast) var(--ease);
+}
+
+.head-sort:hover,
+.head-sort--sorted {
+  color: var(--text-primary);
+}
+
+.head-sort:focus-visible {
+  border-radius: var(--radius-md);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sort-indicator {
+  font-size: 8px;
+  line-height: 1;
+}
+
+/* A head's right edge drags to resize; a thin accent line shows on hover. */
+.head-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 2;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.head-resize::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.head-resize:hover::after,
+.head-resize--active::after {
+  background: var(--accent);
+}
+
+/* The last column's edge stays inside the table, or the area would scroll
+   sideways by 4px at any width. */
+.head-cell:last-child .head-resize {
+  right: 0;
+}
+
+/* --- Rows: 46px; hover, selected and playing tint the row (--row-bg, always
+   opaque, so the sticky cells below can wear it too) --- */
+
+.data-row {
+  --row-bg: var(--bg-primary);
+  height: 46px;
+  border-radius: var(--radius-md);
+  background: var(--row-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  overflow: clip;
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.data-row:hover {
+  --row-bg: var(--bg-tertiary);
+}
+
+.data-row--selected {
+  --row-bg: color-mix(in srgb, var(--bg-primary), var(--accent) 16%);
+}
+
+.data-row--playing {
+  --row-bg: color-mix(in srgb, var(--bg-primary), var(--accent) 12%);
+  /* The accent, drawn toward the text colour: lighter on dark themes, darker
+     on light ones, so it reads on both. */
+  --row-accent: color-mix(in srgb, var(--accent), var(--text-primary) 25%);
+}
+
+.data-row--selected:hover,
+.data-row--playing:hover {
+  --row-bg: color-mix(in srgb, var(--bg-primary), var(--accent) 20%);
+}
+
+/* # and the artwork stay put when the table scrolls sideways. */
+.cell-index,
+.cell-art {
+  position: sticky;
+  z-index: 1;
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--row-bg);
+  transition: background-color var(--motion-fast) var(--ease);
+}
+
+.cell-index {
+  left: 0;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* INDEX_WIDTH in lib/trackTable/columns.ts */
+.cell-art {
+  left: 44px;
+  padding: 0 6px;
+}
+
+.header-row .cell-index,
+.header-row .cell-art {
+  background-color: var(--bg-secondary);
+}
+
+.data-row:hover .cell-index {
+  color: var(--text-primary);
+}
+
+.data-row--playing .cell-index {
+  color: var(--row-accent);
+}
+
+/* The number, or the equalizer on the row playing; under the mouse, the
+   button (▶, or pause / play on the row playing) takes their place. */
+.row-action {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.row-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.data-row:hover .row-number,
+.data-row:hover .equalizer {
+  display: none;
+}
+
+.data-row:hover .row-action {
+  display: flex;
+}
+
+.tt-cover {
+  display: block;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.tt-cover__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Only a cover that has just arrived fades in; one read before shows at once. */
+.tt-cover__img--in {
+  animation: tt-cover-in var(--motion-slow) var(--ease);
+}
+
+@keyframes tt-cover-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-cover__img--in {
+    animation-duration: var(--motion-fast);
+  }
+}
+
+/* Title & artist: two lines */
+.cell-title__name,
+.cell-title__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-title__name {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.cell-title__artist {
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.data-row--playing .cell-title__name {
+  color: var(--row-accent);
+}
+
+/* Under the mouse, the playing row's title takes the text colour, as its
+   pause / play button does (the mockup). */
+.data-row--playing:hover .cell-title__name {
+  color: var(--text-primary);
+}
+
+.cell--end {
+  text-align: right;
+}
+
+.cell-missing {
+  color: var(--text-muted);
 }
 
 .cell-comment:hover {
@@ -311,23 +450,7 @@
 }
 
 .cell-rating {
-  flex: 0 0 80px;
-  min-width: 80px;
-  justify-content: center;
-  padding: 0 6px;
   overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
-}
-
-.cell-duration {
-  flex: 0 0 104px;
-  justify-content: flex-end;
-}
-
-.text-muted {
-  color: var(--text-secondary);
-  font-style: italic;
 }
 
 /* --- Scrollbar Styling --- */
@@ -363,7 +486,7 @@
   align-items: center;
   justify-content: center;
   z-index: 10001;
-  animation: fadeIn 0.15s ease-out;
+  animation: fadeIn var(--motion-base) var(--ease);
 }
 
 @keyframes fadeIn {
@@ -383,7 +506,7 @@
   min-width: 400px;
   max-width: 500px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  animation: slideIn 0.2s ease-out;
+  animation: slideIn var(--motion-base) var(--ease);
 }
 
 @keyframes slideIn {
@@ -394,6 +517,13 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* Reduced motion: the dialog fades in, it does not slide. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-content {
+    animation-name: fadeIn;
   }
 }
 
@@ -422,7 +552,7 @@
   border-radius: 6px;
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--motion-fast) var(--ease);
   margin-bottom: 20px;
   box-sizing: border-box;
 }
@@ -444,94 +574,21 @@
   justify-content: flex-end;
 }
 
-.modal-button {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-  outline: none;
+/* --- Dragging (track table spec, Dragging) --- */
+
+.data-row--dragging {
+  opacity: 0.45;
 }
 
-.modal-button-secondary {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-}
-
-.modal-button-secondary:hover {
-  background: var(--bg-tertiary);
-}
-
-.modal-button-primary {
+/* Where dragged tracks land in a playlist's own order, over the sticky cells. */
+.tt-reorder-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 2px;
+  border-radius: 1px;
   background: var(--accent);
-  color: white;
-}
-
-.modal-button-primary:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.modal-button-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Context menu improvements (track table uses same classes as FolderTree) */
-.context-menu-item-active {
-  background: var(--bg-tertiary);
-  font-weight: 500;
-}
-
-.context-menu-checkmark {
-  margin-left: auto;
-  color: var(--accent);
-  font-weight: bold;
-}
-
-/* Ensure context menu and button items are readable (no white-on-white) */
-.track-table-container .context-menu {
-  background: var(--bg-secondary);
-}
-
-button.context-menu-item {
-  width: 100%;
-  border: none;
-  background: transparent;
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: left;
-  color: var(--text-primary);
-  padding: 7px 12px;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: background-color 0.1s ease;
-}
-
-button.context-menu-item:hover {
-  background: var(--accent);
-  color: #fff;
-}
-
-/* Ensure no gaps in context menu */
-.context-menu,
-.context-submenu {
-  padding: 0;
-}
-
-.context-menu > *:first-child,
-.context-submenu > *:first-child {
-  margin-top: 0;
-}
-
-.context-menu > *:last-child,
-.context-submenu > *:last-child {
-  margin-bottom: 0;
+  pointer-events: none;
 }

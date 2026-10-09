@@ -30,6 +30,22 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+
+  /* Motion (Interactions spec): three durations, one easing */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Reduced motion: nothing takes longer than fast. What moves as it appears
+   (menus, toasts, dialogs, the shortcuts sheet) fades instead, in its own
+   rule; framer-motion drops movement through App's MotionConfig. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-base: var(--motion-fast);
+    --motion-slow: var(--motion-fast);
+  }
 }
 
 /* Midnight theme - Spotify warm blacks (default) */
@@ -123,6 +139,8 @@
 
 /* Dawn theme - Light */
 :root[data-theme='dawn'] {
+  /* Its raised colour is the page's white: buttons take the grey a step down. */
+  --btn-bg: var(--bg-tertiary);
   --bg-primary: #ffffff;
   --bg-secondary: #f8f8f8;
   --bg-tertiary: #f0f0f0;

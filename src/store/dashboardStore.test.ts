@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useDashboardStore } from './dashboardStore'
-import { DEFAULT_LAYOUT } from '../components/views/widgets/widgetRegistry'
+import { defaultLayout, storedLayoutJson } from '../lib/home/cards'
+import { tauriApi } from '../lib/tauri-api'
 
 vi.mock('../lib/tauri-api', () => ({
   tauriApi: {
@@ -9,7 +10,11 @@ vi.mock('../lib/tauri-api', () => ({
   },
 }))
 
+const DEFAULT_LAYOUT = defaultLayout()
+
 beforeEach(() => {
+  vi.mocked(tauriApi.getDashboardLayout).mockResolvedValue(null)
+  vi.mocked(tauriApi.saveDashboardLayout).mockClear()
   useDashboardStore.setState({
     layout: [...DEFAULT_LAYOUT],
     savedLayout: [...DEFAULT_LAYOUT],
@@ -43,21 +48,19 @@ describe('dashboardStore', () => {
     expect(state.layout).toEqual(DEFAULT_LAYOUT)
   })
 
-  it('addWidget appends to layout', () => {
+  it('addWidget appends a catalog card at its default size', () => {
+    useDashboardStore.getState().removeWidget('upcoming-gigs')
     const before = useDashboardStore.getState().layout.length
-    useDashboardStore.getState().addWidget('library-insights', {
-      defaultW: 4, defaultH: 1, minW: 2, minH: 1, maxW: 4, maxH: 1,
-    })
+    useDashboardStore.getState().addWidget('upcoming-gigs')
     const state = useDashboardStore.getState()
     expect(state.layout.length).toBe(before + 1)
-    expect(state.layout.find((l) => l.i === 'library-insights')).toBeDefined()
+    expect(state.layout.find((l) => l.i === 'upcoming-gigs')).toMatchObject({ w: 2, h: 2, maxH: 3 })
   })
 
-  it('addWidget does not duplicate existing widget', () => {
+  it('addWidget does not duplicate a card, nor add one not in the catalog', () => {
     const before = useDashboardStore.getState().layout.length
-    useDashboardStore.getState().addWidget('recently-played', {
-      defaultW: 2, defaultH: 1, minW: 2, minH: 1, maxW: 4, maxH: 2,
-    })
+    useDashboardStore.getState().addWidget('recently-played')
+    useDashboardStore.getState().addWidget('ai-recommendations')
     expect(useDashboardStore.getState().layout.length).toBe(before)
   })
 
@@ -71,5 +74,34 @@ describe('dashboardStore', () => {
     const newLayout = [{ i: 'test', x: 0, y: 0, w: 2, h: 1 }]
     useDashboardStore.getState().updateLayout(newLayout)
     expect(useDashboardStore.getState().layout).toEqual(newLayout)
+  })
+
+  it('resetLayout puts back the default layout, until Save', () => {
+    useDashboardStore.getState().enterEditMode()
+    useDashboardStore.getState().updateLayout([{ i: 'needs-you', x: 0, y: 0, w: 4, h: 2 }])
+    useDashboardStore.getState().resetLayout()
+    expect(useDashboardStore.getState().layout).toEqual(DEFAULT_LAYOUT)
+    expect(tauriApi.saveDashboardLayout).not.toHaveBeenCalled()
+  })
+
+  it('loadLayout replaces the old form by the default once and stores it', async () => {
+    vi.mocked(tauriApi.getDashboardLayout).mockResolvedValue(JSON.stringify([{ i: 'recently-played', x: 0, y: 0, w: 2, h: 1 }]))
+    await useDashboardStore.getState().loadLayout()
+    expect(useDashboardStore.getState().layout).toEqual(DEFAULT_LAYOUT)
+    expect(tauriApi.saveDashboardLayout).toHaveBeenCalledWith(storedLayoutJson(DEFAULT_LAYOUT))
+  })
+
+  it('loadLayout shows a saved layout as it is, storing nothing', async () => {
+    vi.mocked(tauriApi.getDashboardLayout).mockResolvedValue(storedLayoutJson([{ i: 'quick-actions', x: 0, y: 0, w: 4, h: 1 }]))
+    await useDashboardStore.getState().loadLayout()
+    expect(useDashboardStore.getState().layout).toMatchObject([{ i: 'quick-actions', w: 4, h: 1, maxH: 1 }])
+    expect(tauriApi.saveDashboardLayout).not.toHaveBeenCalled()
+  })
+
+  it('saveLayout stores version 2', async () => {
+    useDashboardStore.getState().enterEditMode()
+    await useDashboardStore.getState().saveLayout()
+    expect(tauriApi.saveDashboardLayout).toHaveBeenCalledWith(storedLayoutJson(DEFAULT_LAYOUT))
+    expect(useDashboardStore.getState().isEditMode).toBe(false)
   })
 })

@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Icon } from '../Icon'
 import { ConversationItem } from './ConversationItem'
 import type { Conversation } from '../../types/ai'
+import { EASE, MOTION } from '../../lib/motion'
 
 function groupByDate(conversations: Conversation[]): { label: string; items: Conversation[] }[] {
   const now = new Date()
@@ -83,7 +84,7 @@ export function ConversationList({
                       key={conv.id}
                       initial={{ opacity: 1 }}
                       exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
+                      transition={{ duration: MOTION.base, ease: EASE }}
                     >
                       <ConversationItem
                         conversation={conv}

@@ -61,8 +61,8 @@
   height: 28px;
   border-radius: 50%;
   transition:
-    color 0.15s,
-    background 0.15s;
+    color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
   flex-shrink: 0;
   position: relative;
 }
@@ -169,6 +169,7 @@
   background: var(--accent);
   border-radius: 1.5px;
   pointer-events: none;
+  /* It follows the playhead, not a change on screen: no motion token. */
   transition: width 0.05s linear;
 }
 
@@ -183,7 +184,7 @@
   transform: translate(-50%, -50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .sc-player__progress:hover .sc-player__progress-handle {
@@ -315,7 +316,7 @@
   padding: 4px 8px;
   margin: -4px 0px -4px -8px;
   border-radius: 6px;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease);
 }
 
 .sc-player__meta--clickable:hover {
@@ -398,7 +399,7 @@
   padding: 8px 12px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .sc-player__playlist-item:hover {

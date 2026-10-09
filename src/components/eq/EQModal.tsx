@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useOverlay } from '../../lib/overlays'
 import './EQModal.css'
 import { EQ_BANDS } from '../../lib/eqConstants'
 import {
@@ -22,6 +23,8 @@ export function EQModal({ open, onClose, onEnabledChange }: EQModalProps) {
   const [activePreset, setActivePreset] = useState<EqPresetName | 'custom'>('flat')
 
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(open, onClose)
 
   // Load EQ state when modal opens
   useEffect(() => {
