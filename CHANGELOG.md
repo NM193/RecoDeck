@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Error messages say what went wrong instead of "[object Object]"
 - A playlist opens in its own order, and a third click on a column head goes back to it
+- Search finds playlists made by the AI assistant too, and the player's Add to playlist offers them
+- Home's Last playlist stays quick with a long playlist: it shows the first 100 tracks, with "and 1,900 more · Open the playlist" under them, and playing from it still queues the whole playlist
 
 ## [0.4.1] - 2026-10-03
 
