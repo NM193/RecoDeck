@@ -5,6 +5,7 @@
 // mark_missing looks at the disk, and the writers touch neither.
 
 pub mod keys;
+pub mod rekordbox;
 mod xml;
 
 use crate::db::{Database, Playlist, Track};
