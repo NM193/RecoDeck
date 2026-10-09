@@ -553,6 +553,8 @@ pub fn run() {
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::export_playlist_to_folder,
             commands::playlists::pick_export_folder,
+            commands::dj_export::dj_export_defaults,
+            commands::dj_export::export_to_dj,
             // Genre commands
             commands::genre::set_track_genre,
             commands::genre::clear_track_genre,

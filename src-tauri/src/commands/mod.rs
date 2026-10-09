@@ -5,6 +5,7 @@ pub mod analysis;
 pub mod conversations;
 pub mod dashboard;
 pub mod dj;
+pub mod dj_export;
 pub mod genre;
 pub mod home;
 pub mod library;
