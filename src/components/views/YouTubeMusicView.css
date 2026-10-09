@@ -50,7 +50,7 @@
 }
 
 .ytm-sets__chevron {
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-base) var(--ease);
 }
 
 .ytm-sets--open .ytm-sets__chevron {

@@ -39,7 +39,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
 }
 
 .search-view__input-wrapper:focus-within {
@@ -75,7 +75,7 @@
   align-items: center;
   padding: 4px;
   border-radius: var(--radius-md);
-  transition: color 0.15s ease;
+  transition: color var(--motion-fast) var(--ease);
 }
 
 .search-view__input-clear:hover {
@@ -185,7 +185,7 @@
   height: 48px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease);
   padding: 0 var(--space-2);
   gap: 0;
 }
@@ -284,7 +284,7 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease);
 }
 
 .search-view__dj-card:hover {
@@ -322,7 +322,7 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease);
 }
 
 .search-view__playlist-card:hover {
