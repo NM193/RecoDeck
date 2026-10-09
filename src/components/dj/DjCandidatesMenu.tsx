@@ -123,7 +123,7 @@ export function DjCandidatesMenu({
     <div className="dj-menu" ref={root}>
       <button
         type="button"
-        className="dj-btn dj-btn--icon"
+        className="btn btn--icon"
         title="Not this artist?"
         aria-label="More"
         aria-haspopup="menu"
