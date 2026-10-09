@@ -29,6 +29,7 @@
 
 /* ---- Album art ---- */
 .playlist-header__art {
+  position: relative;
   width: 200px;
   height: 200px;
   flex-shrink: 0;
@@ -43,6 +44,50 @@
   height: 48px;
   border-radius: var(--radius-sm);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Change cover: over the art while hovered (or focused from the keyboard,
+   or its menu open). */
+.playlist-header__cover-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 0;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--motion-fast) var(--ease);
+}
+
+.playlist-header__art:hover .playlist-header__cover-btn,
+.playlist-header__cover-btn:focus-visible,
+.playlist-header__cover-btn[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.playlist-header__cover-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.playlist-header--compressed .playlist-header__cover-label {
+  display: none;
+}
+
+/* The initial steps aside, so the icon and its label read clean. */
+.playlist-header__art:hover .playlist-header__art-initial,
+.playlist-header__art:has(.playlist-header__cover-btn:focus-visible) .playlist-header__art-initial,
+.playlist-header__art:has(.playlist-header__cover-btn[aria-expanded='true']) .playlist-header__art-initial {
+  opacity: 0;
 }
 
 .playlist-header__art-img {
@@ -71,7 +116,9 @@
   color: rgba(255, 255, 255, 0.9);
   line-height: 1;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: font-size var(--motion-slow) var(--ease);
+  transition:
+    font-size var(--motion-slow) var(--ease),
+    opacity var(--motion-fast) var(--ease);
 }
 
 .playlist-header--compressed .playlist-header__art-initial {

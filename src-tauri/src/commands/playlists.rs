@@ -17,6 +17,8 @@ pub struct PlaylistDTO {
     pub track_count: i64,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// Its own cover image, a file in the covers folder (get_playlist_cover reads it).
+    pub cover_path: Option<String>,
 }
 
 /// Create a new playlist (type = "manual")
@@ -45,6 +47,7 @@ pub fn create_playlist(
         track_count: 0,
         created_at: playlist.created_at,
         updated_at: playlist.updated_at,
+        cover_path: playlist.cover_path,
     })
 }
 
@@ -74,6 +77,7 @@ pub fn create_playlist_folder(
         track_count: 0,
         created_at: playlist.created_at,
         updated_at: playlist.updated_at,
+        cover_path: playlist.cover_path,
     })
 }
 
@@ -103,6 +107,7 @@ pub fn get_all_playlists(state: State<AppState>) -> Result<Vec<PlaylistDTO>, App
             track_count,
             created_at: p.created_at,
             updated_at: p.updated_at,
+            cover_path: p.cover_path,
         });
     }
 
@@ -125,8 +130,125 @@ pub fn delete_playlist(state: State<AppState>, id: i64) -> Result<(), AppError> 
     let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
+    // Its cover, and those of the playlists in it, go with it.
+    let covers = db.playlist_covers_under(id).unwrap_or_default();
     db.delete_playlist(id)
-        .map_err(|e| AppError::Database(format!("Failed to delete: {}", e)))
+        .map_err(|e| AppError::Database(format!("Failed to delete: {}", e)))?;
+    if let Some(dir) = covers_dir(&state) {
+        for cover in covers {
+            remove_cover_file(&dir, &cover);
+        }
+    }
+    Ok(())
+}
+
+// --- A playlist's own cover (Change cover) ---
+
+/// The images a cover can be.
+const COVER_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
+/// Larger than this is not a cover.
+const COVER_MAX_BYTES: u64 = 15 * 1024 * 1024;
+
+/// A cover's extension, lowercased, when it is an image a cover can be.
+fn cover_extension(path: &Path) -> Option<String> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    COVER_EXTENSIONS.contains(&ext.as_str()).then_some(ext)
+}
+
+/// A new name for each cover, so a replaced one is never served from a cache.
+fn cover_file_name(playlist_id: i64, ext: &str, millis: u128) -> String {
+    format!("playlist-{playlist_id}-{millis}.{ext}")
+}
+
+/// The covers folder, beside the database.
+fn covers_dir(state: &State<AppState>) -> Option<PathBuf> {
+    let db_path = state.db_path.lock().ok()?.clone()?;
+    Some(Path::new(&db_path).parent()?.join("covers"))
+}
+
+/// Removes a cover's file, only ever one inside the covers folder.
+fn remove_cover_file(dir: &Path, cover: &str) {
+    let path = Path::new(cover);
+    if path.parent() == Some(dir) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Copies an image into the covers folder as the playlist's cover; the one it
+/// had goes. Answers the new cover's path.
+#[tauri::command]
+pub fn set_playlist_cover(
+    state: State<AppState>,
+    playlist_id: i64,
+    source_path: String,
+) -> Result<String, AppError> {
+    let source = Path::new(&source_path);
+    let ext = cover_extension(source).ok_or_else(|| {
+        AppError::Validation("A cover must be a PNG, JPEG, WebP or GIF image".to_string())
+    })?;
+    let size = std::fs::metadata(source)
+        .map_err(|e| AppError::Internal(format!("Couldn't read the image: {e}")))?
+        .len();
+    if size > COVER_MAX_BYTES {
+        return Err(AppError::Validation("The image is larger than 15 MB".to_string()));
+    }
+    let dir = covers_dir(&state).ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| AppError::Internal(format!("Couldn't make the covers folder: {e}")))?;
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dest = dir.join(cover_file_name(playlist_id, &ext, millis));
+    std::fs::copy(source, &dest).map_err(|e| AppError::Internal(format!("Couldn't copy the image: {e}")))?;
+    let dest_str = dest.to_string_lossy().to_string();
+
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    match db.set_playlist_cover(playlist_id, Some(&dest_str)) {
+        Ok(previous) => {
+            if let Some(previous) = previous {
+                remove_cover_file(&dir, &previous);
+            }
+            Ok(dest_str)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&dest);
+            Err(AppError::Database(format!("Failed to set the cover: {e}")))
+        }
+    }
+}
+
+/// The playlist goes back to its default cover; its image file goes.
+#[tauri::command]
+pub fn clear_playlist_cover(state: State<AppState>, playlist_id: i64) -> Result<(), AppError> {
+    let previous = {
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+        db.set_playlist_cover(playlist_id, None)
+            .map_err(|e| AppError::Database(format!("Failed to clear the cover: {e}")))?
+    };
+    if let (Some(dir), Some(previous)) = (covers_dir(&state), previous) {
+        remove_cover_file(&dir, &previous);
+    }
+    Ok(())
+}
+
+/// The playlist's cover image, as bytes (the UI makes a blob URL of them).
+#[tauri::command]
+pub fn get_playlist_cover(
+    state: State<AppState>,
+    playlist_id: i64,
+) -> Result<tauri::ipc::Response, AppError> {
+    let cover = {
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+        db.get_playlist(playlist_id)
+            .map_err(|e| AppError::Database(format!("Failed to read the playlist: {e}")))?
+            .cover_path
+    };
+    let cover = cover.ok_or_else(|| AppError::NotFound("no_cover".to_string()))?;
+    let bytes = std::fs::read(&cover).map_err(|e| AppError::Internal(format!("Couldn't read the cover: {e}")))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// Get tracks in a playlist (with analysis data)
@@ -555,4 +677,42 @@ pub fn pick_export_folder(app: AppHandle) -> Result<Option<String>, AppError> {
         .recv()
         .map_err(|e| AppError::Internal(format!("Dialog channel closed: {}", e)))?;
     Ok(folder.map(|p| p.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cover_is_an_image_of_a_known_kind() {
+        assert_eq!(cover_extension(Path::new("/x/Cover.JPG")).as_deref(), Some("jpg"));
+        assert_eq!(cover_extension(Path::new("/x/c.webp")).as_deref(), Some("webp"));
+        assert_eq!(cover_extension(Path::new("/x/c.png")).as_deref(), Some("png"));
+        assert_eq!(cover_extension(Path::new("/x/c.pdf")), None);
+        assert_eq!(cover_extension(Path::new("/x/cover")), None);
+    }
+
+    #[test]
+    fn each_cover_gets_a_new_name() {
+        assert_eq!(cover_file_name(7, "png", 1_760_000_000_123), "playlist-7-1760000000123.png");
+        assert_ne!(cover_file_name(7, "png", 1), cover_file_name(7, "png", 2));
+    }
+
+    #[test]
+    fn only_a_file_in_the_covers_folder_is_ever_removed() {
+        let dir = std::env::temp_dir().join(format!("recodeck-covers-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let inside = dir.join("playlist-1-1.png");
+        std::fs::write(&inside, b"x").unwrap();
+        let outside = std::env::temp_dir().join(format!("recodeck-not-a-cover-{}.png", std::process::id()));
+        std::fs::write(&outside, b"x").unwrap();
+
+        remove_cover_file(&dir, outside.to_str().unwrap());
+        assert!(outside.exists());
+        remove_cover_file(&dir, inside.to_str().unwrap());
+        assert!(!inside.exists());
+
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

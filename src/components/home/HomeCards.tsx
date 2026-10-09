@@ -30,6 +30,7 @@ import { formatTime } from '../../lib/trackTable/cells'
 import type { Playlist } from '../../types/track'
 import { homeGenreTiles, playlistGradient, userPlaylists } from './content'
 import { HomeTrackRows, type TrackRowActions } from './HomeTrackRows'
+import { PlaylistCover } from '../PlaylistCover'
 import type { HomeData } from './useHomeData'
 
 /** Last playlist draws this many rows; a 2,000-track playlist would draw them all. */
@@ -349,9 +350,10 @@ function CardBody({
       return (
         <div className="home-last">
           <div className="home-last__head">
-            <span
+            <PlaylistCover
+              playlist={facts.playlists.find((p) => p.id === last.id) ?? null}
               className="home-last__cover"
-              style={{ background: playlistGradient(last.name) }}
+              fallback={playlistGradient(last.name)}
             />
             <span className="home-last__text">
               <span className="home-last__name" title={last.name}>
@@ -457,9 +459,10 @@ function CardBody({
                 className="home-playlist__open"
                 onClick={() => actions.onOpenPlaylist(playlist.id)}
               >
-                <span
+                <PlaylistCover
+                  playlist={playlist}
                   className="home-playlist__cover"
-                  style={{ background: playlistGradient(playlist.name) }}
+                  fallback={playlistGradient(playlist.name)}
                 />
                 <span className="home-playlist__text">
                   <span className="home-playlist__name">{playlist.name}</span>

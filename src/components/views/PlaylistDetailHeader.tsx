@@ -1,13 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
 import { getTrackArtworkUrl } from '../../lib/artworkCache'
+import { usePlaylistCover } from '../../lib/playlistCovers'
+import { tauriApi } from '../../lib/tauri-api'
+import { toast } from '../../lib/toast'
+import { getErrorMessage } from '../../types/ai'
 import type { Playlist, Track } from '../../types/track'
 import { Icon } from '../Icon'
+import { Menu } from '../menu/Menu'
 import './PlaylistDetailHeader.css'
 
 interface PlaylistDetailHeaderProps {
   playlist: Playlist
   tracks: Track[]
+  /** A cover was chosen or removed: the playlists are read again. */
+  onCoverChanged?: () => void
 }
+
+/** The images a cover can be (set_playlist_cover checks them too). */
+const COVER_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif']
 
 // --- Metadata computation helpers ---
 
@@ -42,9 +53,48 @@ function formatTotalDuration(tracks: Track[]): string {
   return `${seconds}s`
 }
 
-export function PlaylistDetailHeader({ playlist, tracks }: PlaylistDetailHeaderProps) {
+export function PlaylistDetailHeader({ playlist, tracks, onCoverChanged }: PlaylistDetailHeaderProps) {
   const [compressed, setCompressed] = useState(false)
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null)
+  // Its own cover, chosen with Change cover, comes before the first track's art.
+  const ownCover = usePlaylistCover(playlist)
+  const shownArt = ownCover ?? artworkUrl
+  const coverButton = useRef<HTMLButtonElement>(null)
+  const [coverMenu, setCoverMenu] = useState<{ x: number; y: number } | null>(null)
+
+  async function chooseCover() {
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Images', extensions: COVER_EXTENSIONS }],
+    }).catch(() => null)
+    if (typeof picked !== 'string') return
+    try {
+      await tauriApi.setPlaylistCover(playlist.id, picked)
+      onCoverChanged?.()
+    } catch (err) {
+      toast(`Couldn't change the cover: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
+
+  async function removeCover() {
+    try {
+      await tauriApi.clearPlaylistCover(playlist.id)
+      onCoverChanged?.()
+    } catch (err) {
+      toast(`Couldn't remove the cover: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
+
+  // With a cover of its own: choose another or remove it; without, straight to choosing.
+  function openCoverChoice() {
+    if (!playlist.cover_path) {
+      void chooseCover()
+      return
+    }
+    const box = coverButton.current?.getBoundingClientRect()
+    if (box) setCoverMenu({ x: box.left + 8, y: box.bottom - 8 })
+  }
 
   // Load artwork from the first track that has it
   useEffect(() => {
@@ -77,9 +127,9 @@ export function PlaylistDetailHeader({ playlist, tracks }: PlaylistDetailHeaderP
     >
       {/* Album art */}
       <div className="playlist-header__art">
-        {artworkUrl ? (
+        {shownArt ? (
           <img
-            src={artworkUrl}
+            src={shownArt}
             alt={`${playlist.name} artwork`}
             className="playlist-header__art-img"
           />
@@ -87,6 +137,30 @@ export function PlaylistDetailHeader({ playlist, tracks }: PlaylistDetailHeaderP
           <div className="playlist-header__art-placeholder">
             <span className="playlist-header__art-initial">{initial}</span>
           </div>
+        )}
+        <button
+          ref={coverButton}
+          type="button"
+          className="playlist-header__cover-btn"
+          aria-label="Change cover"
+          title="Change cover"
+          aria-haspopup={playlist.cover_path ? 'menu' : undefined}
+          aria-expanded={playlist.cover_path ? coverMenu !== null : undefined}
+          onClick={openCoverChoice}
+        >
+          <Icon name="ImagePlus" size={compressed ? 16 : 26} />
+          <span className="playlist-header__cover-label">Change cover</span>
+        </button>
+        {coverMenu && (
+          <Menu
+            at={coverMenu}
+            label="Cover"
+            entries={[
+              { kind: 'action', label: 'Choose an image…', icon: 'ImagePlus', onSelect: () => void chooseCover() },
+              { kind: 'action', label: 'Remove cover', icon: 'Trash2', onSelect: () => void removeCover() },
+            ]}
+            onClose={() => setCoverMenu(null)}
+          />
         )}
       </div>
 

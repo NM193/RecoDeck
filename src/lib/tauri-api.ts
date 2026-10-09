@@ -296,6 +296,21 @@ export const tauriApi = {
     return await invoke('delete_playlist', { id })
   },
 
+  /** Copies an image in as the playlist's own cover; answers the cover's new path. */
+  async setPlaylistCover(playlistId: number, sourcePath: string): Promise<string> {
+    return await invoke('set_playlist_cover', { playlistId, sourcePath })
+  },
+
+  /** Back to the playlist's default cover. */
+  async clearPlaylistCover(playlistId: number): Promise<void> {
+    return await invoke('clear_playlist_cover', { playlistId })
+  },
+
+  /** The playlist's own cover image, as bytes. */
+  async getPlaylistCover(playlistId: number): Promise<ArrayBuffer> {
+    return await invoke('get_playlist_cover', { playlistId })
+  },
+
   async getPlaylistTracks(playlistId: number): Promise<Track[]> {
     return await invoke('get_playlist_tracks', { playlistId })
   },

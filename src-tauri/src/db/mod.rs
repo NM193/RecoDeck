@@ -23,6 +23,8 @@ pub struct Playlist {
     pub ai_prompt: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// Its own cover image (a file in the covers folder), else None.
+    pub cover_path: Option<String>,
 }
 
 /// Represents DSP analysis results for a track (from the track_analysis table).
@@ -371,6 +373,18 @@ impl Database {
                 .execute_batch(include_str!("migrations/018_yt_dj_finds_seen.sql"))?;
         }
 
+        // Migration 019: a playlist's own cover. ALTER TABLE is not
+        // idempotent, so the column is checked for first.
+        let has_cover: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('playlists') WHERE name = 'cover_path'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_cover {
+            self.conn
+                .execute_batch(include_str!("migrations/019_playlist_cover.sql"))?;
+        }
+
         Ok(())
     }
 
@@ -622,7 +636,7 @@ impl Database {
     /// Get all playlists and folders, ordered by name.
     pub fn get_all_playlists(&self) -> Result<Vec<Playlist>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, type, parent_id, smart_rules, ai_prompt, created_at, updated_at
+            "SELECT id, name, type, parent_id, smart_rules, ai_prompt, created_at, updated_at, cover_path
              FROM playlists ORDER BY name"
         )?;
 
@@ -636,6 +650,7 @@ impl Database {
                 ai_prompt: row.get(5)?,
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
+                cover_path: row.get(8)?,
             })
         })?;
 
@@ -645,7 +660,7 @@ impl Database {
     /// Get a single playlist by ID.
     pub fn get_playlist(&self, id: i64) -> Result<Playlist> {
         self.conn.query_row(
-            "SELECT id, name, type, parent_id, smart_rules, ai_prompt, created_at, updated_at
+            "SELECT id, name, type, parent_id, smart_rules, ai_prompt, created_at, updated_at, cover_path
              FROM playlists WHERE id = ?",
             [id],
             |row| {
@@ -658,9 +673,38 @@ impl Database {
                     ai_prompt: row.get(5)?,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
+                    cover_path: row.get(8)?,
                 })
             },
         )
+    }
+
+    /// Sets (or, with None, clears) a playlist's cover; answers the cover it
+    /// had, whose file the caller removes.
+    pub fn set_playlist_cover(&self, id: i64, cover_path: Option<&str>) -> Result<Option<String>> {
+        let previous: Option<String> =
+            self.conn.query_row("SELECT cover_path FROM playlists WHERE id = ?", [id], |row| row.get(0))?;
+        self.conn.execute(
+            "UPDATE playlists SET cover_path = ?, updated_at = datetime('now') WHERE id = ?",
+            params![cover_path, id],
+        )?;
+        Ok(previous)
+    }
+
+    /// The covers of a playlist and everything under it (a folder): the files
+    /// to remove when it is deleted.
+    pub fn playlist_covers_under(&self, id: i64) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE under(id) AS (
+                 SELECT ?
+                 UNION ALL
+                 SELECT p.id FROM playlists p JOIN under ON p.parent_id = under.id
+             )
+             SELECT cover_path FROM playlists
+             WHERE id IN (SELECT id FROM under) AND cover_path IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([id], |row| row.get(0))?;
+        rows.collect()
     }
 
     /// Rename a playlist or folder.
@@ -4585,6 +4629,57 @@ mod tests {
         db.record_play_event(ids[2], Some(7)).unwrap();
 
         assert_eq!(db.get_play_counts().unwrap(), vec![(ids[0], 1), (ids[2], 3)]);
+    }
+
+    #[test]
+    fn a_playlist_cover_is_set_replaced_and_cleared() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let id = db.create_playlist("Peak Time", "manual", None).unwrap();
+        assert_eq!(db.get_playlist(id).unwrap().cover_path, None);
+
+        assert_eq!(db.set_playlist_cover(id, Some("/c/playlist-1-1.png")).unwrap(), None);
+        assert_eq!(db.get_playlist(id).unwrap().cover_path.as_deref(), Some("/c/playlist-1-1.png"));
+        let listed = db.get_all_playlists().unwrap();
+        assert_eq!(listed[0].cover_path.as_deref(), Some("/c/playlist-1-1.png"));
+
+        // Replaced: answers the one it had, so its file can go.
+        assert_eq!(
+            db.set_playlist_cover(id, Some("/c/playlist-1-2.jpg")).unwrap().as_deref(),
+            Some("/c/playlist-1-1.png")
+        );
+        assert_eq!(db.set_playlist_cover(id, None).unwrap().as_deref(), Some("/c/playlist-1-2.jpg"));
+        assert_eq!(db.get_playlist(id).unwrap().cover_path, None);
+    }
+
+    #[test]
+    fn deleting_a_folder_finds_the_covers_under_it() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let folder = db.create_playlist("Sets", "folder", None).unwrap();
+        let inner = db.create_playlist("Deep", "manual", Some(folder)).unwrap();
+        let deeper = db.create_playlist("Deeper", "folder", Some(folder)).unwrap();
+        let deepest = db.create_playlist("Deepest", "manual", Some(deeper)).unwrap();
+        let outside = db.create_playlist("Warm Up", "manual", None).unwrap();
+        db.set_playlist_cover(folder, Some("/c/a.png")).unwrap();
+        db.set_playlist_cover(inner, Some("/c/b.png")).unwrap();
+        db.set_playlist_cover(deepest, Some("/c/c.png")).unwrap();
+        db.set_playlist_cover(outside, Some("/c/d.png")).unwrap();
+
+        let mut covers = db.playlist_covers_under(folder).unwrap();
+        covers.sort();
+        assert_eq!(covers, ["/c/a.png", "/c/b.png", "/c/c.png"]);
+        assert_eq!(db.playlist_covers_under(outside).unwrap(), ["/c/d.png"]);
+    }
+
+    #[test]
+    fn the_cover_migration_runs_twice_without_failing() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        db.run_migrations().unwrap();
+        let id = db.create_playlist("Peak Time", "manual", None).unwrap();
+        db.set_playlist_cover(id, Some("/c/x.png")).unwrap();
+        assert_eq!(db.get_playlist(id).unwrap().cover_path.as_deref(), Some("/c/x.png"));
     }
 
     // Three tracks with distinct paths, for the bulk operations' tests.
