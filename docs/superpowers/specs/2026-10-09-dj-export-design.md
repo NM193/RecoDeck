@@ -25,7 +25,9 @@ It sits next to Export to folder, which stays as it is.
 ### The dialog
 
 - **Program**: Rekordbox · Traktor · Serato, as one tab bar (the shared
-  `.tabs` with the thumb). The last one used is remembered. Each program keeps
+  `.tabs` with the thumb). The last one used is remembered. (Phase 1 has
+  only Rekordbox: no tab bar; the tabs and `dj_export.last_target` come with
+  Traktor in phase 2.) Each program keeps
   its own selection: a tab shows that program's remembered playlists plus the
   playlist (or folder) the dialog was opened from; checks changed on a tab stay
   on that tab while the dialog is open.
@@ -49,7 +51,8 @@ It sits next to Export to folder, which stays as it is.
     Preferences → Advanced → Database → rekordbox xml → Imported Library:
     choose this file. Refresh "rekordbox xml" in the tree and drag the
     playlists where you want them.* (Shown in full until the first export to
-    Rekordbox, then as one line.)
+    Rekordbox, and again whenever the chosen file differs from the remembered
+    one — Rekordbox still points at the old file; otherwise as one line.)
   - Traktor: *Right-click Playlists → Import Playlist → choose this file.*
   - Serato: *Close Serato before exporting; the crates appear under RecoDeck
     the next time it opens.*
@@ -272,10 +275,12 @@ The writers are pure: no database, no disk. Everything they need comes in.
 |---|---|
 | A track's file is missing | Skipped; listed in the toast's detail |
 | A track has no BPM or key | Written without them; the program analyses |
-| Destination not writable / disk full | Error toast with the path; the previous file is untouched (temp + rename) |
+| Destination not writable / disk full | The error, with the path, shows in the dialog, which stays open (a toast would sit under the dialog's overlay); the previous file is untouched (temp file synced, then renamed) |
 | Serato DJ is running | Export stops: "Close Serato DJ first, then export again." |
 | No `_Serato_` folder on the system drive | The dialog says Serato is not set up here; Export is disabled |
 | No playlist checked | Export is disabled |
+| The checked playlists were deleted meanwhile | The export stops ("The chosen playlists no longer exist"); the previous file is untouched |
+| The choice cannot be saved after a good write | The export still succeeds; the failure is only logged |
 | A playlist is empty, or all its files are missing | Written as an empty playlist; counted |
 
 ## Testing
