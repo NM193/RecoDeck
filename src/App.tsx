@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { listen } from '@tauri-apps/api/event'
 import { check, type Update } from '@tauri-apps/plugin-updater'
@@ -89,6 +89,7 @@ import type {
   AnalysisProgressEvent,
   AnalysisCompleteEvent,
 } from './types/track'
+import { EASE, MOTION } from './lib/motion'
 import './App.css'
 import './components/TrackTable.css'
 
@@ -139,11 +140,12 @@ function App() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
-  if (hash === '#mini-player') {
-    return <MiniPlayer />
-  }
-
-  return <AppContent />
+  // framer-motion follows the system's reduced motion: no movement, only fades.
+  return (
+    <MotionConfig reducedMotion="user">
+      {hash === '#mini-player' ? <MiniPlayer /> : <AppContent />}
+    </MotionConfig>
+  )
 }
 
 function AppContent() {
@@ -1968,7 +1970,7 @@ function AppContent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            transition={{ duration: MOTION.base, ease: EASE }}
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
             {djPage !== null ? (

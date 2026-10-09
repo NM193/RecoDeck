@@ -13,6 +13,7 @@ import type { Track } from '../../types/track'
 import type { RecommendationResult } from '../../types/ai'
 import { getErrorMessage } from '../../types/ai'
 import { useAIStore } from '../../store/aiStore'
+import { EASE, MOTION } from '../../lib/motion'
 import './RecommendationsPanel.css'
 
 interface RecommendationsPanelProps {
@@ -126,7 +127,7 @@ export function RecommendationsPanel({
         initial={{ x: '100%' }}
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
-        transition={{ duration: 0.22, ease: 'easeOut' }}
+        transition={{ duration: MOTION.slow, ease: EASE }}
       >
         {/* Header */}
         <div className="recommendations-panel__header">

@@ -31,6 +31,7 @@ import {
   type ColourOverrides,
   type SidebarSection,
 } from '../../lib/sidebarPrefs'
+import { EASE, MOTION } from '../../lib/motion'
 import './Sidebar.css'
 
 // --- Constants ---
@@ -135,12 +136,12 @@ function Section({
               // and pushes the headers below it off screen.
               height: height ?? 0,
               opacity: 1,
-              transition: { duration: animateHeight ? 0.2 : 0, ease: 'easeInOut' },
+              transition: { duration: animateHeight ? MOTION.base : 0, ease: EASE },
             }}
             exit={{
               height: 0,
               opacity: 0,
-              transition: { duration: 0.2, ease: 'easeInOut' },
+              transition: { duration: MOTION.base, ease: EASE },
             }}
             // No scrollbar while the height moves (it would flash and shift the rows).
             onAnimationStart={() => {

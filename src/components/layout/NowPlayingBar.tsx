@@ -11,6 +11,7 @@ import { WaveformVisualizer } from '../WaveformVisualizer'
 import { EQModal } from '../eq/EQModal'
 import { useOverlay } from '../../lib/overlays'
 import { registerFileControls } from '../../lib/shortcuts/players'
+import { EASE, MOTION } from '../../lib/motion'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -703,7 +704,7 @@ export function NowPlayingBar({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: MOTION.slow, ease: EASE }}
             onClick={() => setExpanded(false)}
           >
             <button

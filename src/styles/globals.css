@@ -38,6 +38,16 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* Reduced motion: nothing takes longer than fast. What moves as it appears
+   (menus, toasts, dialogs, the shortcuts sheet) fades instead, in its own
+   rule; framer-motion drops movement through App's MotionConfig. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-base: var(--motion-fast);
+    --motion-slow: var(--motion-fast);
+  }
+}
+
 /* Midnight theme - Spotify warm blacks (default) */
 :root[data-theme='midnight'] {
   /* Base backgrounds -- Spotify warm blacks, not blue-tinted */
