@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { confirm } from '@tauri-apps/plugin-dialog'
 import { tauriApi } from '../../lib/tauri-api'
 import { ToggleSwitch } from './ToggleSwitch'
+import { Button } from '../Button'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { SPOTIFY_SYNCED_EVENT, type SpotifyStatus } from '../../types/spotify'
 
@@ -130,7 +131,7 @@ export function SpotifySection() {
             <code>{REDIRECT_URI}</code>{' '}
             <button
               type="button"
-              className="btn-secondary btn-small"
+              className="btn btn--sm"
               onClick={() => {
                 navigator.clipboard
                   .writeText(REDIRECT_URI)
@@ -181,16 +182,18 @@ export function SpotifySection() {
             style={{ flex: 1 }}
             spellCheck={false}
           />
-          <button
-            type="button"
-            className="btn-primary btn-small"
+          <Button
+            variant="primary"
+            size="sm"
             disabled={!dirty || busy !== null}
+            working={busy === 'save'}
+            workingLabel="Saving…"
             onClick={() =>
               run('save', () => tauriApi.setSpotifyClientId(clientId))
             }
           >
-            {busy === 'save' ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </Button>
         </div>
       </div>
 
@@ -212,7 +215,7 @@ export function SpotifySection() {
               {status.needsReconnect && (
                 <button
                   type="button"
-                  className="btn-primary btn-small"
+                  className="btn btn--primary btn--sm"
                   disabled={dirty || (busy !== null && !waiting)}
                   title={dirty ? 'Save the Client ID first' : undefined}
                   onClick={connect}
@@ -222,7 +225,7 @@ export function SpotifySection() {
               )}
               <button
                 type="button"
-                className="btn-secondary btn-small"
+                className="btn btn--sm"
                 // Allowed while a login waits: it cancels that login too.
                 disabled={busy !== null && !waiting}
                 onClick={disconnect}
@@ -233,7 +236,7 @@ export function SpotifySection() {
           ) : (
             <button
               type="button"
-              className="btn-primary btn-small"
+              className="btn btn--primary btn--sm"
               // Connect signs in with the saved Client ID, not the one being typed.
               disabled={!saved || dirty || (busy !== null && !waiting)}
               title={dirty ? 'Save the Client ID first' : undefined}

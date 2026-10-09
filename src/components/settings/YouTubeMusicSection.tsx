@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { confirm } from '@tauri-apps/plugin-dialog'
 import { ToggleSwitch } from './ToggleSwitch'
+import { Button } from '../Button'
 import { tauriApi } from '../../lib/tauri-api'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { YTM_SYNCED_EVENT, type YtmStatus } from '../../types/youtubeMusic'
@@ -150,14 +151,15 @@ export function YouTubeMusicSection() {
         <div
           style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}
         >
-          <button
-            type="button"
-            className="btn-secondary btn-small"
+          <Button
+            size="sm"
             disabled={busy !== null && !waiting}
+            working={busy === 'file'}
+            workingLabel="Reading…"
             onClick={chooseFile}
           >
-            {busy === 'file' ? 'Reading…' : 'Choose client file…'}
-          </button>
+            Choose client file…
+          </Button>
           <span className="settings-hint">
             {status?.hasClient ? 'A Desktop client is chosen.' : 'None chosen yet.'}
           </span>
@@ -177,7 +179,7 @@ export function YouTubeMusicSection() {
               {status.needsReconnect && (
                 <button
                   type="button"
-                  className="btn-primary btn-small"
+                  className="btn btn--primary btn--sm"
                   disabled={busy !== null && !waiting}
                   onClick={connect}
                 >
@@ -186,7 +188,7 @@ export function YouTubeMusicSection() {
               )}
               <button
                 type="button"
-                className="btn-secondary btn-small"
+                className="btn btn--sm"
                 // Allowed while a login waits: it cancels that login too.
                 disabled={busy !== null && !waiting}
                 onClick={disconnect}
@@ -197,7 +199,7 @@ export function YouTubeMusicSection() {
           ) : (
             <button
               type="button"
-              className="btn-primary btn-small"
+              className="btn btn--primary btn--sm"
               disabled={!status?.hasClient || (busy !== null && !waiting)}
               title={status?.hasClient ? undefined : 'Choose the client file first'}
               onClick={connect}

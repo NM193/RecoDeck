@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSettingsContext } from './SettingsContext'
 import { Icon } from '../Icon'
+import { Button } from '../Button'
 
 function getFolderName(path: string): string {
   const parts = path.replace(/\\/g, '/').split('/')
@@ -38,19 +39,17 @@ export function LibrarySection() {
 
       <div className="sv-section__actions">
         {folders.length > 0 && (
-          <button
-            className="btn-secondary btn-small"
+          <Button
+            size="sm"
             onClick={handleRescanAll}
-            disabled={loading || scanningFolder !== null}
+            disabled={loading}
+            working={scanningFolder !== null}
+            workingLabel="Scanning…"
           >
-            {scanningFolder ? 'Scanning...' : 'Rescan All'}
-          </button>
+            Rescan All
+          </Button>
         )}
-        <button
-          className="btn-primary btn-small"
-          onClick={handleAddFolder}
-          disabled={loading}
-        >
+        <button type="button" className="btn btn--primary btn--sm" onClick={handleAddFolder} disabled={loading}>
           Add Folder
         </button>
       </div>
@@ -90,17 +89,21 @@ export function LibrarySection() {
                     ) : (
                       <>
                         <button
-                          className="btn-icon"
+                          type="button"
+                          className="btn btn--icon btn--sm"
                           onClick={() => handleRescanFolder(folder)}
                           title="Rescan this folder"
+                          aria-label="Rescan this folder"
                           disabled={loading || scanningFolder !== null}
                         >
                           <Icon name="RotateCw" size={16} />
                         </button>
                         <button
-                          className="btn-icon btn-icon-danger"
+                          type="button"
+                          className="btn btn--icon btn--sm btn--danger"
                           onClick={() => handleRemoveFolder(folder)}
                           title="Remove this folder"
+                          aria-label="Remove this folder"
                           disabled={loading || scanningFolder !== null}
                         >
                           <Icon name="X" size={16} />

@@ -19,7 +19,7 @@ export function DatabaseSection() {
           <button
             onClick={() => setShowDuplicatesModal(true)}
             disabled={cleaningDuplicates}
-            className="btn-primary btn-small"
+            className="btn btn--primary btn--sm"
             style={{ width: '100%' }}
           >
             Review Duplicate Tracks

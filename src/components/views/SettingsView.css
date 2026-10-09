@@ -315,41 +315,6 @@
   font-style: italic;
 }
 
-/* Icon buttons */
-.btn-icon {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  transition: all var(--motion-fast) var(--ease);
-}
-
-.btn-icon:hover {
-  background: var(--surface);
-  color: var(--text-primary);
-  border-color: var(--border);
-}
-
-.btn-icon:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-icon-danger:hover {
-  background: rgba(var(--color-danger-rgb), 0.15);
-  color: var(--color-danger);
-  border-color: rgba(var(--color-danger-rgb), 0.3);
-}
-
-/* Small button variant */
-.btn-small {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-
 /* Theme grid */
 .theme-grid {
   display: grid;

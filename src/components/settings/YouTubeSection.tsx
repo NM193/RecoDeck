@@ -1,5 +1,6 @@
 import { useSettingsContext } from './SettingsContext'
 import { Icon } from '../Icon'
+import { Button } from '../Button'
 
 /** "8h 12m" — the reset is at midnight Pacific, roughly 9am here. */
 function formatReset(seconds: number): string {
@@ -40,33 +41,38 @@ export function YouTubeSection() {
           />
           <button
             onClick={() => setShowYtKey(!showYtKey)}
-            className="btn-icon"
+            className="btn btn--icon"
             title={showYtKey ? 'Hide' : 'Show'}
+            aria-label={showYtKey ? 'Hide the key' : 'Show the key'}
             type="button"
           >
-            <Icon name={showYtKey ? 'EyeOff' : 'Eye'} size={20} />
+            <Icon name={showYtKey ? 'EyeOff' : 'Eye'} size={16} />
           </button>
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             onClick={handleSaveYouTubeKey}
-            disabled={ytSaving || !ytKeyInput.trim()}
-            className="btn-primary btn-small"
+            disabled={!ytKeyInput.trim()}
+            working={ytSaving}
+            workingLabel="Saving…"
           >
-            {ytSaving ? 'Saving...' : ytKeyConfigured ? 'Update Key' : 'Save Key'}
-          </button>
+            {ytKeyConfigured ? 'Update Key' : 'Save Key'}
+          </Button>
           {ytKeyConfigured && (
             <>
-              <button
+              <Button
+                size="sm"
                 onClick={handleTestYouTubeKey}
-                disabled={ytTesting}
-                className="btn-secondary btn-small"
+                working={ytTesting}
+                workingLabel="Testing…"
                 title="Costs 1 quota unit"
               >
-                {ytTesting ? 'Testing...' : 'Test Connection'}
-              </button>
-              <button onClick={handleDeleteYouTubeKey} className="btn-secondary btn-small">
+                Test Connection
+              </Button>
+              <button type="button" onClick={handleDeleteYouTubeKey} className="btn btn--sm">
                 Delete Key
               </button>
             </>
