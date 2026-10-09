@@ -180,6 +180,13 @@
   font-weight: 700;
 }
 
+/* New finds on the Library tab: the accent, nudged toward the text so it
+   reads at 11px in the dark themes and in Dawn. */
+.sets-home__new {
+  color: color-mix(in srgb, var(--accent) 75%, var(--text-primary));
+  font-weight: 600;
+}
+
 .sets-home__spacer {
   flex: 1;
 }

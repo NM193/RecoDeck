@@ -63,6 +63,7 @@ describe('SetsTabBar', () => {
   it('shows new finds next to the library count and the channels badge on Following', () => {
     draw('library', { library: 12, newFinds: 3, saved: 0, channelNews: 5 })
     expect(tabs()[0].querySelector('small')?.textContent).toBe('12 · 3 new')
+    expect(tabs()[0].querySelector('.sets-home__new')?.textContent).toBe('3 new')
     expect(tabs()[2].querySelector('.sets-home__badge')?.textContent).toBe('5')
   })
 

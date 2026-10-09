@@ -64,7 +64,12 @@ export function SetsTabBar({
           {t === 'library' && (
             <small>
               {library.toLocaleString('en-US')}
-              {newFinds > 0 ? ` · ${newFinds} new` : ''}
+              {newFinds > 0 && (
+                <>
+                  {' · '}
+                  <span className="sets-home__new">{newFinds} new</span>
+                </>
+              )}
             </small>
           )}
           {t === 'saved' && <small>{saved.toLocaleString('en-US')}</small>}
