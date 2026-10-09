@@ -673,7 +673,8 @@ export function NowPlayingBar({
 
   const progress = duration > 0 ? (position / duration) * 100 : 0
 
-  const manualPlaylists = playlists.filter((p) => p.playlist_type === 'manual')
+  // Every playlist a track can go in: manual and AI-made alike, not folders.
+  const addablePlaylists = playlists.filter((p) => p.playlist_type !== 'folder')
 
   const getVolumeIcon = () => {
     if (isMuted || volume === 0) return 'VolumeX'
@@ -1034,8 +1035,8 @@ export function NowPlayingBar({
                 <div className="now-playing-bar__playlist-header">
                   Add to playlist
                 </div>
-                {manualPlaylists.length > 0 ? (
-                  manualPlaylists.map((p) => (
+                {addablePlaylists.length > 0 ? (
+                  addablePlaylists.map((p) => (
                     <button
                       key={p.id}
                       className="now-playing-bar__playlist-item"

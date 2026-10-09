@@ -95,9 +95,9 @@ export function SearchView({
   const filteredPlaylists = useMemo(() => {
     if (!query.trim()) return []
     const q = query.toLowerCase()
-    // Only show manual and ai playlists (not folder-type)
+    // Every playlist but a folder: manual and AI-made ('ai_generated') alike
     return playlists.filter(p =>
-      (p.playlist_type === 'manual' || p.playlist_type === 'ai') &&
+      p.playlist_type !== 'folder' &&
       p.name.toLowerCase().includes(q)
     )
   }, [playlists, query])
