@@ -82,6 +82,8 @@ export interface Playlist {
   track_count: number
   created_at?: string
   updated_at?: string
+  /** Its own cover image (Change cover); read with tauriApi.getPlaylistCover. */
+  cover_path?: string | null
 }
 
 // Analysis result types

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-09
+
+### Added
+- **Change cover** — give a playlist an image of its own: rest on the playlist's header and choose Change cover; the image shows on the header, on Home and in Search, and Remove cover brings back the playlist's colours
+
+### Changed
+- A DJ page's tabs are one bar, and the selected tab sits on a highlight that glides to the tab you choose
+
+### Fixed
+- The track tables leave a little room between the column heads and the first row
+
 ## [0.5.0] - 2026-10-09
 
 ### Added

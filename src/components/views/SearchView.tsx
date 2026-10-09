@@ -17,6 +17,7 @@ import type { SectionPref } from '../../lib/search/sections'
 import type { TrackFilter } from '../../lib/trackTable/filter'
 import type { SpotifyData } from '../spotify/useSpotify'
 import type { Track, Playlist } from '../../types/track'
+import { PlaylistCover } from '../PlaylistCover'
 import './SearchView.css'
 
 /** A query is remembered when it stays unchanged this long while it has results. */
@@ -289,12 +290,13 @@ export function SearchView({
                     }}
                     type="button"
                   >
-                    <span
+                    <PlaylistCover
+                      playlist={playlist}
                       className="search-view__playlist-art"
-                      style={{ background: getPlaylistGradient(playlist.name) }}
+                      fallback={getPlaylistGradient(playlist.name)}
                     >
                       <Icon name="Music" size={20} style={{ color: 'rgba(255,255,255,0.7)' }} />
-                    </span>
+                    </PlaylistCover>
                     <span className="search-view__playlist-text">
                       <span className="search-view__dj-name">{playlist.name}</span>
                       <span className="search-view__dj-subtitle">{playlist.track_count} tracks</span>

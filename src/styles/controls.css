@@ -193,6 +193,72 @@ button,
   outline-offset: 2px;
 }
 
+/* Tabs: quiet labels in a bar, the selected one on a thumb that glides to
+   it (useTabThumb). The thumb is the raised colour with a shadow, so it reads
+   on the bar in the dark themes and as white on grey in Dawn. */
+.tabs {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: calc(var(--radius-md) + 3px);
+  background: color-mix(in srgb, var(--bg-primary), var(--text-primary) 6%);
+}
+
+.tabs__thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 0 0 1px color-mix(in srgb, var(--border), transparent 40%);
+  pointer-events: none;
+  transition:
+    transform var(--motion-base) var(--ease),
+    width var(--motion-base) var(--ease);
+}
+
+.tabs__tab {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease);
+}
+
+.tabs__tab:hover,
+.tabs__tab[aria-selected='true'] {
+  color: var(--text-primary);
+}
+
+.tabs__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* A tab's count: "Tracks 120" */
+.tabs__tab small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
 /* Segmented control: follows the buttons */
 .segmented {
   display: flex;

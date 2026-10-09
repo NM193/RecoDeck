@@ -260,43 +260,10 @@
 .dj-tabs-row {
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 0 24px;
+  gap: 16px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-}
-
-.dj-tabs {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-}
-
-.dj-tab {
-  padding: 12px 0 10px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.dj-tab:hover {
-  color: var(--text-primary);
-}
-
-.dj-tab--on {
-  border-bottom-color: var(--accent);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.dj-tab small {
-  margin-left: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 400;
 }
 
 /* A plain grey icon, no box: quiet until hovered. */

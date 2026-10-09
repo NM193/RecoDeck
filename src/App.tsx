@@ -2109,6 +2109,7 @@ function AppContent() {
                       <PlaylistDetailHeader
                         playlist={selectedPlaylist}
                         tracks={tracks}
+                        onCoverChanged={() => void loadPlaylists()}
                       />
                     ) : null
                   })()}
