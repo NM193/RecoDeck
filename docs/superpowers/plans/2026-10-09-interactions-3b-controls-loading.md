@@ -5,7 +5,7 @@
 **Goal:** The last of the Interactions spec. The shared button classes get their missing variants and a `Button` component with a working state. Settings, the DJ pages and the modals move onto them, and the page-specific button styles go. Lists that are still reading show skeletons, after 150ms. Buttons show on Dawn's white.
 
 **Architecture:**
-- **Controls** (`src/styles/controls.css`): `.btn--icon` (square, quiet until hovered), `.btn--pill` (22px), `.btn[aria-pressed='true']` (a toggle that is on), `.btn--icon.btn--danger` (red only while hovered), the working state (`.btn__spinner`, `[aria-busy]`), and `--btn-bg` — `.btn` and its hover / press / open mixes start from `var(--btn-bg, var(--bg-elevated))`; Dawn sets it to its tertiary grey (`globals.css`), since its raised colour is the page's white. Loading's `.skeleton` shimmer, `SkeletonRows`' layout and `.content-in` (a 4px rise, slow) live here too, as shared pieces.
+- **Controls** (`src/styles/controls.css`): `.btn--icon` (square, quiet until hovered), `.btn--pill` (22px), `.btn[aria-pressed='true']` (a toggle that is on), `.btn--icon.btn--danger` (red only while hovered), the working state (`.btn__spinner`, `[aria-busy]`), a disabled button that keeps its pointer events (so its title still says why), and `--btn-bg` — `.btn` and its hover / press / open mixes start from `var(--btn-bg, var(--bg-elevated))`; Dawn sets it to its tertiary grey (`globals.css`), since its raised colour is the page's white. Loading's `.skeleton` shimmer, `SkeletonRows`' layout and `.content-in` (a 4px rise, slow) live here too, as shared pieces.
 - **Components**: `src/components/Button.tsx` (`variant`, `size`, `icon`, `working`, `workingLabel`); `src/components/Skeleton.tsx` (`Skeleton`, one block; `SkeletonRows`, a list); `src/lib/useShowAfter.ts` (tested: false until 150ms after mount — a fast read never flashes a skeleton).
 - **The sweep**: the Settings sections, the modals (the name prompt, What's New, Share, Export, Duplicates, the track table's genre and comment dialogs, App's Delete folder) and the DJ pages use `btn` / `Button`; `btn-primary`, `btn-secondary`, `btn-icon`, `btn-small`, `modal-button`, `dj-btn` and `dj-pill` and their styles (`App.css`, `SettingsView.css`, `TrackTable.css`, `DjView.css`) go. The set page's "have it" is `.btn--pill` in its green; its rows' skeleton and a DJ's Tracks skeleton keep their own columns, with the shared shimmer and the delay.
 
@@ -21,8 +21,9 @@
 - **The working state** keeps the button's width honest: the label is the -ing form ("Saving…", "Scanning…", "Exporting…", "Checking…" / "Downloading…", "Starting…" / "Stopping…", "Testing…", "Reading…"), with a spinner in the icon's place, `aria-busy`, and 75% opacity instead of disabled's 40%, so it reads as working, not unavailable. The connect buttons that may be pressed again while a login waits ("Waiting for Spotify… (try again)") stay plain buttons — they are not disabled while working.
 - **Delete folder and all files** and **Delete selected** (duplicates) are `.btn--danger`; "Remove from library only" and Cancel are plain.
 - **The DJ hero's buttons** keep their glass over the photo — a rule on `.dj-hero__acts .btn` (a context, not a page-specific button) — and Watch is a toggle (`aria-pressed`) instead of a `--on` class. The overview editor's add-card chips become `.btn--sm`.
-- **Skeletons that keep their columns**: a DJ's Tracks table and the set page draw skeleton rows in the table's own grid; they take the shared `.skeleton` shimmer and `useShowAfter`, not `SkeletonRows`. `SkeletonRows` (a cover and two lines) is for a list without columns: a DJ's Overview tracks card. Companion's QR code waits as a `Skeleton` block. The shimmer stops under reduced motion.
-- **Left as they are**: the AI panels' own buttons (`AI_ENABLED = false`); the busy states that are not buttons (the Sets box's "Reading…", a playlist's "Reading the playlist…").
+- **Skeletons that keep their columns**: a DJ's Tracks table (`TrackRowsSkeleton`) and the set page (`RowsSkeleton`) draw skeleton rows in the table's own grid; they take the shared `.skeleton` shimmer and `useShowAfter`, not `SkeletonRows`. Every skeleton is drawn from the start but hidden until 150ms, so it holds its place and nothing shifts when it appears. `SkeletonRows` (a cover and two lines) is for a list without columns: a DJ's Overview tracks card. Companion's QR code waits as a `Skeleton` block. The shimmer stops under reduced motion.
+- **Disabled buttons keep their pointer events** (`cursor: not-allowed` instead of `pointer-events: none`): Connect's "Save the Client ID first" and "Choose the client file first" are titles shown only while disabled, and the only word on why.
+- **Left as they are**: the AI panels' own buttons (`AI_ENABLED = false`); the busy states that are not buttons (the Sets box's "Reading…", a playlist's "Reading the playlist…"); a `custom` theme gets no `--btn-bg` (it cannot know whether it is light); the DJ hero's glass has no press or open shade, as `.dj-btn` had none.
 
 **Checked:** every code block below was applied to a scratch copy of `feat/redesign` at `d60986d`; the same blocks, applied to a clean `git archive`, reproduce it file for file, and `tsc` and each task's tests pass at every task's end.
 - **Builds and tests:**
@@ -32,10 +33,16 @@
 - **In WebKit** (a test page with the shared controls, the real SettingsView with mocks, the export dialog and the name prompt), in Midnight and Dawn:
   - the gallery: default, primary, danger, small, a toggle on, disabled, two icon buttons (one destructive), "have it", and a working button — on Dawn the default button is `rgb(240, 240, 240)` on the white page (it was the page's own white);
   - a working Analyze: "Analyzing…", a spinner, `aria-busy`, disabled; done: "Analyze" again;
-  - `SkeletonRows`: nothing at 60ms, three rows at 260ms, `role="status"`;
+  - `SkeletonRows`: hidden at 60ms but already 138px high, visible at 260ms, the same height, `role="status"`;
   - Settings with Library, AI, YouTube and Companion open: no legacy class, 22 shared buttons; Rescan All: "Scanning…" until the scan ends; the folder row's Rescan and ✕ are quiet icons;
   - the export dialog: Export → "Exporting…" with its spinner, Cancel disabled, then done; the name prompt: Cancel and OK on `.btn` / `.btn--primary`;
   - I1's, S4's and S3's scenarios still pass on this copy (the set page's "have it" and its skeleton included).
+
+**Reviewed:** an independent review found no blocker; its points are folded in above and checked:
+- **A disabled button's title** (why Connect is disabled) never showed: `.btn:disabled` had `pointer-events: none`, new to these buttons → `cursor: not-allowed`, with no press scale.
+- **"have it"** lost its green text on hover (`.btn:hover`'s colour) → its hover keeps the colour.
+- **Skeletons** rendered nothing for 150ms, so the area collapsed and then jumped → drawn from the start, hidden until shown. DjTracksTab's local `SkeletonRows` is now `TrackRowsSkeleton`, apart from `Skeleton.tsx`'s.
+- Checked and kept: every disabled condition moved into `Button` unchanged (`disabled || working`); `--btn-bg` turns no overridden button invisible; PromptModal's OK stays a submit.
 
 ---
 
@@ -168,6 +175,17 @@ In `src/styles/controls.css`, replace
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
 ```
 
 with
@@ -196,6 +214,22 @@ with
 .btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Disabled keeps its pointer events, so a title saying why still shows. */
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn:disabled:active {
+  transform: none;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
 ```
 
 In `src/styles/controls.css`, replace
@@ -576,21 +610,26 @@ export function Skeleton({
   )
 }
 
-/** A list still reading: rows of a cover and two lines. */
+/** A list still reading: rows of a cover and two lines, holding their place while they wait. */
 export function SkeletonRows({ rows = 6, label = 'Loading' }: { rows?: number; label?: string }) {
   const shown = useShowAfter()
   return (
-    <div className="skeleton-rows" role="status" aria-label={label} aria-busy="true">
-      {shown &&
-        Array.from({ length: rows }, (_, i) => (
-          <div className="skeleton-rows__row" key={i}>
-            <span className="skeleton skeleton-rows__cover" />
-            <span className="skeleton-rows__lines">
-              <span className="skeleton skeleton-rows__line" style={{ width: `${64 - (i % 3) * 12}%` }} />
-              <span className="skeleton skeleton-rows__line skeleton-rows__line--short" />
-            </span>
-          </div>
-        ))}
+    <div
+      className="skeleton-rows"
+      role="status"
+      aria-label={label}
+      aria-busy="true"
+      style={{ visibility: shown ? undefined : 'hidden' }}
+    >
+      {Array.from({ length: rows }, (_, i) => (
+        <div className="skeleton-rows__row" key={i}>
+          <span className="skeleton skeleton-rows__cover" />
+          <span className="skeleton-rows__lines">
+            <span className="skeleton skeleton-rows__line" style={{ width: `${64 - (i % 3) * 12}%` }} />
+            <span className="skeleton skeleton-rows__line skeleton-rows__line--short" />
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -2732,15 +2771,20 @@ with
 
 /**
  * Grey bars where rows will be, in the table's own columns, while a first
- * fetch has nothing to show yet — after 150ms, so a quick one never flashes.
+ * fetch has nothing to show yet — shown after 150ms, so a quick one never
+ * flashes, and holding their place until then.
  */
-function SkeletonRows() {
+function TrackRowsSkeleton() {
   const shown = useShowAfter()
-  if (!shown) return null
   return (
     <>
       {[62, 48, 70, 55, 66, 40, 58, 50].map((width, i) => (
-        <div key={i} className="spotify-row dj-skeleton" aria-hidden="true">
+        <div
+          key={i}
+          className="spotify-row dj-skeleton"
+          aria-hidden="true"
+          style={{ visibility: shown ? undefined : 'hidden' }}
+        >
           <span className="spotify-cell--num">{i + 1}</span>
           <span>
             <i className="skeleton" style={{ width: `${width}%` }} />
@@ -2790,6 +2834,42 @@ with
       </div>
     )
   }
+```
+
+In `src/components/dj/DjTracksTab.tsx`, replace
+
+```tsx
+            <span role="columnheader">Released</span>
+            <span className="spotify-cell--status" role="columnheader">
+              Status
+            </span>
+          </div>
+          {state === 'skeleton' ? (
+            <SkeletonRows />
+          ) : (
+            shown.map((row, index) => (
+              <DjTrackRow
+                key={row.track.spotifyId}
+                row={row}
+                number={index + 1}
+```
+
+with
+
+```tsx
+            <span role="columnheader">Released</span>
+            <span className="spotify-cell--status" role="columnheader">
+              Status
+            </span>
+          </div>
+          {state === 'skeleton' ? (
+            <TrackRowsSkeleton />
+          ) : (
+            shown.map((row, index) => (
+              <DjTrackRow
+                key={row.track.spotifyId}
+                row={row}
+                number={index + 1}
 ```
 
 - [ ] **Step 2: The hero's glass; the old buttons and chips go**
@@ -3163,19 +3243,18 @@ with
   )
 }
 
-/** The rows while the set reads: grey bars in their columns, after 150ms. */
+/** The rows while the set reads: grey bars in their columns, shown after 150ms, holding their place until then. */
 function RowsSkeleton() {
   const shown = useShowAfter()
   return (
-    <div className="set-page__rows" aria-busy="true">
-      {shown &&
-        Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="set-row set-row--skeleton">
-            <span className="skeleton" />
-            <span className="skeleton" />
-            <span className="skeleton" />
-          </div>
-        ))}
+    <div className="set-page__rows" aria-busy="true" style={{ visibility: shown ? undefined : 'hidden' }}>
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="set-row set-row--skeleton">
+          <span className="skeleton" />
+          <span className="skeleton" />
+          <span className="skeleton" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -3208,6 +3287,11 @@ In `src/components/sets/SetPage.css`, replace
 .set-row__have:hover {
   background: color-mix(in srgb, #1ed760 25%, transparent);
 }
+
+.set-row__missing {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 ```
 
 with
@@ -3227,6 +3311,12 @@ with
 
 .set-row__have:hover {
   background: color-mix(in srgb, #1ed760 25%, transparent);
+  color: color-mix(in srgb, #1ed760 80%, var(--text-primary));
+}
+
+.set-row__missing {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 ```
 
@@ -3311,7 +3401,9 @@ with
   only while hovered), and `--btn-bg`: a theme whose raised colour is its
   page's sets it, so buttons show on white (Dawn: its tertiary grey).
 - `Button` renders them, with `working`: a spinner in the icon's place,
-  `workingLabel` ("Saving…"), disabled until done (`aria-busy`). Settings'
+  `workingLabel` ("Saving…"), disabled until done (`aria-busy`). A disabled
+  button keeps its pointer events, so a title saying why it is disabled
+  still shows (Connect: "Save the Client ID first"). Settings'
   Save, Test Connection, Rescan All, Start / Stop Server, Check for Updates
   and Choose client file, and the export dialog's Export, use it.
 - Settings, the DJ pages and the modals (the name prompt, What's New, Share,
@@ -3324,8 +3416,10 @@ with
   they are: the AI panels' own buttons (not shown in this build).
 - Loading: `useShowAfter` (150ms), `Skeleton` and `SkeletonRows` on the shared
   `.skeleton` shimmer (still under reduced motion); `.content-in` fades in
-  what replaces them. A DJ's Tracks table and Overview tracks card, the set
-  page's rows and the Companion's QR code use them.
+  what replaces them. Skeletons hold their place while they wait (drawn but
+  hidden), so nothing shifts when they appear. A DJ's Tracks table and
+  Overview tracks card, the set page's rows and the Companion's QR code use
+  them.
 
 ## Testing
 
