@@ -5,6 +5,7 @@ pub mod commands;
 pub mod db;
 pub mod error;
 pub mod external;
+pub mod formats;
 pub mod scanner;
 pub mod server;
 
