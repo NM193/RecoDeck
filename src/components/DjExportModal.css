@@ -1,10 +1,6 @@
 /* Export to DJ software: the playlist tree with boxes, where the file goes,
    and how to load it in the program. Sits in the shared .modal-content. */
 
-.dj-export {
-  width: min(520px, 92vw);
-}
-
 .dj-export__label {
   margin: 0 0 6px;
   color: var(--text-secondary);
@@ -18,9 +14,9 @@
   margin-bottom: 16px;
   padding: 4px 0;
   overflow: auto;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
 }
 
 .dj-export__row {
@@ -82,12 +78,23 @@
 }
 
 .dj-export__path {
+  display: flex;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   color: var(--text-secondary);
   font-size: 12.5px;
+}
+
+/* A long path gives up its folder part, never the file name. */
+.dj-export__path-folder {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dj-export__path-file {
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
@@ -100,4 +107,11 @@
 
 .dj-export__howto--steps {
   padding-left: 18px;
+}
+
+.dj-export__error {
+  margin: 0 0 16px;
+  color: var(--color-danger);
+  font-size: 12.5px;
+  line-height: 1.5;
 }

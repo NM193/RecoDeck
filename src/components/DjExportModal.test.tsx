@@ -116,7 +116,43 @@ describe('DjExportModal', () => {
     await act(async () => {
       exportButton().click()
     })
-    expect(toast).toHaveBeenCalledWith('Couldn’t write /x: Permission denied', { kind: 'error' })
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Couldn’t write /x: Permission denied')
+    expect(toast).not.toHaveBeenCalledWith(expect.anything(), { kind: 'error' })
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('says why in the tree box when the playlists cannot be loaded, and Cancel still closes', async () => {
+    vi.mocked(tauriApi.getAllPlaylists).mockRejectedValue({ kind: 'Internal', message: 'db gone' })
+    await open(null)
+    expect(host.querySelector('.dj-export__tree')?.textContent).toBe('db gone')
+    const cancel = [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')!
+    await act(async () => {
+      cancel.click()
+    })
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('Change… sets where the file goes, and Export sends that path', async () => {
+    vi.mocked(tauriApi.pickDjExportFile).mockResolvedValue('/Volumes/USB/RecoDeck.xml')
+    await open(2)
+    const change = [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Change…')!
+    await act(async () => {
+      change.click()
+    })
+    expect(host.textContent).toContain('/Volumes/USB/RecoDeck.xml')
+    await act(async () => {
+      exportButton().click()
+    })
+    expect(tauriApi.exportToDj).toHaveBeenCalledWith('rekordbox', [2, 4], '/Volumes/USB/RecoDeck.xml')
+  })
+
+  it('an empty folder has its box disabled', async () => {
+    vi.mocked(tauriApi.getAllPlaylists).mockResolvedValue([
+      ...playlists,
+      { id: 9, name: 'Empty', parent_id: null, playlist_type: 'folder', track_count: 0 },
+    ])
+    await open(null)
+    expect(box('Empty').disabled).toBe(true)
+    expect(box('Gigs').disabled).toBe(false)
   })
 })

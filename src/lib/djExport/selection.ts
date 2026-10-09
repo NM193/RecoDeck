@@ -87,6 +87,9 @@ export function selectedInOrder(tree: ExportTreeNode[], selected: Set<number>): 
   return tree.flatMap(playlistIdsUnder).filter((id) => selected.has(id))
 }
 
+/** How many skipped tracks the toast's hover lists before "and N more". */
+const SKIPPED_LINES = 6
+
 const count = (n: number, one: string, many: string) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`
 
 /** The toast after an export: a warning, with the list as its detail, when files were gone. */
@@ -99,8 +102,14 @@ export function resultToast(
   return {
     message: `${message} · ${count(result.skipped.length, 'track', 'tracks')} skipped — file missing`,
     kind: 'warning',
-    detail: result.skipped
-      .map((s) => `${s.artist || 'Unknown artist'} – ${s.title || 'Untitled'} (${s.path})`)
-      .join('\n'),
+    detail: skippedDetail(result.skipped),
   }
+}
+
+function skippedDetail(skipped: DjExportResult['skipped']): string {
+  const lines = skipped
+    .slice(0, SKIPPED_LINES)
+    .map((s) => `${s.artist || 'Unknown artist'} – ${s.title || 'Untitled'} (${s.path})`)
+  if (skipped.length > SKIPPED_LINES) lines.push(`and ${(skipped.length - SKIPPED_LINES).toLocaleString('en-US')} more`)
+  return lines.join('\n')
 }

@@ -98,4 +98,12 @@ describe('resultToast', () => {
     expect(t.kind).toBe('warning')
     expect(t.detail).toBe('DJ – Gone (/a.mp3)\nUnknown artist – Untitled (/b.mp3)')
   })
+  it('lists at most six skipped tracks, then how many more', () => {
+    const skipped = Array.from({ length: 8 }, (_, i) => ({ artist: 'DJ', title: `T${i}`, path: `/${i}.mp3` }))
+    const t = resultToast({ playlists: 1, tracks: 9, skipped, written: ['/x.xml'] }, 'Rekordbox')
+    const lines = t.detail!.split('\n')
+    expect(lines).toHaveLength(7)
+    expect(lines[5]).toBe('DJ – T5 (/5.mp3)')
+    expect(lines[6]).toBe('and 2 more')
+  })
 })

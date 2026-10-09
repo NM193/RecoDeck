@@ -2,12 +2,13 @@
 // the playlist tree with boxes, where the file goes, how to load it, and the
 // export. Phase 1 writes Rekordbox XML; the program tabs come with Traktor.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { tauriApi } from '../lib/tauri-api'
 import { useOverlay } from '../lib/overlays'
 import { toast } from '../lib/toast'
 import { getErrorMessage } from '../types/ai'
+import type { DjExportDefaults } from '../types/djExport'
 import {
   buildTree,
   checkState,
@@ -36,13 +37,20 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
   const [tree, setTree] = useState<ExportTreeNode[] | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [path, setPath] = useState('')
-  const [firstTime, setFirstTime] = useState(true)
+  const [defaults, setDefaults] = useState<DjExportDefaults | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   // Esc closes it, as the backdrop and Cancel do — not while it writes.
   useOverlay(true, () => {
     if (!running) onClose()
   })
+
+  // Menus hand focus back to whatever opened them, expecting a dialog to take it.
+  useEffect(() => {
+    dialogRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     let live = true
@@ -53,7 +61,7 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
         setTree(built)
         setSelected(initialSelection(built, defaults.playlist_ids, openedFrom))
         setPath(defaults.path)
-        setFirstTime(!defaults.remembered)
+        setDefaults(defaults)
       })
       .catch((err) => {
         if (live) setLoadError(getErrorMessage(err))
@@ -64,16 +72,18 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
   }, [openedFrom])
 
   async function changePath() {
+    setError(null)
     try {
       const picked = await tauriApi.pickDjExportFile('rekordbox', path)
       if (picked) setPath(picked)
     } catch (err) {
-      toast(getErrorMessage(err), { kind: 'error' })
+      setError(getErrorMessage(err))
     }
   }
 
   async function handleExport() {
     if (!tree) return
+    setError(null)
     setRunning(true)
     try {
       const result = await tauriApi.exportToDj('rekordbox', selectedInOrder(tree, selected), path)
@@ -82,12 +92,12 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
       toast(message, {
         kind,
         detail,
-        action: written ? { label: REVEAL_LABEL, run: () => void revealItemInDir(written) } : undefined,
+        action: written ? { label: REVEAL_LABEL, run: () => void revealItemInDir(written).catch((e) => toast(getErrorMessage(e), { kind: 'error' })) } : undefined,
       })
       onClose()
     } catch (err) {
       setRunning(false)
-      toast(getErrorMessage(err), { kind: 'error' })
+      setError(getErrorMessage(err))
     }
   }
 
@@ -98,6 +108,9 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
       <div
         className="modal-content dj-export"
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        ref={dialogRef}
         aria-labelledby="dj-export-title"
         onClick={(e) => e.stopPropagation()}
       >
@@ -124,15 +137,24 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
 
         <div className="dj-export__label">Where</div>
         <div className="dj-export__where">
-          <span className="dj-export__path" title={path}>
-            {path}
-          </span>
-          <button type="button" className="btn" onClick={() => void changePath()} disabled={running}>
+          <PathText path={path} />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void changePath()}
+            disabled={running || tree === null}
+          >
             Change…
           </button>
         </div>
 
-        <HowTo firstTime={firstTime} />
+        {defaults && <HowTo full={!defaults.remembered || path !== defaults.path} />}
+
+        {error && (
+          <p className="dj-export__error" role="alert">
+            {error}
+          </p>
+        )}
 
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose} disabled={running}>
@@ -207,7 +229,7 @@ function Check({
   onChange: () => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (ref.current) ref.current.indeterminate = state === 'mixed'
   }, [state])
   return (
@@ -222,9 +244,20 @@ function Check({
   )
 }
 
-/** How to load the file in Rekordbox: every step until the first export, then the one that repeats. */
-function HowTo({ firstTime }: { firstTime: boolean }) {
-  if (!firstTime) {
+/** The file's path; when it is long the folder part gives way and the file name stays in view. */
+function PathText({ path }: { path: string }) {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1
+  return (
+    <span className="dj-export__path" title={path}>
+      <span className="dj-export__path-folder">{path.slice(0, cut)}</span>
+      <span className="dj-export__path-file">{path.slice(cut)}</span>
+    </span>
+  )
+}
+
+/** How to load the file in Rekordbox: every step until the first export or when the file goes somewhere new, then the one that repeats. */
+function HowTo({ full }: { full: boolean }) {
+  if (!full) {
     return <p className="dj-export__howto">In Rekordbox, refresh “rekordbox xml” in the tree to see the changes.</p>
   }
   return (
