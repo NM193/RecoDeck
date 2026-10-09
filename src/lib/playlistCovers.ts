@@ -1,11 +1,15 @@
 // src/lib/playlistCovers.ts
 // A playlist's own cover (Change cover): read once per cover file and kept as
 // a blob URL, as track artwork is. A replaced cover is a new file (a new
-// path), so it reads again and the old URL is let go.
+// path), so it reads again; the old URL is let go a little later, as a card
+// may still show it for a render or two. A read that failed is not kept, so
+// the next one tries again.
 import { useEffect, useState } from 'react'
 import { tauriApi } from './tauri-api'
 
 const covers = new Map<string, Promise<string | null>>()
+/** How long an earlier cover's URL stays usable after a new one is asked for. */
+const RELEASE_AFTER_MS = 5000
 
 const keyOf = (id: number, path: string) => `${id}\n${path}`
 
@@ -14,17 +18,20 @@ export function playlistCoverUrl(id: number, path: string): Promise<string | nul
   const key = keyOf(id, path)
   const known = covers.get(key)
   if (known) return known
-  // An earlier cover of this playlist is let go.
+  // An earlier cover of this playlist is let go, a little later.
   for (const [old, url] of covers) {
     if (old.startsWith(`${id}\n`)) {
       covers.delete(old)
-      void url.then((u) => u && URL.revokeObjectURL(u))
+      setTimeout(() => void url.then((u) => u && URL.revokeObjectURL(u)), RELEASE_AFTER_MS)
     }
   }
   const url = tauriApi
     .getPlaylistCover(id)
     .then((buffer) => URL.createObjectURL(new Blob([new Uint8Array(buffer)])))
-    .catch(() => null)
+    .catch(() => {
+      if (covers.get(key) === url) covers.delete(key)
+      return null
+    })
   covers.set(key, url)
   return url
 }

@@ -199,14 +199,18 @@ pub fn set_playlist_cover(
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let dest = dir.join(cover_file_name(playlist_id, &ext, millis));
-    std::fs::copy(source, &dest).map_err(|e| AppError::Internal(format!("Couldn't copy the image: {e}")))?;
+    if let Err(e) = std::fs::copy(source, &dest) {
+        // A copy that stopped halfway leaves nothing behind.
+        let _ = std::fs::remove_file(&dest);
+        return Err(AppError::Internal(format!("Couldn't copy the image: {e}")));
+    }
     let dest_str = dest.to_string_lossy().to_string();
 
     let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     match db.set_playlist_cover(playlist_id, Some(&dest_str)) {
         Ok(previous) => {
-            if let Some(previous) = previous {
+            if let Some(previous) = previous.filter(|p| *p != dest_str) {
                 remove_cover_file(&dir, &previous);
             }
             Ok(dest_str)
@@ -247,7 +251,19 @@ pub fn get_playlist_cover(
             .cover_path
     };
     let cover = cover.ok_or_else(|| AppError::NotFound("no_cover".to_string()))?;
-    let bytes = std::fs::read(&cover).map_err(|e| AppError::Internal(format!("Couldn't read the cover: {e}")))?;
+    // Only a file in the covers folder, of a cover's size, is ever read.
+    let path = Path::new(&cover);
+    let dir = covers_dir(&state).ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    if path.parent() != Some(dir.as_path()) {
+        return Err(AppError::NotFound("no_cover".to_string()));
+    }
+    let size = std::fs::metadata(path)
+        .map_err(|e| AppError::Internal(format!("Couldn't read the cover: {e}")))?
+        .len();
+    if size > COVER_MAX_BYTES {
+        return Err(AppError::NotFound("no_cover".to_string()));
+    }
+    let bytes = std::fs::read(path).map_err(|e| AppError::Internal(format!("Couldn't read the cover: {e}")))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
