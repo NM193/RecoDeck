@@ -31,6 +31,7 @@ import type { Playlist } from '../../types/track'
 import { homeGenreTiles, playlistGradient, userPlaylists } from './content'
 import { HomeTrackRows, type TrackRowActions } from './HomeTrackRows'
 import { PlaylistCover } from '../PlaylistCover'
+import { ErrorBoundary } from '../ErrorBoundary'
 import type { HomeData } from './useHomeData'
 
 /** Last playlist draws this many rows; a 2,000-track playlist would draw them all. */
@@ -112,13 +113,16 @@ export function HomeCard({
         )}
       </div>
       <div className="home-card__body">
-        <CardBody
-          id={id}
-          columns={columns}
-          data={data}
-          facts={facts}
-          actions={actions}
-        />
+        {/* A card that fails says so in its place; the head stays, so it can still be removed. */}
+        <ErrorBoundary level="card">
+          <CardBody
+            id={id}
+            columns={columns}
+            data={data}
+            facts={facts}
+            actions={actions}
+          />
+        </ErrorBoundary>
       </div>
     </section>
   )

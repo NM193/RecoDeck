@@ -30,6 +30,7 @@ import type { TrackFilter } from './lib/trackTable/filter'
 import appPackage from '../package.json'
 import { UpdateToast } from './components/UpdateToast'
 import { ShortcutsSheet } from './components/ShortcutsSheet'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import {
   AnalysisProgress,
   type AnalysisProgressData,
@@ -1730,6 +1731,8 @@ function AppContent() {
       ? `spotify-${shownSpotifyList}`
       : shownYouTubeMusicList !== null
       ? `youtube-music-${shownYouTubeMusicList}`
+      : showSets
+        ? 'sets'
       : showSettings
         ? 'settings'
         : showSearch
@@ -1973,195 +1976,198 @@ function AppContent() {
             transition={{ duration: MOTION.base, ease: EASE }}
             style={{ height: '100%', overflow: 'auto', minWidth: 0 }}
           >
-            {djPage !== null ? (
-              <DjView
-                name={djPage.name}
-                spotifyArtistId={djPage.spotifyArtistId}
-                spotify={spotify}
-                onBack={closeDj}
-                onOpenSets={openSets}
-                onOpenDj={(name, spotifyArtistId) =>
-                  openDj(name, spotifyArtistId)
-                }
-                onOpenSettings={openSpotifySettings}
-                onPlayTrack={handlePlayTrack}
-              />
-            ) : shownSpotifyList !== null ? (
-              <SpotifyView
-                listId={shownSpotifyList}
-                spotify={spotify}
-                onPlayTrack={handlePlayTrack}
-              />
-            ) : shownYouTubeMusicList !== null ? (
-              <YouTubeMusicView
-                listId={shownYouTubeMusicList}
-                youtubeMusic={youtubeMusic}
-                matches={youtubeMusicMatches}
-                library={spotify}
-                onPlayTrack={handlePlayTrack}
-                onOpenSet={(videoId) =>
-                  openSets({ openVideoId: videoId, initialQuery: '' })
-                }
-              />
-            ) : showSets ? (
-              <SetsView
-                // A new start is a new SetsView: it reads these props only when it mounts.
-                key={`sets-${setsVisit}`}
-                onPlayTrack={handlePlayTrack}
-                openVideoId={setsStart.openVideoId}
-                initialQuery={setsStart.initialQuery}
-                initialTab={setsStart.tab}
-                onOpenDj={(name, openVideoId) => openDj(name, null, { view: 'sets', openVideoId })}
-              />
-            ) : showSettings ? (
-              <SettingsView
-                onFoldersChanged={handleFoldersChanged}
-                onThemeChanged={handleThemeChanged}
-                onNotification={(message, type) => toast(message, { kind: type })}
-              />
-            ) : showSearch ? (
-              <SearchView
-                tracks={tracks}
-                playlists={playlists}
-                onTrackPlay={handlePlayTrack}
-                query={searchQuery}
-                onQueryChange={setSearchQuery}
-                onOpenDj={(name, spotifyArtistId) => openDj(name, spotifyArtistId, { view: 'search' })}
-                spotify={spotify}
-                onOpenAllTracks={openAllTracks}
-                onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
-                playVersion={playVersion}
-                onPlaylistSelect={(id) => {
-                  handlePlaylistSelect(id)
-                  setStreamList(null)
-                  setDjPage(null)
-                  setShowSearch(false)
-                  setShowSets(false)
-                }}
-              />
-            ) : showAIChat ? (
-              <ChatView onPlaylistCreated={loadPlaylists} />
-            ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
-              <HomeView
-                dataVersion={playVersion + dataVersion}
-                playlists={playlists}
-                totalTrackCount={totalTrackCount}
-                folderCount={libraryFolders.length}
-                spotify={
-                  spotifyShown
-                    ? {
-                        total: spotify.newCounts.total,
-                        byList: spotify.newCounts.byList,
-                        lists: spotify.library.lists,
-                      }
-                    : null
-                }
-                youtubeMusic={
-                  youtubeMusicShown
-                    ? {
-                        total: youtubeMusicMatches.newCounts.total,
-                        byList: youtubeMusicMatches.newCounts.byList,
-                        lists: youtubeMusic.library.lists,
-                      }
-                    : null
-                }
-                onPlay={handlePlayTrack}
-                onPlayPlaylist={(id) => void playPlaylist(id)}
-                onOpenPlaylist={handlePlaylistSelect}
-                onOpenDj={(name) => openDj(name, null, { view: 'home' })}
-                onOpenSets={() => openSets(NO_SETS_START)}
-                onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
-                onOpenSetsLibrary={() => openSets({ ...NO_SETS_START, tab: 'library' })}
-                onMarkAllSetsSeen={() => void handleMarkAllSetsSeen()}
-                onOpenAllTracks={openAllTracks}
-                onOpenStreamList={(service, listId) =>
-                  service === 'spotify' ? openSpotifyList(listId) : openYouTubeMusicList(listId)
-                }
-                onAnalyzeTracks={handleAnalyzeFromHome}
-                onCreatePlaylist={() => handleCreatePlaylist(null)}
-                onImportFolder={() => openSettingsOn('library')}
-                onAddToPlaylist={handleAddToPlaylist}
-                onMoveToFolder={handleMoveToFolder}
-              />
-            ) : showAllTracks && libraryPending ? (
-              <div />
-            ) : tracks.length === 0 && !allTracksWithLibrary ? (
-              <div className="empty-state">
-                <h2>{emptyTitle}</h2>
-                <p>{emptySubtitle}</p>
-              </div>
-            ) : (
-              <div
-                style={{
-                  height: '100%',
-                  overflowY: 'auto',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                {/* Playlist detail header with scroll compression */}
-                {selectedPlaylistId != null &&
-                  (() => {
-                    const selectedPlaylist = playlists.find(
-                      (p) => p.id === selectedPlaylistId,
-                    )
-                    return selectedPlaylist ? (
-                      <PlaylistDetailHeader
-                        playlist={selectedPlaylist}
-                        tracks={tracks}
-                        onCoverChanged={() => void loadPlaylists()}
-                      />
-                    ) : null
-                  })()}
-
+            {/* A page that fails says so in its place; the sidebar and the player keep working. */}
+            <ErrorBoundary level="page">
+              {djPage !== null ? (
+                <DjView
+                  name={djPage.name}
+                  spotifyArtistId={djPage.spotifyArtistId}
+                  spotify={spotify}
+                  onBack={closeDj}
+                  onOpenSets={openSets}
+                  onOpenDj={(name, spotifyArtistId) =>
+                    openDj(name, spotifyArtistId)
+                  }
+                  onOpenSettings={openSpotifySettings}
+                  onPlayTrack={handlePlayTrack}
+                />
+              ) : shownSpotifyList !== null ? (
+                <SpotifyView
+                  listId={shownSpotifyList}
+                  spotify={spotify}
+                  onPlayTrack={handlePlayTrack}
+                />
+              ) : shownYouTubeMusicList !== null ? (
+                <YouTubeMusicView
+                  listId={shownYouTubeMusicList}
+                  youtubeMusic={youtubeMusic}
+                  matches={youtubeMusicMatches}
+                  library={spotify}
+                  onPlayTrack={handlePlayTrack}
+                  onOpenSet={(videoId) =>
+                    openSets({ openVideoId: videoId, initialQuery: '' })
+                  }
+                />
+              ) : showSets ? (
+                <SetsView
+                  // A new start is a new SetsView: it reads these props only when it mounts.
+                  key={`sets-${setsVisit}`}
+                  onPlayTrack={handlePlayTrack}
+                  openVideoId={setsStart.openVideoId}
+                  initialQuery={setsStart.initialQuery}
+                  initialTab={setsStart.tab}
+                  onOpenDj={(name, openVideoId) => openDj(name, null, { view: 'sets', openVideoId })}
+                />
+              ) : showSettings ? (
+                <SettingsView
+                  onFoldersChanged={handleFoldersChanged}
+                  onThemeChanged={handleThemeChanged}
+                  onNotification={(message, type) => toast(message, { kind: type })}
+                />
+              ) : showSearch ? (
+                <SearchView
+                  tracks={tracks}
+                  playlists={playlists}
+                  onTrackPlay={handlePlayTrack}
+                  query={searchQuery}
+                  onQueryChange={setSearchQuery}
+                  onOpenDj={(name, spotifyArtistId) => openDj(name, spotifyArtistId, { view: 'search' })}
+                  spotify={spotify}
+                  onOpenAllTracks={openAllTracks}
+                  onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+                  playVersion={playVersion}
+                  onPlaylistSelect={(id) => {
+                    handlePlaylistSelect(id)
+                    setStreamList(null)
+                    setDjPage(null)
+                    setShowSearch(false)
+                    setShowSets(false)
+                  }}
+                />
+              ) : showAIChat ? (
+                <ChatView onPlaylistCreated={loadPlaylists} />
+              ) : !selectedFolder && !selectedPlaylistId && !showAllTracks ? (
+                <HomeView
+                  dataVersion={playVersion + dataVersion}
+                  playlists={playlists}
+                  totalTrackCount={totalTrackCount}
+                  folderCount={libraryFolders.length}
+                  spotify={
+                    spotifyShown
+                      ? {
+                          total: spotify.newCounts.total,
+                          byList: spotify.newCounts.byList,
+                          lists: spotify.library.lists,
+                        }
+                      : null
+                  }
+                  youtubeMusic={
+                    youtubeMusicShown
+                      ? {
+                          total: youtubeMusicMatches.newCounts.total,
+                          byList: youtubeMusicMatches.newCounts.byList,
+                          lists: youtubeMusic.library.lists,
+                        }
+                      : null
+                  }
+                  onPlay={handlePlayTrack}
+                  onPlayPlaylist={(id) => void playPlaylist(id)}
+                  onOpenPlaylist={handlePlaylistSelect}
+                  onOpenDj={(name) => openDj(name, null, { view: 'home' })}
+                  onOpenSets={() => openSets(NO_SETS_START)}
+                  onOpenSet={(videoId) => openSets({ openVideoId: videoId, initialQuery: '' })}
+                  onOpenSetsLibrary={() => openSets({ ...NO_SETS_START, tab: 'library' })}
+                  onMarkAllSetsSeen={() => void handleMarkAllSetsSeen()}
+                  onOpenAllTracks={openAllTracks}
+                  onOpenStreamList={(service, listId) =>
+                    service === 'spotify' ? openSpotifyList(listId) : openYouTubeMusicList(listId)
+                  }
+                  onAnalyzeTracks={handleAnalyzeFromHome}
+                  onCreatePlaylist={() => handleCreatePlaylist(null)}
+                  onImportFolder={() => openSettingsOn('library')}
+                  onAddToPlaylist={handleAddToPlaylist}
+                  onMoveToFolder={handleMoveToFolder}
+                />
+              ) : showAllTracks && libraryPending ? (
+                <div />
+              ) : tracks.length === 0 && !allTracksWithLibrary ? (
+                <div className="empty-state">
+                  <h2>{emptyTitle}</h2>
+                  <p>{emptySubtitle}</p>
+                </div>
+              ) : (
                 <div
                   style={{
-                    flex: 1,
-                    overflow: 'hidden',
-                    position: 'relative',
-                    minWidth: 0,
+                    height: '100%',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
                   }}
                 >
-                  <TrackTable
-                    ref={trackTableRef}
-                    tracks={tracks}
-                    playlists={playlists}
-                    selectedPlaylistId={selectedPlaylistId}
-                    onTrackClick={handleTrackClick}
-                    onTrackDoubleClick={handlePlayTrack}
-                    onAnalyzeTracks={handleAnalyzeTracks}
-                    onAddToPlaylist={handleAddToPlaylist}
-                    onRemoveFromPlaylist={handleRemoveFromPlaylist}
-                    onSetGenre={handleSetGenre}
-                    onClearGenre={handleClearGenre}
-                    onMoveToFolder={handleMoveToFolder}
-                    onReorderPlaylist={handleReorderPlaylist}
-                    onUpdateTrack={handleUpdateTrack}
-                    genreDefinitions={genreDefinitions}
-                    onGenerateAIPlaylist={
-                      AI_ENABLED ? handleGenerateAIPlaylist : undefined
-                    }
-                    onGetPlaylistRecommendations={
-                      AI_ENABLED ? handleGetPlaylistRecommendations : undefined
-                    }
-                    onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
-                    onSearch={
-                      !selectedFolder && !selectedPlaylistId
-                        ? handleSearch
-                        : undefined
-                    }
-                    filter={tableFilter}
-                    onFilterChange={setTableFilter}
-                    playVersion={playVersion}
-                    totalCount={
-                      !selectedFolder && !selectedPlaylistId
-                        ? totalTrackCount
-                        : undefined
-                    }
-                  />
+                  {/* Playlist detail header with scroll compression */}
+                  {selectedPlaylistId != null &&
+                    (() => {
+                      const selectedPlaylist = playlists.find(
+                        (p) => p.id === selectedPlaylistId,
+                      )
+                      return selectedPlaylist ? (
+                        <PlaylistDetailHeader
+                          playlist={selectedPlaylist}
+                          tracks={tracks}
+                          onCoverChanged={() => void loadPlaylists()}
+                        />
+                      ) : null
+                    })()}
+
+                  <div
+                    style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      position: 'relative',
+                      minWidth: 0,
+                    }}
+                  >
+                    <TrackTable
+                      ref={trackTableRef}
+                      tracks={tracks}
+                      playlists={playlists}
+                      selectedPlaylistId={selectedPlaylistId}
+                      onTrackClick={handleTrackClick}
+                      onTrackDoubleClick={handlePlayTrack}
+                      onAnalyzeTracks={handleAnalyzeTracks}
+                      onAddToPlaylist={handleAddToPlaylist}
+                      onRemoveFromPlaylist={handleRemoveFromPlaylist}
+                      onSetGenre={handleSetGenre}
+                      onClearGenre={handleClearGenre}
+                      onMoveToFolder={handleMoveToFolder}
+                      onReorderPlaylist={handleReorderPlaylist}
+                      onUpdateTrack={handleUpdateTrack}
+                      genreDefinitions={genreDefinitions}
+                      onGenerateAIPlaylist={
+                        AI_ENABLED ? handleGenerateAIPlaylist : undefined
+                      }
+                      onGetPlaylistRecommendations={
+                        AI_ENABLED ? handleGetPlaylistRecommendations : undefined
+                      }
+                      onOpenMixPrep={AI_ENABLED ? handleOpenMixPrep : undefined}
+                      onSearch={
+                        !selectedFolder && !selectedPlaylistId
+                          ? handleSearch
+                          : undefined
+                      }
+                      filter={tableFilter}
+                      onFilterChange={setTableFilter}
+                      playVersion={playVersion}
+                      totalCount={
+                        !selectedFolder && !selectedPlaylistId
+                          ? totalTrackCount
+                          : undefined
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </div>

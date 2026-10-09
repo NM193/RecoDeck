@@ -1,0 +1,63 @@
+/* src/components/ErrorBoundary.css — the notice in place of what failed to draw */
+
+.error-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* The whole app: the notice is all the window shows. */
+.error-notice--app {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+}
+
+.error-notice--card {
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+
+.error-notice__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.error-notice--card .error-notice__title {
+  font-size: var(--text-base);
+}
+
+.error-notice__message {
+  margin: 0;
+  max-width: 520px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A card has room for one line; the whole message is in its tooltip. */
+.error-notice--card .error-notice__message {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.error-notice__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.error-notice--card .error-notice__actions {
+  margin-top: var(--space-1);
+}

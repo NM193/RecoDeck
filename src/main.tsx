@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client'
 // them at equal specificity.
 import './styles/controls.css'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import '@fontsource-variable/inter'
 import './styles/globals.css'
 
@@ -20,7 +21,9 @@ const Agentation = import.meta.env.DEV
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary level="app">
+      <App />
+    </ErrorBoundary>
     {Agentation && (
       <React.Suspense fallback={null}>
         <Agentation appName="RecoDeck" />
