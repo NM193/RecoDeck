@@ -139,6 +139,8 @@
 
 /* Dawn theme - Light */
 :root[data-theme='dawn'] {
+  /* Its raised colour is the page's white: buttons take the grey a step down. */
+  --btn-bg: var(--bg-tertiary);
   --bg-primary: #ffffff;
   --bg-secondary: #f8f8f8;
   --bg-tertiary: #f0f0f0;
