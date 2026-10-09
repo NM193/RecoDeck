@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
 ### Added
 - **A new look across the app** — the sidebar, the track tables, Search, Home and Sets are redesigned, with the same buttons, menus, notifications and movement everywhere
 - **Home** is a grid of cards you arrange with Customize: what's playing, Needs you (new likes you don't own, new sets, tracks not analyzed, the next gig of a DJ you follow), recently played and added, Last playlist, Your DJs and their upcoming gigs, BPM & key, Library stats, genres, New sets and Sets you saved lately
