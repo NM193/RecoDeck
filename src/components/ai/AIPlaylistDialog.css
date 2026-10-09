@@ -65,8 +65,8 @@
   padding: 4px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 .ai-playlist-header__close:hover {
@@ -166,8 +166,8 @@
   font-weight: 500;
   color: var(--text-secondary);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
   text-align: center;
 }
 
@@ -200,9 +200,9 @@
   font-weight: 500;
   color: var(--text-secondary);
   transition:
-    background 0.15s,
-    color 0.15s,
-    border-color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
   text-align: center;
 }
 
@@ -326,7 +326,7 @@
   gap: 8px;
   padding: 8px 10px;
   border-radius: var(--radius-md);
-  transition: background 0.1s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .ai-playlist-track-row:hover {
@@ -346,8 +346,8 @@
   height: 28px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 
@@ -412,8 +412,8 @@
   height: 24px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 
@@ -474,9 +474,9 @@
   cursor: pointer;
   border: 1px solid transparent;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    opacity 0.15s;
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease);
 }
 
 .ai-playlist-actions__btn:disabled {
@@ -525,7 +525,7 @@
   font-size: var(--text-md);
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--motion-fast) var(--ease);
 }
 
 .ai-playlist-save-input:focus {

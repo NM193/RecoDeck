@@ -66,8 +66,8 @@
   padding: 4px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 
@@ -164,7 +164,7 @@
   color: var(--color-danger);
   cursor: pointer;
   align-self: flex-start;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .recommendations-panel__retry-btn:hover {
@@ -240,7 +240,7 @@
   padding: 7px 12px;
   border-radius: var(--radius-md);
   margin: 0 4px;
-  transition: background 0.1s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .recommendations-panel__track-row:hover {
@@ -260,8 +260,8 @@
   height: 26px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 
@@ -328,8 +328,8 @@
   height: 26px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
   flex-shrink: 0;
 }
 

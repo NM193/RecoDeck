@@ -70,8 +70,8 @@
   padding: 4px;
   border-radius: var(--radius-md);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 .mix-prep-header__close:hover {
@@ -245,8 +245,8 @@
   justify-content: center;
   gap: 8px;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
 }
 
 .mix-prep-suggested__generate-btn:hover:not(:disabled) {
@@ -364,8 +364,8 @@
   justify-content: center;
   gap: 6px;
   transition:
-    background 0.15s,
-    opacity 0.15s;
+    background var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease);
 }
 
 .mix-prep-btn-primary:hover:not(:disabled) {
@@ -391,8 +391,8 @@
   justify-content: center;
   gap: 6px;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 .mix-prep-btn-secondary:hover:not(:disabled) {
