@@ -46,13 +46,13 @@ fn write_track(out: &mut String, t: &ExportTrack) {
         artist = text(&t.artist),
         album = text(&t.album),
         genre = text(&t.genre),
-        kind = kind(t.file_format.as_deref(), &t.path),
+        kind = attr(&kind(t.file_format.as_deref(), &t.path)),
         size = t.file_size.unwrap_or(0),
         time = t.duration_ms.unwrap_or(0).max(0) / 1000,
         number = t.track_number.unwrap_or(0),
         year = t.year.unwrap_or(0),
         bpm = t.bpm.unwrap_or(0.0),
-        added = t.date_added.as_deref().and_then(|d| d.get(..10)).unwrap_or(""),
+        added = attr(t.date_added.as_deref().and_then(|d| d.get(..10)).unwrap_or("")),
         bitrate = t.bitrate.unwrap_or(0),
         rate = t.sample_rate.unwrap_or(0),
         comment = text(&t.comment),
@@ -89,9 +89,11 @@ fn write_node(out: &mut String, node: &ExportNode, present: &HashSet<i64>, depth
 
 /// `file://localhost` and the path, every byte outside the unreserved set
 /// percent-encoded and `/` kept. The path keeps the Unicode normalization it
-/// has on disk. A Windows path keeps its drive: file://localhost/C:/Music/a.mp3.
+/// has on disk. A Windows path keeps its drive: file://localhost/C:/Music/a.mp3;
+/// `\` becomes `/` only in a Windows-shaped path (`C:\...`), elsewhere it is a name character.
 pub fn location(path: &str) -> String {
-    let unified = path.replace('\\', "/");
+    let windows = matches!(path.as_bytes(), [l, b':', b'\\' | b'/', ..] if l.is_ascii_alphabetic());
+    let unified = if windows { path.replace('\\', "/") } else { path.to_string() };
     let (drive, rest) = match unified.as_bytes() {
         [letter, b':', b'/', ..] if letter.is_ascii_alphabetic() => unified.split_at(2),
         _ => ("", unified.as_str()),
@@ -214,5 +216,28 @@ mod tests {
     #[test]
     fn the_file_matches_the_golden_sample() {
         assert_eq!(write(&sample(), "0.0.0-test"), include_str!("fixtures/rekordbox_sample.xml"));
+    }
+
+    #[test]
+    fn a_backslash_in_a_mac_name_is_part_of_the_name() {
+        assert_eq!(location("/Music/AC\\DC - Live.mp3"), "file://localhost/Music/AC%5CDC%20-%20Live.mp3");
+    }
+
+    #[test]
+    fn odd_formats_and_dates_are_escaped_too() {
+        let lib = ExportLibrary {
+            tracks: vec![ExportTrack {
+                id: 9,
+                path: "/a/b.x".into(),
+                exists: true,
+                file_format: Some("a&b\"c".into()),
+                date_added: Some("<2026-09-01>".into()),
+                ..ExportTrack::default()
+            }],
+            tree: vec![],
+        };
+        let xml = write(&lib, "t");
+        assert!(xml.contains("Kind=\"A&amp;B&quot;C File\""), "{xml}");
+        assert!(xml.contains("DateAdded=\"&lt;2026-09-0\""), "{xml}");
     }
 }

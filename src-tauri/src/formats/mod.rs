@@ -322,4 +322,18 @@ mod tests {
         assert_eq!(lib.present(), HashSet::from([1]));
         assert_eq!(lib.missing().iter().map(|t| t.id).collect::<Vec<_>>(), vec![2]);
     }
+
+    #[test]
+    fn collect_keeps_the_playlist_order_not_the_id_order() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let first = db.create_track(&track("/m/1.mp3", "One")).unwrap();
+        let second = db.create_track(&track("/m/2.mp3", "Two")).unwrap();
+        let list = db.create_playlist("Set", "manual", None).unwrap();
+        db.add_track_to_playlist(list, second).unwrap();
+        db.add_track_to_playlist(list, first).unwrap();
+        let lib = collect(&db, &[list]).unwrap();
+        assert_eq!(lib.tree, vec![ExportNode::Playlist { name: "Set".into(), track_ids: vec![second, first] }]);
+        assert_eq!(lib.tracks.iter().map(|t| t.id).collect::<Vec<_>>(), vec![second, first]);
+    }
 }
