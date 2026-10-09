@@ -227,12 +227,14 @@ The writers are pure: no database, no disk. Everything they need comes in.
 
 ### Rust: `commands/dj_export.rs`
 
-- `dj_export_defaults(target) -> { path, exists }` — the remembered or default
+- `dj_export_defaults(target) -> { path, exists, playlist_ids, remembered }` —
+  the remembered playlists, and the remembered or default
   file (Rekordbox, Traktor), or the system drive's `_Serato_` folder, and
   whether it exists.
-- `pick_dj_export_path(target)` — a native save-file picker for Rekordbox and
-  Traktor, callback-based like `pick_export_folder` so it does not deadlock on
-  macOS; no new frontend dialog permission.
+- The save-file picker for Rekordbox and Traktor is the JS dialog plugin's
+  `save` (in `tauri-api.ts`), as `pickExportFolder` uses `open`: its comment
+  records that the Rust-side picker can hang on macOS. This needs the
+  `dialog:allow-save` permission in `src-tauri/capabilities/default.json`.
 - `export_to_dj(target, playlist_ids, path) -> DjExportResult { playlists,
   tracks, skipped: [{ artist, title, path }], written: [paths] }`:
   1. lock the DB, `collect`, release the lock (as `export_playlist_to_folder`),
@@ -253,8 +255,8 @@ The writers are pure: no database, no disk. Everything they need comes in.
 - `src/components/DjExportModal.tsx` + `.css`, built like
   `ExportPlaylistModal` and on the shared controls (tabs, checkboxes, buttons).
   The playlist tree is a small checkbox tree over `get_all_playlists`.
-- `src/lib/tauri-api.ts`: `djExportDefaults`, `pickDjExportPath`,
-  `exportToDj`, and the remembered choice through `getSetting`.
+- `src/lib/tauri-api.ts`: `djExportDefaults` (which also answers the
+  remembered playlists), `pickDjExportFile`, `exportToDj`.
 - `src/components/FolderTree.tsx`: **Export to DJ software…** in the playlist
   and folder menus (`onExportToDj`), passed from `App.tsx` through
   `src/components/layout/Sidebar.tsx` like `onExportPlaylist`, next to the
