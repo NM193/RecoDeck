@@ -20,7 +20,7 @@
 .analysis-progress-bar {
   height: 100%;
   background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 100%);
-  transition: width 0.3s ease-out;
+  transition: width var(--motion-slow) var(--ease);
   box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.3);
 }
 
@@ -106,7 +106,7 @@
   color: var(--text-primary);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--motion-fast) var(--ease);
 }
 
 .analysis-cancel-btn:hover {

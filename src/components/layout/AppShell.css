@@ -43,5 +43,5 @@
 /* Set on <html> by Sidebar.tsx for ~200ms around a collapse/expand only, so
    dragging the sidebar's edge never lags behind the mouse. */
 .sidebar-width-animating .app-shell {
-  transition: grid-template-columns 150ms ease;
+  transition: grid-template-columns var(--motion-base) var(--ease);
 }

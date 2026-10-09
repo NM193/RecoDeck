@@ -36,8 +36,8 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition:
-    color 0.15s,
-    background 0.15s;
+    color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
 }
 
 .mini-player__close:hover {
@@ -124,8 +124,8 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition:
-    color 0.15s,
-    background 0.15s;
+    color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
 }
 
 .mini-player__btn:hover:not(:disabled) {
@@ -189,6 +189,7 @@
   background: var(--accent);
   border-radius: 2px;
   pointer-events: none;
+  /* It follows the playhead, not a change on screen: no motion token. */
   transition: width 0.05s linear;
 }
 
@@ -202,7 +203,7 @@
   transform: translate(-50%, -50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .mini-player__progress:hover .mini-player__progress-handle,

@@ -44,7 +44,7 @@
   align-items: center;
   min-height: 88px;
   padding: 0 var(--space-4);
-  transition: min-height 0.15s ease;
+  transition: min-height var(--motion-base) var(--ease);
 }
 
 .now-playing-bar__inner.is-waveform {
@@ -105,7 +105,7 @@
   padding: 4px 8px;
   margin: -4px -8px;
   border-radius: var(--radius-md);
-  transition: background-color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--ease);
 }
 
 .now-playing-bar__track-info--clickable:hover {
@@ -211,7 +211,7 @@
   background: var(--text-primary);
   border-radius: 1.5px;
   pointer-events: none;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 /* On hover: fill turns accent */
@@ -238,7 +238,7 @@
   transform: translate(-50%, -50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-fast) var(--ease);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
@@ -289,8 +289,8 @@
   height: 28px;
   border-radius: var(--radius-md);
   transition:
-    color 0.15s,
-    background 0.15s;
+    color var(--motion-fast) var(--ease),
+    background var(--motion-fast) var(--ease);
   flex-shrink: 0;
   position: relative;
 }
@@ -469,7 +469,7 @@
   padding: 8px 12px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s;
+  transition: background var(--motion-fast) var(--ease);
 }
 
 .now-playing-bar__playlist-item:hover {
@@ -576,7 +576,7 @@
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 
 .now-playing-expanded__close:hover {

@@ -61,8 +61,8 @@
   cursor: pointer;
   flex-shrink: 0;
   transition:
-    background 0.15s,
-    border-color 0.15s;
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
 }
 
 .track-table-ai-rec-btn:hover {
@@ -78,7 +78,7 @@
   border-radius: 6px;
   padding: 0 10px;
   height: 32px;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease);
 }
 
 .search-input-wrapper:focus-within {
@@ -121,8 +121,8 @@
   line-height: 1;
   flex-shrink: 0;
   transition:
-    color 0.1s ease,
-    background-color 0.1s ease;
+    color var(--motion-fast) var(--ease),
+    background-color var(--motion-fast) var(--ease);
 }
 
 .search-clear:hover {
@@ -486,7 +486,7 @@
   align-items: center;
   justify-content: center;
   z-index: 10001;
-  animation: fadeIn 0.15s ease-out;
+  animation: fadeIn var(--motion-base) var(--ease);
 }
 
 @keyframes fadeIn {
@@ -506,7 +506,7 @@
   min-width: 400px;
   max-width: 500px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  animation: slideIn 0.2s ease-out;
+  animation: slideIn var(--motion-base) var(--ease);
 }
 
 @keyframes slideIn {
@@ -517,6 +517,13 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* Reduced motion: the dialog fades in, it does not slide. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-content {
+    animation-name: fadeIn;
   }
 }
 
@@ -545,7 +552,7 @@
   border-radius: 6px;
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--motion-fast) var(--ease);
   margin-bottom: 20px;
   box-sizing: border-box;
 }
@@ -574,7 +581,7 @@
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--motion-fast) var(--ease);
   outline: none;
 }
 
