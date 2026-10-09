@@ -7,7 +7,7 @@
 **Architecture:**
 - **CSS**: 98 `transition:` / one-shot `animation:` declarations in 21 files change only their duration and easing (property lists and formatting stay). The role decides the token: hover, press, colour, border, opacity → fast; chevrons, switches, collapsing (the sidebar's width, the bar's height) and a modal, flyout or menu opening → base; panels (the playlist header shrinking) and progress fills → slow. Every easing becomes `var(--ease)`.
 - **Kept**: looping animations (`… infinite`: spinners, shimmers, the equalizer, pulses) — not transitions; the two players' seek fill, `width 0.05s linear`, which follows the playhead (a comment says so); `transition: none`.
-- **Reduced motion**: `globals.css` sets `--motion-base` and `--motion-slow` to `var(--motion-fast)` under `prefers-reduced-motion: reduce`; the menus, toasts and the shortcuts sheet already swap their movement for a fade in their own rules.
+- **Reduced motion**: `globals.css` sets `--motion-base` and `--motion-slow` to `var(--motion-fast)` under `prefers-reduced-motion: reduce`; the menus, toasts and the shortcuts sheet already swap their movement for a fade in their own rules, and now so do the old modal (`.modal-content`, which slid in) and the AI context menu (which grew); the rail's flyout only fades already.
 - **framer-motion**: its literal durations use `MOTION` / `EASE` from `src/lib/motion.ts` (the page fade, a sidebar section collapsing, the expanded now-playing view, and the AI panels); `MotionConfig reducedMotion="user"` around App makes every framer animation drop movement and keep fades when the system asks.
 
 **Tech Stack:** CSS custom properties, framer-motion, React 19.
@@ -29,6 +29,8 @@
   - `tsc` passes; `npx eslint src mobile` shows 28 problems, the baseline; `vite build` passes.
   - After it, the only literal durations left in `src/**/*.css` are the looping animations and the two seek fills.
 - **In WebKit** (the I2 test page: the real Sidebar and TrackTable), computed styles: a folder row `background-color 0.12s cubic-bezier(0.2, 0, 0, 1)`, a section's chevron `transform 0.18s …`, a nav item `background, color 0.12s …`, the track table's search box `border-color 0.12s …`; with reduced motion emulated the chevron is `0.12s`; a Playlists section still collapses and opens (framer), with no error, in both.
+
+**Reviewed:** an independent review found no blocker or should-fix point. Folded in: under reduced motion the old modal still slid and the AI context menu still grew (the tokens only shortened them) → both fade instead, and `globals.css`'s comment says where movement goes. Noted, not changed: a few durations move a little (the sidebar's width 150 → 180ms, the old modal's fade 150 → 180ms, the playlist header 300 → 240ms), within the spec's roles.
 
 ---
 
@@ -83,8 +85,9 @@ with
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* Reduced motion: nothing moves for longer than fast (menus, toasts and
-   panels drop their movement and only fade, in their own rules). */
+/* Reduced motion: nothing takes longer than fast. What moves as it appears
+   (menus, toasts, dialogs, the shortcuts sheet) fades instead, in its own
+   rule; framer-motion drops movement through App's MotionConfig. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-base: var(--motion-fast);
@@ -1220,6 +1223,47 @@ with
   from {
     transform: translateY(-20px);
     opacity: 0;
+```
+
+In `src/components/TrackTable.css`, replace
+
+```css
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+```
+
+with
+
+```css
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: the dialog fades in, it does not slide. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-content {
+    animation-name: fadeIn;
+  }
+}
+
+.modal-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
 ```
 
 In `src/components/TrackTable.css`, replace
@@ -3976,6 +4020,27 @@ In `src/components/ai/ChatView.css`, replace
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+.conv-ctx-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.conv-ctx-menu__item:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+}
 ```
 
 with
@@ -3994,28 +4059,22 @@ with
   to {
     opacity: 1;
     transform: scale(1);
-```
-
-In `src/components/ai/ChatView.css`, replace
-
-```css
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s;
+  }
 }
 
-.conv-ctx-menu__item:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+/* Reduced motion: the menu fades in, it does not grow. */
+@media (prefers-reduced-motion: reduce) {
+  .conv-ctx-menu {
+    transform: none;
+  }
 }
-```
 
-with
-
-```css
+.conv-ctx-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
   background: none;
   border: none;
   color: var(--text-primary);
@@ -4431,7 +4490,8 @@ with
   this build) the same way.
 - Reduced motion: `--motion-base` and `--motion-slow` become fast, and
   framer-motion follows the system (`MotionConfig reducedMotion="user"`
-  around App): no movement, fades only.
+  around App): no movement, fades only. The old modal and the AI context
+  menu fade instead of sliding or growing, as the menus and toasts do.
 - I3 is two plans: **I3a** (this one, motion) and **I3b** (controls and
   loading: `.btn--icon`, `.btn--pill`, `Button` with its working state,
   Settings, the DJ pages and the modals on the shared controls, `Skeleton`).
