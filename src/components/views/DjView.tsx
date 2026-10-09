@@ -21,7 +21,7 @@ import { gigLabel, heroMetaParts, localDay, splitGigs } from '../../lib/dj/gigs'
 import { djTabs, gigsState, spotifyArtistUrl } from '../../lib/dj/page'
 import { tracksEmptyText, tracksTabState } from '../../lib/dj/tabs'
 import { djPhotos } from '../../lib/dj/cards'
-import { useTabThumb } from '../../lib/useTabThumb'
+import { tabKeyTarget, useTabThumb } from '../../lib/useTabThumb'
 import { djKey } from '../../lib/dj/names'
 import {
   countByStatus,
@@ -55,15 +55,6 @@ interface DjViewProps {
   onOpenSettings: () => void
   /** App's player: double-clicking an Owned row plays its library file. */
   onPlayTrack: (track: Track, queue: Track[], index: number) => void
-}
-
-/** The tab a key moves to (arrows wrap, Home / End), or null for other keys. */
-function tabKeyTarget(key: string, at: number, count: number): number | null {
-  if (key === 'ArrowRight') return (at + 1) % count
-  if (key === 'ArrowLeft') return (at - 1 + count) % count
-  if (key === 'Home') return 0
-  if (key === 'End') return count - 1
-  return null
 }
 
 export function DjView({

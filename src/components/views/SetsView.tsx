@@ -7,6 +7,7 @@ import { SetsLibrary } from '../sets/SetsLibrary'
 import { SetsFollowing } from '../sets/SetsFollowing'
 import { SetsSaved } from '../sets/SetsSaved'
 import { SetsStats } from '../sets/SetsStats'
+import { SetsTabBar } from '../sets/SetsTabBar'
 import { channelNewsCount, useChannelNews } from '../../store/channelNewsStore'
 import { tauriApi } from '../../lib/tauri-api'
 import { analyse, type Track, type TracklistResult } from '../../lib/tracklist'
@@ -17,7 +18,7 @@ import { removeQuestion } from '../../lib/sets/setPage'
 import type { Track as LibraryTrack } from '../../types/track'
 import { getErrorMessage, isAppError } from '../../types/ai'
 import { useSetPlayer } from '../../store/setPlayerStore'
-import { useSetsView, type SetsTab } from '../../store/setsViewStore'
+import { useSetsView } from '../../store/setsViewStore'
 import { dismissToast, toast } from '../../lib/toast'
 import type {
   RawSet,
@@ -752,32 +753,18 @@ export function SetsView({
           ) : (
             <>
               <div className="sets-home__tabs">
-                {(['library', 'saved', 'channels', 'stats'] as const).map((t: SetsTab) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className="sets-home__tab"
-                    aria-pressed={tab === t}
-                    onClick={() => {
-                      setTab(t)
-                      // Another tab starts at its top.
-                      if (libraryScroll.current) libraryScroll.current.scrollTop = 0
-                    }}
-                  >
-                    {t === 'library'
-                      ? `Library ${sets.length.toLocaleString('en-US')}${
-                          newFinds && newFinds.total > 0 ? ` · ${newFinds.total} new` : ''
-                        }`
-                      : t === 'saved'
-                        ? `Saved tracks ${saved.length.toLocaleString('en-US')}`
-                        : t === 'channels'
-                          ? 'Following'
-                          : 'Stats'}
-                    {t === 'channels' && channelNews > 0 && (
-                      <span className="sets-home__badge">{channelNews}</span>
-                    )}
-                  </button>
-                ))}
+                <SetsTabBar
+                  tab={tab}
+                  onTab={(t) => {
+                    setTab(t)
+                    // Another tab starts at its top.
+                    if (libraryScroll.current) libraryScroll.current.scrollTop = 0
+                  }}
+                  library={sets.length}
+                  newFinds={newFinds?.total ?? 0}
+                  saved={saved.length}
+                  channelNews={channelNews}
+                />
                 {tab === 'library' && sets.length > 0 && (
                   <>
                     <span className="sets-home__spacer" />
@@ -801,53 +788,55 @@ export function SetsView({
                 )}
               </div>
 
-              {tab === 'library' && (
-                <SetsLibrary
-                  sets={sets}
-                  newFinds={newFinds?.finds ?? []}
-                  grouping={grouping}
-                  onOpenSet={(videoId, title) => void openSet(videoId, { title })}
-                  onOpenDj={onOpenDj ? (name) => onOpenDj(name, null) : undefined}
-                  onMarkAllSeen={() => void markAllFindsSeen()}
-                />
-              )}
+              <div role="tabpanel" id="sets-panel" aria-labelledby={`sets-tab-${tab}`}>
+                {tab === 'library' && (
+                  <SetsLibrary
+                    sets={sets}
+                    newFinds={newFinds?.finds ?? []}
+                    grouping={grouping}
+                    onOpenSet={(videoId, title) => void openSet(videoId, { title })}
+                    onOpenDj={onOpenDj ? (name) => onOpenDj(name, null) : undefined}
+                    onMarkAllSeen={() => void markAllFindsSeen()}
+                  />
+                )}
 
-              {tab === 'channels' && (
-                <SetsFollowing
-                  djs={djs}
-                  channels={channels}
-                  quota={quota}
-                  onChanged={refreshLibrary}
-                  onQuotaChanged={refreshQuota}
-                  onPatchDj={(nameKey, patch) =>
-                    setDjs((current) => current.map((d) => (d.name_key === nameKey ? { ...d, ...patch } : d)))
-                  }
-                  onPatchChannel={(channelId, patch) =>
-                    setChannels((current) =>
-                      current.map((c) => (c.channel_id === channelId ? { ...c, ...patch } : c)),
-                    )
-                  }
-                  onOpenSet={(videoId, title) => void openSet(videoId, { title })}
-                  onImport={importUpload}
-                  onOpenDj={onOpenDj ? (name) => onOpenDj(name, null) : undefined}
-                />
-              )}
+                {tab === 'channels' && (
+                  <SetsFollowing
+                    djs={djs}
+                    channels={channels}
+                    quota={quota}
+                    onChanged={refreshLibrary}
+                    onQuotaChanged={refreshQuota}
+                    onPatchDj={(nameKey, patch) =>
+                      setDjs((current) => current.map((d) => (d.name_key === nameKey ? { ...d, ...patch } : d)))
+                    }
+                    onPatchChannel={(channelId, patch) =>
+                      setChannels((current) =>
+                        current.map((c) => (c.channel_id === channelId ? { ...c, ...patch } : c)),
+                      )
+                    }
+                    onOpenSet={(videoId, title) => void openSet(videoId, { title })}
+                    onImport={importUpload}
+                    onOpenDj={onOpenDj ? (name) => onOpenDj(name, null) : undefined}
+                  />
+                )}
 
-              {tab === 'stats' && (
-                <SetsStats
-                  stats={stats}
-                  quota={quota}
-                  onOpenSet={(videoId, title) => void openSet(videoId, { title })}
-                />
-              )}
+                {tab === 'stats' && (
+                  <SetsStats
+                    stats={stats}
+                    quota={quota}
+                    onOpenSet={(videoId, title) => void openSet(videoId, { title })}
+                  />
+                )}
 
-              {tab === 'saved' && (
-                <SetsSaved
-                  saved={saved}
-                  onOpenAt={(videoId, cueMs, title) => void openSet(videoId, { cueMs, title })}
-                  onRemove={(track) => void unheart(track)}
-                />
-              )}
+                {tab === 'saved' && (
+                  <SetsSaved
+                    saved={saved}
+                    onOpenAt={(videoId, cueMs, title) => void openSet(videoId, { cueMs, title })}
+                    onRemove={(track) => void unheart(track)}
+                  />
+                )}
+              </div>
             </>
           )}
         </div>

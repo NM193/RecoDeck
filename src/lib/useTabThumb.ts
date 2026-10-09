@@ -47,3 +47,12 @@ export function useTabThumb(bar: RefObject<HTMLElement | null>, selected: string
     transition: moving ? undefined : 'none',
   }
 }
+
+/** The tab a key moves to (arrows wrap, Home / End), or null for other keys. */
+export function tabKeyTarget(key: string, at: number, count: number): number | null {
+  if (key === 'ArrowRight') return (at + 1) % count
+  if (key === 'ArrowLeft') return (at - 1 + count) % count
+  if (key === 'Home') return 0
+  if (key === 'End') return count - 1
+  return null
+}
