@@ -25,27 +25,31 @@ It sits next to Export to folder, which stays as it is.
 ### The dialog
 
 - **Program**: Rekordbox · Traktor · Serato, as one tab bar (the shared
-  `.tabs` with the thumb). The last one used is remembered.
+  `.tabs` with the thumb). The last one used is remembered. Each program keeps
+  its own selection: a tab shows that program's remembered playlists plus the
+  playlist (or folder) the dialog was opened from; checks changed on a tab stay
+  on that tab while the dialog is open.
 - **Playlists**: the playlist tree with checkboxes. A folder's box selects or
   clears everything inside it (mixed shows as indeterminate). Opened from a
   playlist, that playlist is checked **plus** the playlists of this program's
   previous export, so exporting again never drops a playlist by accident.
   Opened from a folder, its playlists are checked plus the previous ones.
   Playlists deleted since are left out silently.
-- **Where**, per program, with a **Change…** button:
+- **Where**, per program (Rekordbox and Traktor with a **Change…** button):
   - Rekordbox: a file, default `~/Music/RecoDeck/RecoDeck.xml`
     (`%USERPROFILE%\Music\RecoDeck\RecoDeck.xml` on Windows).
   - Traktor: a file, default `~/Music/RecoDeck/RecoDeck.nml`.
-  - Serato: the system drive's `_Serato_` folder (`~/Music/_Serato_`), found
-    by RecoDeck; if it does not exist, Serato is not set up on this computer
-    and the dialog says so (Change… picks another `_Serato_` folder).
-    Tracks on an external drive go to that drive's `_Serato_` (see Serato
-    below) — the dialog lists those drives under the path.
+  - Serato: no Change… — placement is automatic (see Serato below). The
+    dialog shows the system drive's `_Serato_` folder (`~/Music/_Serato_`);
+    if it does not exist, Serato is not set up on this computer, the dialog
+    says so and Export is disabled. Tracks on an external drive go to that
+    drive's `_Serato_`; the result lists every folder written.
 - **How to load it** — one or two lines for the selected program:
-  - Rekordbox: *Preferences → Advanced → Database → rekordbox xml → Imported
-    Library: choose this file. Then refresh "rekordbox xml" in the tree and
-    drag the playlists where you want them.* (Shown in full until the first
-    export to Rekordbox, then as one line.)
+  - Rekordbox: *Preferences → View → Layout: turn on "rekordbox xml". Then
+    Preferences → Advanced → Database → rekordbox xml → Imported Library:
+    choose this file. Refresh "rekordbox xml" in the tree and drag the
+    playlists where you want them.* (Shown in full until the first export to
+    Rekordbox, then as one line.)
   - Traktor: *Right-click Playlists → Import Playlist → choose this file.*
   - Serato: *Close Serato before exporting; the crates appear under RecoDeck
     the next time it opens.*
@@ -59,7 +63,8 @@ It sits next to Export to folder, which stays as it is.
   `Subcrates` folder for Serato).
 - Tracks whose file is gone are left out and the export goes on; the toast
   adds "2 tracks skipped — file missing", and its detail lists them
-  (artist – title, path).
+  (artist – title, path). With skipped tracks the toast is a `warning` (it
+  stays longer) instead of a plain success.
 - Everything RecoDeck writes sits under a **RecoDeck** folder (Rekordbox,
   Traktor) or a **RecoDeck** crate (Serato), apart from the DJ's own playlists.
 - Exporting again: open the dialog, the previous selection and path are there,
@@ -110,7 +115,9 @@ Paths cause most import failures, so each writer has its own tested encoder:
 
 - **Rekordbox** `Location`: `file://localhost` + the absolute path,
   percent-encoded per segment (space, `#`, `%`, `&`, `?`, non-ASCII as UTF-8),
-  `/` kept. Windows: `file://localhost/C:/Music/…`.
+  `/` kept. Windows: `file://localhost/C:/Music/…`. Paths keep the Unicode
+  normalization they have on disk (as read from the database), checked against
+  a real export (č/ć/š in NFC vs NFD would make Rekordbox see new tracks).
 - **Traktor** `LOCATION`: `VOLUME` is the volume name — the boot volume's name
   on macOS (e.g. "Macintosh HD", read from the system, not assumed), the
   `/Volumes/<name>` part for external drives, the drive letter (`C:`) on
@@ -147,8 +154,9 @@ Paths cause most import failures, so each writer has its own tested encoder:
 
 `TrackID` is RecoDeck's track id. Attribute order and the exact shape follow
 a real Rekordbox export (Verification). XML is written by hand with one
-escaping function (`&`, `<`, `>`, `"`, `'`, and control characters dropped):
-no XML crate, so the output stays exactly as Rekordbox expects.
+escaping function (`&`, `<`, `>`, `"`, `'`; line breaks in comments as `&#10;`
+/ `&#13;` so they survive attribute parsing; other control characters
+dropped): no XML crate, so the output stays exactly as Rekordbox expects.
 
 ### Traktor NML
 
@@ -156,8 +164,11 @@ no XML crate, so the output stays exactly as Rekordbox expects.
 (`LOCATION`, `ALBUM`, `INFO`, `TEMPO`, `MUSICAL_KEY`), and `PLAYLISTS` with
 `$ROOT` → `RecoDeck` folder → playlists (`PLAYLIST ENTRIES TYPE="LIST"
 UUID`), each entry a `PRIMARYKEY TYPE="TRACK"`. A playlist's UUID is derived
-from its RecoDeck id, so re-imports refer to the same playlist. Shape follows
-a real Traktor playlist export (Verification).
+from its RecoDeck id (stable across exports). Whether Traktor replaces or
+duplicates a playlist imported again is checked by hand; the Traktor help line
+says what to do. `INFO BITRATE` uses the unit the real export uses (likely bps,
+i.e. kbps × 1000); `VOLUMEID` is written if the real export shows Traktor needs
+it. Shape follows a real Traktor playlist export (Verification).
 
 ### Serato crates
 
@@ -169,11 +180,16 @@ a real Traktor playlist export (Verification).
   `~/Music/_Serato_`, an external drive's is `/Volumes/<name>/_Serato_`
   (`D:\_Serato_` on Windows). A playlist with tracks on two drives becomes
   a crate of the same name on each; Serato shows them as one.
-- Names: `RecoDeck.crate` (the parent) and `RecoDeck%%<Folder>%%<Playlist>.crate`.
-  Characters a file name cannot hold are replaced.
+- Names: `RecoDeck.crate` (the parent), one crate per folder level
+  (`RecoDeck%%<Folder>.crate`, empty) and `RecoDeck%%<Folder>%%<Playlist>.crate`.
+  Characters a file name cannot hold are replaced, and so is `%%` inside a
+  name (it would break the nesting). Two playlists with the same name in one
+  folder get " (2)", " (3)"… so neither overwrites the other.
+- On an external drive without `_Serato_/Subcrates`, RecoDeck creates it.
 - RecoDeck remembers the crate files it wrote. Exporting again deletes those
   that are no longer in the selection, then writes the new set. It never
-  touches crates it did not write.
+  touches crates it did not write. A remembered crate it cannot delete (its
+  drive is not connected) stays remembered, to be cleaned up next time.
 - Serato rewrites its crates when it quits, so it must be closed: before
   writing, RecoDeck looks for a running Serato DJ (Pro / Lite) in the process
   list (`pgrep` on macOS, `tasklist` on Windows). If one runs, the export stops
@@ -194,9 +210,11 @@ The stub `formats/mod.rs` gets content and is declared in `lib.rs`.
   - `ExportLibrary { tracks, tree }` with tracks deduplicated across playlists
     and in playlist order inside each playlist.
   - `collect(db, playlist_ids) -> ExportLibrary`: reads playlists (with
-    `parent_id` for folders), their tracks with `track_analysis`, and checks
-    each file exists. Missing files are kept with `exists: false`; writers
-    skip them and the command reports them.
+    `parent_id` for folders) and their tracks with `track_analysis`. It does
+    not touch the disk.
+  - `mark_missing(&mut ExportLibrary)`: checks each file exists, run after the
+    DB lock is released (a sleeping external drive can take seconds). Missing
+    files get `exists: false`; writers skip them and the command reports them.
 - `keys.rs` — Camelot → Rekordbox notation, Camelot → Traktor integer.
 - `rekordbox.rs` — `write(&ExportLibrary, app_version) -> String`.
 - `traktor.rs` — `write(&ExportLibrary, volumes) -> String`.
@@ -209,14 +227,16 @@ The writers are pure: no database, no disk. Everything they need comes in.
 
 ### Rust: `commands/dj_export.rs`
 
-- `dj_export_defaults(target) -> { path, exists, note }` — the default file
-  or `_Serato_` folder and whether it exists.
-- `pick_dj_export_path(target)` — a native save-file picker (Rekordbox,
-  Traktor) or folder picker (Serato), callback-based like `pick_export_folder`
-  so it does not deadlock on macOS; no new frontend dialog permission.
+- `dj_export_defaults(target) -> { path, exists }` — the remembered or default
+  file (Rekordbox, Traktor), or the system drive's `_Serato_` folder, and
+  whether it exists.
+- `pick_dj_export_path(target)` — a native save-file picker for Rekordbox and
+  Traktor, callback-based like `pick_export_folder` so it does not deadlock on
+  macOS; no new frontend dialog permission.
 - `export_to_dj(target, playlist_ids, path) -> DjExportResult { playlists,
   tracks, skipped: [{ artist, title, path }], written: [paths] }`:
-  1. lock the DB, `collect`, release the lock (as `export_playlist_to_folder`);
+  1. lock the DB, `collect`, release the lock (as `export_playlist_to_folder`),
+     then `mark_missing`;
   2. Serato: refuse if Serato DJ runs;
   3. write each file to `<name>.tmp` next to its target, then rename over it,
      so a failed write leaves the previous export intact; create missing
@@ -236,8 +256,11 @@ The writers are pure: no database, no disk. Everything they need comes in.
 - `src/lib/tauri-api.ts`: `djExportDefaults`, `pickDjExportPath`,
   `exportToDj`, and the remembered choice through `getSetting`.
 - `src/components/FolderTree.tsx`: **Export to DJ software…** in the playlist
-  and folder menus (`onExportToDj`), wired in `App.tsx` next to the existing
-  export modal.
+  and folder menus (`onExportToDj`), passed from `App.tsx` through
+  `src/components/layout/Sidebar.tsx` like `onExportPlaylist`, next to the
+  existing export modal.
+- The folder checkbox's mixed state is a native checkbox with `indeterminate`
+  set through a ref (there is no shared checkbox component).
 - The success toast uses `toast(…, { action: { label: 'Show in Finder', … } })`
   and reveals the file with the opener plugin.
 
@@ -249,7 +272,7 @@ The writers are pure: no database, no disk. Everything they need comes in.
 | A track has no BPM or key | Written without them; the program analyses |
 | Destination not writable / disk full | Error toast with the path; the previous file is untouched (temp + rename) |
 | Serato DJ is running | Export stops: "Close Serato DJ first, then export again." |
-| No `_Serato_` folder | The dialog says Serato is not set up here; Change… picks one |
+| No `_Serato_` folder on the system drive | The dialog says Serato is not set up here; Export is disabled |
 | No playlist checked | Export is disabled |
 | A playlist is empty, or all its files are missing | Written as an empty playlist; counted |
 
@@ -276,9 +299,29 @@ The writers are pure: no database, no disk. Everything they need comes in.
 - **By hand at the end of each phase**: import the export into the real
   program and check playlists, tracks, BPM, key, rating and comments.
 
+### Verification list
+
+Settled against the real exports or by hand, before the phase that needs it
+is done:
+
+- Rekordbox: attribute order and shape; `Tonality` spelling (`Abm` or `G#m`);
+  Unicode normalization of paths.
+- Rekordbox and Traktor: whether data (BPM, key, rating, comments) reaches
+  tracks the program **already has**, or only new ones. If only new ones, the
+  help text and "What it does not do" say so.
+- Traktor: the key integers; `INFO BITRATE` unit; `VOLUMEID`; the volume name
+  for files under `/Users` ("Macintosh HD" or "Macintosh HD - Data"); what a
+  second import of the same playlist does.
+- Serato: the crate's fields beyond `vrsn` / `otrk` / `ptrk`; whether
+  intermediate folder crates are needed.
+- Windows shapes (drive letters, separators, `file://localhost/C:/`) cannot be
+  checked against the user's exports (macOS); they are built to the formats'
+  documented shape and are best-effort until a Windows user tries them.
+
 ## Phases
 
-Each phase is complete on its own and can ship as a release.
+Each phase is complete on its own and can ship as a release, and each gets
+its own implementation plan.
 
 1. **Core + dialog + Rekordbox**: `formats` model and loader, `keys`, Rekordbox
    path encoder and writer, the command with settings, the dialog (Rekordbox
