@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-09
+
+### Changed
+- Sets' tabs are one bar, as on a DJ page: the selected tab sits on a highlight that glides to the tab you choose, and the arrow keys move between them
+- Going between Home and Sets fades like every other page
+
+### Fixed
+- When a part of the app fails to draw, it says so in its place instead of leaving a blank window: a Home card shows the error in the card, a page offers Try again while the sidebar and the player keep working, and the whole window offers Reload and Copy error
+
 ## [0.5.1] - 2026-10-09
 
 ### Added
