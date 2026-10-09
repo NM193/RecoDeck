@@ -13,6 +13,7 @@ import {
   gigWhere,
   keyKnownLine,
   lastPlaylistLine,
+  moreRowsLine,
   libraryStats,
   needsYouRows,
   newLikeRows,
@@ -30,6 +31,9 @@ import type { Playlist } from '../../types/track'
 import { homeGenreTiles, playlistGradient, userPlaylists } from './content'
 import { HomeTrackRows, type TrackRowActions } from './HomeTrackRows'
 import type { HomeData } from './useHomeData'
+
+/** Last playlist draws this many rows; a 2,000-track playlist would draw them all. */
+const LAST_PLAYLIST_ROWS = 100
 
 /** What the cards act through; App passes them to HomeView. */
 export interface HomeActions extends TrackRowActions {
@@ -371,6 +375,8 @@ function CardBody({
           <HomeTrackRows
             table="home:last-playlist"
             tracks={last.tracks}
+            // A long playlist draws its first rows only; a play queues it all.
+            limit={LAST_PLAYLIST_ROWS}
             last={(track) => formatTime(track.duration_ms)}
             // A play from here records the playlist, so it stays the last one.
             onPlay={(track, list, index) =>
@@ -379,6 +385,14 @@ function CardBody({
             onAddToPlaylist={actions.onAddToPlaylist}
             onMoveToFolder={actions.onMoveToFolder}
           />
+          {moreRowsLine(last.tracks.length, LAST_PLAYLIST_ROWS) && (
+            <div className="home-last__more">
+              {moreRowsLine(last.tracks.length, LAST_PLAYLIST_ROWS)} ·{' '}
+              <button type="button" className="link-btn" onClick={() => actions.onOpenPlaylist(last.id)}>
+                Open the playlist
+              </button>
+            </div>
+          )}
         </div>
       )
     }

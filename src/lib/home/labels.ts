@@ -72,6 +72,11 @@ export function lastPlaylistLine(tracks: number, playedAt: number, now: Date): s
   return `${count(tracks)} ${noun(tracks, 'track')} · ${played}`
 }
 
+/** Under a card that draws only its first rows: "and 1,900 more"; null when it draws them all. */
+export function moreRowsLine(total: number, shown: number): string | null {
+  return total > shown ? `and ${count(total - shown)} more` : null
+}
+
 /** A service's new likes not owned, as the sidebar counts them. */
 export interface StreamNews {
   total: number

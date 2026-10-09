@@ -10,6 +10,7 @@ import {
   keyKnownLine,
   lastPlaylistLine,
   libraryStats,
+  moreRowsLine,
   needsYouRows,
   newSetCost,
   newSetLine,
@@ -221,6 +222,15 @@ describe('lastPlaylistLine', () => {
     expect(lastPlaylistLine(10, at(2026, 10, 2, 9), now)).toBe('10 tracks · played Oct 2')
     expect(lastPlaylistLine(1, at(2026, 10, 7, 20), now)).toBe('1 track · played yesterday')
     expect(lastPlaylistLine(1581, at(2026, 10, 8, 22, 39), now)).toBe('1,581 tracks · played at 22:39')
+  })
+})
+
+describe('moreRowsLine', () => {
+  it('says how many rows a card leaves out, or nothing when it shows them all', () => {
+    expect(moreRowsLine(2000, 100)).toBe('and 1,900 more')
+    expect(moreRowsLine(101, 100)).toBe('and 1 more')
+    expect(moreRowsLine(100, 100)).toBeNull()
+    expect(moreRowsLine(40, 100)).toBeNull()
   })
 })
 

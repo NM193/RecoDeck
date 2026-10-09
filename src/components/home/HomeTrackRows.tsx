@@ -34,6 +34,8 @@ interface HomeTrackRowsProps<T extends Track> extends TrackRowActions {
   /** Names the drag source: the card's id. */
   table: string
   tracks: T[]
+  /** Draws only the first rows (a long playlist); a play still queues them all. */
+  limit?: number
   /** The last column: when it was played, added, or its length. */
   last: (track: T) => string
 }
@@ -54,6 +56,7 @@ function togglePlayback() {
 export function HomeTrackRows<T extends Track>({
   table,
   tracks,
+  limit,
   last,
   onPlay,
   onAddToPlaylist,
@@ -88,9 +91,11 @@ export function HomeTrackRows<T extends Track>({
     [dragged],
   )
 
+  const drawn = limit === undefined ? tracks : tracks.slice(0, limit)
+
   return (
     <div className="home-rows">
-      {tracks.map((track, index) => {
+      {drawn.map((track, index) => {
         const playing =
           currentTrack != null &&
           track.id === currentTrack.id &&
