@@ -10,8 +10,21 @@ import './styles/globals.css'
 // Set default theme (will be overridden by saved setting on app init)
 document.documentElement.setAttribute('data-theme', 'midnight')
 
+// The toolbar for annotating the UI for a coding agent. Loaded only in dev,
+// so it never reaches a release build.
+const Agentation = import.meta.env.DEV
+  ? React.lazy(() =>
+      import('agentation').then((m) => ({ default: m.Agentation })),
+    )
+  : null
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <App />
+    {Agentation && (
+      <React.Suspense fallback={null}>
+        <Agentation appName="RecoDeck" />
+      </React.Suspense>
+    )}
   </React.StrictMode>,
 )
