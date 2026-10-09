@@ -1,7 +1,7 @@
 // src/components/views/DjView.tsx
 // One DJ's page (the approved mockup's first section): the hero with the
 // artist photo, the meta line and the buttons, then the tabs.
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { SpotifyGlyph } from '../spotify/SpotifyGlyph'
@@ -21,6 +21,7 @@ import { gigLabel, heroMetaParts, localDay, splitGigs } from '../../lib/dj/gigs'
 import { djTabs, gigsState, spotifyArtistUrl } from '../../lib/dj/page'
 import { tracksEmptyText, tracksTabState } from '../../lib/dj/tabs'
 import { djPhotos } from '../../lib/dj/cards'
+import { useTabThumb } from '../../lib/useTabThumb'
 import { djKey } from '../../lib/dj/names'
 import {
   countByStatus,
@@ -167,6 +168,9 @@ export function DjView({
     sets: dj.sets?.length ?? null,
     gigs: page && today ? gigs.upcoming.length : null,
   })
+  // The tab bar's thumb glides to the tab shown.
+  const tabBar = useRef<HTMLDivElement>(null)
+  const thumb = useTabThumb(tabBar, tab)
 
   const photo = profile?.spotifyImageUrl ?? null
   const displayName = profile?.displayName ?? name
@@ -281,7 +285,8 @@ export function DjView({
       </header>
 
       <div className="dj-tabs-row">
-        <div className="dj-tabs" role="tablist" aria-label="DJ page">
+        <div className="tabs" role="tablist" aria-label="DJ page" ref={tabBar}>
+          <span className="tabs__thumb" aria-hidden="true" style={thumb} />
           {tabs.map((item, i) => (
             <button
               type="button"
@@ -291,7 +296,7 @@ export function DjView({
               aria-controls="dj-panel"
               aria-selected={tab === item.id}
               tabIndex={tab === item.id ? 0 : -1}
-              className={`dj-tab${tab === item.id ? ' dj-tab--on' : ''}`}
+              className="tabs__tab"
               onClick={() => openTab(item.id)}
               onKeyDown={(event) => {
                 const next = tabKeyTarget(event.key, i, tabs.length)
