@@ -143,18 +143,23 @@ pub async fn dj_export_defaults(
             .map_err(|e| AppError::Database(format!("Failed to read the export settings: {e}")))?
     };
     let choice = parse_choice(raw.as_deref());
-    let path = choice
-        .as_ref()
-        .and_then(|c| c.path.clone())
-        .map(PathBuf::from)
-        .or_else(|| default_file(&music_dir(&app), target))
-        .ok_or_else(|| not_yet(target))?;
+    let path = chosen_file(choice.as_ref(), &music_dir(&app), target).ok_or_else(|| not_yet(target))?;
     Ok(DjExportDefaults {
         exists: path.is_file(),
         path: path.to_string_lossy().to_string(),
         playlist_ids: choice.as_ref().map(|c| c.playlist_ids.clone()).unwrap_or_default(),
         remembered: choice.is_some(),
     })
+}
+
+/// The remembered file if it is an absolute path (export_to_dj refuses any
+/// other), else the default file.
+fn chosen_file(choice: Option<&DjExportChoice>, music_dir: &Path, target: DjTarget) -> Option<PathBuf> {
+    choice
+        .and_then(|c| c.path.as_deref())
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| default_file(music_dir, target))
 }
 
 /// Saves a program's choice in the settings table.
@@ -224,6 +229,17 @@ mod tests {
         let target: DjTarget = serde_json::from_str("\"rekordbox\"").unwrap();
         assert_eq!(target, DjTarget::Rekordbox);
         assert_eq!(DjTarget::Serato.setting_key(), "dj_export.serato");
+    }
+
+    #[test]
+    fn a_remembered_path_is_kept_only_when_absolute() {
+        let dir = Path::new("/Users/dj/Music");
+        let default = PathBuf::from("/Users/dj/Music/RecoDeck/RecoDeck.xml");
+        let abs = DjExportChoice { playlist_ids: vec![], path: Some("/x/My.xml".into()) };
+        let rel = DjExportChoice { playlist_ids: vec![], path: Some("RecoDeck.xml".into()) };
+        assert_eq!(chosen_file(Some(&abs), dir, DjTarget::Rekordbox), Some(PathBuf::from("/x/My.xml")));
+        assert_eq!(chosen_file(Some(&rel), dir, DjTarget::Rekordbox), Some(default.clone()));
+        assert_eq!(chosen_file(None, dir, DjTarget::Rekordbox), Some(default));
     }
 
     #[test]

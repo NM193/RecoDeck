@@ -173,7 +173,10 @@ export const tauriApi = {
         ? [{ name: 'Traktor NML', extensions: ['nml'] }]
         : [{ name: 'Rekordbox XML', extensions: ['xml'] }]
     const picked = await saveDialog({ defaultPath: current || undefined, filters })
-    return typeof picked === 'string' ? picked : null
+    if (typeof picked !== 'string') return null
+    // Some platforms hand back a name typed without its extension.
+    const name = picked.slice(Math.max(picked.lastIndexOf('/'), picked.lastIndexOf('\\')) + 1)
+    return name.includes('.') ? picked : `${picked}.${target === 'traktor' ? 'nml' : 'xml'}`
   },
 
   async exportToDj(target: DjTarget, playlistIds: number[], path: string): Promise<DjExportResult> {
