@@ -2233,23 +2233,15 @@ function AppContent() {
               className="modal-actions"
               style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}
             >
-              <button
-                type="button"
-                className="modal-button modal-button-secondary"
-                onClick={() => confirmDeleteFolder(false)}
-              >
+              <button type="button" className="btn" onClick={() => confirmDeleteFolder(false)}>
                 Remove from library only
               </button>
-              <button
-                type="button"
-                className="modal-button modal-button-primary"
-                onClick={() => confirmDeleteFolder(true)}
-              >
+              <button type="button" className="btn btn--danger" onClick={() => confirmDeleteFolder(true)}>
                 Delete folder and all files
               </button>
               <button
                 type="button"
-                className="modal-button modal-button-secondary"
+                className="btn"
                 onClick={() =>
                   setDeleteFolderModal({
                     open: false,

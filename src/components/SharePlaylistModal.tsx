@@ -66,7 +66,7 @@ export function SharePlaylistModal({
 
         <button
           type="button"
-          className="btn-primary share-playlist-open-btn"
+          className="btn btn--primary share-playlist-open-btn"
           onClick={handleOpenLink}
         >
           Otvori link u browseru

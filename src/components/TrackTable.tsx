@@ -787,14 +787,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               <div className="modal-actions">
                 <button
                   type="button"
-                  className="modal-button modal-button-secondary"
+                  className="btn"
                   onClick={closeCustomGenre}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="modal-button modal-button-primary"
+                  className="btn btn--primary"
                   onClick={saveCustomGenre}
                   disabled={!customGenreInput.value.trim()}
                 >
@@ -836,14 +836,14 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               <div className="modal-actions">
                 <button
                   type="button"
-                  className="modal-button modal-button-secondary"
+                  className="btn"
                   onClick={closeComment}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  className="modal-button modal-button-primary"
+                  className="btn btn--primary"
                   onClick={saveComment}
                 >
                   Save

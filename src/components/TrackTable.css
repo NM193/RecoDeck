@@ -574,42 +574,6 @@
   justify-content: flex-end;
 }
 
-.modal-button {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all var(--motion-fast) var(--ease);
-  outline: none;
-}
-
-.modal-button-secondary {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-}
-
-.modal-button-secondary:hover {
-  background: var(--bg-tertiary);
-}
-
-.modal-button-primary {
-  background: var(--accent);
-  color: white;
-}
-
-.modal-button-primary:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.modal-button-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* --- Dragging (track table spec, Dragging) --- */
 
 .data-row--dragging {

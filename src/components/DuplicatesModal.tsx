@@ -248,7 +248,7 @@ export function DuplicatesModal({
         <footer className="dup-modal__footer">
           <button
             type="button"
-            className="modal-button modal-button-secondary"
+            className="btn"
             onClick={onClose}
             disabled={deleting}
           >
@@ -256,7 +256,7 @@ export function DuplicatesModal({
           </button>
           <button
             type="button"
-            className="modal-button modal-button-primary dup-modal__delete"
+            className="btn btn--danger dup-modal__delete"
             onClick={deleteSelected}
             disabled={deleting || selectedIds.size === 0}
           >

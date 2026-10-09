@@ -9,48 +9,6 @@
   color: var(--text-primary);
 }
 
-/* Buttons */
-.btn-primary,
-.btn-secondary {
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  border: none;
-  font-size: var(--text-base);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--motion-fast) var(--ease);
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: var(--accent-hover);
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-}
-
-.btn-secondary:hover {
-  background: var(--surface);
-}
-
-.btn-settings {
-  font-size: var(--text-lg);
-  padding: 8px 12px;
-  line-height: 1;
-}
-
 /* Loading State */
 .loading,
 .error {

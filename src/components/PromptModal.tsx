@@ -62,10 +62,10 @@ export function PromptModal({
             aria-label={title}
           />
           <div className="prompt-modal-actions">
-            <button type="button" className="btn-secondary" onClick={onCancel}>
+            <button type="button" className="btn" onClick={onCancel}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
+            <button type="submit" className="btn btn--primary">
               OK
             </button>
           </div>
