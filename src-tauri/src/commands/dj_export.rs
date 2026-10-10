@@ -1,11 +1,12 @@
 // src-tauri/src/commands/dj_export.rs
 // Export to DJ software (spec: docs/superpowers/specs/2026-10-09-dj-export-design.md):
-// what the dialog opens with, and the export itself. Phase 1 writes Rekordbox
-// XML; Traktor and Serato come in later phases.
+// what the dialog opens with, and the export itself: Rekordbox XML and
+// Traktor NML. Serato comes in phase 3.
 
 use crate::commands::library::AppState;
 use crate::error::AppError;
-use crate::formats::{self, rekordbox, ExportLibrary};
+use crate::db::Database;
+use crate::formats::{self, rekordbox, traktor, volumes, ExportLibrary};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -33,6 +34,9 @@ impl DjTarget {
         format!("dj_export.{}", self.label().to_ascii_lowercase())
     }
 }
+
+/// The program exported to last: the dialog opens on its tab.
+const LAST_TARGET_KEY: &str = "dj_export.last_target";
 
 /// What is remembered per program: the playlists and where the file went.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -166,8 +170,15 @@ fn chosen_file(choice: Option<&DjExportChoice>, music_dir: &Path, target: DjTarg
 fn remember(state: &AppState, target: DjTarget, choice: &DjExportChoice) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|_| "State lock failed".to_string())?;
     let db = db_lock.as_ref().ok_or_else(|| "Database not initialized".to_string())?;
+    save_choice(db, target, choice)
+}
+
+/// The program's choice, and that it is the program used last (as JSON: "traktor").
+fn save_choice(db: &Database, target: DjTarget, choice: &DjExportChoice) -> Result<(), String> {
     let raw = serde_json::to_string(choice).map_err(|e| e.to_string())?;
-    db.set_setting(&target.setting_key(), &raw).map_err(|e| e.to_string())
+    db.set_setting(&target.setting_key(), &raw).map_err(|e| e.to_string())?;
+    let last = serde_json::to_string(&target).map_err(|e| e.to_string())?;
+    db.set_setting(LAST_TARGET_KEY, &last).map_err(|e| e.to_string())
 }
 
 /// Writes the picked playlists for a program and remembers the choice.
@@ -178,7 +189,7 @@ pub async fn export_to_dj(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<DjExportResult, AppError> {
-    if target != DjTarget::Rekordbox {
+    if target == DjTarget::Serato {
         return Err(not_yet(target));
     }
     if playlist_ids.is_empty() {
@@ -202,7 +213,11 @@ pub async fn export_to_dj(
     formats::mark_missing(&mut lib);
 
     let file = PathBuf::from(&path);
-    let content = rekordbox::write(&lib, env!("CARGO_PKG_VERSION"));
+    let content = match target {
+        DjTarget::Rekordbox => rekordbox::write(&lib, env!("CARGO_PKG_VERSION")),
+        DjTarget::Traktor => traktor::write(&lib, &volumes::boot_volume_name()),
+        DjTarget::Serato => return Err(not_yet(target)),
+    };
     write_atomically(&file, content.as_bytes())
         .map_err(|e| AppError::Internal(format!("Couldn't write {}: {e}", file.display())))?;
 
@@ -324,5 +339,16 @@ mod tests {
             skipped(&lib),
             vec![SkippedTrack { artist: "DJ".into(), title: String::new(), path: "/gone.mp3".into() }]
         );
+    }
+
+    #[test]
+    fn a_saved_choice_names_its_program_as_the_last_one() {
+        let db = crate::db::Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let choice = DjExportChoice { playlist_ids: vec![2], path: Some("/x/RecoDeck.nml".into()) };
+        save_choice(&db, DjTarget::Traktor, &choice).unwrap();
+        // The dialog reads this through get_setting and opens on Traktor's tab.
+        assert_eq!(db.get_setting("dj_export.last_target").unwrap().as_deref(), Some("\"traktor\""));
+        assert_eq!(parse_choice(db.get_setting("dj_export.traktor").unwrap().as_deref()), Some(choice));
     }
 }
