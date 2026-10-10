@@ -6,6 +6,7 @@
 }
 
 .star-rating .star {
+  display: inline-block;
   background: none;
   border: none;
   padding: 0 1px;
@@ -13,7 +14,11 @@
   line-height: 1;
   cursor: pointer;
   color: var(--border);
-  transition: color var(--motion-fast) var(--ease);
+  /* The wave (Micro-interactions spec, Stars): each star's colour follows the
+     one before by 24ms; the zoom has no delay, on the way in or out. */
+  transition:
+    color 150ms var(--ease) calc(var(--i, 0) * 24ms),
+    transform 260ms cubic-bezier(0.34, 1.4, 0.64, 1);
   outline: none;
 }
 
@@ -28,4 +33,25 @@
 
 .star-rating--readonly .star:hover {
   color: inherit;
+}
+
+/* The pulse runs on the glyph; the zoom on the button. */
+.star-rating .star__glyph {
+  display: inline-block;
+}
+
+/* Only the star under the pointer zooms; its own colour comes at once. */
+.star-rating:not(.star-rating--readonly) .star:hover {
+  transform: scale(1.28);
+  transition-delay: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-rating .star {
+    transition: color var(--motion-fast) var(--ease);
+  }
+
+  .star-rating:not(.star-rating--readonly) .star:hover {
+    transform: none;
+  }
 }
