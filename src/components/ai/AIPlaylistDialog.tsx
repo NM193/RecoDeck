@@ -455,7 +455,11 @@ export function AIPlaylistDialog({
                             className="ai-playlist-track-play"
                             onClick={() => handlePlayTrack(track)}
                             disabled={!track.file_path}
-                            title={
+                            data-tip={
+                              track.file_path
+                                ? 'Preview track'
+                                : 'No file path available'
+                            } aria-label={
                               track.file_path
                                 ? 'Preview track'
                                 : 'No file path available'
@@ -491,7 +495,7 @@ export function AIPlaylistDialog({
                             type="button"
                             className="ai-playlist-track-remove"
                             onClick={() => handleRemoveTrack(track.id)}
-                            title="Remove from playlist"
+                            data-tip="Remove from playlist" aria-label="Remove from playlist"
                           >
                             <Icon name="X" size={14} />
                           </button>

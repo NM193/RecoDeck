@@ -176,6 +176,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-bottom: var(--space-6);
+  --glide-bg: var(--bg-tertiary);
 }
 
 .search-view__track-row {
@@ -190,19 +191,28 @@
   gap: 0;
 }
 
-.search-view__track-row:hover {
-  background: var(--bg-tertiary);
+/* Hover: the number and the play icon cross-fade, one over the other */
+.search-view__track-number,
+.search-view__track-play {
+  display: flex;
+  align-items: center;
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
-/* Hover: hide number, show play icon */
-.search-view__track-number { display: flex; align-items: center; }
-.search-view__track-play   { display: none; color: var(--text-primary); align-items: center; }
+.search-view__track-play {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  color: var(--text-primary);
+  opacity: 0;
+}
 
-.search-view__track-row:hover .search-view__track-number { display: none; }
-.search-view__track-row:hover .search-view__track-play   { display: flex; }
+.search-view__track-row:hover .search-view__track-number { opacity: 0; }
+.search-view__track-row:hover .search-view__track-play   { opacity: 1; }
 
 /* # column */
 .search-view__track-index {
+  position: relative;
   flex: 0 0 48px;
   display: flex;
   align-items: center;
@@ -262,6 +272,7 @@
 /* ---- DJs and Playlists rows: cards that scroll sideways inside the row ---- */
 
 .search-view__card-row {
+  --glide-bg: var(--bg-tertiary);
   display: flex;
   gap: var(--space-3);
   min-width: 0;
@@ -284,11 +295,13 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background-color 240ms var(--ease-soft);
 }
 
+/* Hovered, a card hands its fill to the glide sliding in under it
+   (Micro-interactions spec, Cards). */
 .search-view__dj-card:hover {
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 /* The artist photo, else the mockup's no-photo gradient with the initial. */
@@ -322,11 +335,11 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background-color 240ms var(--ease-soft);
 }
 
 .search-view__playlist-card:hover {
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 .search-view__playlist-art {

@@ -32,6 +32,8 @@ import {
   type SidebarSection,
 } from '../../lib/sidebarPrefs'
 import { EASE, MOTION } from '../../lib/motion'
+import { GLIDE, menuGlide } from '../../lib/glide/glide'
+import { useGlideTo, useHoverGlide } from '../../lib/glide/useGlide'
 import './Sidebar.css'
 
 // --- Constants ---
@@ -40,6 +42,8 @@ const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const STORAGE_KEY = 'sidebar_width'
 const DEFAULT_WIDTH = 240
+/** The context menu's highlight: the accent, red on a destructive item. */
+const CTX_GLIDE = menuGlide('sidebar-ctx-menu__item--danger')
 
 /** The width the user dragged the full sidebar to, or the default. */
 function readStoredWidth(): number {
@@ -282,6 +286,16 @@ export function Sidebar({
     withCreate: boolean
   } | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
+  // The nav's sliding highlights (Micro-interactions spec, Sidebar): the
+  // hover, and the open page painted over it.
+  const navRef = useRef<HTMLDivElement>(null)
+  const navHoverRef = useRef<HTMLSpanElement>(null)
+  const navOpenRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(navRef, navHoverRef, '.sidebar-nav-item', GLIDE.row)
+  useGlideTo(navRef, navOpenRef, '.sidebar-nav-item--active', GLIDE.row)
+  // The colour menu's hover slides between its items.
+  const ctxGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(ctxRef, ctxGlideRef, '.sidebar-ctx-menu__item', CTX_GLIDE)
   // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
   useOverlay(ctxMenu !== null, () => setCtxMenu(null))
 
@@ -450,9 +464,10 @@ export function Sidebar({
   const colourMenuEl = ctxMenu && (
     <div
       ref={ctxRef}
-      className="sidebar-ctx-menu"
+      className="glide-track sidebar-ctx-menu"
       style={{ top: ctxMenu.y, left: ctxMenu.x }}
     >
+      <span ref={ctxGlideRef} className="glide" aria-hidden="true" />
       <SidebarColourMenu
         label={SECTION_LABELS[ctxMenu.section]}
         current={colourFor(ctxMenu.section, colours)}
@@ -576,7 +591,7 @@ export function Sidebar({
           className={`sidebar-top__avatar ${activeView === 'settings' ? 'sidebar-top__avatar--active' : ''}`}
           onClick={onOpenSettings}
           type="button"
-          title="Settings"
+          data-tip="Settings" aria-label="Settings"
         >
           <Icon name="User" size={16} />
         </button>
@@ -584,7 +599,7 @@ export function Sidebar({
           className="sidebar-top__toggle"
           onClick={onToggleCollapsed}
           type="button"
-          title="Collapse sidebar (⌘\)"
+          data-tip="Collapse sidebar" data-tip-keys="sidebar"
           aria-label="Collapse sidebar"
         >
           <Icon name="PanelLeft" size={14} />
@@ -592,7 +607,9 @@ export function Sidebar({
       </div>
 
       {/* Top nav items — they stay put; the sections share the space below */}
-      <div className="sidebar-nav">
+      <div className="glide-track sidebar-nav" ref={navRef}>
+        <span ref={navHoverRef} className="glide" aria-hidden="true" />
+        <span ref={navOpenRef} className="glide glide--open" aria-hidden="true" />
         {navItems.map((item) => (
           <button
             key={item.section}

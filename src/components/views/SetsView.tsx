@@ -33,6 +33,7 @@ import type {
   WatchedDj,
 } from '../../types/youtube'
 import type { NewDjFind } from '../../types/home'
+import { HoverGlide } from '../HoverGlide'
 import './SetsView.css'
 
 /** The new finds the library shows, newest first. */
@@ -712,6 +713,7 @@ export function SetsView({
                   Back to your library
                 </button>
               </div>
+            <HoverGlide className="sets-found-list" item=".sets-found" kind="row">
             {found.map((hit) => {
               // Read from the description that came back with the search,
               // by the same rules that parse a stored set.
@@ -749,6 +751,7 @@ export function SetsView({
                 </button>
               )
             })}
+            </HoverGlide>
             </>
           ) : (
             <>

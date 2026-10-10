@@ -12,6 +12,8 @@ import { EQModal } from '../eq/EQModal'
 import { useOverlay } from '../../lib/overlays'
 import { registerFileControls } from '../../lib/shortcuts/players'
 import { EASE, MOTION } from '../../lib/motion'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -75,6 +77,25 @@ export function NowPlayingBar({
 
   const progressRef = useRef<HTMLDivElement>(null)
   const playlistMenuRef = useRef<HTMLDivElement>(null)
+  // Add to playlist: the hover slides between the playlists (Micro-
+  // interactions spec, Menus).
+  const addMenuRef = useRef<HTMLDivElement>(null)
+  const addGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(addMenuRef, addGlideRef, '.now-playing-bar__playlist-item', GLIDE.menu)
+  // The small buttons' grey square slides between them, play and disabled
+  // ones skipped; the same on the right: mute and the actions (Micro-
+  // interactions spec, Player bar).
+  const controlsRef = useRef<HTMLDivElement>(null)
+  const controlsGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(
+    controlsRef,
+    controlsGlideRef,
+    '.now-playing-bar__btn:not(.now-playing-bar__btn--play):not(:disabled)',
+    GLIDE.icon,
+  )
+  const actionsRef = useRef<HTMLDivElement>(null)
+  const actionsGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(actionsRef, actionsGlideRef, '.now-playing-bar__btn:not(:disabled)', GLIDE.icon)
   const volumeRef = useRef<HTMLDivElement>(null)
   const hideTimeoutRef = useRef<number | null>(null)
 
@@ -696,7 +717,10 @@ export function NowPlayingBar({
   // --- Render ---
 
   return (
-    <div className={`now-playing-bar ${!currentTrack ? 'now-playing-bar--empty' : ''}`}>
+    <div
+      className={`now-playing-bar ${!currentTrack ? 'now-playing-bar--empty' : ''}`}
+      data-tip-side="top"
+    >
       {/* Expanded now-playing overlay */}
       <AnimatePresence>
         {expanded && currentTrack && (
@@ -711,7 +735,7 @@ export function NowPlayingBar({
             <button
               className="now-playing-expanded__close"
               onClick={(e) => { e.stopPropagation(); setExpanded(false) }}
-              title="Close (Escape)"
+              data-tip="Close" aria-label="Close" data-tip-keys="cancel"
             >
               <Icon name="X" size={20} />
             </button>
@@ -763,7 +787,7 @@ export function NowPlayingBar({
           <div
             className="now-playing-bar__artwork"
             onClick={() => currentTrack && setExpanded(true)}
-            title={currentTrack ? 'Click to expand now playing' : undefined}
+            data-tip={currentTrack ? 'Click to expand now playing' : undefined} aria-description={currentTrack ? 'Click to expand now playing' : undefined}
             style={{ cursor: currentTrack ? 'pointer' : 'default' }}
           >
             {artworkUrl ? (
@@ -782,7 +806,7 @@ export function NowPlayingBar({
           <div
             className={`now-playing-bar__track-info ${currentTrack ? 'now-playing-bar__track-info--clickable' : ''}`}
             onClick={() => currentTrack && onTrackMetaClick?.()}
-            title={currentTrack ? 'Click to scroll to track in library' : undefined}
+            data-tip={currentTrack ? 'Click to scroll to track in library' : undefined} aria-description={currentTrack ? 'Click to scroll to track in library' : undefined}
           >
             {currentTrack ? (
               <>
@@ -812,11 +836,12 @@ export function NowPlayingBar({
         {/* CENTER: Transport controls + progress */}
         <div className="now-playing-bar__center">
           {/* Transport controls row */}
-          <div className="now-playing-bar__controls">
+          <div className="glide-track now-playing-bar__controls" ref={controlsRef}>
+            <span ref={controlsGlideRef} className="glide" aria-hidden="true" />
             <button
               className={`now-playing-bar__btn now-playing-bar__btn--toggle ${isShuffle ? 'now-playing-bar__btn--active' : ''}`}
               onClick={() => setShuffle(!isShuffle)}
-              title="Shuffle"
+              data-tip="Shuffle" aria-label="Shuffle"
             >
               <Icon name="Shuffle" size={16} />
             </button>
@@ -825,7 +850,7 @@ export function NowPlayingBar({
               className="now-playing-bar__btn"
               onClick={handlePrevious}
               disabled={!currentTrack || isLoading}
-              title="Previous"
+              data-tip="Previous" aria-label="Previous" data-tip-keys="previous"
             >
               <Icon name="SkipBack" size={18} />
             </button>
@@ -834,16 +859,26 @@ export function NowPlayingBar({
               className="now-playing-bar__btn now-playing-bar__btn--play"
               onClick={handlePlayPause}
               disabled={!currentTrack || isLoading}
-              title={isPlaying ? 'Pause' : 'Play'}
+              data-tip={isPlaying ? 'Pause' : 'Play'} aria-label={isPlaying ? 'Pause' : 'Play'} data-tip-keys="play-pause"
             >
-              <Icon name={isPlaying ? 'Pause' : 'Play'} size={20} />
+              {/* Play and pause, one over the other: the one leaving turns away. */}
+              <span
+                className={`now-playing-bar__play-icon now-playing-bar__play-icon--play${isPlaying ? ' now-playing-bar__play-icon--hidden' : ''}`}
+              >
+                <Icon name="Play" size={20} />
+              </span>
+              <span
+                className={`now-playing-bar__play-icon now-playing-bar__play-icon--pause${isPlaying ? '' : ' now-playing-bar__play-icon--hidden'}`}
+              >
+                <Icon name="Pause" size={20} />
+              </span>
             </button>
 
             <button
               className="now-playing-bar__btn"
               onClick={handleNext}
               disabled={!currentTrack || isLoading}
-              title="Next"
+              data-tip="Next" aria-label="Next" data-tip-keys="next"
             >
               <Icon name="SkipForward" size={18} />
             </button>
@@ -851,7 +886,13 @@ export function NowPlayingBar({
             <button
               className={`now-playing-bar__btn now-playing-bar__btn--toggle ${repeatMode !== 'off' ? 'now-playing-bar__btn--active' : ''}`}
               onClick={handleRepeatToggle}
-              title={
+              data-tip={
+                repeatMode === 'one'
+                  ? 'Repeat One'
+                  : repeatMode === 'all'
+                    ? 'Repeat All'
+                    : 'Repeat'
+              } aria-label={
                 repeatMode === 'one'
                   ? 'Repeat One'
                   : repeatMode === 'all'
@@ -930,7 +971,8 @@ export function NowPlayingBar({
         </div>
 
         {/* RIGHT: Volume + extras */}
-        <div className="now-playing-bar__right">
+        <div className="glide-track now-playing-bar__right" ref={actionsRef}>
+          <span ref={actionsGlideRef} className="glide" aria-hidden="true" />
           {/* Volume */}
           <div
             className="now-playing-bar__volume"
@@ -953,7 +995,7 @@ export function NowPlayingBar({
             <button
               className="now-playing-bar__btn"
               onClick={handleVolumeToggle}
-              title={isMuted ? 'Unmute' : 'Mute'}
+              data-tip={isMuted ? 'Unmute' : 'Mute'} aria-label={isMuted ? 'Unmute' : 'Mute'}
             >
               <Icon name={getVolumeIcon()} size={18} />
             </button>
@@ -990,7 +1032,7 @@ export function NowPlayingBar({
             className={`now-playing-bar__btn now-playing-bar__btn--action ${showWaveform ? 'now-playing-bar__btn--waveform-active' : ''}`}
             onClick={() => setShowWaveform((v) => !v)}
             disabled={!currentTrack}
-            title={showWaveform ? 'Hide waveform' : 'Show waveform'}
+            data-tip={showWaveform ? 'Hide waveform' : 'Show waveform'} aria-label={showWaveform ? 'Hide waveform' : 'Show waveform'}
           >
             <Icon name="AudioWaveform" size={18} />
           </button>
@@ -999,7 +1041,7 @@ export function NowPlayingBar({
           <button
             className={`now-playing-bar__btn now-playing-bar__btn--action${eqEnabled ? ' now-playing-bar__btn--toggle now-playing-bar__btn--active' : ''}`}
             onClick={() => setShowEQModal((v) => !v)}
-            title={eqEnabled ? 'Equalizer (active)' : 'Equalizer'}
+            data-tip={eqEnabled ? 'Equalizer (active)' : 'Equalizer'} aria-label={eqEnabled ? 'Equalizer (active)' : 'Equalizer'}
           >
             <Icon name="SlidersHorizontal" size={18} />
           </button>
@@ -1014,7 +1056,7 @@ export function NowPlayingBar({
                   console.error('[NowPlayingBar] Mini player open failed:', err),
                 )
             }
-            title="Open Mini Player"
+            data-tip="Open Mini Player" aria-label="Open Mini Player"
           >
             <Icon name="PictureInPicture2" size={18} />
           </button>
@@ -1025,13 +1067,14 @@ export function NowPlayingBar({
               className="now-playing-bar__btn now-playing-bar__btn--action"
               onClick={() => setShowPlaylistMenu(!showPlaylistMenu)}
               disabled={!currentTrack}
-              title="Add to playlist"
+              data-tip="Add to playlist" aria-label="Add to playlist"
             >
               <Icon name="ListPlus" size={18} />
             </button>
 
             {showPlaylistMenu && (
-              <div className="now-playing-bar__playlist-menu">
+              <div className="glide-track now-playing-bar__playlist-menu" ref={addMenuRef}>
+                <span ref={addGlideRef} className="glide" aria-hidden="true" />
                 <div className="now-playing-bar__playlist-header">
                   Add to playlist
                 </div>
@@ -1069,7 +1112,7 @@ export function NowPlayingBar({
               className="now-playing-bar__btn now-playing-bar__btn--action"
               onClick={() => currentTrack && onGenerateAIPlaylist(currentTrack)}
               disabled={!currentTrack}
-              title="Generate AI Playlist from this track"
+              data-tip="Generate AI Playlist from this track" aria-label="Generate AI Playlist from this track"
             >
               <Icon name="Sparkles" size={18} />
             </button>
@@ -1081,7 +1124,11 @@ export function NowPlayingBar({
               className="now-playing-bar__btn now-playing-bar__btn--action"
               onClick={() => currentTrack && onGetRecommendations(currentTrack)}
               disabled={!currentTrack}
-              title={
+              data-tip={
+                currentTrack
+                  ? 'Get similar track recommendations'
+                  : 'Play a track first to get recommendations'
+              } aria-label={
                 currentTrack
                   ? 'Get similar track recommendations'
                   : 'Play a track first to get recommendations'

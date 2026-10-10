@@ -141,7 +141,7 @@ export function AnalysisProgress({
             <button
               className="analysis-cancel-btn"
               onClick={onCancel}
-              title="Cancel analysis"
+              data-tip="Cancel analysis" aria-label="Cancel analysis"
             >
               ✕
             </button>

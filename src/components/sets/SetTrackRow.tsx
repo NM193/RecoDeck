@@ -93,7 +93,7 @@ export function SetTrackRow({
               type="button"
               className="set-row__echo"
               onClick={() => onFollowEcho(echo)}
-              title={`Heard at ${echo.cue ?? ''} in "${echo.set_title ?? 'another set'}"`}
+              data-tip={`Heard at ${echo.cue ?? ''} in "${echo.set_title ?? 'another set'}"`} aria-description={`Heard at ${echo.cue ?? ''} in "${echo.set_title ?? 'another set'}"`}
             >
               ↳ {echo.cue}
             </button>
@@ -131,7 +131,7 @@ export function SetTrackRow({
             type="button"
             className="btn btn--pill set-row__have"
             onClick={() => onPlayFile(match.track as LibraryTrack)}
-            title={`Play your file: ${match.track.artist ?? ''} — ${match.track.title ?? ''}`}
+            data-tip={`Play your file: ${match.track.artist ?? ''} — ${match.track.title ?? ''}`} aria-description={`Play your file: ${match.track.artist ?? ''} — ${match.track.title ?? ''}`}
           >
             <Icon name="Play" size={11} /> have it
           </button>

@@ -16,6 +16,8 @@ import {
   type StatusFilter,
 } from '../../lib/spotify/rows'
 import { getErrorMessage, isAppError, type AppErrorKind } from '../../types/ai'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import './SpotifyView.css'
 
 /** What every service's row carries. */
@@ -122,6 +124,10 @@ export function StreamingListView<R extends StreamRow>({
   const [reconnectError, setReconnectError] = useState<string | null>(null)
   /** Each Reconnect click; only the newest one's end clears "Waiting…". */
   const reconnectSeq = useRef(0)
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const tableRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(tableRef, glideRef, '.spotify-row--data', GLIDE.row)
 
   const counts = useMemo(() => countByStatus(rows), [rows])
   const shown = useMemo(
@@ -204,7 +210,11 @@ export function StreamingListView<R extends StreamRow>({
             type="button"
             className="spotify-mini spotify-mini--primary"
             onClick={reconnect}
-            title={
+            data-tip={
+              reconnecting
+                ? 'Closed the browser tab? Click to sign in again'
+                : undefined
+            } aria-description={
               reconnecting
                 ? 'Closed the browser tab? Click to sign in again'
                 : undefined
@@ -254,7 +264,7 @@ export function StreamingListView<R extends StreamRow>({
               className="spotify-header__sync"
               onClick={onSync}
               disabled={syncing}
-              title={`Sync with ${serviceName} now`}
+              data-tip={`Sync with ${serviceName} now`} aria-description={`Sync with ${serviceName} now`}
             >
               <Icon name="RefreshCw" size={12} />
               {syncText(now)}
@@ -290,7 +300,13 @@ export function StreamingListView<R extends StreamRow>({
         ))}
       </div>
 
-      <div className="spotify-table" role="table" aria-label={title}>
+      <div
+        ref={tableRef}
+        className="glide-track spotify-table"
+        role="table"
+        aria-label={title}
+      >
+        <span ref={glideRef} className="glide" aria-hidden="true" />
         <div className={rowClass('spotify-row--head')} role="row">
           <span className="spotify-cell--num" role="columnheader">
             #
@@ -321,7 +337,7 @@ export function StreamingListView<R extends StreamRow>({
                 <span
                   className="spotify-cell--title"
                   role="cell"
-                  title={text.titleTip}
+                  data-tip={text.titleTip} aria-description={text.titleTip}
                 >
                   {row.isNew && (
                     <i
@@ -335,7 +351,7 @@ export function StreamingListView<R extends StreamRow>({
                 <span
                   className="spotify-cell--artist"
                   role="cell"
-                  title={text.artist}
+                  data-tip={text.artist} data-tip-overflow
                 >
                   {text.artist}
                 </span>
@@ -343,7 +359,7 @@ export function StreamingListView<R extends StreamRow>({
                   <span
                     className="spotify-cell--lists"
                     role="cell"
-                    title={row.lists.join(', ')}
+                    data-tip={row.lists.join(', ')} data-tip-overflow
                   >
                     {row.lists.join(', ')}
                   </span>
@@ -369,7 +385,7 @@ export function StreamingListView<R extends StreamRow>({
                     aria-colspan={showLists ? 5 : 4}
                   >
                     In library:{' '}
-                    <code title={row.ownership.file.file_path}>
+                    <code data-tip={row.ownership.file.file_path} aria-description={row.ownership.file.file_path}>
                       {fileName(row.ownership.file.file_path)}
                     </code>
                     <span className="spotify-hint__why">

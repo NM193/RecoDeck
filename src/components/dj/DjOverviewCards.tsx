@@ -3,7 +3,7 @@
 // leads to its tab ("all 9 →"), then a few rows drawn by the tabs' own
 // components. While customizing, a card has a grip and × instead, and its
 // rows show ghosted.
-import { useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { Icon, type IconName } from '../Icon'
 import { SkeletonRows } from '../Skeleton'
 import { GigRow, RaLinkCard } from './DjGigsTab'
@@ -36,6 +36,8 @@ import type { DjGig } from '../../types/dj'
 import type { LibraryTrack } from '../../lib/tracklist/match'
 import type { Verdict } from '../../types/spotify'
 import type { YtSetSummary } from '../../types/youtube'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 
 /** What the cards show — DjView's own memoised values, never classified again here. */
 export interface OverviewData {
@@ -143,7 +145,7 @@ function PlaysBody({ data }: { data: OverviewData }) {
         const text = playText(play)
         return (
           <div key={play.key} className="dj-card-play">
-            <span className="dj-card-play__text" title={text}>
+            <span className="dj-card-play__text" data-tip={text} data-tip-overflow>
               {text}
             </span>
             <PlayBar
@@ -179,6 +181,10 @@ function TracksBody({
   data: OverviewData
   actions: OverviewActions
 }) {
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const tableRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(tableRef, glideRef, '.spotify-row--data', GLIDE.row)
   if (data.tracksState === 'notConnected') {
     return (
       <div className="dj-connect">
@@ -211,9 +217,11 @@ function TracksBody({
   }
   return (
     <div
-      className={`spotify-table dj-table dj-card__table content-in${scroll ? ' dj-card__table--scroll' : ''}`}
+      ref={tableRef}
+      className={`glide-track spotify-table dj-table dj-card__table content-in${scroll ? ' dj-card__table--scroll' : ''}`}
       role="table"
     >
+      <span ref={glideRef} className="glide" aria-hidden="true" />
       {shown.map((row, index) => (
         <DjTrackRow
           key={row.track.spotifyId}
@@ -385,7 +393,7 @@ export function EditCard({ id, data, actions, onRemove }: EditCardProps) {
   return (
     <section className="dj-card dj-card--edit" aria-label={card.title}>
       <h4 className="dj-card__head">
-        <span className="dj-card__grip" title="Drag to move">
+        <span className="dj-card__grip" data-tip="Drag to move" aria-label="Drag to move">
           <Icon name="GripVertical" size={14} />
         </span>
         <Icon name={CARD_ICONS[id]} size={14} />
@@ -393,7 +401,7 @@ export function EditCard({ id, data, actions, onRemove }: EditCardProps) {
         <button
           type="button"
           className="dj-card__remove"
-          title={`Remove ${card.title}`}
+          data-tip={`Remove ${card.title}`}
           aria-label={`Remove ${card.title}`}
           onClick={() => onRemove(id)}
         >

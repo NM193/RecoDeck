@@ -2,7 +2,7 @@
 // The Tracks tab: every track the DJ made or remixed, in the Spotify view's
 // table (its classes, chips and row actions, Maybe's Yes/No included), newest
 // release first, then "Load older releases" when Spotify lists more.
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { useShowAfter } from '../../lib/useShowAfter'
 import { SpotifyRowActions } from '../spotify/SpotifyRowActions'
@@ -25,6 +25,8 @@ import {
 import type { LibraryTrack } from '../../lib/tracklist/match'
 import type { Verdict } from '../../types/spotify'
 import type { DjPage } from '../../types/dj'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import '../views/SpotifyView.css'
 
 /** The Spotify view's status chips with their counts; `filters` picks which (the overview card shows three). */
@@ -92,7 +94,11 @@ export function DjTrackRow({
         <span
           className="spotify-cell--title"
           role="cell"
-          title={
+          data-tip={
+            row.track.album
+              ? `${row.track.title} · ${row.track.album}`
+              : row.track.title
+          } aria-description={
             row.track.album
               ? `${row.track.title} · ${row.track.album}`
               : row.track.title
@@ -103,7 +109,7 @@ export function DjTrackRow({
         <span
           className="spotify-cell--artist"
           role="cell"
-          title={row.track.artists}
+          data-tip={row.track.artists} data-tip-overflow
         >
           {row.track.artists}
         </span>
@@ -128,7 +134,7 @@ export function DjTrackRow({
           <span role="cell" />
           <span className="spotify-hint" role="cell" aria-colspan={4}>
             In library:{' '}
-            <code title={row.ownership.file.file_path}>
+            <code data-tip={row.ownership.file.file_path} aria-description={row.ownership.file.file_path}>
               {fileName(row.ownership.file.file_path)}
             </code>
             <span className="spotify-hint__why">· {row.ownership.reason}</span>
@@ -212,6 +218,10 @@ export function DjTracksTab({
 }: DjTracksTabProps) {
   const [filter, setFilter] = useState<StatusFilter>(initialFilter)
   const [query, setQuery] = useState('')
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const tableRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(tableRef, glideRef, '.spotify-row--data', GLIDE.row)
   const counts = useMemo(() => countByStatus(rows), [rows])
   const shown = useMemo(
     () => filterRows(rows, filter, query),
@@ -258,7 +268,7 @@ export function DjTracksTab({
         {failed && (
           <span
             className="dj-tabhead__failed"
-            title={spotify.error ?? undefined}
+            data-tip={spotify.error ?? undefined} aria-description={spotify.error ?? undefined}
           >
             · couldn&apos;t refresh
           </span>
@@ -293,10 +303,12 @@ export function DjTracksTab({
         </p>
       ) : (
         <div
-          className="spotify-table dj-table"
+          ref={tableRef}
+          className="glide-track spotify-table dj-table"
           role="table"
           aria-label="Tracks and remixes"
         >
+          <span ref={glideRef} className="glide" aria-hidden="true" />
           <div className="spotify-row spotify-row--head" role="row">
             <span className="spotify-cell--num" role="columnheader">
               #

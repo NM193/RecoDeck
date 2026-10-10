@@ -10,6 +10,7 @@ import { setCardLine } from '../../lib/sets/box'
 import { thumbnailUrl } from '../../lib/sets/setPage'
 import type { NewDjFind } from '../../types/home'
 import type { YtSetSummary } from '../../types/youtube'
+import { HoverGlide } from '../HoverGlide'
 import './SetsHome.css'
 
 interface SetsLibraryProps {
@@ -28,7 +29,7 @@ function SetCard({ set, onOpen }: { set: YtSetSummary; onOpen: () => void }) {
       <span className="set-card__thumb" style={{ backgroundImage: `url(${thumbnailUrl(set.video_id, 'mqdefault')})` }}>
         {set.duration_ms ? <span className="set-card__length">{msToCue(set.duration_ms)}</span> : null}
       </span>
-      <span className="set-card__title" title={set.title}>
+      <span className="set-card__title" data-tip={set.title} data-tip-overflow>
         {set.title}
       </span>
       <span className="set-card__line">{setCardLine(set)}</span>
@@ -39,11 +40,11 @@ function SetCard({ set, onOpen }: { set: YtSetSummary; onOpen: () => void }) {
 export function SetsLibrary({ sets, newFinds, grouping, onOpenSet, onOpenDj, onMarkAllSeen }: SetsLibraryProps) {
   const byDj = useMemo(() => groupByDj(sets), [sets])
   const grid = (list: YtSetSummary[]) => (
-    <div className="set-cards">
+    <HoverGlide className="set-cards" item=".set-card" kind="card">
       {list.map((set) => (
         <SetCard key={set.video_id} set={set} onOpen={() => onOpenSet(set.video_id, set.title)} />
       ))}
-    </div>
+    </HoverGlide>
   )
 
   return (
@@ -56,7 +57,7 @@ export function SetsLibrary({ sets, newFinds, grouping, onOpenSet, onOpenDj, onM
               Mark all seen
             </button>
           </div>
-          <div className="new-finds">
+          <HoverGlide className="new-finds" item=".new-find" kind="card">
             {newFinds.map((find) => (
               <button
                 key={find.videoId}
@@ -70,14 +71,14 @@ export function SetsLibrary({ sets, newFinds, grouping, onOpenSet, onOpenDj, onM
                 />
                 <span className="new-find__text">
                   <span className="new-find__dj">{find.displayName}</span>
-                  <span className="new-find__title" title={find.title}>
+                  <span className="new-find__title" data-tip={find.title} data-tip-overflow>
                     {find.title}
                   </span>
                   <span className="new-find__cost">{find.saved ? 'saved' : 'opening costs 5–7'}</span>
                 </span>
               </button>
             ))}
-          </div>
+          </HoverGlide>
         </section>
       )}
 

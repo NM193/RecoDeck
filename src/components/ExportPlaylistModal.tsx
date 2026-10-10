@@ -167,7 +167,7 @@ export function ExportPlaylistModal({
               <span>
                 {progress.current} / {progress.total}
               </span>
-              <span className="export-progress-file" title={progress.currentFile}>
+              <span className="export-progress-file" data-tip={progress.currentFile} data-tip-overflow>
                 {progress.currentFile || '…'}
               </span>
             </div>

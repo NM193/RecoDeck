@@ -3,6 +3,9 @@
 
 .folder-tree-section-body {
   padding: 2px 0 2px 10px;
+  /* The hover is a faint grey glide; the open row, the accent one over it
+     (Micro-interactions spec, Sidebar). */
+  --glide-bg: var(--glide-weak);
 }
 
 /* --- Folder Rows --- */
@@ -20,25 +23,15 @@
   overflow: hidden;
 }
 
-.folder-row:hover {
-  background: var(--bg-tertiary);
-}
-
 .folder-row.selected {
-  background: var(--accent);
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
-.folder-row.selected:hover {
-  background: var(--accent-hover);
-}
-
-.folder-row.selected .folder-count {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.folder-row.selected .folder-arrow {
-  color: rgba(255, 255, 255, 0.8);
+/* The open row's icon takes the accent. Icon sets an inline
+   color: currentColor, hence !important. */
+.folder-row.selected .folder-icon,
+.folder-row.selected .spotify-list-row__icon {
+  color: var(--accent-hover) !important;
 }
 
 /* Root library/explorer folder */

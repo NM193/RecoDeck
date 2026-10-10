@@ -31,10 +31,10 @@ export function TrackCell({ column, track, plays, onEditComment, onRate }: Track
     case 'title':
       return (
         <div className="tt-cell cell-title">
-          <div className="cell-title__name" title={track.title || undefined}>
+          <div className="cell-title__name" data-tip={track.title || undefined} data-tip-overflow>
             {track.title || <span className="cell-missing">Untitled</span>}
           </div>
-          <div className="cell-title__artist" title={track.artist || undefined}>
+          <div className="cell-title__artist" data-tip={track.artist || undefined} data-tip-overflow>
             {text(track.artist)}
           </div>
         </div>
@@ -45,7 +45,11 @@ export function TrackCell({ column, track, plays, onEditComment, onRate }: Track
       return (
         <div
           className={className}
-          title={
+          data-tip={
+            track.key_confidence != null
+              ? `${track.musical_key ?? MISSING} (${Math.round(track.key_confidence * 100)}%)`
+              : undefined
+          } aria-description={
             track.key_confidence != null
               ? `${track.musical_key ?? MISSING} (${Math.round(track.key_confidence * 100)}%)`
               : undefined
@@ -55,11 +59,11 @@ export function TrackCell({ column, track, plays, onEditComment, onRate }: Track
         </div>
       )
     case 'genre':
-      return <div className={className} title={track.genre || undefined}>{text(track.genre)}</div>
+      return <div className={className} data-tip={track.genre || undefined} data-tip-overflow>{text(track.genre)}</div>
     case 'label':
-      return <div className={className} title={track.label || undefined}>{text(track.label)}</div>
+      return <div className={className} data-tip={track.label || undefined} data-tip-overflow>{text(track.label)}</div>
     case 'album':
-      return <div className={className} title={track.album || undefined}>{text(track.album)}</div>
+      return <div className={className} data-tip={track.album || undefined} data-tip-overflow>{text(track.album)}</div>
     case 'time':
       return <div className={className}>{formatTime(track.duration_ms)}</div>
     case 'added':
@@ -84,7 +88,7 @@ export function TrackCell({ column, track, plays, onEditComment, onRate }: Track
       return (
         <div
           className={onEditComment ? `${className} cell-comment` : className}
-          title={track.comment || undefined}
+          data-tip={track.comment || undefined} data-tip-overflow
           onClick={(event) => {
             if (!onEditComment) return
             event.stopPropagation()

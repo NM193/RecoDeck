@@ -53,8 +53,14 @@
   white-space: nowrap;
 }
 
-.menu__item--active {
-  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 9%);
+/* The active item's background is the glide under the items (Micro-
+   interactions spec, Menus): the accent, red on a destructive item. */
+.menu__items {
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
+}
+
+.menu__item--active .menu__icon {
+  color: var(--accent-hover);
 }
 
 .menu__item[aria-disabled='true'] {

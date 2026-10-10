@@ -13,6 +13,8 @@ import {
 } from 'react'
 import { Icon } from './Icon'
 import { Popover } from './Popover'
+import { GLIDE } from '../lib/glide/glide'
+import { useGlideTo } from '../lib/glide/useGlide'
 import './SelectMenu.css'
 
 // Longer labels may be cut at the list's width; they get a tooltip.
@@ -51,6 +53,9 @@ export function SelectMenu({
   const anchorRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  // The active option's highlight slides (Micro-interactions spec, Menus).
+  const glideRef = useRef<HTMLLIElement>(null)
+  useGlideTo(listRef, glideRef, '.select-menu__option--active', GLIDE.menu)
   const listId = useId()
 
   const shown = useMemo(() => {
@@ -157,9 +162,10 @@ export function SelectMenu({
           aria-label={label}
           aria-activedescendant={shown.length > 0 ? optionId(activeIndex) : undefined}
           tabIndex={-1}
-          className="select-menu__options"
+          className="glide-track select-menu__options"
           onKeyDown={onListKeyDown}
         >
+          <li ref={glideRef} role="presentation" aria-hidden="true" className="glide" />
           {shown.map((option, index) => (
             <li
               key={option.value}
@@ -167,7 +173,7 @@ export function SelectMenu({
               data-index={index}
               role="option"
               aria-selected={option.value === value}
-              title={option.label.length > LONG_LABEL ? option.label : undefined}
+              data-tip={option.label.length > LONG_LABEL ? option.label : undefined} data-tip-overflow
               className={
                 index === activeIndex
                   ? 'select-menu__option select-menu__option--active'

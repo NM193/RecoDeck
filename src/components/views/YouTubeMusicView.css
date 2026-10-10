@@ -68,8 +68,8 @@
   font-size: 13px;
 }
 
-.ytm-sets__row:hover {
-  background: var(--bg-tertiary);
+.ytm-sets__rows {
+  --glide-bg: var(--bg-tertiary);
 }
 
 .ytm-sets__name,

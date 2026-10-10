@@ -30,6 +30,7 @@
 }
 
 .dj-export__tree {
+  --glide-bg: var(--bg-tertiary);
   max-height: 280px;
   margin-bottom: 16px;
   padding: 4px 0;
@@ -49,10 +50,6 @@
   font-size: 13px;
   cursor: pointer;
   user-select: none;
-}
-
-.dj-export__row:hover {
-  background: var(--bg-tertiary);
 }
 
 .dj-export__row input[type='checkbox'] {

@@ -16,6 +16,7 @@ import type { TrackFilter } from '../../lib/trackTable/filter'
 import type { Track } from '../../types/track'
 import { genreTiles, hasContent } from './sectionContent'
 import type { SectionsData } from './useSectionsData'
+import { HoverGlide } from '../HoverGlide'
 import './SearchSections.css'
 
 export interface SectionActions {
@@ -110,7 +111,7 @@ function Section({
     case 'recently-played':
       return (
         <SectionFrame title="Recently played">
-          <div className="search-tiles">
+          <HoverGlide className="search-tiles" item=".search-tile" kind="card">
             {data.recentlyPlayed.map((track, index) => (
               <TrackTile
                 key={track.id}
@@ -118,13 +119,13 @@ function Section({
                 onPlay={() => actions.onPlay(track, data.recentlyPlayed, index)}
               />
             ))}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
     case 'your-djs':
       return (
         <SectionFrame title="Your DJs">
-          <div className="search-djs">
+          <HoverGlide className="search-djs" item=".search-dj" kind="card">
             {data.djs.map((dj) => {
               const line = djLine(dj, data.today)
               return (
@@ -160,7 +161,7 @@ function Section({
                 </button>
               )
             })}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
     case 'genres':
@@ -185,7 +186,7 @@ function Section({
     case 'recently-added':
       return (
         <SectionFrame title="Recently added">
-          <div className="search-rows">
+          <HoverGlide className="search-rows" item=".search-row" kind="row">
             {data.recentlyAdded.map((track, index) => (
               <button
                 key={track.id}
@@ -210,13 +211,13 @@ function Section({
                 </span>
               </button>
             ))}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
     case 'saved-sets':
       return (
         <SectionFrame title="Sets you saved lately">
-          <div className="search-rows">
+          <HoverGlide className="search-rows" item=".search-row" kind="row">
             {data.savedSets.map((set) => (
               <button
                 key={set.video_id}
@@ -238,7 +239,7 @@ function Section({
                 </span>
               </button>
             ))}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
   }

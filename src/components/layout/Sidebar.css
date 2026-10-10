@@ -185,13 +185,14 @@
   border-radius: var(--radius-md);
 }
 
-.sidebar-nav-item:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+/* The hover and the open page are the nav's glides (Micro-interactions
+   spec, Sidebar): a faint grey, and the accent over it. */
+.sidebar-nav {
+  --glide-bg: var(--glide-weak);
 }
 
+.sidebar-nav-item:hover,
 .sidebar-nav-item--active {
-  background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
@@ -221,6 +222,8 @@
   padding: 4px 0;
   min-width: 252px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /* Its hover is the glide under the items (Micro-interactions spec). */
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
 }
 
 .sidebar-ctx-menu__item {
@@ -236,10 +239,8 @@
   cursor: pointer;
   text-align: left;
   transition: background var(--motion-fast) var(--ease);
-}
-
-.sidebar-ctx-menu__item:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+  /* Full-width rows: the <label> and the buttons share square corners. */
+  border-radius: 0;
 }
 
 /* ===== Drag resize handle ===== */
@@ -377,9 +378,12 @@
   transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 
+.sidebar-rail__nav {
+  --glide-bg: var(--glide-weak);
+}
+
 .sidebar-rail__item:hover,
 .sidebar-rail__item--active {
-  background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
@@ -403,22 +407,6 @@
 
 .sidebar-rail__avatar {
   margin: 10px 0 12px;
-}
-
-/* ===== Tooltip (rail) — fixed, so the sidebar's overflow cannot clip it ===== */
-
-.sidebar-tooltip {
-  position: fixed;
-  z-index: 260;
-  transform: translateY(-50%);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  font-size: var(--text-xs, 11px);
-  white-space: nowrap;
-  pointer-events: none;
 }
 
 /* ===== Colour block in the right-click menu ===== */
@@ -498,11 +486,6 @@
   color: var(--accent-hover);
   font-size: 11px;
   font-weight: 600;
-}
-
-.folder-row.selected .spotify-list-row__icon,
-.folder-row.selected .spotify-list-row__new {
-  color: inherit;
 }
 
 /* ===== YouTube Music ===== */

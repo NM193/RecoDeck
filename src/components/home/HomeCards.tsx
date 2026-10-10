@@ -32,6 +32,7 @@ import { homeGenreTiles, playlistGradient, userPlaylists } from './content'
 import { HomeTrackRows, type TrackRowActions } from './HomeTrackRows'
 import { PlaylistCover } from '../PlaylistCover'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { HoverGlide } from '../HoverGlide'
 import type { HomeData } from './useHomeData'
 
 /** Last playlist draws this many rows; a 2,000-track playlist would draw them all. */
@@ -239,7 +240,7 @@ function CardBody({
         return <Empty>No DJs yet — open a DJ page or watch a DJ in Sets</Empty>
       }
       return (
-        <div className="home-djs">
+        <HoverGlide className="home-djs" item=".home-dj" kind="card">
           {data.djs.map((dj) => {
             const line = djLine(dj, data.today)
             return (
@@ -272,7 +273,7 @@ function CardBody({
                   )}
                 </span>
                 <span className="home-dj__text">
-                  <span className="home-dj__name" title={dj.displayName}>
+                  <span className="home-dj__name" data-tip={dj.displayName} data-tip-overflow>
                     {dj.displayName}
                   </span>
                   {line && <span className="home-dj__line">{line}</span>}
@@ -280,13 +281,13 @@ function CardBody({
               </button>
             )
           })}
-        </div>
+        </HoverGlide>
       )
     case 'new-likes': {
       const rows = newLikeRows(facts.spotify, facts.youtubeMusic)
       if (rows.length === 0) return <Empty>No new likes</Empty>
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {rows.map((row) => (
             <button
               key={`${row.service}\n${row.listId}`}
@@ -295,7 +296,7 @@ function CardBody({
               onClick={() => actions.onOpenStreamList(row.service, row.listId)}
             >
               <span className="home-news__number">{row.number}</span>
-              <span className="home-news__text" title={row.name}>
+              <span className="home-news__text" data-tip={row.name} data-tip-overflow>
                 {row.name}
               </span>
               <span className="home-news__place">
@@ -306,7 +307,7 @@ function CardBody({
               </span>
             </button>
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'new-sets': {
@@ -314,7 +315,7 @@ function CardBody({
       if (news === null) return null
       if (news.finds.length === 0) return <Empty>No new sets</Empty>
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {news.finds.map((find) => (
             <SetRow
               key={find.videoId}
@@ -324,7 +325,7 @@ function CardBody({
               onOpen={() => actions.onOpenSet(find.videoId)}
             />
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'saved-sets': {
@@ -332,7 +333,7 @@ function CardBody({
       if (data.savedSets.length === 0) return <Empty>No saved sets yet</Empty>
       const now = new Date()
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {data.savedSets.map((set) => (
             <SetRow
               key={set.video_id}
@@ -342,7 +343,7 @@ function CardBody({
               onOpen={() => actions.onOpenSet(set.video_id)}
             />
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'bpm-key':
@@ -360,7 +361,7 @@ function CardBody({
               fallback={playlistGradient(last.name)}
             />
             <span className="home-last__text">
-              <span className="home-last__name" title={last.name}>
+              <span className="home-last__name" data-tip={last.name} data-tip-overflow>
                 {last.name}
               </span>
               <span className="home-sub">
@@ -406,7 +407,7 @@ function CardBody({
       if (data.gigs === null) return null
       if (data.gigs.length === 0) return <Empty>No upcoming gigs</Empty>
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {data.gigs.map((gig) => {
             const day = gigDay(gig.date)
             const where = gigWhere(gig)
@@ -428,7 +429,7 @@ function CardBody({
               </button>
             )
           })}
-        </div>
+        </HoverGlide>
       )
     case 'library-by-genre': {
       if (data.groups === null) return null
@@ -455,7 +456,7 @@ function CardBody({
       const playlists = userPlaylists(facts.playlists)
       if (playlists.length === 0) return <Empty>No playlists yet</Empty>
       return (
-        <div className="home-playlists">
+        <HoverGlide className="home-playlists" item=".home-playlist" kind="card">
           {playlists.map((playlist) => (
             <div key={playlist.id} className="home-playlist">
               <button
@@ -488,7 +489,7 @@ function CardBody({
               )}
             </div>
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'library-stats': {
@@ -613,11 +614,11 @@ function SetRow({
   return (
     <button type="button" className="home-set" onClick={onOpen}>
       <span className="home-set__text">
-        <span className="home-set__title" title={title}>
+        <span className="home-set__title" data-tip={title} data-tip-overflow>
           {title}
         </span>
         {line && (
-          <span className="home-set__line" title={line}>
+          <span className="home-set__line" data-tip={line} data-tip-overflow>
             {line}
           </span>
         )}
@@ -720,7 +721,7 @@ function NeedsYou({
   }
 
   return (
-    <div className="home-list">
+    <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
       {rows.map((row) => (
         <button
           key={row.kind}
@@ -736,6 +737,6 @@ function NeedsYou({
           </span>
         </button>
       ))}
-    </div>
+    </HoverGlide>
   )
 }

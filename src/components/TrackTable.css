@@ -271,11 +271,16 @@
   right: 0;
 }
 
-/* --- Rows: 46px; hover, selected and playing tint the row (--row-bg, always
-   opaque, so the sticky cells below can wear it too) --- */
+/* --- Rows: 46px. The hover is the sliding highlight under the rows (the
+   glide); selected and playing tint the row itself (--row-bg, which the
+   sticky cells below wear too). A plain row is transparent. --- */
+
+.track-table-rows {
+  --glide-bg: var(--bg-tertiary);
+}
 
 .data-row {
-  --row-bg: var(--bg-primary);
+  --row-bg: transparent;
   height: 46px;
   border-radius: var(--radius-md);
   background: var(--row-bg);
@@ -285,10 +290,6 @@
   cursor: pointer;
   overflow: clip;
   transition: background-color var(--motion-fast) var(--ease);
-}
-
-.data-row:hover {
-  --row-bg: var(--bg-tertiary);
 }
 
 .data-row--selected {
@@ -305,6 +306,20 @@
 .data-row--selected:hover,
 .data-row--playing:hover {
   --row-bg: color-mix(in srgb, var(--bg-primary), var(--accent) 20%);
+}
+
+/* Scrolled sideways, the sticky cells cover what passes under them: opaque
+   again, and under the pointer they fade to the hover colour themselves,
+   since the glide is under them. */
+.track-table--scrolled-x .data-row:not(.data-row--selected):not(.data-row--playing) .cell-index,
+.track-table--scrolled-x .data-row:not(.data-row--selected):not(.data-row--playing) .cell-art {
+  background-color: var(--bg-primary);
+  transition: background-color 240ms var(--ease-soft);
+}
+
+.track-table--scrolled-x .data-row:not(.data-row--selected):not(.data-row--playing):hover .cell-index,
+.track-table--scrolled-x .data-row:not(.data-row--selected):not(.data-row--playing):hover .cell-art {
+  background-color: var(--bg-tertiary);
 }
 
 /* # and the artwork stay put when the table scrolls sideways. */
@@ -349,11 +364,21 @@
 /* The number, or the equalizer on the row playing; under the mouse, the
    button (▶, or pause / play on the row playing) takes their place. */
 .row-action {
-  display: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
+  margin: auto;
+  opacity: 0;
+  /* Hidden from screen readers and clicks too until the row is hovered; the
+     visibility waits for the fade-out. */
+  visibility: hidden;
+  transition:
+    opacity var(--motion-fast) var(--ease),
+    visibility 0s linear var(--motion-fast);
   padding: 0;
   border: none;
   border-radius: var(--radius-md);
@@ -367,13 +392,22 @@
   outline-offset: 1px;
 }
 
+.cell-index .row-number,
+.cell-index .equalizer {
+  transition: opacity var(--motion-fast) var(--ease);
+}
+
 .data-row:hover .row-number,
 .data-row:hover .equalizer {
-  display: none;
+  opacity: 0;
 }
 
 .data-row:hover .row-action {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--motion-fast) var(--ease),
+    visibility 0s;
 }
 
 .tt-cover {

@@ -11,6 +11,8 @@ import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
 import { SECTION_LABELS, type SidebarSection } from '../../lib/sidebarPrefs'
 import type { FlyoutSection, NavItem } from './sidebarTypes'
 import { SidebarFlyout } from './SidebarFlyout'
+import { GLIDE } from '../../lib/glide/glide'
+import { useGlideTo, useHoverGlide } from '../../lib/glide/useGlide'
 
 interface SidebarRailProps {
   navItems: NavItem[]
@@ -32,8 +34,6 @@ interface SidebarRailProps {
   renderSection: (section: FlyoutSection, close: () => void) => ReactNode
 }
 
-const TOOLTIP_DELAY_MS = 400
-
 export function SidebarRail({
   navItems,
   activeSection,
@@ -46,32 +46,15 @@ export function SidebarRail({
   youtubeMusicNew,
   renderSection,
 }: SidebarRailProps) {
-  // --- Tooltip ---
-  const [tip, setTip] = useState<{
-    label: string
-    top: number
-    left: number
-  } | null>(null)
-  const tipTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The rail's sliding highlights (Micro-interactions spec, Sidebar): the
+  // hover, and the open section painted over it. aria-current marks the open
+  // section only; --active also marks the section whose flyout is open.
+  const railNavRef = useRef<HTMLDivElement>(null)
+  const railHoverRef = useRef<HTMLSpanElement>(null)
+  const railOpenRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(railNavRef, railHoverRef, '.sidebar-rail__item', GLIDE.row)
+  useGlideTo(railNavRef, railOpenRef, '[aria-current="page"]', GLIDE.row)
 
-  const showTip = (label: string) => (e: React.MouseEvent<HTMLElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    clearTimeout(tipTimer.current)
-    tipTimer.current = setTimeout(
-      () =>
-        setTip({
-          label,
-          top: rect.top + rect.height / 2,
-          left: rect.right + 8,
-        }),
-      TOOLTIP_DELAY_MS,
-    )
-  }
-  const hideTip = () => {
-    clearTimeout(tipTimer.current)
-    setTip(null)
-  }
-  useEffect(() => () => clearTimeout(tipTimer.current), [])
 
   // --- Flyout ---
   const [flyout, setFlyout] = useState<{
@@ -94,7 +77,6 @@ export function SidebarRail({
 
   const toggleFlyout =
     (section: FlyoutSection) => (e: React.MouseEvent<HTMLElement>) => {
-      hideTip()
       if (flyout?.section === section) {
         setFlyout(null)
         return
@@ -108,8 +90,6 @@ export function SidebarRail({
   useEffect(() => {
     const unregister = registerDropOpener('rail', (section, anchor) => {
       if (section !== 'folders' && section !== 'playlists') return
-      clearTimeout(tipTimer.current)
-      setTip(null)
       openedByDrag.current = true
       openFlyout(section, anchor)
     })
@@ -135,16 +115,16 @@ export function SidebarRail({
       className={`sidebar-rail__item ${activeSection === section || flyout?.section === section ? 'sidebar-rail__item--active' : ''}`}
       onClick={toggleFlyout(section)}
       onContextMenu={onColourMenu(section, section === 'playlists')}
-      onMouseEnter={flyout ? undefined : showTip(label)}
-      onMouseLeave={hideTip}
       data-drop-open={
         (section === 'folders' || section === 'playlists') && flyout?.section !== section
           ? `rail:${section}`
           : undefined
       }
       aria-label={badge != null && badge > 0 ? `${label}, ${badge} new` : label}
+      data-tip={label}
       aria-haspopup="dialog"
       aria-expanded={flyout?.section === section}
+      aria-current={activeSection === section ? 'page' : undefined}
       type="button"
     >
       {glyph}
@@ -158,7 +138,7 @@ export function SidebarRail({
 
   return (
     <div className="sidebar sidebar--rail">
-      <div className="sidebar-rail__top">
+      <div className="sidebar-rail__top" data-tip-side="right">
         <span
           className="sidebar-rail__wordmark"
           role="img"
@@ -172,23 +152,31 @@ export function SidebarRail({
           className="sidebar-top__toggle"
           onClick={onToggleCollapsed}
           type="button"
-          title="Expand sidebar (⌘\)"
+          data-tip="Expand sidebar" data-tip-keys="sidebar"
           aria-label="Expand sidebar"
         >
           <Icon name="PanelLeft" size={14} />
         </button>
       </div>
 
-      <div className="sidebar-rail__nav">
+      <div
+        className="glide-track sidebar-rail__nav"
+        ref={railNavRef}
+        // The app's tooltip, beside the rail; none while a flyout is open.
+        data-tip-side="right"
+        data-tip-off={flyout ? '' : undefined}
+      >
+        <span ref={railHoverRef} className="glide" aria-hidden="true" />
+        <span ref={railOpenRef} className="glide glide--open" aria-hidden="true" />
         {navItems.map((item) => (
           <button
             key={item.section}
             className={`sidebar-rail__item ${activeSection === item.section ? 'sidebar-rail__item--active' : ''}`}
             onClick={item.onClick}
             onContextMenu={onColourMenu(item.section)}
-            onMouseEnter={flyout ? undefined : showTip(item.label)}
-            onMouseLeave={hideTip}
             aria-label={item.label}
+            data-tip={item.label}
+            aria-current={activeSection === item.section ? 'page' : undefined}
             type="button"
           >
             <Icon name={item.icon} size={16} style={iconStyle(item.section)} />
@@ -224,22 +212,14 @@ export function SidebarRail({
       <button
         className={`sidebar-top__avatar sidebar-rail__avatar ${settingsActive ? 'sidebar-top__avatar--active' : ''}`}
         onClick={onOpenSettings}
-        onMouseEnter={flyout ? undefined : showTip('Settings')}
-        onMouseLeave={hideTip}
         aria-label="Settings"
+        data-tip="Settings"
+        data-tip-side="right"
+        data-tip-off={flyout ? '' : undefined}
         type="button"
       >
         <Icon name="User" size={16} />
       </button>
-
-      {tip && (
-        <div
-          className="sidebar-tooltip"
-          style={{ top: tip.top, left: tip.left }}
-        >
-          {tip.label}
-        </div>
-      )}
 
       {flyout && (
         <SidebarFlyout

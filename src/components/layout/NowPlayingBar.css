@@ -202,6 +202,9 @@
   height: 3px;
   background: var(--border);
   border-radius: 1.5px;
+  transition:
+    height 240ms var(--ease-soft),
+    border-radius 240ms var(--ease-soft);
 }
 
 .now-playing-bar__progress-fill {
@@ -211,7 +214,10 @@
   background: var(--text-primary);
   border-radius: 1.5px;
   pointer-events: none;
-  transition: background var(--motion-fast) var(--ease);
+  transition:
+    background var(--motion-fast) var(--ease),
+    height 240ms var(--ease-soft),
+    border-radius 240ms var(--ease-soft);
 }
 
 /* On hover: fill turns accent */
@@ -219,11 +225,12 @@
   background: var(--accent);
 }
 
-/* Hover preview: muted white bar from current position to cursor */
+/* Hover preview: a lighter bar from the current position to the cursor,
+   mixed from the text so it shows on light themes too */
 .now-playing-bar__progress-hover-fill {
   position: absolute;
   height: 3px;
-  background: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
   border-radius: 1.5px;
   pointer-events: none;
 }
@@ -235,16 +242,28 @@
   height: 12px;
   background: var(--text-primary);
   border-radius: 50%;
-  transform: translate(-50%, -50%);
+  /* It springs in from nothing (Micro-interactions spec, Progress bar). */
+  transform: translate(-50%, -50%) scale(0);
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--motion-fast) var(--ease);
+  transition:
+    opacity 120ms var(--ease),
+    transform 320ms var(--ease-spring);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* On hover: show thumb */
 .now-playing-bar__progress--hover .now-playing-bar__progress-handle {
   opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* On hover (or while dragging) the bar thickens, 3px to 6px. */
+.now-playing-bar__progress--hover .now-playing-bar__progress-track,
+.now-playing-bar__progress--hover .now-playing-bar__progress-fill,
+.now-playing-bar__progress--hover .now-playing-bar__progress-hover-fill {
+  height: 6px;
+  border-radius: 3px;
 }
 
 /* Floating time tooltip */
@@ -263,6 +282,43 @@
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  /* It mounts as the hover starts and springs up from the bar; following the
+     pointer only changes left. */
+  transform-origin: 50% 100%;
+  animation:
+    npb-bubble-fade 120ms var(--ease) both,
+    npb-bubble-rise 280ms var(--ease-spring) both;
+}
+
+@keyframes npb-bubble-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes npb-bubble-rise {
+  from {
+    transform: translate(-50%, 6px) scale(0.8);
+  }
+  to {
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-bar__progress-track,
+  .now-playing-bar__progress-fill {
+    transition: none;
+  }
+
+  .now-playing-bar__progress-handle,
+  .now-playing-bar__progress--hover .now-playing-bar__progress-handle {
+    transform: translate(-50%, -50%);
+  }
+
+  .now-playing-bar__progress-tooltip {
+    animation: npb-bubble-fade 120ms var(--ease) both;
+  }
 }
 
 /* ---- RIGHT column: volume + extras ---- */
@@ -290,7 +346,8 @@
   border-radius: var(--radius-md);
   transition:
     color var(--motion-fast) var(--ease),
-    background var(--motion-fast) var(--ease);
+    background var(--motion-fast) var(--ease),
+    transform 280ms var(--ease-spring);
   flex-shrink: 0;
   position: relative;
 }
@@ -315,29 +372,25 @@
   background: var(--text-primary);
   color: var(--bg-primary);
   border-radius: var(--radius-md);
+  transition:
+    transform 320ms var(--ease-spring),
+    box-shadow 280ms ease;
 }
 
 .now-playing-bar__btn--play:hover:not(:disabled) {
   background: var(--text-primary);
   color: var(--bg-primary);
-  transform: scale(1.05);
+  transform: scale(1.1);
+  box-shadow: 0 0 0 5px rgba(var(--accent-rgb), 0.3);
+}
+
+.now-playing-bar__btn--play:active:not(:disabled) {
+  transform: scale(0.9);
 }
 
 /* Toggle buttons (shuffle, repeat) active state */
 .now-playing-bar__btn--toggle.now-playing-bar__btn--active {
   color: var(--accent) !important;
-}
-
-.now-playing-bar__btn--toggle.now-playing-bar__btn--active::after {
-  content: '';
-  position: absolute;
-  bottom: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  border-radius: 50%;
 }
 
 /* Repeat "1" badge */
@@ -431,6 +484,8 @@
 }
 
 .now-playing-bar__playlist-menu {
+  /* The hover is the glide under the playlists. */
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
   position: absolute;
   bottom: 44px;
   right: 0;
@@ -473,7 +528,6 @@
 }
 
 .now-playing-bar__playlist-item:hover {
-  background: rgba(var(--accent-rgb), 0.1);
   color: var(--text-primary);
 }
 
@@ -632,4 +686,61 @@
   font-size: var(--text-base, 1rem);
   color: var(--text-muted);
   margin-top: var(--space-1);
+}
+
+/* The transport and the right-hand actions (Micro-interactions spec, Player
+   bar): a grey square slides under the small buttons, which spring up a
+   little and shrink when pressed. */
+.now-playing-bar__controls,
+.now-playing-bar__right {
+  --glide-bg: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+/* Isolated as a glide track, the right group would cap the volume popup and
+   the Add to playlist menu that open upward from it: it stands above the
+   main area as a whole, at the volume wrapper's own 150, and still under the
+   expanded now-playing view (200). */
+.now-playing-bar__right {
+  z-index: 150;
+}
+
+.now-playing-bar__controls .now-playing-bar__btn:not(.now-playing-bar__btn--play):hover:not(:disabled),
+.now-playing-bar__right .now-playing-bar__btn:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+
+.now-playing-bar__controls .now-playing-bar__btn:not(.now-playing-bar__btn--play):active:not(:disabled),
+.now-playing-bar__right .now-playing-bar__btn:active:not(:disabled) {
+  transform: scale(0.88);
+  transition-duration: 90ms;
+}
+
+/* Play and pause, one over the other: the one leaving turns away. */
+.now-playing-bar__play-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity 160ms ease,
+    transform 320ms var(--ease-spring);
+}
+
+.now-playing-bar__play-icon--hidden {
+  opacity: 0;
+}
+
+.now-playing-bar__play-icon--play.now-playing-bar__play-icon--hidden {
+  transform: rotate(90deg) scale(0.5);
+}
+
+.now-playing-bar__play-icon--pause.now-playing-bar__play-icon--hidden {
+  transform: rotate(-90deg) scale(0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-bar__btn,
+  .now-playing-bar__play-icon {
+    transform: none !important;
+  }
 }

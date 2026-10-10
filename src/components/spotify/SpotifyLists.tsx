@@ -1,6 +1,7 @@
 // The items under SPOTIFY: All playlists, Liked Songs, then each playlist in
 // Spotify's order. Used by the full sidebar and by the rail's flyout; styled
 // with FolderTree's rows so it looks like the sections above it.
+import { HoverGlide } from '../HoverGlide'
 import { Icon } from '../Icon'
 import { ALL_LISTS, LIKED, type SpotifyList } from '../../types/spotify'
 
@@ -32,7 +33,7 @@ export function SpotifyLists({
       type="button"
       className={`folder-row spotify-list-row ${activeListId === id ? 'selected' : ''}`}
       onClick={() => onOpen(id)}
-      title={name}
+      data-tip={name} data-tip-overflow
     >
       <Icon name={icon} size={14} className="spotify-list-row__icon" />
       <span className="folder-name">{name}</span>
@@ -42,7 +43,12 @@ export function SpotifyLists({
   )
 
   return (
-    <div className="folder-tree-section-body">
+    <HoverGlide
+      className="folder-tree-section-body"
+      item=".folder-row"
+      kind="row"
+      open=".folder-row.selected"
+    >
       {/* All playlists carries no number: the header already holds the distinct total. */}
       {item(ALL_LISTS, 'All playlists', 'ListMusic', 0)}
       {lists.map((list) =>
@@ -53,6 +59,6 @@ export function SpotifyLists({
           newByList.get(list.id) ?? 0,
         ),
       )}
-    </div>
+    </HoverGlide>
   )
 }

@@ -191,7 +191,7 @@ export function DjView({
           type="button"
           className="dj-hero__back"
           onClick={onBack}
-          title="Back"
+          data-tip="Back" data-tip-overflow
         >
           <Icon name="ArrowLeft" size={16} />
           Back
@@ -221,7 +221,11 @@ export function DjView({
               aria-pressed={dj.watched === true}
               disabled={dj.watched === null}
               onClick={dj.toggleWatch}
-              title={
+              data-tip={
+                dj.watched
+                  ? 'Stop watching for new sets'
+                  : 'Look for new sets of this DJ on YouTube'
+              } aria-description={
                 dj.watched
                   ? 'Stop watching for new sets'
                   : 'Look for new sets of this DJ on YouTube'
@@ -234,7 +238,7 @@ export function DjView({
               <button
                 type="button"
                 className="btn"
-                title="Open on Spotify"
+                data-tip="Open on Spotify" aria-description="Open on Spotify"
                 onClick={() => {
                   if (profile.spotifyArtistId)
                     void openUrl(spotifyArtistUrl(profile.spotifyArtistId))
@@ -251,7 +255,7 @@ export function DjView({
               <button
                 type="button"
                 className="btn"
-                title="Open on Resident Advisor"
+                data-tip="Open on Resident Advisor" aria-description="Open on Resident Advisor"
                 onClick={() => void openUrl(profile.raUrl)}
               >
                 <Icon name="ExternalLink" size={14} />
@@ -306,7 +310,7 @@ export function DjView({
         <button
           type="button"
           className={`dj-tabs__customize${customizing ? ' dj-tabs__customize--on' : ''}`}
-          title="Customize overview"
+          data-tip="Customize overview"
           aria-label="Customize overview"
           aria-pressed={customizing}
           onClick={() => {

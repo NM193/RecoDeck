@@ -143,7 +143,7 @@ export function PlaylistDetailHeader({ playlist, tracks, onCoverChanged }: Playl
           type="button"
           className="playlist-header__cover-btn"
           aria-label="Change cover"
-          title="Change cover"
+          data-tip="Change cover" data-tip-overflow
           aria-haspopup={playlist.cover_path ? 'menu' : undefined}
           aria-expanded={playlist.cover_path ? coverMenu !== null : undefined}
           onClick={openCoverChoice}
@@ -202,7 +202,7 @@ export function PlaylistDetailHeader({ playlist, tracks, onCoverChanged }: Playl
       <button
         className="playlist-header__toggle"
         onClick={() => setCompressed((v) => !v)}
-        title={compressed ? 'Expand header' : 'Collapse header'}
+        data-tip={compressed ? 'Expand header' : 'Collapse header'} aria-label={compressed ? 'Expand header' : 'Collapse header'}
         type="button"
       >
         <Icon name={compressed ? 'ChevronDown' : 'ChevronUp'} size={16} />

@@ -264,8 +264,8 @@
   user-select: none;
 }
 
-.home-row:hover {
-  background: var(--bg-tertiary);
+.home-rows {
+  --glide-bg: var(--bg-tertiary);
 }
 
 .home-row--dragging {
@@ -302,11 +302,17 @@
   cursor: pointer;
   opacity: 0;
   transform: translate(-50%, -50%);
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .home-row__action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.home-row__number,
+.home-row__no .equalizer {
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .home-row:hover .home-row__number,
@@ -391,10 +397,8 @@
   border-bottom-color: transparent;
 }
 
-.home-news:hover,
-.home-gig:hover,
-.home-set:hover {
-  background: var(--bg-tertiary);
+.home-list {
+  --glide-bg: var(--bg-tertiary);
 }
 
 .home-news:focus-visible,
@@ -598,6 +602,7 @@
 
 /* ---- Your playlists ---- */
 .home-playlists {
+  --glide-bg: color-mix(in srgb, var(--bg-tertiary), var(--text-primary) 6%);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--space-3);
@@ -606,6 +611,8 @@
 .home-playlist {
   position: relative;
   min-width: 0;
+  /* The glide's item: it takes these corners, those of the button inside. */
+  border-radius: var(--radius-md);
 }
 
 .home-playlist__open {
@@ -614,17 +621,21 @@
   gap: 9px;
   width: 100%;
   padding: 6px;
+  /* Room for the ▶ at the right end, so it never covers the name. */
+  padding-right: 46px;
   border: none;
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background-color 240ms var(--ease-soft);
 }
 
-.home-playlist__open:hover {
-  background: color-mix(in srgb, var(--bg-tertiary), var(--text-primary) 6%);
+/* Keyed on the card, so moving onto its play button keeps the card hovered;
+   it hands its fill to the glide sliding in under it. */
+.home-playlist:hover .home-playlist__open {
+  background: transparent;
 }
 
 .home-playlist__open:focus-visible {
@@ -661,29 +672,51 @@
   color: var(--text-muted);
 }
 
-/* ▶ over the cover: plays the playlist. */
+/* ▶ at the tile's right end: pops in when the card is hovered (Micro-
+   interactions spec, Cards). Centred with margin, so transform is free. */
 .home-playlist__play {
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: 50%;
+  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
+  margin-top: -16px;
   padding: 0;
   border: none;
-  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  background: var(--accent);
   color: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
+  transform: translateY(10px) scale(0.4);
+  transition:
+    opacity 180ms var(--ease),
+    transform 420ms var(--ease-spring),
+    background-color var(--motion-fast) var(--ease);
 }
 
 .home-playlist:hover .home-playlist__play,
 .home-playlist__play:focus-visible {
   opacity: 1;
   pointer-events: auto;
+  transform: none;
+}
+
+.home-playlist:hover .home-playlist__play:hover {
+  background: var(--accent-hover);
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-playlist__play,
+  .home-playlist:hover .home-playlist__play:hover {
+    transform: none;
+  }
 }
 
 .home-playlist__play:focus-visible {
@@ -798,6 +831,7 @@
 
 /* ---- Your DJs: a round photo, the name and one line ---- */
 .home-djs {
+  --glide-bg: var(--bg-tertiary);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: var(--space-2) var(--space-3);
@@ -815,10 +849,6 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.home-dj:hover {
-  background: var(--bg-tertiary);
 }
 
 .home-dj:focus-visible {

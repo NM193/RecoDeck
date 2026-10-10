@@ -6,11 +6,13 @@
 // spends quota, a YouTube search (101 units). ↑ / ↓ move, Enter opens, Esc
 // closes the dropdown, then clears the box. The dropdown stays inside the
 // main area, so it never reaches the set video in the bar.
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icon'
 import { tauriApi } from '../../lib/tauri-api'
 import { TRACK_HITS_MAX, boxOffer, matchingSets } from '../../lib/sets/box'
 import type { YouTubeQuotaStatus, YtSetSummary, YtTrackHit } from '../../types/youtube'
+import { GLIDE } from '../../lib/glide/glide'
+import { useGlideTo } from '../../lib/glide/useGlide'
 import './SetsHome.css'
 
 interface SetsBoxProps {
@@ -53,6 +55,10 @@ export function SetsBox({
   onClear,
 }: SetsBoxProps) {
   const listId = useId()
+  // The active row's highlight slides (Micro-interactions spec, Menus).
+  const listRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useGlideTo(listRef, glideRef, '.sets-box__row--active', GLIDE.menu)
   const [open, setOpen] = useState(Boolean(autoFocus))
   const [active, setActive] = useState(0)
   const [hits, setHits] = useState<{ query: string; rows: YtTrackHit[] }>({ query: '', rows: [] })
@@ -171,13 +177,15 @@ export function SetsBox({
 
       {showing && (
         <div
-          className="sets-box__menu"
+          ref={listRef}
+          className="glide-track sets-box__menu"
           id={listId}
           role="listbox"
           aria-label="Sets and tracks"
           // A press anywhere in the list (a heading, the scrollbar) keeps the box focused.
           onMouseDown={(e) => e.preventDefault()}
         >
+          <span ref={glideRef} className="glide" aria-hidden="true" />
           {rows.map((row, i) => (
             <div key={i}>
               {row.kind === 'set' && i === 0 && (

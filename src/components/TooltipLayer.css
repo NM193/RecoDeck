@@ -1,0 +1,136 @@
+/* src/components/TooltipLayer.css */
+/* The app's tooltip (Micro-interactions spec, Tooltips): the dark surface, a
+   name and, when it has one, its shortcut's keys. It rises 4px away from its
+   element as it fades in, and glides (left, top, width) between neighbours. */
+
+.tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10002; /* over menus (10000) and modal overlays (10001) */
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 26px;
+  max-width: 280px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: var(--tip-from, translateY(-4px));
+  /* Hidden for assistive tech too once it has faded out. */
+  visibility: hidden;
+  transition:
+    opacity 140ms var(--ease),
+    transform 180ms var(--ease-soft),
+    visibility 0s linear 140ms;
+}
+
+/* Where it rises from: towards its element. */
+.tip[data-side='top'] {
+  --tip-from: translateY(4px);
+}
+
+.tip[data-side='bottom'] {
+  --tip-from: translateY(-4px);
+}
+
+.tip[data-side='right'] {
+  --tip-from: translateX(-4px);
+}
+
+.tip[data-side='left'] {
+  --tip-from: translateX(4px);
+}
+
+.tip--shown {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 140ms var(--ease),
+    transform 180ms var(--ease-soft),
+    visibility 0s;
+}
+
+.tip--gliding {
+  transition:
+    opacity 140ms var(--ease),
+    transform 180ms var(--ease-soft),
+    left 260ms var(--ease-soft),
+    top 260ms var(--ease-soft),
+    width 260ms var(--ease-soft),
+    visibility 0s;
+}
+
+/* One line, centred: while the width glides between two tips, the text is
+   clipped evenly instead of wrapping (which made the tip jump in height). */
+.tip__text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 6px;
+  white-space: nowrap;
+  transition: opacity 110ms ease;
+}
+
+/* Only a tip too long for one line (wider than 280px) wraps. */
+.tip--wrap .tip__text,
+.tip--wrap.tip__text {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  white-space: normal;
+}
+
+.tip kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+/* Measures the next tip's width before it glides there. */
+.tip--measure {
+  top: -9999px;
+  left: -9999px;
+  width: max-content;
+  max-width: none;
+  visibility: hidden;
+  transition: none;
+}
+
+.tip--measure.tip--wrap {
+  max-width: 280px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip,
+  .tip--gliding {
+    transform: none;
+    transition:
+      opacity 140ms var(--ease),
+      visibility 0s linear 140ms;
+  }
+
+  .tip--shown {
+    transition:
+      opacity 140ms var(--ease),
+      visibility 0s;
+  }
+
+  .tip__text {
+    transition: none;
+  }
+}

@@ -46,6 +46,13 @@ button,
   color: var(--text-primary);
 }
 
+/* A secondary button shows its edge on hover (Micro-interactions spec,
+   Buttons). :where keeps this at .btn:hover's weight, so a pressed toggle and
+   the pages' own edges still win. */
+.btn:where(:not(.btn--primary, .btn--danger, .btn--icon, :disabled)):hover {
+  border-color: var(--border-strong);
+}
+
 .btn:active {
   transform: scale(0.97);
   background: color-mix(in srgb, var(--btn-bg, var(--bg-elevated)), black 15%);
@@ -72,18 +79,44 @@ button,
 }
 
 .btn--primary {
-  background: var(--accent);
+  --flow: linear-gradient(
+    110deg,
+    var(--accent) 0%,
+    var(--accent) 35%,
+    var(--accent-flow) 65%,
+    var(--accent-hover) 100%
+  );
+  /* Every state sets the whole shorthand: .btn:hover's would win otherwise. */
+  background: var(--flow) 0 0 / 220% 100% var(--accent);
   color: #fff;
   font-weight: 600;
+  transition:
+    background-position 700ms var(--ease-soft),
+    background-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
 }
 
 .btn--primary:hover {
-  background: var(--accent-hover);
+  background: var(--flow) 100% 0 / 220% 100% var(--accent);
   color: #fff;
+}
+
+.btn--primary:disabled:hover {
+  background-position: 0 0;
 }
 
 .btn--primary:active {
   background: color-mix(in srgb, var(--accent), black 15%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn--primary {
+    background: var(--accent);
+  }
+
+  .btn--primary:hover:not(:active) {
+    background: var(--accent-hover);
+  }
 }
 
 .btn--sm {
@@ -380,4 +413,29 @@ button,
   .content-in {
     animation-name: content-fade-in;
   }
+}
+
+/* ===== Glide: the sliding highlight (Micro-interactions spec) =====
+   lib/glide places and moves it; it stays hidden until it reaches an item.
+   The track is positioned and isolated, so z-index -1 puts the highlight
+   above the track's background and under every item. A page's own rule wins
+   over .glide-track (this file loads first), so a fixed menu stays fixed. */
+.glide-track {
+  position: relative;
+  isolation: isolate;
+}
+
+.glide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--glide-bg, var(--bg-tertiary));
+}
+
+/* The sidebar's open page, painted over its hover highlight. */
+.glide--open {
+  background: rgba(var(--accent-rgb), 0.2);
 }

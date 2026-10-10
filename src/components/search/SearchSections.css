@@ -93,20 +93,25 @@
 
 /* ---- Recently played: 150px tiles in a row that scrolls sideways ---- */
 
+/* Room around each cover for the glide: the tiles carry 8px of padding, the
+   gap goes, and the row reaches 8px out so the first cover stays aligned. */
 .search-tiles {
+  --glide-bg: var(--bg-tertiary);
   display: flex;
-  gap: 14px;
+  gap: 0;
+  margin-inline: -8px;
   min-width: 0;
   overflow-x: auto;
   padding-bottom: var(--space-1);
 }
 
 .search-tile {
-  flex: 0 0 150px;
+  flex: 0 0 166px;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 0;
+  padding: 8px;
+  border-radius: var(--radius-lg);
   border: none;
   background: none;
   color: var(--text-primary);
@@ -145,21 +150,34 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   opacity: 0;
-  transform: translateY(4px);
+  /* It pops: up from small, a little past full size and back. */
+  transform: translateY(10px) scale(0.4);
   transition:
-    opacity var(--motion-fast) var(--ease),
-    transform var(--motion-fast) var(--ease);
+    opacity 180ms var(--ease),
+    transform 420ms var(--ease-spring),
+    background-color var(--motion-fast) var(--ease);
 }
 
 .search-tile:hover .search-tile__play,
 .search-tile:focus-visible .search-tile__play {
   opacity: 1;
   transform: none;
+}
+
+.search-tile:hover .search-tile__play:hover {
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-tile__play,
+  .search-tile:hover .search-tile__play:hover {
+    transform: none;
+  }
 }
 
 .search-tile:focus-visible {
@@ -191,6 +209,7 @@
 /* ---- Your DJs: round photos in a row that scrolls sideways ---- */
 
 .search-djs {
+  --glide-bg: var(--bg-tertiary);
   display: flex;
   gap: var(--space-2);
   min-width: 0;
@@ -212,10 +231,6 @@
   font: inherit;
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease);
-}
-
-.search-dj:hover {
-  background: var(--bg-tertiary);
 }
 
 .search-dj:focus-visible {
@@ -345,6 +360,7 @@
 
 .search-rows {
   display: grid;
+  --glide-bg: var(--bg-tertiary);
 }
 
 .search-row {
@@ -362,10 +378,6 @@
   text-align: left;
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease);
-}
-
-.search-row:hover {
-  background: var(--bg-tertiary);
 }
 
 .search-row:focus-visible {

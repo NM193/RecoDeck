@@ -297,7 +297,7 @@ export function SetsFollowing({
         disabled={busy !== null}
         onClick={() => void take(item, channelId)}
       >
-        <span className="follow-upload__title" title={item.title}>
+        <span className="follow-upload__title" data-tip={item.title} data-tip-overflow>
           {item.title}
         </span>
         <span className="follow-upload__meta">

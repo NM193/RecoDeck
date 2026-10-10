@@ -24,6 +24,8 @@ import {
 } from '../lib/djExport/selection'
 import { Button } from './Button'
 import { Icon } from './Icon'
+import { GLIDE } from '../lib/glide/glide'
+import { useHoverGlide } from '../lib/glide/useGlide'
 import './DjExportModal.css'
 
 /** The programs on the tab bar, in order. */
@@ -57,6 +59,10 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
+  // The list's hover slides from row to row (Micro-interactions spec, Rows).
+  const listRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(listRef, glideRef, '.dj-export__row', GLIDE.row)
   // Esc closes it, as the backdrop and Cancel do — not while it writes.
   useOverlay(true, () => {
     if (!running) onClose()
@@ -163,7 +169,8 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
 
         <div role="tabpanel" id="dj-export-panel" aria-labelledby={`dj-export-tab-${program}`}>
           <div className="dj-export__label">Playlists</div>
-          <div className="dj-export__tree">
+          <div className="glide-track dj-export__tree" ref={listRef}>
+            <span ref={glideRef} className="glide" aria-hidden="true" />
             {loadError ? (
               <p className="dj-export__note dj-export__note--error">{loadError}</p>
             ) : tree === null || tab === null ? (
@@ -340,7 +347,7 @@ function Check({
 function PathText({ path }: { path: string }) {
   const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1
   return (
-    <span className="dj-export__path" title={path}>
+    <span className="dj-export__path" data-tip={path} data-tip-overflow>
       <span className="dj-export__path-folder">{path.slice(0, cut)}</span>
       <span className="dj-export__path-file">{path.slice(cut)}</span>
     </span>

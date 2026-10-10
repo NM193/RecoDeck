@@ -20,6 +20,8 @@ import { createPortal } from 'react-dom'
 import { useOverlay } from '../../lib/overlays'
 import { Icon, type IconName } from '../Icon'
 import { stepIndex } from './menuNav'
+import { menuGlide } from '../../lib/glide/glide'
+import { useGlideTo } from '../../lib/glide/useGlide'
 import './Menu.css'
 
 export interface MenuAction {
@@ -60,6 +62,8 @@ export type MenuEntry = MenuAction | MenuSubmenu | MenuSeparator
 const EDGE = 8
 /** A submenu stays open this long after the pointer moves to another item. */
 const SUBMENU_GRACE_MS = 150
+/** The active item's highlight: the accent, red on a destructive item. */
+const MENU_GLIDE = menuGlide('menu__item--danger')
 
 interface MenuProps {
   /** Where it opens: the pointer, for a right-click. */
@@ -263,6 +267,11 @@ function MenuPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
+  // The active item's highlight slides (Micro-interactions spec, Menus):
+  // pointer and arrow keys move it alike, since both set `active`.
+  const itemsRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useGlideTo(itemsRef, glideRef, '.menu__item--active', MENU_GLIDE)
   const [query, setQuery] = useState('')
   const shown = search ? narrow(entries, query) : entries
   const [active, setActive] = useState(() => (startActive ? stepIndex(entries, -1, 1) : -1))
@@ -394,7 +403,11 @@ function MenuPanel({
         )}
         {heading && <div className="menu__heading">{heading}</div>}
         {search && shown.length === 0 && <div className="menu__empty">{search.empty}</div>}
-        <div className={search ? 'menu__list' : undefined}>
+        <div
+          ref={itemsRef}
+          className={search ? 'glide-track menu__items menu__list' : 'glide-track menu__items'}
+        >
+          <span ref={glideRef} className="glide" aria-hidden="true" />
           {shown.map((entry, index) => {
             if (entry.kind === 'separator') {
               return <div key={index} role="separator" className="menu__separator" />

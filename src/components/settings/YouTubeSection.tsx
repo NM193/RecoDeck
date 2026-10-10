@@ -42,7 +42,7 @@ export function YouTubeSection() {
           <button
             onClick={() => setShowYtKey(!showYtKey)}
             className="btn btn--icon"
-            title={showYtKey ? 'Hide' : 'Show'}
+            data-tip={showYtKey ? 'Hide' : 'Show'}
             aria-label={showYtKey ? 'Hide the key' : 'Show the key'}
             type="button"
           >
@@ -68,7 +68,7 @@ export function YouTubeSection() {
                 onClick={handleTestYouTubeKey}
                 working={ytTesting}
                 workingLabel="Testing…"
-                title="Costs 1 quota unit"
+                data-tip="Costs 1 quota unit" aria-description="Costs 1 quota unit"
               >
                 Test Connection
               </Button>

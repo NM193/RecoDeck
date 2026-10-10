@@ -152,7 +152,7 @@ export function MiniPlayer() {
         <button
           className="mini-player__close"
           onClick={handleClose}
-          title="Close"
+          data-tip="Close"
           aria-label="Close"
         >
           <Icon name="X" size={20} />
@@ -199,7 +199,7 @@ export function MiniPlayer() {
           className="mini-player__btn"
           onClick={handlePrevious}
           disabled={!state.currentTrack || state.isLoading}
-          title="Previous"
+          data-tip="Previous"
           aria-label="Previous"
         >
           <Icon name="SkipBack" size={24} />
@@ -208,7 +208,7 @@ export function MiniPlayer() {
           className="mini-player__btn mini-player__btn--play"
           onClick={handlePlayPause}
           disabled={!state.currentTrack || state.isLoading}
-          title={state.isPlaying ? 'Pause' : 'Play'}
+          data-tip={state.isPlaying ? 'Pause' : 'Play'}
           aria-label={state.isPlaying ? 'Pause' : 'Play'}
         >
           <Icon name={state.isPlaying ? 'Pause' : 'Play'} size={32} />
@@ -217,7 +217,7 @@ export function MiniPlayer() {
           className="mini-player__btn"
           onClick={handleNext}
           disabled={!state.currentTrack || state.isLoading}
-          title="Next"
+          data-tip="Next"
           aria-label="Next"
         >
           <Icon name="SkipForward" size={24} />

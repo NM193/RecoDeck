@@ -234,7 +234,11 @@ export function RecommendationsPanel({
                         className="recommendations-panel__track-play"
                         onClick={() => handlePlayTrack(track)}
                         disabled={!track.file_path}
-                        title={
+                        data-tip={
+                          track.file_path
+                            ? 'Preview track'
+                            : 'No file available'
+                        } aria-label={
                           track.file_path
                             ? 'Preview track'
                             : 'No file available'
@@ -271,7 +275,7 @@ export function RecommendationsPanel({
                           type="button"
                           className="recommendations-panel__track-add"
                           onClick={() => handleAddTrack(track)}
-                          title="Add to this playlist"
+                          data-tip="Add to this playlist" aria-label="Add to this playlist"
                         >
                           <Icon name="ListPlus" size={14} />
                         </button>

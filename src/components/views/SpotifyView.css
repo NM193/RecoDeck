@@ -230,6 +230,8 @@
   min-height: 0;
   overflow-y: auto;
   border-top: 1px solid var(--border-subtle);
+  /* The hover is the glide under the rows (Micro-interactions spec). */
+  --glide-bg: var(--bg-tertiary);
 }
 
 .spotify-row {
@@ -258,10 +260,6 @@
   letter-spacing: 0.04em;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.spotify-row--data:hover {
-  background: var(--bg-tertiary);
 }
 
 .spotify-cell--num {
