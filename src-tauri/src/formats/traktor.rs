@@ -124,7 +124,9 @@ fn write_entry(out: &mut String, t: &ExportTrack, at: &TraktorLocation) {
     out.push_str("</ENTRY>\n");
 }
 
-/// INFO's attributes in Traktor's order and units: bit/s, stars × 51, dates as 2026/9/1, and KiB and whole seconds rounded up, as in Traktor's own collection.
+/// INFO's attributes in Traktor's order and units: bit/s, stars × 51, dates
+/// as 2026/9/1, and KiB and whole seconds rounded up, as in Traktor's own
+/// collection.
 fn info(t: &ExportTrack) -> Vec<(&'static str, String)> {
     let mut info = Vec::new();
     if let Some(kbps) = t.bitrate.filter(|kbps| *kbps > 0) {
