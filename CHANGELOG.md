@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-10
+
+### Changed
+- The highlight under the pointer slides from one item to the next in the track tables, lists, the sidebar, menus and dropdowns instead of jumping
+- Resting on a card pops its play button up
+- The player's buttons spring when you rest on them and press them, play and pause turn into each other, and the progress bar thickens under the pointer
+- The stars of a rating light up in a wave
+- Primary buttons have a gradient that flows when you rest on them
+- Tooltips are the app's own: they show sooner, slide from one button to the next, and show a button's keyboard shortcut in chips
+- The open playlist in the sidebar sits on a translucent accent instead of a solid one
+
 ## [0.6.0] - 2026-10-10
 
 ### Added
