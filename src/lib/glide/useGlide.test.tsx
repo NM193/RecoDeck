@@ -128,6 +128,19 @@ describe('useHoverGlide', () => {
   })
 })
 
+describe('useHoverGlide, after a render', () => {
+  it('follows its item when the list moved it under a still pointer', () => {
+    act(() => root.render(<HoverList />))
+    layOut(host)
+    const [one] = host.querySelectorAll<HTMLElement>('.item')
+    over(one)
+    expect(glideOf().style.transform).toBe('translate3d(0px, 0px, 0)')
+    one.getBoundingClientRect = () => ({ left: 0, top: 80, width: 300, height: 40 }) as DOMRect
+    act(() => root.render(<HoverList />))
+    expect(glideOf().style.transform).toBe('translate3d(0px, 80px, 0)')
+  })
+})
+
 describe('useGlideTo', () => {
   it('sits on the open item and slides when another opens', () => {
     act(() => root.render(<OpenList open={0} />))

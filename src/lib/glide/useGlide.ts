@@ -36,7 +36,11 @@ function useAttached(
     const track = trackRef.current
     const el = highlightRef.current
     const now = attached.current
-    if (now && now.track === track && now.el === el && now.key === key) return
+    if (now && now.track === track && now.el === el && now.key === key) {
+      // A render may have moved its item under a still pointer (a re-sort).
+      now.glide.refresh()
+      return
+    }
     now?.detach()
     attached.current = null
     if (!track || !el) return

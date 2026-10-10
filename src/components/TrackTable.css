@@ -373,7 +373,12 @@
   height: 24px;
   margin: auto;
   opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease);
+  /* Hidden from screen readers and clicks too until the row is hovered; the
+     visibility waits for the fade-out. */
+  visibility: hidden;
+  transition:
+    opacity var(--motion-fast) var(--ease),
+    visibility 0s linear var(--motion-fast);
   padding: 0;
   border: none;
   border-radius: var(--radius-md);
@@ -399,6 +404,10 @@
 
 .data-row:hover .row-action {
   opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--motion-fast) var(--ease),
+    visibility 0s;
 }
 
 .tt-cover {

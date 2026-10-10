@@ -36,7 +36,8 @@ beforeEach(() => {
     <button id="prev" data-tip="Previous"></button>
     <div data-tip-off><button id="off" data-tip="Hidden"></button></div>
     <button id="plain"></button>
-    <span id="name" data-tip="A long set name" data-tip-overflow>A long set name</span>`
+    <span id="name" data-tip="A long set name" data-tip-overflow>A long set name</span>
+    <button id="outer" data-tip="Open the set"><span id="inner" data-tip="Short" data-tip-overflow>Short</span></button>`
   document.body.append(page)
   host = document.createElement('div')
   document.body.append(host)
@@ -156,5 +157,28 @@ describe('TooltipLayer', () => {
     over(el('name'))
     wait(TIP_DELAY_MS)
     expect(shown()).toBe(true)
+  })
+
+  it('back on a pressed element after leaving it, the tip is its own', () => {
+    over(el('next'))
+    wait(TIP_DELAY_MS)
+    act(() => {
+      el('next').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    out(el('next'), el('prev'))
+    over(el('prev'))
+    expect(shown()).toBe(true)
+    out(el('prev'), el('next'))
+    over(el('next'))
+    wait(TIP_LEAVE_MS + 110)
+    expect(shown()).toBe(true)
+    expect(tip().textContent).toMatch(/^Next/)
+  })
+
+  it("an uncut overflow tip lets its parent's tip show", () => {
+    over(el('inner'))
+    wait(TIP_DELAY_MS)
+    expect(shown()).toBe(true)
+    expect(tip().textContent).toBe('Open the set')
   })
 })

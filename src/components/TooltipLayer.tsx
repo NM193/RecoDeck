@@ -34,12 +34,18 @@ function cutOff(el: HTMLElement): boolean {
   return false
 }
 
-/** The element whose tip a node is in, unless tips are off there. */
+/**
+ * The element whose tip a node is in, unless tips are off there. A
+ * data-tip-overflow element whose text is not cut off passes to the next
+ * element with a tip around it.
+ */
 function tipTarget(node: EventTarget | null): HTMLElement | null {
   if (!(node instanceof Element)) return null
-  const el = node.closest<HTMLElement>('[data-tip]')
+  let el = node.closest<HTMLElement>('[data-tip]')
+  while (el && el.hasAttribute('data-tip-overflow') && !cutOff(el)) {
+    el = el.parentElement?.closest<HTMLElement>('[data-tip]') ?? null
+  }
   if (!el || !el.dataset.tip || el.closest('[data-tip-off]')) return null
-  if (el.hasAttribute('data-tip-overflow') && !cutOff(el)) return null
   return el
 }
 
@@ -153,10 +159,17 @@ export function TooltipLayer() {
     }
 
     const enter = (el: HTMLElement) => {
+      if (el === target) {
+        clearTimeout(leaveTimer)
+        return
+      }
+      // No tip here: the one shown belongs to another element, so it goes.
+      if (el === dismissed || useTrackDragStore.getState().payload !== null) {
+        hide()
+        return
+      }
       clearTimeout(leaveTimer)
-      if (el === target || el === dismissed) return
       clearTimeout(showTimer)
-      if (useTrackDragStore.getState().payload !== null) return
       target = el
       const entry = tipEntry(visible, performance.now() - hiddenAt)
       if (entry === 'glide') glide(el)
@@ -191,6 +204,8 @@ export function TooltipLayer() {
       if (el && focusVisible(el)) enter(el)
     }
     const onFocusOut = (e: FocusEvent) => {
+      if (dismissed && e.target instanceof Node && dismissed.contains(e.target))
+        dismissed = null
       if (target && e.target instanceof Node && target.contains(e.target))
         leave()
     }
