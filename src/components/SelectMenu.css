@@ -103,8 +103,9 @@
   transition: background-color var(--motion-fast) var(--ease);
 }
 
-.select-menu__option--active {
-  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 10%);
+/* The active option's background is the glide under the options. */
+.select-menu__options {
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
 }
 
 /* Only the chosen row carries the check, which moves its label over. */

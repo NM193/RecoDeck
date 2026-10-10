@@ -52,6 +52,8 @@
 }
 
 .sets-box__menu {
+  /* The active row's background is the glide under the rows. */
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
   position: absolute;
   top: 44px;
   right: 0;
@@ -87,7 +89,6 @@
 }
 
 .sets-box__row--active {
-  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 10%);
   color: var(--text-primary);
 }
 

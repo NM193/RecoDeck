@@ -431,6 +431,8 @@
 }
 
 .now-playing-bar__playlist-menu {
+  /* The hover is the glide under the playlists. */
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
   position: absolute;
   bottom: 44px;
   right: 0;
@@ -473,7 +475,6 @@
 }
 
 .now-playing-bar__playlist-item:hover {
-  background: rgba(var(--accent-rgb), 0.1);
   color: var(--text-primary);
 }
 

@@ -7,6 +7,8 @@ import { Icon } from '../Icon'
 import { useOverlay } from '../../lib/overlays'
 import { raPick } from '../../lib/dj/page'
 import type { ArtistCandidate, DjCandidates, RaPick } from '../../types/dj'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 
 interface DjCandidatesMenuProps {
   candidates: DjCandidates | null
@@ -83,6 +85,10 @@ export function DjCandidatesMenu({
 }: DjCandidatesMenuProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  // The hover slides between the choices (Micro-interactions spec, Menus).
+  const popRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(popRef, glideRef, '.dj-menu__choice:not(:disabled)', GLIDE.menu)
   // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
   useOverlay(open, () => setOpen(false))
 
@@ -136,7 +142,8 @@ export function DjCandidatesMenu({
         <Icon name="Ellipsis" size={14} />
       </button>
       {open && (
-        <div className="dj-menu__pop" role="menu">
+        <div ref={popRef} className="glide-track dj-menu__pop" role="menu">
+          <span ref={glideRef} className="glide" aria-hidden="true" />
           <div className="dj-menu__title">Not this artist?</div>
           {error && <div className="dj-menu__note">{error}</div>}
           {loading && !candidates && (

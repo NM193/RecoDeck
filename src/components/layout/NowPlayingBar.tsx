@@ -12,6 +12,8 @@ import { EQModal } from '../eq/EQModal'
 import { useOverlay } from '../../lib/overlays'
 import { registerFileControls } from '../../lib/shortcuts/players'
 import { EASE, MOTION } from '../../lib/motion'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import './NowPlayingBar.css'
 
 interface NowPlayingBarProps {
@@ -75,6 +77,11 @@ export function NowPlayingBar({
 
   const progressRef = useRef<HTMLDivElement>(null)
   const playlistMenuRef = useRef<HTMLDivElement>(null)
+  // Add to playlist: the hover slides between the playlists (Micro-
+  // interactions spec, Menus).
+  const addMenuRef = useRef<HTMLDivElement>(null)
+  const addGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(addMenuRef, addGlideRef, '.now-playing-bar__playlist-item', GLIDE.menu)
   const volumeRef = useRef<HTMLDivElement>(null)
   const hideTimeoutRef = useRef<number | null>(null)
 
@@ -1031,7 +1038,8 @@ export function NowPlayingBar({
             </button>
 
             {showPlaylistMenu && (
-              <div className="now-playing-bar__playlist-menu">
+              <div className="glide-track now-playing-bar__playlist-menu" ref={addMenuRef}>
+                <span ref={addGlideRef} className="glide" aria-hidden="true" />
                 <div className="now-playing-bar__playlist-header">
                   Add to playlist
                 </div>
