@@ -289,8 +289,10 @@
   font-size: 12.5px;
 }
 
-.set-row:not(.set-row--head):not(.set-row--skeleton):hover {
-  background: var(--bg-tertiary);
+/* The hover is the glide under the rows (Micro-interactions spec). The
+   playing row's tint is translucent, so the glide shows through it on hover. */
+.set-page__rows {
+  --glide-bg: var(--bg-tertiary);
 }
 
 .set-row--head {
@@ -307,7 +309,7 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-/* Hovered, it keeps its tint (as specific as the rows' hover, and later). */
+/* Hovered, the playing row keeps a stronger tint, over the glide. */
 .set-row.set-row--now:not(.set-row--head):hover {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
@@ -347,6 +349,12 @@
   color: var(--text-primary);
   opacity: 0;
   cursor: pointer;
+  transition: opacity var(--motion-fast) var(--ease);
+}
+
+/* The number (or the time) under it cross-fades with ▶. */
+.set-row__no > :not(.set-row__play) {
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .set-row:hover .set-row__play,
@@ -358,7 +366,7 @@
    which would leave the cell blank once the mouse moves on. */
 .set-row:hover .set-row__no > :not(.set-row__play),
 .set-row__no:has(.set-row__play:focus-visible) > :not(.set-row__play) {
-  visibility: hidden;
+  opacity: 0;
 }
 
 .set-row__play:focus-visible {

@@ -259,8 +259,9 @@
   cursor: pointer;
 }
 
-.sets-found:hover {
-  background: var(--bg-secondary);
+/* The hover is the glide under the results (Micro-interactions spec). */
+.sets-found-list {
+  --glide-bg: var(--bg-secondary);
 }
 
 .sets-found__thumb {

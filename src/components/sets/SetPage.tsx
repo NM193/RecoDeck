@@ -34,6 +34,8 @@ import { useSetPlayer, videoIsPlaying } from '../../store/setPlayerStore'
 import { useShowAfter } from '../../lib/useShowAfter'
 import type { Track as LibraryTrack } from '../../types/track'
 import type { TrackEcho } from '../../types/youtube'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import './SetPage.css'
 
 /** A set being read, or one that could not be: what is known of it so far. */
@@ -100,6 +102,9 @@ export function SetPage({
   const [filter, setFilter] = useState<SetFilter>('all')
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   const rowsRef = useRef<HTMLDivElement>(null)
+  // The hover slides from row to row; the header row and skeletons are not rows.
+  const rowGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(rowsRef, rowGlideRef, '.set-row:not(.set-row--head):not(.set-row--skeleton)', GLIDE.row)
 
   const playing = useSetPlayer((s) => s.playing)
   const panel = useSetPlayer((s) => s.panel)
@@ -371,7 +376,8 @@ export function SetPage({
               ))}
             </div>
 
-            <div className="set-page__rows" ref={rowsRef}>
+            <div className="glide-track set-page__rows" ref={rowsRef}>
+              <span ref={rowGlideRef} className="glide" aria-hidden="true" />
               <div className="set-row set-row--head" aria-hidden="true">
                 <span>#</span>
                 <span>{untimed ? '' : 'Time'}</span>

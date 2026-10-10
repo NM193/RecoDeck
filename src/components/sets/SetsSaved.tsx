@@ -8,6 +8,7 @@ import { StoreLinks } from './StoreLinks'
 import { toast } from '../../lib/toast'
 import { savedList } from '../../lib/sets/setPage'
 import type { SavedTrack } from '../../types/youtube'
+import { HoverGlide } from '../HoverGlide'
 import './SetsTabs.css'
 
 interface SetsSavedProps {
@@ -36,6 +37,7 @@ export function SetsSaved({ saved, onOpenAt, onRemove }: SetsSavedProps) {
         )}
       </div>
       {saved.length === 0 && <p className="follow-note">Heart a track in any set to keep it here.</p>}
+      <HoverGlide className="saved-rows" item=".saved-row" kind="row">
       {saved.map((t) => (
         <div className="saved-row" key={t.id ?? `${t.video_id}|${t.cue_ms}|${t.title}`}>
           <span className="saved-row__cue">{t.cue}</span>
@@ -64,6 +66,7 @@ export function SetsSaved({ saved, onOpenAt, onRemove }: SetsSavedProps) {
           </button>
         </div>
       ))}
+      </HoverGlide>
     </section>
   )
 }
