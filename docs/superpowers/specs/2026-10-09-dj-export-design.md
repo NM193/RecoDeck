@@ -342,6 +342,9 @@ is done:
   tracks take it (Rekordbox 7.2.19: a rating changed in RecoDeck did not reach
   a track already in the collection); importing again duplicates nothing. The
   how-to and "What it does not do" say so.
+- ~~Traktor: Import Playlist brings the RecoDeck folder and its playlists;
+  tracks new to Traktor take RecoDeck's BPM and key~~ ✓ (checked by the user
+  in Traktor 3.11.1). Rating and comments on new tracks not looked at yet.
 - Traktor: whether data (BPM, key, rating, comments) reaches tracks it
   **already has**, or only new ones.
 - Traktor: ~~the key integers~~ ✓; ~~`INFO BITRATE` unit~~ ✓ bit/s;

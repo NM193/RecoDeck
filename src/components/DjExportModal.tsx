@@ -372,7 +372,11 @@ function RekordboxHowTo({ full }: { full: boolean }) {
   )
 }
 
-/** How to load the file in Traktor. What Traktor does with tracks it already has is checked by hand. */
+/** How to load the file in Traktor. Checked in Traktor 3.11.1: the RecoDeck folder and its playlists arrive, and new tracks take RecoDeck's BPM and key. */
 function TraktorHowTo() {
-  return <p className="dj-export__howto">In Traktor, right-click Playlists → Import Playlist and choose this file.</p>
+  return (
+    <p className="dj-export__howto">
+      In Traktor, right-click Playlists → Import Playlist and choose this file. The playlists arrive in a RecoDeck folder.
+    </p>
+  )
 }
