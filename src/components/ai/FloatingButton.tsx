@@ -31,7 +31,7 @@ export function FloatingButton({
       }}
       whileTap={{ scale: 0.9 }}
       transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-      title="Open AI Assistant (Cmd+K)"
+      data-tip="Open AI Assistant (Cmd+K)" aria-label="Open AI Assistant (Cmd+K)"
     >
       {/* AI Sparkle Icon */}
       <Icon name="Sparkles" size={40} className="text-white drop-shadow-lg" />

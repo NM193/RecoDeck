@@ -31,7 +31,7 @@ export function AISection() {
           <button
             onClick={() => setShowApiKey(!showApiKey)}
             className="btn btn--icon"
-            title={showApiKey ? 'Hide' : 'Show'}
+            data-tip={showApiKey ? 'Hide' : 'Show'}
             aria-label={showApiKey ? 'Hide the key' : 'Show the key'}
             type="button"
           >

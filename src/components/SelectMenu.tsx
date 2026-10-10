@@ -173,7 +173,7 @@ export function SelectMenu({
               data-index={index}
               role="option"
               aria-selected={option.value === value}
-              title={option.label.length > LONG_LABEL ? option.label : undefined}
+              data-tip={option.label.length > LONG_LABEL ? option.label : undefined} data-tip-overflow
               className={
                 index === activeIndex
                   ? 'select-menu__option select-menu__option--active'

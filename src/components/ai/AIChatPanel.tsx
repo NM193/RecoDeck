@@ -184,7 +184,7 @@ export function AIChatPanel({ onPlaylistCreated }: AIChatPanelProps) {
               <button
                 onClick={clearHistory}
                 className="p-1 hover:bg-white/20 rounded transition-colors"
-                title="Clear chat history"
+                data-tip="Clear chat history" aria-label="Clear chat history"
               >
                 <svg
                   className="w-4 h-4"

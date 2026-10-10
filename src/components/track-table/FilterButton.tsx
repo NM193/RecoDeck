@@ -36,7 +36,7 @@ export function FilterButton({
         className="btn tt-filter__main"
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={label ?? undefined}
+        data-tip={label ?? undefined} data-tip-overflow
         onClick={() => setOpen((wasOpen) => !wasOpen)}
       >
         <Icon name="ListFilter" size={14} />
@@ -47,7 +47,7 @@ export function FilterButton({
           type="button"
           className="btn tt-filter__clear"
           aria-label="Clear filter"
-          title="Clear filter"
+          data-tip="Clear filter"
           onClick={() => onChange(null)}
         >
           ✕

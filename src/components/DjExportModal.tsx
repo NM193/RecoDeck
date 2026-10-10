@@ -347,7 +347,7 @@ function Check({
 function PathText({ path }: { path: string }) {
   const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1
   return (
-    <span className="dj-export__path" title={path}>
+    <span className="dj-export__path" data-tip={path} data-tip-overflow>
       <span className="dj-export__path-folder">{path.slice(0, cut)}</span>
       <span className="dj-export__path-file">{path.slice(cut)}</span>
     </span>

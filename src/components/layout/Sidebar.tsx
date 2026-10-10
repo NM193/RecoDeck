@@ -591,7 +591,7 @@ export function Sidebar({
           className={`sidebar-top__avatar ${activeView === 'settings' ? 'sidebar-top__avatar--active' : ''}`}
           onClick={onOpenSettings}
           type="button"
-          title="Settings"
+          data-tip="Settings" aria-label="Settings"
         >
           <Icon name="User" size={16} />
         </button>
@@ -599,7 +599,7 @@ export function Sidebar({
           className="sidebar-top__toggle"
           onClick={onToggleCollapsed}
           type="button"
-          title="Collapse sidebar (⌘\)"
+          data-tip="Collapse sidebar" data-tip-keys="sidebar"
           aria-label="Collapse sidebar"
         >
           <Icon name="PanelLeft" size={14} />

@@ -145,7 +145,7 @@ function PlaysBody({ data }: { data: OverviewData }) {
         const text = playText(play)
         return (
           <div key={play.key} className="dj-card-play">
-            <span className="dj-card-play__text" title={text}>
+            <span className="dj-card-play__text" data-tip={text} data-tip-overflow>
               {text}
             </span>
             <PlayBar
@@ -393,7 +393,7 @@ export function EditCard({ id, data, actions, onRemove }: EditCardProps) {
   return (
     <section className="dj-card dj-card--edit" aria-label={card.title}>
       <h4 className="dj-card__head">
-        <span className="dj-card__grip" title="Drag to move">
+        <span className="dj-card__grip" data-tip="Drag to move" aria-label="Drag to move">
           <Icon name="GripVertical" size={14} />
         </span>
         <Icon name={CARD_ICONS[id]} size={14} />
@@ -401,7 +401,7 @@ export function EditCard({ id, data, actions, onRemove }: EditCardProps) {
         <button
           type="button"
           className="dj-card__remove"
-          title={`Remove ${card.title}`}
+          data-tip={`Remove ${card.title}`}
           aria-label={`Remove ${card.title}`}
           onClick={() => onRemove(id)}
         >

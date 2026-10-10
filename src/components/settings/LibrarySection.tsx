@@ -92,7 +92,7 @@ export function LibrarySection() {
                           type="button"
                           className="btn btn--icon btn--sm"
                           onClick={() => handleRescanFolder(folder)}
-                          title="Rescan this folder"
+                          data-tip="Rescan this folder"
                           aria-label="Rescan this folder"
                           disabled={loading || scanningFolder !== null}
                         >
@@ -102,7 +102,7 @@ export function LibrarySection() {
                           type="button"
                           className="btn btn--icon btn--sm btn--danger"
                           onClick={() => handleRemoveFolder(folder)}
-                          title="Remove this folder"
+                          data-tip="Remove this folder"
                           aria-label="Remove this folder"
                           disabled={loading || scanningFolder !== null}
                         >

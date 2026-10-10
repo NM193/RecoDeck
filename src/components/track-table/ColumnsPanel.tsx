@@ -97,7 +97,7 @@ export function ColumnsPanel({ layout, onChange }: ColumnsPanelProps) {
                 type="button"
                 className="tt-columns__handle"
                 aria-label={`Move ${def.name}`}
-                title="Drag to reorder"
+                data-tip="Drag to reorder"
                 onPointerDown={startDrag(index)}
                 onPointerMove={moveDrag}
                 onPointerUp={endDrag}

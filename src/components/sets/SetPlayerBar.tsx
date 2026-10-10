@@ -36,7 +36,7 @@ export function SetPlayerBar({ onOpenSet }: { onOpenSet: (videoId: string) => vo
         type="button"
         className="set-bar__text"
         onClick={() => onOpenSet(result.video.id)}
-        title={`Open ${result.video.title}`}
+        data-tip={`Open ${result.video.title}`} aria-description={`Open ${result.video.title}`}
       >
         <span className="set-bar__now">
           {now && name ? (

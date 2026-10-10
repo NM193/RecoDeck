@@ -217,7 +217,7 @@ export function SetPage({
           <button type="button" className="set-hero__back" onClick={onBack}>
             <Icon name="ChevronLeft" size={14} /> Sets
           </button>
-          <h1 className="set-hero__title" title={title}>
+          <h1 className="set-hero__title" data-tip={title} data-tip-overflow>
             {title || (opening?.error ? 'This set' : 'Reading the set…')}
           </h1>
           {video && (
@@ -229,7 +229,7 @@ export function SetPage({
                     type="button"
                     className="set-hero__dj"
                     onClick={() => onOpenDj(part.text)}
-                    title={`Open ${part.text}'s page`}
+                    data-tip={`Open ${part.text}'s page`} aria-description={`Open ${part.text}'s page`}
                   >
                     {part.text}
                   </button>

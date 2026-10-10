@@ -110,10 +110,10 @@ function SetsGroup({
       >
         {sets.map(({ track }) => (
           <div className="ytm-sets__row" key={track.videoId}>
-            <span className="ytm-sets__name" title={track.title}>
+            <span className="ytm-sets__name" data-tip={track.title} data-tip-overflow>
               {track.title}
             </span>
-            <span className="ytm-sets__channel" title={track.channel}>
+            <span className="ytm-sets__channel" data-tip={track.channel} data-tip-overflow>
               {track.channel}
             </span>
             <span className="ytm-sets__length">

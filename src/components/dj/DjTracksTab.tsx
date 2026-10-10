@@ -94,7 +94,11 @@ export function DjTrackRow({
         <span
           className="spotify-cell--title"
           role="cell"
-          title={
+          data-tip={
+            row.track.album
+              ? `${row.track.title} · ${row.track.album}`
+              : row.track.title
+          } aria-description={
             row.track.album
               ? `${row.track.title} · ${row.track.album}`
               : row.track.title
@@ -105,7 +109,7 @@ export function DjTrackRow({
         <span
           className="spotify-cell--artist"
           role="cell"
-          title={row.track.artists}
+          data-tip={row.track.artists} data-tip-overflow
         >
           {row.track.artists}
         </span>
@@ -130,7 +134,7 @@ export function DjTrackRow({
           <span role="cell" />
           <span className="spotify-hint" role="cell" aria-colspan={4}>
             In library:{' '}
-            <code title={row.ownership.file.file_path}>
+            <code data-tip={row.ownership.file.file_path} aria-description={row.ownership.file.file_path}>
               {fileName(row.ownership.file.file_path)}
             </code>
             <span className="spotify-hint__why">· {row.ownership.reason}</span>
@@ -264,7 +268,7 @@ export function DjTracksTab({
         {failed && (
           <span
             className="dj-tabhead__failed"
-            title={spotify.error ?? undefined}
+            data-tip={spotify.error ?? undefined} aria-description={spotify.error ?? undefined}
           >
             · couldn&apos;t refresh
           </span>

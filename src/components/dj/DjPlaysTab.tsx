@@ -57,7 +57,7 @@ export function PlayStatus({
       <button
         type="button"
         className="spotify-mini spotify-mini--icon"
-        title="Search on SelectedRecs"
+        data-tip="Search on SelectedRecs"
         aria-label="Search on SelectedRecs"
         onClick={() => {
           openUrl(playSearchUrl(play)).catch(() => {})
@@ -81,7 +81,7 @@ export function PlayBar({
   label: string
 }) {
   return (
-    <span className="dj-play__sets" role="cell" title={inSets(count, sets)}>
+    <span className="dj-play__sets" role="cell" data-tip={inSets(count, sets)} aria-description={inSets(count, sets)}>
       <span className="dj-play__bar">
         <i style={{ width: `${playShare(count, sets)}%` }} />
       </span>
@@ -122,7 +122,7 @@ export function DjPlayRow({
         <span className="spotify-cell--num" role="cell">
           {number}
         </span>
-        <span className="spotify-cell--title" role="cell" title={text}>
+        <span className="spotify-cell--title" role="cell" data-tip={text} data-tip-overflow>
           {text}
         </span>
         <PlayBar
@@ -143,7 +143,7 @@ export function DjPlayRow({
           <span role="cell" />
           <span className="spotify-hint" role="cell" aria-colspan={3}>
             In library:{' '}
-            <code title={ownership.file.file_path}>
+            <code data-tip={ownership.file.file_path} aria-description={ownership.file.file_path}>
               {fileName(ownership.file.file_path)}
             </code>
             <span className="spotify-hint__why">· {ownership.reason}</span>

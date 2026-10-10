@@ -50,7 +50,7 @@ export function SetsSaved({ saved, onOpenAt, onRemove }: SetsSavedProps) {
             <button
               type="button"
               className="saved-row__set"
-              title={`Open ${t.set_title ?? 'the set'} at ${t.cue ?? 'this track'}`}
+              data-tip={`Open ${t.set_title ?? 'the set'} at ${t.cue ?? 'this track'}`} aria-description={`Open ${t.set_title ?? 'the set'} at ${t.cue ?? 'this track'}`}
               onClick={() => onOpenAt(t.video_id, t.cue_ms, t.set_title ?? null)}
             >
               {t.set_title ?? 'the set'}

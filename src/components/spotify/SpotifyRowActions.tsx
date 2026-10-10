@@ -52,7 +52,7 @@ export function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       className={`spotify-mini spotify-mini--icon${copied ? ' spotify-mini--copied' : ''}`}
-      title={copied ? 'Copied' : `Copy “${text}”`}
+      data-tip={copied ? 'Copied' : `Copy “${text}”`}
       aria-label={copied ? 'Copied' : 'Copy artist and title'}
       onClick={copy}
     >
@@ -70,7 +70,7 @@ export function YouTubeButton({ text }: { text: string }) {
     <button
       type="button"
       className="spotify-mini spotify-mini--icon spotify-mini--youtube"
-      title={`Search YouTube for “${text}”`}
+      data-tip={`Search YouTube for “${text}”`}
       aria-label="Search on YouTube"
       onClick={() => {
         openUrl(youtubeSearchUrl(text)).catch(() => {})
@@ -116,7 +116,7 @@ export function VerdictButtons({
         disabled={pending !== null}
         aria-busy={pending === 'yes'}
         onClick={() => answer('yes')}
-        title="This is the file"
+        data-tip="This is the file" aria-description="This is the file"
       >
         {pending === 'yes' ? '…' : 'Yes'}
       </button>
@@ -126,7 +126,7 @@ export function VerdictButtons({
         disabled={pending !== null}
         aria-busy={pending === 'no'}
         onClick={() => answer('no')}
-        title="Not this file"
+        data-tip="Not this file" aria-description="Not this file"
       >
         {pending === 'no' ? '…' : 'No'}
       </button>
@@ -154,7 +154,7 @@ export function SpotifyRowActions({
     <button
       type="button"
       className="spotify-mini spotify-mini--icon spotify-mini--play"
-      title="Play on Spotify"
+      data-tip="Play on Spotify"
       aria-label="Play on Spotify"
       onClick={() => {
         // Rust opens the Spotify app itself when there is no active device or
@@ -203,7 +203,7 @@ export function SpotifyRowActions({
       <button
         type="button"
         className="spotify-mini spotify-mini--icon"
-        title="Search on SelectedRecs"
+        data-tip="Search on SelectedRecs"
         aria-label="Search on SelectedRecs"
         onClick={() => {
           openUrl(selectedRecsUrl(row.track)).catch(() => {})

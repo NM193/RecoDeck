@@ -273,7 +273,7 @@ function CardBody({
                   )}
                 </span>
                 <span className="home-dj__text">
-                  <span className="home-dj__name" title={dj.displayName}>
+                  <span className="home-dj__name" data-tip={dj.displayName} data-tip-overflow>
                     {dj.displayName}
                   </span>
                   {line && <span className="home-dj__line">{line}</span>}
@@ -296,7 +296,7 @@ function CardBody({
               onClick={() => actions.onOpenStreamList(row.service, row.listId)}
             >
               <span className="home-news__number">{row.number}</span>
-              <span className="home-news__text" title={row.name}>
+              <span className="home-news__text" data-tip={row.name} data-tip-overflow>
                 {row.name}
               </span>
               <span className="home-news__place">
@@ -361,7 +361,7 @@ function CardBody({
               fallback={playlistGradient(last.name)}
             />
             <span className="home-last__text">
-              <span className="home-last__name" title={last.name}>
+              <span className="home-last__name" data-tip={last.name} data-tip-overflow>
                 {last.name}
               </span>
               <span className="home-sub">
@@ -614,11 +614,11 @@ function SetRow({
   return (
     <button type="button" className="home-set" onClick={onOpen}>
       <span className="home-set__text">
-        <span className="home-set__title" title={title}>
+        <span className="home-set__title" data-tip={title} data-tip-overflow>
           {title}
         </span>
         {line && (
-          <span className="home-set__line" title={line}>
+          <span className="home-set__line" data-tip={line} data-tip-overflow>
             {line}
           </span>
         )}

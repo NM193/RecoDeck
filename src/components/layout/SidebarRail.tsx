@@ -184,7 +184,7 @@ export function SidebarRail({
           className="sidebar-top__toggle"
           onClick={onToggleCollapsed}
           type="button"
-          title="Expand sidebar (⌘\)"
+          data-tip="Expand sidebar" data-tip-keys="sidebar"
           aria-label="Expand sidebar"
         >
           <Icon name="PanelLeft" size={14} />

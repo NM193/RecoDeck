@@ -189,7 +189,7 @@ export function SearchView({
               type="button"
               aria-label="Customize Search"
               aria-pressed={customizing}
-              title="Customize Search"
+              data-tip="Customize Search"
             >
               <Icon name="SlidersHorizontal" size={16} />
             </button>

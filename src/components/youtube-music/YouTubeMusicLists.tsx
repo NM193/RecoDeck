@@ -126,7 +126,7 @@ export function YouTubeMusicLists({
             }
           : undefined
       }
-      title={list.gone ? `${list.name} — no longer available` : list.name}
+      data-tip={list.gone ? `${list.name} — no longer available` : list.name} aria-description={list.gone ? `${list.name} — no longer available` : list.name}
     >
       <Icon name={list.icon} size={14} className="spotify-list-row__icon" />
       <span className="folder-name">{list.name}</span>

@@ -29,7 +29,7 @@ function SetCard({ set, onOpen }: { set: YtSetSummary; onOpen: () => void }) {
       <span className="set-card__thumb" style={{ backgroundImage: `url(${thumbnailUrl(set.video_id, 'mqdefault')})` }}>
         {set.duration_ms ? <span className="set-card__length">{msToCue(set.duration_ms)}</span> : null}
       </span>
-      <span className="set-card__title" title={set.title}>
+      <span className="set-card__title" data-tip={set.title} data-tip-overflow>
         {set.title}
       </span>
       <span className="set-card__line">{setCardLine(set)}</span>
@@ -71,7 +71,7 @@ export function SetsLibrary({ sets, newFinds, grouping, onOpenSet, onOpenDj, onM
                 />
                 <span className="new-find__text">
                   <span className="new-find__dj">{find.displayName}</span>
-                  <span className="new-find__title" title={find.title}>
+                  <span className="new-find__title" data-tip={find.title} data-tip-overflow>
                     {find.title}
                   </span>
                   <span className="new-find__cost">{find.saved ? 'saved' : 'opening costs 5–7'}</span>

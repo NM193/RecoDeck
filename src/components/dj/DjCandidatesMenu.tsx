@@ -130,7 +130,7 @@ export function DjCandidatesMenu({
       <button
         type="button"
         className="btn btn--icon"
-        title="Not this artist?"
+        data-tip="Not this artist?"
         aria-label="More"
         aria-haspopup="menu"
         aria-expanded={open}

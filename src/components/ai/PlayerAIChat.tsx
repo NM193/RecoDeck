@@ -160,7 +160,7 @@ export function PlayerAIChat({ onPlaylistCreated }: PlayerAIChatProps) {
           e.currentTarget.style.boxShadow =
             '0 0 30px rgba(6, 182, 212, 0.6), 0 4px 15px rgba(0, 0, 0, 0.4)'
         }}
-        title="AI Assistant (Cmd+K)"
+        data-tip="AI Assistant (Cmd+K)" aria-label="AI Assistant (Cmd+K)"
       >
         <Icon name="Sparkles" size={28} className="text-white" />
       </button>
@@ -244,7 +244,7 @@ export function PlayerAIChat({ onPlaylistCreated }: PlayerAIChatProps) {
                       (e.currentTarget.style.background =
                         'rgba(255, 255, 255, 0.1)')
                     }
-                    title="Clear chat history"
+                    data-tip="Clear chat history" aria-label="Clear chat history"
                   >
                     <Icon name="Trash2" size={16} strokeWidth={2} />
                   </button>

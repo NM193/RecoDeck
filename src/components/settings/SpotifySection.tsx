@@ -217,7 +217,7 @@ export function SpotifySection() {
                   type="button"
                   className="btn btn--primary btn--sm"
                   disabled={dirty || (busy !== null && !waiting)}
-                  title={dirty ? 'Save the Client ID first' : undefined}
+                  data-tip={dirty ? 'Save the Client ID first' : undefined} aria-description={dirty ? 'Save the Client ID first' : undefined}
                   onClick={connect}
                 >
                   {waiting ? 'Waiting for Spotify… (try again)' : 'Reconnect'}
@@ -239,7 +239,7 @@ export function SpotifySection() {
               className="btn btn--primary btn--sm"
               // Connect signs in with the saved Client ID, not the one being typed.
               disabled={!saved || dirty || (busy !== null && !waiting)}
-              title={dirty ? 'Save the Client ID first' : undefined}
+              data-tip={dirty ? 'Save the Client ID first' : undefined} aria-description={dirty ? 'Save the Client ID first' : undefined}
               onClick={connect}
             >
               {waiting ? 'Waiting for Spotify… (try again)' : 'Connect Spotify'}

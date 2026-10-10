@@ -81,7 +81,7 @@ export function SetTimeline({
                 showTempo && !bpm ? 'sets-timeline__block--unmeasured' : ''
               }`}
               style={{ left: `${left}%`, width: `${width}%`, height }}
-              title={`${track.cue}  ${name}${bpm ? `  ·  ${Math.round(bpm)} BPM` : ''}`}
+              data-tip={`${track.cue}  ${name}${bpm ? `  ·  ${Math.round(bpm)} BPM` : ''}`} aria-label={`${track.cue}  ${name}${bpm ? `  ·  ${Math.round(bpm)} BPM` : ''}`}
               onClick={() => onSeek(track.cueMs)}
             />
           )

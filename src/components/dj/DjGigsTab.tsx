@@ -82,7 +82,7 @@ function Lineup({
                 key={j}
                 type="button"
                 className="dj-gig__dj"
-                title={`Open ${part.text}'s page`}
+                data-tip={`Open ${part.text}'s page`} aria-description={`Open ${part.text}'s page`}
                 onClick={() => onOpenDj(part.text)}
               >
                 {part.text}
@@ -119,7 +119,7 @@ export function GigRow({
         <b>{gig.venue ?? 'Venue to be announced'}</b>
         {place && <span>{place}</span>}
       </div>
-      <span className="dj-gig__lineup" title={gig.lineup ?? undefined}>
+      <span className="dj-gig__lineup" data-tip={gig.lineup ?? undefined} data-tip-overflow>
         {gig.lineup && (
           <Lineup lineup={gig.lineup} pageKey={pageKey} onOpenDj={onOpenDj} />
         )}
@@ -128,7 +128,7 @@ export function GigRow({
         <button
           type="button"
           className="dj-gig__link"
-          title="Open on Resident Advisor"
+          data-tip="Open on Resident Advisor"
           aria-label="Open on Resident Advisor"
           onClick={() => {
             if (gig.url) void openUrl(gig.url)

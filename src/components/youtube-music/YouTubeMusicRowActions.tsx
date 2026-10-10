@@ -41,7 +41,7 @@ export function YouTubeMusicRowActions({
     <button
       type="button"
       className="spotify-mini spotify-mini--icon spotify-mini--youtube"
-      title="Play on YouTube Music"
+      data-tip="Play on YouTube Music"
       aria-label="Play on YouTube Music"
       onClick={() => {
         openUrl(musicUrl(row.track.videoId)).catch(() => {})
@@ -80,7 +80,7 @@ export function YouTubeMusicRowActions({
       <button
         type="button"
         className="spotify-mini spotify-mini--icon"
-        title="Search on SelectedRecs"
+        data-tip="Search on SelectedRecs"
         aria-label="Search on SelectedRecs"
         onClick={() => {
           openUrl(selectedRecsUrl(row.track)).catch(() => {})

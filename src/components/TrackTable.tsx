@@ -497,7 +497,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
               <button
                 className="search-clear"
                 onClick={() => handleSearchChange('')}
-                title="Clear search"
+                data-tip="Clear search" aria-label="Clear search"
               >
                 ✕
               </button>
@@ -530,7 +530,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                       playlist.name,
                     )
                   }
-                  title="Get AI recommendations for this playlist"
+                  data-tip="Get AI recommendations for this playlist" aria-description="Get AI recommendations for this playlist"
                 >
                   <Icon name="Compass" size={16} />
                   <span>Recommend</span>
@@ -552,7 +552,7 @@ export const TrackTable = forwardRef<TrackTableRef, TrackTableProps>(
                   onClick={() =>
                     onOpenMixPrep(selectedPlaylistId, playlist.name)
                   }
-                  title="Mix preparation analysis"
+                  data-tip="Mix preparation analysis" aria-description="Mix preparation analysis"
                 >
                   <Icon name="AudioWaveform" size={16} />
                   <span>Mix Prep</span>

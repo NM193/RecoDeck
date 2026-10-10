@@ -76,7 +76,7 @@ function ErrorNotice({
     <div className={`error-notice error-notice--${level}`} role="alert">
       <Icon name="TriangleAlert" size={level === 'card' ? 18 : 28} />
       <p className="error-notice__title">{TITLES[level]}</p>
-      <p className="error-notice__message" title={message}>
+      <p className="error-notice__message" data-tip={message} data-tip-overflow>
         {message}
       </p>
       <div className="error-notice__actions">

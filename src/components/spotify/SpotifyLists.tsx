@@ -33,7 +33,7 @@ export function SpotifyLists({
       type="button"
       className={`folder-row spotify-list-row ${activeListId === id ? 'selected' : ''}`}
       onClick={() => onOpen(id)}
-      title={name}
+      data-tip={name} data-tip-overflow
     >
       <Icon name={icon} size={14} className="spotify-list-row__icon" />
       <span className="folder-name">{name}</span>

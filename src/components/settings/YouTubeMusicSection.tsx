@@ -201,7 +201,7 @@ export function YouTubeMusicSection() {
               type="button"
               className="btn btn--primary btn--sm"
               disabled={!status?.hasClient || (busy !== null && !waiting)}
-              title={status?.hasClient ? undefined : 'Choose the client file first'}
+              data-tip={status?.hasClient ? undefined : 'Choose the client file first'} aria-description={status?.hasClient ? undefined : 'Choose the client file first'}
               onClick={connect}
             >
               {waiting ? 'Waiting for Google… (try again)' : 'Connect YouTube Music'}

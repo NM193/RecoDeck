@@ -350,7 +350,7 @@ function TrackRow({
             <span className="dup-keep-badge">Recommended keep</span>
           )}
         </div>
-        <div className="dup-row__path" title={track.file_path}>
+        <div className="dup-row__path" data-tip={track.file_path} data-tip-overflow>
           {track.file_path}
         </div>
         <div className="dup-row__meta">
