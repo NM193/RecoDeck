@@ -272,6 +272,7 @@
 /* ---- DJs and Playlists rows: cards that scroll sideways inside the row ---- */
 
 .search-view__card-row {
+  --glide-bg: var(--bg-tertiary);
   display: flex;
   gap: var(--space-3);
   min-width: 0;
@@ -294,11 +295,13 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background-color 240ms var(--ease-soft);
 }
 
+/* Hovered, a card hands its fill to the glide sliding in under it
+   (Micro-interactions spec, Cards). */
 .search-view__dj-card:hover {
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 /* The artist photo, else the mockup's no-photo gradient with the initial. */
@@ -332,11 +335,11 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background-color 240ms var(--ease-soft);
 }
 
 .search-view__playlist-card:hover {
-  background: var(--bg-tertiary);
+  background: transparent;
 }
 
 .search-view__playlist-art {

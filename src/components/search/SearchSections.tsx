@@ -111,7 +111,7 @@ function Section({
     case 'recently-played':
       return (
         <SectionFrame title="Recently played">
-          <div className="search-tiles">
+          <HoverGlide className="search-tiles" item=".search-tile" kind="card">
             {data.recentlyPlayed.map((track, index) => (
               <TrackTile
                 key={track.id}
@@ -119,13 +119,13 @@ function Section({
                 onPlay={() => actions.onPlay(track, data.recentlyPlayed, index)}
               />
             ))}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
     case 'your-djs':
       return (
         <SectionFrame title="Your DJs">
-          <div className="search-djs">
+          <HoverGlide className="search-djs" item=".search-dj" kind="card">
             {data.djs.map((dj) => {
               const line = djLine(dj, data.today)
               return (
@@ -161,7 +161,7 @@ function Section({
                 </button>
               )
             })}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
     case 'genres':

@@ -18,6 +18,7 @@ import type { TrackFilter } from '../../lib/trackTable/filter'
 import type { SpotifyData } from '../spotify/useSpotify'
 import type { Track, Playlist } from '../../types/track'
 import { PlaylistCover } from '../PlaylistCover'
+import { HoverGlide } from '../HoverGlide'
 import { GLIDE } from '../../lib/glide/glide'
 import { useHoverGlide } from '../../lib/glide/useGlide'
 import './SearchView.css'
@@ -249,7 +250,7 @@ export function SearchView({
                 <h3 className="search-view__section-title">DJs</h3>
                 <span className="search-view__section-count">{djCards.length}</span>
               </div>
-              <div className="search-view__card-row">
+              <HoverGlide className="search-view__card-row" item=".search-view__dj-card" kind="card">
                 {djCards.map((dj) => (
                   <button
                     key={dj.key}
@@ -274,7 +275,7 @@ export function SearchView({
                     <span className="search-view__dj-subtitle">{dj.subtitle}</span>
                   </button>
                 ))}
-              </div>
+              </HoverGlide>
             </div>
           )}
 
@@ -285,7 +286,7 @@ export function SearchView({
                 <h3 className="search-view__section-title">Playlists</h3>
                 <span className="search-view__section-count">{filteredPlaylists.length}</span>
               </div>
-              <div className="search-view__card-row">
+              <HoverGlide className="search-view__card-row" item=".search-view__playlist-card" kind="card">
                 {filteredPlaylists.map((playlist) => (
                   <button
                     key={playlist.id}
@@ -309,7 +310,7 @@ export function SearchView({
                     </span>
                   </button>
                 ))}
-              </div>
+              </HoverGlide>
             </div>
           )}
 

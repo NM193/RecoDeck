@@ -602,6 +602,7 @@
 
 /* ---- Your playlists ---- */
 .home-playlists {
+  --glide-bg: color-mix(in srgb, var(--bg-tertiary), var(--text-primary) 6%);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: var(--space-3);
@@ -610,6 +611,8 @@
 .home-playlist {
   position: relative;
   min-width: 0;
+  /* The glide's item: it takes these corners, those of the button inside. */
+  border-radius: var(--radius-md);
 }
 
 .home-playlist__open {
@@ -624,11 +627,13 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease);
+  transition: background-color 240ms var(--ease-soft);
 }
 
-.home-playlist__open:hover {
-  background: color-mix(in srgb, var(--bg-tertiary), var(--text-primary) 6%);
+/* Keyed on the card, so moving onto its play button keeps the card hovered;
+   it hands its fill to the glide sliding in under it. */
+.home-playlist:hover .home-playlist__open {
+  background: transparent;
 }
 
 .home-playlist__open:focus-visible {
@@ -802,6 +807,7 @@
 
 /* ---- Your DJs: a round photo, the name and one line ---- */
 .home-djs {
+  --glide-bg: var(--bg-tertiary);
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: var(--space-2) var(--space-3);
@@ -819,10 +825,6 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.home-dj:hover {
-  background: var(--bg-tertiary);
 }
 
 .home-dj:focus-visible {

@@ -93,20 +93,25 @@
 
 /* ---- Recently played: 150px tiles in a row that scrolls sideways ---- */
 
+/* Room around each cover for the glide: the tiles carry 8px of padding, the
+   gap goes, and the row reaches 8px out so the first cover stays aligned. */
 .search-tiles {
+  --glide-bg: var(--bg-tertiary);
   display: flex;
-  gap: 14px;
+  gap: 0;
+  margin-inline: -8px;
   min-width: 0;
   overflow-x: auto;
   padding-bottom: var(--space-1);
 }
 
 .search-tile {
-  flex: 0 0 150px;
+  flex: 0 0 166px;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 0;
+  padding: 8px;
+  border-radius: var(--radius-lg);
   border: none;
   background: none;
   color: var(--text-primary);
@@ -191,6 +196,7 @@
 /* ---- Your DJs: round photos in a row that scrolls sideways ---- */
 
 .search-djs {
+  --glide-bg: var(--bg-tertiary);
   display: flex;
   gap: var(--space-2);
   min-width: 0;
@@ -212,10 +218,6 @@
   font: inherit;
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease);
-}
-
-.search-dj:hover {
-  background: var(--bg-tertiary);
 }
 
 .search-dj:focus-visible {

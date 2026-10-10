@@ -240,7 +240,7 @@ function CardBody({
         return <Empty>No DJs yet — open a DJ page or watch a DJ in Sets</Empty>
       }
       return (
-        <div className="home-djs">
+        <HoverGlide className="home-djs" item=".home-dj" kind="card">
           {data.djs.map((dj) => {
             const line = djLine(dj, data.today)
             return (
@@ -281,7 +281,7 @@ function CardBody({
               </button>
             )
           })}
-        </div>
+        </HoverGlide>
       )
     case 'new-likes': {
       const rows = newLikeRows(facts.spotify, facts.youtubeMusic)
@@ -456,7 +456,7 @@ function CardBody({
       const playlists = userPlaylists(facts.playlists)
       if (playlists.length === 0) return <Empty>No playlists yet</Empty>
       return (
-        <div className="home-playlists">
+        <HoverGlide className="home-playlists" item=".home-playlist" kind="card">
           {playlists.map((playlist) => (
             <div key={playlist.id} className="home-playlist">
               <button
@@ -489,7 +489,7 @@ function CardBody({
               )}
             </div>
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'library-stats': {
