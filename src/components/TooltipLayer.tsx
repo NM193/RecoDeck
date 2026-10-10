@@ -103,7 +103,13 @@ export function TooltipLayer() {
 
     const place = (el: HTMLElement) => {
       fill(measure, el)
-      const size = { width: measure.offsetWidth, height: measure.offsetHeight }
+      // Rounded up, with a pixel to spare: a width rounded down by a fraction
+      // would wrap the tip onto a second line.
+      const measured = measure.getBoundingClientRect()
+      const size = {
+        width: Math.ceil(measured.width) + 1,
+        height: Math.ceil(measured.height),
+      }
       const side = (el.closest<HTMLElement>('[data-tip-side]')?.dataset
         .tipSide ?? 'bottom') as TipSide
       const at = placeTip(el.getBoundingClientRect(), size, side, {
