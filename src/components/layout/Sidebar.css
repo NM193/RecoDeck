@@ -396,9 +396,12 @@
   transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 
+.sidebar-rail__nav {
+  --glide-bg: var(--glide-weak);
+}
+
 .sidebar-rail__item:hover,
 .sidebar-rail__item--active {
-  background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 

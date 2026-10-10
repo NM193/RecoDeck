@@ -11,6 +11,8 @@ import { YouTubeGlyph } from '../spotify/YouTubeGlyph'
 import { SECTION_LABELS, type SidebarSection } from '../../lib/sidebarPrefs'
 import type { FlyoutSection, NavItem } from './sidebarTypes'
 import { SidebarFlyout } from './SidebarFlyout'
+import { GLIDE } from '../../lib/glide/glide'
+import { useGlideTo, useHoverGlide } from '../../lib/glide/useGlide'
 
 interface SidebarRailProps {
   navItems: NavItem[]
@@ -53,6 +55,15 @@ export function SidebarRail({
     left: number
   } | null>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // The rail's sliding highlights (Micro-interactions spec, Sidebar): the
+  // hover, and the open section painted over it. aria-current marks the open
+  // section only; --active also marks the section whose flyout is open.
+  const railNavRef = useRef<HTMLDivElement>(null)
+  const railHoverRef = useRef<HTMLSpanElement>(null)
+  const railOpenRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(railNavRef, railHoverRef, '.sidebar-rail__item', GLIDE.row)
+  useGlideTo(railNavRef, railOpenRef, '[aria-current="page"]', GLIDE.row)
 
   const showTip = (label: string) => (e: React.MouseEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -145,6 +156,7 @@ export function SidebarRail({
       aria-label={badge != null && badge > 0 ? `${label}, ${badge} new` : label}
       aria-haspopup="dialog"
       aria-expanded={flyout?.section === section}
+      aria-current={activeSection === section ? 'page' : undefined}
       type="button"
     >
       {glyph}
@@ -179,7 +191,9 @@ export function SidebarRail({
         </button>
       </div>
 
-      <div className="sidebar-rail__nav">
+      <div className="glide-track sidebar-rail__nav" ref={railNavRef}>
+        <span ref={railHoverRef} className="glide" aria-hidden="true" />
+        <span ref={railOpenRef} className="glide glide--open" aria-hidden="true" />
         {navItems.map((item) => (
           <button
             key={item.section}
@@ -189,6 +203,7 @@ export function SidebarRail({
             onMouseEnter={flyout ? undefined : showTip(item.label)}
             onMouseLeave={hideTip}
             aria-label={item.label}
+            aria-current={activeSection === item.section ? 'page' : undefined}
             type="button"
           >
             <Icon name={item.icon} size={16} style={iconStyle(item.section)} />
