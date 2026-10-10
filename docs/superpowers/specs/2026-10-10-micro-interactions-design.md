@@ -225,8 +225,8 @@ turned transparent would leave them as a dark block over the highlight. So:
 
 **Hover:**
 - `--glide-weak` slides between items (`enterFrom: scaleY(.4)`).
-- The hovered item's icon and label move 3px right (240ms soft). Its count and
-  a folder's arrow stay put.
+- Nothing in the item moves. (A 3px lean of the icon and label was tried and
+  dropped after the user's check.)
 
 **The open page:**
 - A translucent accent, `rgba(var(--accent-rgb), .2)`, slides to the item that
@@ -274,8 +274,8 @@ and PlaylistDetailHeader:
   - in a plain menu, the panel (`panelRef`, `.menu`) scrolls around it;
   - in a searchable menu, it is `.menu__list` and scrolls itself. The core
     then adds its `scrollTop`.
-- **The active item:** its icon turns `--accent-hover`, and a submenu's
-  chevron moves 2px right (soft).
+- **The active item:** its icon turns `--accent-hover`. Nothing moves; a 2px
+  lean of a submenu's chevron was dropped with the sidebar's lean.
 - **Delete** (`danger`): while it is active, the highlight turns
   `rgba(var(--color-danger-rgb), .2)`, and its colour changes as it slides.
   The danger text colour stays as it is.
@@ -307,7 +307,7 @@ button still gets `pointerover`.
 playlist dialog. AI is turned off (`AI_ENABLED = false`), so none of them can
 be reached or tried.
 
-**Reduced motion:** the highlight only fades, and the chevron does not move.
+**Reduced motion:** the highlight only fades.
 
 ## Cards
 
@@ -535,7 +535,8 @@ delay).
 
 - **Surface:** `--bg-elevated`, a 1px `--border`, 6px radius, 26px tall,
   0 8px of padding, 11.5px weight 500, `box-shadow: 0 8px 20px rgba(0,0,0,.45)`.
-  It wraps at 280px for long text.
+  It stays on one line, centred, so its text is clipped evenly while its
+  width glides; only a tip wider than 280px wraps (`.tip--wrap`).
 - **Shortcut chips:** 10.5px, `--text-secondary`, a faint background, a 1px
   border and a 4px radius. For example Play `Space`, Previous `⌘` `←`,
   Next `⌘` `→`.

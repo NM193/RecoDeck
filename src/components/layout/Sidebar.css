@@ -196,24 +196,6 @@
   color: var(--text-primary);
 }
 
-/* Under the pointer the icon and label lean 3px right; the count stays. */
-.sidebar-nav-item > svg,
-.sidebar-nav-item > span:not(.sidebar-nav-item__count) {
-  transition: transform 240ms var(--ease-soft);
-}
-
-.sidebar-nav-item:hover > svg,
-.sidebar-nav-item:hover > span:not(.sidebar-nav-item__count) {
-  transform: translateX(3px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-nav-item:hover > svg,
-  .sidebar-nav-item:hover > span:not(.sidebar-nav-item__count) {
-    transform: none;
-  }
-}
-
 .sidebar-nav-item__count {
   margin-left: auto;
   font-size: var(--text-xs);

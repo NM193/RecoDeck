@@ -109,21 +109,6 @@
   color: var(--text-secondary);
 }
 
-/* A submenu's chevron leans 2px towards it while its item is active. */
-.menu__chevron {
-  transition: transform 240ms var(--ease-soft);
-}
-
-.menu__item--active .menu__chevron {
-  transform: translateX(2px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .menu__item--active .menu__chevron {
-    transform: none;
-  }
-}
-
 /* A searchable submenu: the box stays put, the list under it scrolls. */
 .menu--search {
   width: 340px;

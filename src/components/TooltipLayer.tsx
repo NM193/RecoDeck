@@ -24,6 +24,8 @@ import './TooltipLayer.css'
 
 /** The text cross-fades this long out before the next one comes in. */
 const SWAP_MS = 110
+/** A tip wider than this wraps (TooltipLayer.css, .tip--wrap). */
+const TIP_MAX_WIDTH = 280
 
 /** Whether an element's text, or a descendant's, is cut off. */
 function cutOff(el: HTMLElement): boolean {
@@ -109,9 +111,18 @@ export function TooltipLayer() {
 
     const place = (el: HTMLElement) => {
       fill(measure, el)
+      // On one line unless it is too long for one: a short tip never wraps,
+      // not even while its width glides to the next one's.
+      measure.classList.remove('tip--wrap')
+      let measured = measure.getBoundingClientRect()
+      const wrap = measured.width > TIP_MAX_WIDTH
+      if (wrap) {
+        measure.classList.add('tip--wrap')
+        measured = measure.getBoundingClientRect()
+      }
+      tip.classList.toggle('tip--wrap', wrap)
       // Rounded up, with a pixel to spare: a width rounded down by a fraction
-      // would wrap the tip onto a second line.
-      const measured = measure.getBoundingClientRect()
+      // would cut the text off.
       const size = {
         width: Math.ceil(measured.width) + 1,
         height: Math.ceil(measured.height),

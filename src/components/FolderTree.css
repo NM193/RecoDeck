@@ -34,27 +34,6 @@
   color: var(--accent-hover) !important;
 }
 
-/* Under the pointer the icon and name lean 3px right; arrow and count stay. */
-.folder-row .folder-icon,
-.folder-row .spotify-list-row__icon,
-.folder-row .folder-name {
-  transition: transform 240ms var(--ease-soft);
-}
-
-.folder-row:hover .folder-icon,
-.folder-row:hover .spotify-list-row__icon,
-.folder-row:hover .folder-name {
-  transform: translateX(3px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .folder-row:hover .folder-icon,
-  .folder-row:hover .spotify-list-row__icon,
-  .folder-row:hover .folder-name {
-    transform: none;
-  }
-}
-
 /* Root library/explorer folder */
 .root-folder {
   font-weight: 500;

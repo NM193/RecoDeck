@@ -71,12 +71,23 @@
     visibility 0s;
 }
 
+/* One line, centred: while the width glides between two tips, the text is
+   clipped evenly instead of wrapping (which made the tip jump in height). */
 .tip__text {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 4px 6px;
+  white-space: nowrap;
   transition: opacity 110ms ease;
+}
+
+/* Only a tip too long for one line (wider than 280px) wraps. */
+.tip--wrap .tip__text,
+.tip--wrap.tip__text {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  white-space: normal;
 }
 
 .tip kbd {
@@ -95,8 +106,13 @@
   top: -9999px;
   left: -9999px;
   width: max-content;
+  max-width: none;
   visibility: hidden;
   transition: none;
+}
+
+.tip--measure.tip--wrap {
+  max-width: 280px;
 }
 
 @media (prefers-reduced-motion: reduce) {
