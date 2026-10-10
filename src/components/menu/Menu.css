@@ -53,8 +53,14 @@
   white-space: nowrap;
 }
 
-.menu__item--active {
-  background: color-mix(in srgb, var(--bg-elevated), var(--text-primary) 9%);
+/* The active item's background is the glide under the items (Micro-
+   interactions spec, Menus): the accent, red on a destructive item. */
+.menu__items {
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
+}
+
+.menu__item--active .menu__icon {
+  color: var(--accent-hover);
 }
 
 .menu__item[aria-disabled='true'] {
@@ -101,6 +107,21 @@
 .menu__check,
 .menu__chevron {
   color: var(--text-secondary);
+}
+
+/* A submenu's chevron leans 2px towards it while its item is active. */
+.menu__chevron {
+  transition: transform 240ms var(--ease-soft);
+}
+
+.menu__item--active .menu__chevron {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu__item--active .menu__chevron {
+    transform: none;
+  }
 }
 
 /* A searchable submenu: the box stays put, the list under it scrolls. */
