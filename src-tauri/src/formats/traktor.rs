@@ -5,7 +5,7 @@
 // Traktor 3.11.1's own files (fixtures/traktor_real.nml).
 
 use super::{keys, xml::attr, ExportLibrary, ExportNode, ExportTrack};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use unicode_normalization::UnicodeNormalization;
 
@@ -36,7 +36,7 @@ pub fn location(path: &str, boot_volume: &str) -> TraktorLocation {
     } else if let Some((name, rest)) = path.strip_prefix("/Volumes/").and_then(|p| p.split_once('/')) {
         (name.to_string(), format!("/{rest}"))
     } else {
-        (boot_volume.to_string(), path.clone())
+        (boot_volume.nfc().collect(), path.clone())
     };
     let (folders, file) = rest.rsplit_once('/').unwrap_or(("", rest.as_str()));
     let mut dir: String = folders.split('/').filter(|f| !f.is_empty()).map(|f| format!("/:{f}")).collect();
@@ -53,20 +53,26 @@ pub fn write(lib: &ExportLibrary, boot_volume: &str) -> String {
         .filter(|t| t.exists)
         .map(|t| (t, location(&t.path, boot_volume)))
         .collect();
-    let keys: HashMap<i64, String> = tracks.iter().map(|(t, at)| (t.id, at.key())).collect();
+    let primary_keys: HashMap<i64, String> = tracks.iter().map(|(t, at)| (t.id, at.key())).collect();
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>\n");
     out.push_str("<NML VERSION=\"19\"><HEAD COMPANY=\"www.native-instruments.com\" PROGRAM=\"Traktor\"></HEAD>\n");
-    let _ = write!(out, "<COLLECTION ENTRIES=\"{}\">", tracks.len());
+    // One file stored twice (composed and decomposed paths) is one entry for Traktor.
+    let mut written: HashSet<String> = HashSet::new();
+    let mut entries = String::new();
     for (track, at) in &tracks {
-        write_entry(&mut out, track, at);
+        if written.insert(at.key()) {
+            write_entry(&mut entries, track, at);
+        }
     }
+    let _ = write!(out, "<COLLECTION ENTRIES=\"{}\">", written.len());
+    out.push_str(&entries);
     out.push_str("</COLLECTION>\n");
     out.push_str("<SETS ENTRIES=\"0\"></SETS>\n");
     out.push_str("<PLAYLISTS><NODE TYPE=\"FOLDER\" NAME=\"$ROOT\"><SUBNODES COUNT=\"1\">");
     let _ = write!(out, "<NODE TYPE=\"FOLDER\" NAME=\"RecoDeck\"><SUBNODES COUNT=\"{}\">", lib.tree.len());
     for node in &lib.tree {
-        write_node(&mut out, node, &keys);
+        write_node(&mut out, node, &primary_keys);
     }
     out.push_str("</SUBNODES>\n</NODE>\n</SUBNODES>\n</NODE>\n</PLAYLISTS>\n");
     out.push_str("<INDEXING></INDEXING>\n</NML>\n");
@@ -109,7 +115,7 @@ fn write_entry(out: &mut String, t: &ExportTrack, at: &TraktorLocation) {
         let _ = write!(out, " {name}=\"{}\"", text(&value));
     }
     out.push_str("></INFO>\n");
-    if let Some(bpm) = t.bpm.filter(|bpm| *bpm > 0.0) {
+    if let Some(bpm) = t.bpm.filter(|bpm| bpm.is_finite() && *bpm > 0.0) {
         let _ = writeln!(out, "<TEMPO BPM=\"{bpm:.6}\" BPM_QUALITY=\"100.000000\"></TEMPO>");
     }
     if let Some(key) = t.camelot.as_deref().and_then(keys::traktor_key) {
@@ -118,8 +124,7 @@ fn write_entry(out: &mut String, t: &ExportTrack, at: &TraktorLocation) {
     out.push_str("</ENTRY>\n");
 }
 
-/// INFO's attributes in Traktor's order and units: bit/s, KiB, stars × 51,
-/// dates as 2026/9/1.
+/// INFO's attributes in Traktor's order and units: bit/s, stars × 51, dates as 2026/9/1, and KiB and whole seconds rounded up, as in Traktor's own collection.
 fn info(t: &ExportTrack) -> Vec<(&'static str, String)> {
     let mut info = Vec::new();
     if let Some(kbps) = t.bitrate.filter(|kbps| *kbps > 0) {
@@ -139,7 +144,7 @@ fn info(t: &ExportTrack) -> Vec<(&'static str, String)> {
     }
     if let Some(ms) = t.duration_ms.filter(|ms| *ms > 0) {
         let seconds = f64::from(ms) / 1000.0;
-        info.push(("PLAYTIME", (seconds.round() as i64).to_string()));
+        info.push(("PLAYTIME", ((i64::from(ms) + 999) / 1000).to_string()));
         info.push(("PLAYTIME_FLOAT", format!("{seconds:.6}")));
     }
     if t.rating > 0 {
@@ -152,24 +157,24 @@ fn info(t: &ExportTrack) -> Vec<(&'static str, String)> {
         info.push(("RELEASE_DATE", format!("{year}/1/1")));
     }
     if let Some(bytes) = t.file_size.filter(|bytes| *bytes > 0) {
-        info.push(("FILESIZE", ((bytes + 512) / 1024).to_string()));
+        info.push(("FILESIZE", ((bytes + 1023) / 1024).to_string()));
     }
     info
 }
 
 /// A folder with its children, or a playlist that refers to collection
 /// entries by their VOLUME + DIR + FILE.
-fn write_node(out: &mut String, node: &ExportNode, keys: &HashMap<i64, String>) {
+fn write_node(out: &mut String, node: &ExportNode, primary_keys: &HashMap<i64, String>) {
     match node {
         ExportNode::Folder { name, children } => {
             let _ = write!(out, "<NODE TYPE=\"FOLDER\" NAME=\"{}\"><SUBNODES COUNT=\"{}\">", text(name), children.len());
             for child in children {
-                write_node(out, child, keys);
+                write_node(out, child, primary_keys);
             }
             out.push_str("</SUBNODES>\n</NODE>\n");
         }
         ExportNode::Playlist { id, name, track_ids } => {
-            let entries: Vec<&String> = track_ids.iter().filter_map(|id| keys.get(id)).collect();
+            let entries: Vec<&String> = track_ids.iter().filter_map(|id| primary_keys.get(id)).collect();
             let _ = write!(
                 out,
                 "<NODE TYPE=\"PLAYLIST\" NAME=\"{}\"><PLAYLIST ENTRIES=\"{}\" TYPE=\"LIST\" UUID=\"{}\">",
@@ -299,7 +304,7 @@ mod tests {
             duration_ms: Some(412_345),
             bitrate: Some(320),
             sample_rate: Some(44_100),
-            file_size: Some(10_000_000),
+            file_size: Some(9_999_800),
             file_format: Some("mp3".into()),
             bpm: Some(124.0),
             camelot: Some("8A".into()),
@@ -337,6 +342,47 @@ mod tests {
                 ExportNode::Playlist { id: 11, name: "Warm-up".into(), track_ids: vec![2] },
             ],
         }
+    }
+
+    #[test]
+    fn odd_values_are_left_out_or_kept_in_range() {
+        let lib = ExportLibrary {
+            tracks: vec![
+                ExportTrack { id: 1, path: "/a.mp3".into(), exists: true, bpm: Some(f64::NAN), rating: 9, ..ExportTrack::default() },
+                ExportTrack { id: 2, path: "/b.mp3".into(), exists: true, bpm: Some(f64::INFINITY), ..ExportTrack::default() },
+                ExportTrack { id: 3, path: "/c.mp3".into(), exists: true, bpm: Some(0.0), ..ExportTrack::default() },
+                ExportTrack { id: 4, path: "/gone.mp3".into(), exists: false, ..ExportTrack::default() },
+            ],
+            tree: vec![ExportNode::Playlist { id: 1, name: "Gone".into(), track_ids: vec![4] }],
+        };
+        let nml = write(&lib, BOOT);
+        assert!(!nml.contains("<TEMPO"), "{nml}");
+        // A track without a title has none, as in Traktor's own files.
+        assert!(nml.contains("<ENTRY><LOCATION DIR=\"/:\" FILE=\"a.mp3\""), "{nml}");
+        assert!(nml.contains("RANKING=\"255\""), "{nml}");
+        // A playlist whose files are all gone is written empty.
+        assert!(nml.contains("<PLAYLIST ENTRIES=\"0\" TYPE=\"LIST\" UUID=\"7265636f6465636b0000000000000001\"></PLAYLIST>\n"), "{nml}");
+    }
+
+    #[test]
+    fn one_file_stored_twice_is_one_entry() {
+        // The same file as a composed and a decomposed path.
+        let lib = ExportLibrary {
+            tracks: vec![
+                ExportTrack { id: 1, path: "/m/\u{10D}.mp3".into(), exists: true, ..ExportTrack::default() },
+                ExportTrack { id: 2, path: "/m/c\u{30C}.mp3".into(), exists: true, ..ExportTrack::default() },
+            ],
+            tree: vec![ExportNode::Playlist { id: 5, name: "Set".into(), track_ids: vec![1, 2] }],
+        };
+        let nml = write(&lib, BOOT);
+        assert!(nml.contains("<COLLECTION ENTRIES=\"1\">"), "{nml}");
+        assert_eq!(nml.matches("<LOCATION ").count(), 1, "{nml}");
+        assert!(nml.contains("<PLAYLIST ENTRIES=\"2\""), "{nml}");
+    }
+
+    #[test]
+    fn the_boot_volume_name_is_composed_too() {
+        assert_eq!(location("/a.mp3", "Disque E\u{301}").volume, "Disque \u{C9}");
     }
 
     #[test]
