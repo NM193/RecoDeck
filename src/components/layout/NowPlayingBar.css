@@ -202,6 +202,9 @@
   height: 3px;
   background: var(--border);
   border-radius: 1.5px;
+  transition:
+    height 240ms var(--ease-soft),
+    border-radius 240ms var(--ease-soft);
 }
 
 .now-playing-bar__progress-fill {
@@ -211,7 +214,10 @@
   background: var(--text-primary);
   border-radius: 1.5px;
   pointer-events: none;
-  transition: background var(--motion-fast) var(--ease);
+  transition:
+    background var(--motion-fast) var(--ease),
+    height 240ms var(--ease-soft),
+    border-radius 240ms var(--ease-soft);
 }
 
 /* On hover: fill turns accent */
@@ -219,11 +225,12 @@
   background: var(--accent);
 }
 
-/* Hover preview: muted white bar from current position to cursor */
+/* Hover preview: a lighter bar from the current position to the cursor,
+   mixed from the text so it shows on light themes too */
 .now-playing-bar__progress-hover-fill {
   position: absolute;
   height: 3px;
-  background: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
   border-radius: 1.5px;
   pointer-events: none;
 }
@@ -235,16 +242,28 @@
   height: 12px;
   background: var(--text-primary);
   border-radius: 50%;
-  transform: translate(-50%, -50%);
+  /* It springs in from nothing (Micro-interactions spec, Progress bar). */
+  transform: translate(-50%, -50%) scale(0);
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--motion-fast) var(--ease);
+  transition:
+    opacity 120ms var(--ease),
+    transform 320ms var(--ease-spring);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* On hover: show thumb */
 .now-playing-bar__progress--hover .now-playing-bar__progress-handle {
   opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* On hover (or while dragging) the bar thickens, 3px to 6px. */
+.now-playing-bar__progress--hover .now-playing-bar__progress-track,
+.now-playing-bar__progress--hover .now-playing-bar__progress-fill,
+.now-playing-bar__progress--hover .now-playing-bar__progress-hover-fill {
+  height: 6px;
+  border-radius: 3px;
 }
 
 /* Floating time tooltip */
@@ -263,6 +282,43 @@
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  /* It mounts as the hover starts and springs up from the bar; following the
+     pointer only changes left. */
+  transform-origin: 50% 100%;
+  animation:
+    npb-bubble-fade 120ms var(--ease) both,
+    npb-bubble-rise 280ms var(--ease-spring) both;
+}
+
+@keyframes npb-bubble-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes npb-bubble-rise {
+  from {
+    transform: translate(-50%, 6px) scale(0.8);
+  }
+  to {
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-bar__progress-track,
+  .now-playing-bar__progress-fill {
+    transition: none;
+  }
+
+  .now-playing-bar__progress-handle,
+  .now-playing-bar__progress--hover .now-playing-bar__progress-handle {
+    transform: translate(-50%, -50%);
+  }
+
+  .now-playing-bar__progress-tooltip {
+    animation: npb-bubble-fade 120ms var(--ease) both;
+  }
 }
 
 /* ---- RIGHT column: volume + extras ---- */
