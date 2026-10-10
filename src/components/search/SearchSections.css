@@ -150,21 +150,34 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   opacity: 0;
-  transform: translateY(4px);
+  /* It pops: up from small, a little past full size and back. */
+  transform: translateY(10px) scale(0.4);
   transition:
-    opacity var(--motion-fast) var(--ease),
-    transform var(--motion-fast) var(--ease);
+    opacity 180ms var(--ease),
+    transform 420ms var(--ease-spring),
+    background-color var(--motion-fast) var(--ease);
 }
 
 .search-tile:hover .search-tile__play,
 .search-tile:focus-visible .search-tile__play {
   opacity: 1;
   transform: none;
+}
+
+.search-tile:hover .search-tile__play:hover {
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-tile__play,
+  .search-tile:hover .search-tile__play:hover {
+    transform: none;
+  }
 }
 
 .search-tile:focus-visible {

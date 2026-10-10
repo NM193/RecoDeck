@@ -621,6 +621,8 @@
   gap: 9px;
   width: 100%;
   padding: 6px;
+  /* Room for the ▶ at the right end, so it never covers the name. */
+  padding-right: 46px;
   border: none;
   background: var(--bg-tertiary);
   color: var(--text-primary);
@@ -670,29 +672,51 @@
   color: var(--text-muted);
 }
 
-/* ▶ over the cover: plays the playlist. */
+/* ▶ at the tile's right end: pops in when the card is hovered (Micro-
+   interactions spec, Cards). Centred with margin, so transform is free. */
 .home-playlist__play {
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: 50%;
+  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
+  margin-top: -16px;
   padding: 0;
   border: none;
-  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  background: var(--accent);
   color: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
+  transform: translateY(10px) scale(0.4);
+  transition:
+    opacity 180ms var(--ease),
+    transform 420ms var(--ease-spring),
+    background-color var(--motion-fast) var(--ease);
 }
 
 .home-playlist:hover .home-playlist__play,
 .home-playlist__play:focus-visible {
   opacity: 1;
   pointer-events: auto;
+  transform: none;
+}
+
+.home-playlist:hover .home-playlist__play:hover {
+  background: var(--accent-hover);
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-playlist__play,
+  .home-playlist:hover .home-playlist__play:hover {
+    transform: none;
+  }
 }
 
 .home-playlist__play:focus-visible {
