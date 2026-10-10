@@ -1,7 +1,7 @@
 // Folder tree — the sidebar's Folders (scanned library folders with track
 // counts) or its Playlists (playlists and playlist folders), one per tree.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Playlist } from '../types/track'
 import {
   useFolderTreeStore,
@@ -10,6 +10,8 @@ import {
 import { Icon } from './Icon'
 import { registerDropOpener } from '../lib/drag/trackDrag'
 import { Menu, type MenuEntry } from './menu/Menu'
+import { GLIDE } from '../lib/glide/glide'
+import { useGlideTo, useHoverGlide } from '../lib/glide/useGlide'
 import './FolderTree.css'
 
 // Dragged tracks land on a playlist (added) or a library folder (moved);
@@ -178,6 +180,13 @@ export function FolderTree({
   onDeleteFolder,
   section,
 }: FolderTreeProps) {
+  // The list's sliding highlights (Micro-interactions spec, Sidebar): the
+  // hover, and the open folder or playlist painted over it.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const hoverRef = useRef<HTMLSpanElement>(null)
+  const openRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(bodyRef, hoverRef, '.folder-row', GLIDE.row)
+  useGlideTo(bodyRef, openRef, '.folder-row.selected', GLIDE.row)
   // ===== TRACK COLLECTION state =====
   // Expansion, loaded children and root counts live in a store shared by every
   // tree (split into `folders` and `playlists` data), so they survive
@@ -434,7 +443,9 @@ export function FolderTree({
 
   function renderFoldersContent() {
     return (
-      <div className="folder-tree-section-body">
+      <div className="glide-track folder-tree-section-body" ref={bodyRef}>
+              <span ref={hoverRef} className="glide" aria-hidden="true" />
+              <span ref={openRef} className="glide glide--open" aria-hidden="true" />
               {/* Library folder roots */}
               {libraryFolders.map((folderPath) => {
                 const isExpanded = libraryExpandedRoots.has(folderPath)
@@ -531,13 +542,16 @@ export function FolderTree({
   function renderPlaylistsContent() {
     return (
       <div
-        className="folder-tree-section-body"
+        ref={bodyRef}
+        className="glide-track folder-tree-section-body"
         onContextMenu={(e) =>
           showContextMenu(e, {
             type: 'playlist-header',
           })
         }
       >
+        <span ref={hoverRef} className="glide" aria-hidden="true" />
+        <span ref={openRef} className="glide glide--open" aria-hidden="true" />
         {rootPlaylists.map((p) => renderPlaylistItem(p, 0))}
         {rootPlaylists.length === 0 && (
           <div className="folder-empty playlist-empty-hint">

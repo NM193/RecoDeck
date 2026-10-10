@@ -519,11 +519,6 @@
   font-weight: 600;
 }
 
-.folder-row.selected .spotify-list-row__icon,
-.folder-row.selected .spotify-list-row__new {
-  color: inherit;
-}
-
 /* ===== YouTube Music ===== */
 
 .ytm-list-row__gone {

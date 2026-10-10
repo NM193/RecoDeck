@@ -3,7 +3,10 @@
 // Right-click a playlist to remove it. Used by the full sidebar and by the
 // rail's flyout; styled with FolderTree's rows, like SpotifyLists.
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from '../Icon'
+import { GLIDE } from '../../lib/glide/glide'
+import { useGlideTo, useHoverGlide } from '../../lib/glide/useGlide'
 import { useOverlay } from '../../lib/overlays'
 import { getErrorMessage } from '../../types/ai'
 import {
@@ -41,6 +44,13 @@ export function YouTubeMusicLists({
   const [error, setError] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; listId: string } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  // The list's sliding highlights (Micro-interactions spec, Sidebar): the
+  // hover, and the open playlist painted over it.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const hoverRef = useRef<HTMLSpanElement>(null)
+  const openRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(bodyRef, hoverRef, '.folder-row', GLIDE.row)
+  useGlideTo(bodyRef, openRef, '.folder-row.selected', GLIDE.row)
   // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
   useOverlay(menu !== null, () => setMenu(null))
 
@@ -123,7 +133,9 @@ export function YouTubeMusicLists({
   )
 
   return (
-    <div className="folder-tree-section-body">
+    <div className="glide-track folder-tree-section-body" ref={bodyRef}>
+      <span ref={hoverRef} className="glide" aria-hidden="true" />
+      <span ref={openRef} className="glide glide--open" aria-hidden="true" />
       {/* All playlists carries no number: the header already holds the distinct total. */}
       {item({
         id: ALL_YTM_LISTS,
@@ -184,24 +196,28 @@ export function YouTubeMusicLists({
         </div>
       )}
 
-      {menu && (
-        <div
-          ref={menuRef}
-          className="sidebar-ctx-menu ytm-list-menu"
-          style={{ top: menu.y, left: menu.x }}
-          role="menu"
-        >
-          <button
-            type="button"
-            className="sidebar-ctx-menu__item"
-            role="menuitem"
-            onClick={() => remove(menu.listId)}
+      {/* In a portal: the list is an isolated glide track, which would cap
+          the menu's z-index under the main area. */}
+      {menu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="sidebar-ctx-menu ytm-list-menu"
+            style={{ top: menu.y, left: menu.x }}
+            role="menu"
           >
-            <Icon name="Trash2" size={14} />
-            Remove
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              className="sidebar-ctx-menu__item"
+              role="menuitem"
+              onClick={() => remove(menu.listId)}
+            >
+              <Icon name="Trash2" size={14} />
+              Remove
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
