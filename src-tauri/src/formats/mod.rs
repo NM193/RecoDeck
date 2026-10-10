@@ -48,7 +48,8 @@ pub struct ExportTrack {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExportNode {
     Folder { name: String, children: Vec<ExportNode> },
-    Playlist { name: String, track_ids: Vec<i64> },
+    /// `id` is RecoDeck's playlist id: Traktor's playlist UUID is made from it.
+    Playlist { id: i64, name: String, track_ids: Vec<i64> },
 }
 
 /// The picked playlists, the folders on the way to them, and their tracks.
@@ -171,7 +172,7 @@ impl Collector<'_> {
                         self.tracks.push(export_track(track_id, track, bpm, camelot));
                     }
                 }
-                nodes.push(ExportNode::Playlist { name: p.name.clone(), track_ids });
+                nodes.push(ExportNode::Playlist { id, name: p.name.clone(), track_ids });
             }
         }
         Ok(nodes)
@@ -276,9 +277,9 @@ mod tests {
             vec![
                 ExportNode::Folder {
                     name: "Gigs".into(),
-                    children: vec![ExportNode::Playlist { name: "Friday".into(), track_ids: vec![f.a, f.b] }],
+                    children: vec![ExportNode::Playlist { id: f.friday, name: "Friday".into(), track_ids: vec![f.a, f.b] }],
                 },
-                ExportNode::Playlist { name: "Warm-up".into(), track_ids: vec![f.b] },
+                ExportNode::Playlist { id: f.warmup, name: "Warm-up".into(), track_ids: vec![f.b] },
             ]
         );
         assert_eq!(lib.tracks.iter().map(|t| t.id).collect::<Vec<_>>(), vec![f.a, f.b]);
@@ -333,7 +334,7 @@ mod tests {
         db.add_track_to_playlist(list, second).unwrap();
         db.add_track_to_playlist(list, first).unwrap();
         let lib = collect(&db, &[list]).unwrap();
-        assert_eq!(lib.tree, vec![ExportNode::Playlist { name: "Set".into(), track_ids: vec![second, first] }]);
+        assert_eq!(lib.tree, vec![ExportNode::Playlist { id: list, name: "Set".into(), track_ids: vec![second, first] }]);
         assert_eq!(lib.tracks.iter().map(|t| t.id).collect::<Vec<_>>(), vec![second, first]);
     }
 }

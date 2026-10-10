@@ -76,7 +76,7 @@ fn write_node(out: &mut String, node: &ExportNode, present: &HashSet<i64>, depth
             }
             let _ = writeln!(out, "{pad}</NODE>");
         }
-        ExportNode::Playlist { name, track_ids } => {
+        ExportNode::Playlist { name, track_ids, .. } => {
             let ids: Vec<i64> = track_ids.iter().copied().filter(|id| present.contains(id)).collect();
             let _ = writeln!(out, "{pad}<NODE Name=\"{}\" Type=\"1\" KeyType=\"0\" Entries=\"{}\">", attr(name), ids.len());
             for id in ids {
@@ -216,9 +216,9 @@ mod tests {
             tree: vec![
                 ExportNode::Folder {
                     name: "Gigs & Raves".into(),
-                    children: vec![ExportNode::Playlist { name: "Friday".into(), track_ids: vec![1, 2, 3] }],
+                    children: vec![ExportNode::Playlist { id: 10, name: "Friday".into(), track_ids: vec![1, 2, 3] }],
                 },
-                ExportNode::Playlist { name: "Warm-up".into(), track_ids: vec![2] },
+                ExportNode::Playlist { id: 11, name: "Warm-up".into(), track_ids: vec![2] },
             ],
         }
     }
