@@ -4,6 +4,9 @@
 // Traktor through right-click Playlists → Import Playlist. The shape follows
 // Traktor 3.11.1's own files (fixtures/traktor_real.nml).
 
+use super::{keys, xml::attr, ExportLibrary, ExportNode, ExportTrack};
+use std::collections::HashMap;
+use std::fmt::Write;
 use unicode_normalization::UnicodeNormalization;
 
 /// Where Traktor files a track: the volume, the folders in its `/:` form, the file.
@@ -41,9 +44,176 @@ pub fn location(path: &str, boot_volume: &str) -> TraktorLocation {
     TraktorLocation { volume, dir, file: file.to_string() }
 }
 
+/// The whole file. Tracks whose file is gone are left out of the collection
+/// and of every playlist.
+pub fn write(lib: &ExportLibrary, boot_volume: &str) -> String {
+    let tracks: Vec<(&ExportTrack, TraktorLocation)> = lib
+        .tracks
+        .iter()
+        .filter(|t| t.exists)
+        .map(|t| (t, location(&t.path, boot_volume)))
+        .collect();
+    let keys: HashMap<i64, String> = tracks.iter().map(|(t, at)| (t.id, at.key())).collect();
+    let mut out = String::new();
+    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>\n");
+    out.push_str("<NML VERSION=\"19\"><HEAD COMPANY=\"www.native-instruments.com\" PROGRAM=\"Traktor\"></HEAD>\n");
+    let _ = write!(out, "<COLLECTION ENTRIES=\"{}\">", tracks.len());
+    for (track, at) in &tracks {
+        write_entry(&mut out, track, at);
+    }
+    out.push_str("</COLLECTION>\n");
+    out.push_str("<SETS ENTRIES=\"0\"></SETS>\n");
+    out.push_str("<PLAYLISTS><NODE TYPE=\"FOLDER\" NAME=\"$ROOT\"><SUBNODES COUNT=\"1\">");
+    let _ = write!(out, "<NODE TYPE=\"FOLDER\" NAME=\"RecoDeck\"><SUBNODES COUNT=\"{}\">", lib.tree.len());
+    for node in &lib.tree {
+        write_node(&mut out, node, &keys);
+    }
+    out.push_str("</SUBNODES>\n</NODE>\n</SUBNODES>\n</NODE>\n</PLAYLISTS>\n");
+    out.push_str("<INDEXING></INDEXING>\n</NML>\n");
+    out
+}
+
+/// One collection entry. Its elements and INFO's attributes come in the order
+/// Traktor writes them, and, as Traktor does, what is empty is left out.
+/// Not written: MODIFIED_DATE (Traktor would take the entry as newer than its
+/// own), FLAGS, LOCK, INFO KEY (a tag's text), cues and loudness.
+fn write_entry(out: &mut String, t: &ExportTrack, at: &TraktorLocation) {
+    out.push_str("<ENTRY");
+    if let Some(title) = filled(&t.title) {
+        let _ = write!(out, " TITLE=\"{}\"", text(title));
+    }
+    if let Some(artist) = filled(&t.artist) {
+        let _ = write!(out, " ARTIST=\"{}\"", text(artist));
+    }
+    let _ = writeln!(
+        out,
+        "><LOCATION DIR=\"{}\" FILE=\"{}\" VOLUME=\"{volume}\" VOLUMEID=\"{volume}\"></LOCATION>",
+        text(&at.dir),
+        text(&at.file),
+        volume = text(&at.volume),
+    );
+    let number = t.track_number.filter(|n| *n > 0);
+    let album = filled(&t.album);
+    if number.is_some() || album.is_some() {
+        out.push_str("<ALBUM");
+        if let Some(number) = number {
+            let _ = write!(out, " TRACK=\"{number}\"");
+        }
+        if let Some(album) = album {
+            let _ = write!(out, " TITLE=\"{}\"", text(album));
+        }
+        out.push_str("></ALBUM>\n");
+    }
+    out.push_str("<INFO");
+    for (name, value) in info(t) {
+        let _ = write!(out, " {name}=\"{}\"", text(&value));
+    }
+    out.push_str("></INFO>\n");
+    if let Some(bpm) = t.bpm.filter(|bpm| *bpm > 0.0) {
+        let _ = writeln!(out, "<TEMPO BPM=\"{bpm:.6}\" BPM_QUALITY=\"100.000000\"></TEMPO>");
+    }
+    if let Some(key) = t.camelot.as_deref().and_then(keys::traktor_key) {
+        let _ = writeln!(out, "<MUSICAL_KEY VALUE=\"{key}\"></MUSICAL_KEY>");
+    }
+    out.push_str("</ENTRY>\n");
+}
+
+/// INFO's attributes in Traktor's order and units: bit/s, KiB, stars × 51,
+/// dates as 2026/9/1.
+fn info(t: &ExportTrack) -> Vec<(&'static str, String)> {
+    let mut info = Vec::new();
+    if let Some(kbps) = t.bitrate.filter(|kbps| *kbps > 0) {
+        info.push(("BITRATE", (i64::from(kbps) * 1000).to_string()));
+    }
+    if let Some(genre) = filled(&t.genre) {
+        info.push(("GENRE", genre.to_string()));
+    }
+    if let Some(label) = filled(&t.label) {
+        info.push(("LABEL", label.to_string()));
+    }
+    if let Some(comment) = filled(&t.comment) {
+        info.push(("COMMENT", comment.to_string()));
+    }
+    if t.play_count > 0 {
+        info.push(("PLAYCOUNT", t.play_count.to_string()));
+    }
+    if let Some(ms) = t.duration_ms.filter(|ms| *ms > 0) {
+        let seconds = f64::from(ms) / 1000.0;
+        info.push(("PLAYTIME", (seconds.round() as i64).to_string()));
+        info.push(("PLAYTIME_FLOAT", format!("{seconds:.6}")));
+    }
+    if t.rating > 0 {
+        info.push(("RANKING", (t.rating.min(5) * 51).to_string()));
+    }
+    if let Some(date) = t.date_added.as_deref().and_then(traktor_date) {
+        info.push(("IMPORT_DATE", date));
+    }
+    if let Some(year) = t.year.filter(|year| *year > 0) {
+        info.push(("RELEASE_DATE", format!("{year}/1/1")));
+    }
+    if let Some(bytes) = t.file_size.filter(|bytes| *bytes > 0) {
+        info.push(("FILESIZE", ((bytes + 512) / 1024).to_string()));
+    }
+    info
+}
+
+/// A folder with its children, or a playlist that refers to collection
+/// entries by their VOLUME + DIR + FILE.
+fn write_node(out: &mut String, node: &ExportNode, keys: &HashMap<i64, String>) {
+    match node {
+        ExportNode::Folder { name, children } => {
+            let _ = write!(out, "<NODE TYPE=\"FOLDER\" NAME=\"{}\"><SUBNODES COUNT=\"{}\">", text(name), children.len());
+            for child in children {
+                write_node(out, child, keys);
+            }
+            out.push_str("</SUBNODES>\n</NODE>\n");
+        }
+        ExportNode::Playlist { id, name, track_ids } => {
+            let entries: Vec<&String> = track_ids.iter().filter_map(|id| keys.get(id)).collect();
+            let _ = write!(
+                out,
+                "<NODE TYPE=\"PLAYLIST\" NAME=\"{}\"><PLAYLIST ENTRIES=\"{}\" TYPE=\"LIST\" UUID=\"{}\">",
+                text(name),
+                entries.len(),
+                playlist_uuid(*id),
+            );
+            for key in entries {
+                let _ = writeln!(out, "<ENTRY><PRIMARYKEY TYPE=\"TRACK\" KEY=\"{}\"></PRIMARYKEY>", text(key));
+                out.push_str("</ENTRY>\n");
+            }
+            out.push_str("</PLAYLIST>\n</NODE>\n");
+        }
+    }
+}
+
+/// A playlist's UUID: "recodeck" in hex, then its id — 32 hex digits like
+/// Traktor's own, the same on every export.
+fn playlist_uuid(id: i64) -> String {
+    format!("7265636f6465636b{id:016x}")
+}
+
+/// SQLite's "2026-09-01 12:30:00" as Traktor's "2026/9/1".
+fn traktor_date(datetime: &str) -> Option<String> {
+    let mut parts = datetime.get(..10)?.split('-');
+    let year: u32 = parts.next()?.parse().ok()?;
+    let month: u32 = parts.next()?.parse().ok()?;
+    let day: u32 = parts.next()?.parse().ok()?;
+    Some(format!("{year}/{month}/{day}"))
+}
+
+/// An attribute value as Traktor writes it: escaped, but `'` kept as it is.
+fn text(value: &str) -> String {
+    attr(value).replace("&apos;", "'")
+}
+
+fn filled(value: &Option<String>) -> Option<&str> {
+    value.as_deref().filter(|v| !v.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::{ExportLibrary, ExportNode, ExportTrack};
 
     const BOOT: &str = "Macintosh HD";
     const REAL: &str = include_str!("fixtures/traktor_real.nml");
@@ -97,5 +267,132 @@ mod tests {
         assert!(REAL.contains(&element), "{element}");
         let key = format!("<PRIMARYKEY TYPE=\"TRACK\" KEY=\"{}\"></PRIMARYKEY>", at.key());
         assert!(REAL.contains(&key), "{key}");
+    }
+
+    #[test]
+    fn dates_take_traktors_form() {
+        assert_eq!(traktor_date("2026-09-01 12:30:00").as_deref(), Some("2026/9/1"));
+        assert_eq!(traktor_date("2026-10-04").as_deref(), Some("2026/10/4"));
+        assert_eq!(traktor_date("<2026-09-01>"), None);
+        assert_eq!(traktor_date(""), None);
+    }
+
+    #[test]
+    fn a_playlist_uuid_is_its_id_in_32_hex_digits() {
+        assert_eq!(playlist_uuid(10), "7265636f6465636b000000000000000a");
+        assert_eq!(playlist_uuid(i64::from(u32::MAX)).len(), 32);
+    }
+
+    fn sample() -> ExportLibrary {
+        let t1 = ExportTrack {
+            id: 1,
+            // "Č" decomposed, as macOS can store it: written composed.
+            path: "/Users/dj/Music/C\u{30C}eh & Don't # 100%.mp3".into(),
+            exists: true,
+            title: Some("Ça & Va".into()),
+            artist: Some("Nina \"N\" Kraviz".into()),
+            album: Some("Trip".into()),
+            genre: Some("Techno".into()),
+            label: Some("Trip".into()),
+            year: Some(2024),
+            track_number: Some(3),
+            duration_ms: Some(412_345),
+            bitrate: Some(320),
+            sample_rate: Some(44_100),
+            file_size: Some(10_000_000),
+            file_format: Some("mp3".into()),
+            bpm: Some(124.0),
+            camelot: Some("8A".into()),
+            rating: 4,
+            comment: Some("line one\nline two".into()),
+            play_count: 3,
+            date_added: Some("2026-09-01 12:30:00".into()),
+        };
+        let t2 = ExportTrack {
+            id: 2,
+            path: r"C:\Music\Warm up.flac".into(),
+            exists: true,
+            title: Some("Warm <Up>".into()),
+            file_format: Some("flac".into()),
+            ..ExportTrack::default()
+        };
+        // In a playlist, but its file is gone: left out everywhere.
+        let t3 = ExportTrack { id: 3, path: "/Volumes/USB/gone.mp3".into(), exists: false, ..ExportTrack::default() };
+        let t4 = ExportTrack {
+            id: 4,
+            path: "/Volumes/USB Stick/Sets/b.aiff".into(),
+            exists: true,
+            title: Some("B".into()),
+            bpm: Some(126.5),
+            camelot: Some("12B".into()),
+            ..ExportTrack::default()
+        };
+        ExportLibrary {
+            tracks: vec![t1, t2, t3, t4],
+            tree: vec![
+                ExportNode::Folder {
+                    name: "Gigs & Raves".into(),
+                    children: vec![ExportNode::Playlist { id: 10, name: "Friday".into(), track_ids: vec![1, 2, 3, 4] }],
+                },
+                ExportNode::Playlist { id: 11, name: "Warm-up".into(), track_ids: vec![2] },
+            ],
+        }
+    }
+
+    #[test]
+    fn the_file_matches_the_golden_sample() {
+        assert_eq!(write(&sample(), BOOT), include_str!("fixtures/traktor_sample.nml"));
+    }
+
+    #[test]
+    fn it_starts_as_a_real_traktor_file_does() {
+        let head = |nml: &str| nml.lines().take(2).collect::<Vec<_>>().join("\n");
+        assert_eq!(head(&write(&sample(), BOOT)), head(REAL));
+    }
+
+    /// Attribute names of the first `<tag …>` element, in order. Values hold no raw quote.
+    fn attribute_names(nml: &str, tag: &str) -> Vec<String> {
+        let open = format!("<{tag} ");
+        let start = nml.find(&open).expect("the element") + open.len();
+        let end = start + nml[start..].find('>').expect("a closed element");
+        nml[start..end]
+            .split('"')
+            .step_by(2)
+            .map(|name| name.trim().trim_end_matches('=').to_string())
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+
+    /// The elements inside the collection's first entry, in order.
+    fn entry_elements(nml: &str) -> Vec<String> {
+        let start = nml.find("<ENTRY ").expect("an entry");
+        let end = start + nml[start..].find("</ENTRY>").expect("a closed entry");
+        nml[start..end]
+            .split('<')
+            .skip(2)
+            .filter(|piece| !piece.starts_with('/'))
+            .map(|piece| piece.split([' ', '>']).next().unwrap_or("").to_string())
+            .collect()
+    }
+
+    /// Every name of `ours` comes in `real`, in the same order.
+    fn in_order(ours: &[String], real: &[String]) -> bool {
+        let mut rest = real.iter();
+        ours.iter().all(|name| rest.any(|r| r == name))
+    }
+
+    #[test]
+    fn an_entry_follows_the_order_of_a_real_traktor_file() {
+        let ours = write(&sample(), BOOT);
+        for tag in ["ENTRY", "INFO"] {
+            let (o, r) = (attribute_names(&ours, tag), attribute_names(REAL, tag));
+            assert!(in_order(&o, &r), "{tag}: {o:?} is not in the order of {r:?}");
+        }
+        // The sample's first track carries everything RecoDeck writes.
+        assert_eq!(attribute_names(&ours, "INFO").len(), 11);
+        assert_eq!(attribute_names(&ours, "LOCATION"), attribute_names(REAL, "LOCATION"));
+        let (o, r) = (entry_elements(&ours), entry_elements(REAL));
+        assert_eq!(o, ["LOCATION", "ALBUM", "INFO", "TEMPO", "MUSICAL_KEY"]);
+        assert!(in_order(&o, &r), "{o:?} is not in the order of {r:?}");
     }
 }
