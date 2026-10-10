@@ -87,8 +87,10 @@ fn write_node(out: &mut String, node: &ExportNode, present: &HashSet<i64>, depth
     }
 }
 
-/// `file://localhost` and the path, every byte outside the unreserved set
-/// percent-encoded and `/` kept. The path keeps the Unicode normalization it
+/// `file://localhost` and the path. The shape follows Rekordbox's own exports
+/// (checked against Rekordbox 7.2.19): the unreserved set, `/`, `(`, `)` and `,`
+/// are kept, every other byte is percent-encoded with lowercase hex (`%5b`,
+/// `%c4%8c`). The path keeps the Unicode normalization it
 /// has on disk. A Windows path keeps its drive: file://localhost/C:/Music/a.mp3;
 /// `\` becomes `/` only in a Windows-shaped path (`C:\...`), elsewhere it is a name character.
 pub fn location(path: &str) -> String {
@@ -105,9 +107,9 @@ pub fn location(path: &str) -> String {
     }
     for byte in rest.bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => out.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b'(' | b')' | b',' => out.push(byte as char),
             _ => {
-                let _ = write!(out, "%{byte:02X}");
+                let _ = write!(out, "%{byte:02x}");
             }
         }
     }
@@ -141,15 +143,23 @@ mod tests {
     fn a_mac_path_is_percent_encoded() {
         assert_eq!(
             location("/Users/dj/Music/Čeh & # 100%.mp3"),
-            "file://localhost/Users/dj/Music/%C4%8Ceh%20%26%20%23%20100%25.mp3"
+            "file://localhost/Users/dj/Music/%c4%8ceh%20%26%20%23%20100%25.mp3"
         );
-        assert_eq!(location("/a/(Original Mix).mp3"), "file://localhost/a/%28Original%20Mix%29.mp3");
+        assert_eq!(location("/a/(Original Mix).mp3"), "file://localhost/a/(Original%20Mix).mp3");
+    }
+
+    #[test]
+    fn the_shape_matches_what_rekordbox_writes() {
+        assert_eq!(
+            location("/Users/x/Music/A & B, C - Song (Original Mix) [Label].mp3"),
+            "file://localhost/Users/x/Music/A%20%26%20B,%20C%20-%20Song%20(Original%20Mix)%20%5bLabel%5d.mp3"
+        );
     }
 
     #[test]
     fn a_decomposed_name_stays_decomposed() {
         // "č" as c + combining caron (NFD), as macOS can store it.
-        assert_eq!(location("/m/c\u{30C}.mp3"), "file://localhost/m/c%CC%8C.mp3");
+        assert_eq!(location("/m/c\u{30C}.mp3"), "file://localhost/m/c%cc%8c.mp3");
     }
 
     #[test]
@@ -220,7 +230,7 @@ mod tests {
 
     #[test]
     fn a_backslash_in_a_mac_name_is_part_of_the_name() {
-        assert_eq!(location("/Music/AC\\DC - Live.mp3"), "file://localhost/Music/AC%5CDC%20-%20Live.mp3");
+        assert_eq!(location("/Music/AC\\DC - Live.mp3"), "file://localhost/Music/AC%5cDC%20-%20Live.mp3");
     }
 
     #[test]
@@ -239,5 +249,30 @@ mod tests {
         let xml = write(&lib, "t");
         assert!(xml.contains("Kind=\"A&amp;B&quot;C File\""), "{xml}");
         assert!(xml.contains("DateAdded=\"&lt;2026-09-0\""), "{xml}");
+    }
+
+    /// Attribute names of the first `<TRACK ` element, in order.
+    fn track_attribute_names(xml: &str) -> Vec<String> {
+        let start = xml.find("<TRACK ").expect("a TRACK element");
+        let end = start + xml[start..].find('>').expect("a closed TRACK element");
+        let tag = &xml[start + "<TRACK ".len()..end];
+        let mut pieces: Vec<&str> = tag.split("=\"").collect();
+        pieces.pop(); // the text after the last `="` is a value, not a name
+        pieces
+            .iter()
+            .map(|piece| {
+                // Each piece ends with a name, preceded by the previous value's closing quote.
+                let after_quote = piece.rfind('"').map_or(*piece, |i| &piece[i + 1..]);
+                after_quote.trim().to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_track_attributes_match_a_real_rekordbox_export() {
+        let real = track_attribute_names(include_str!("fixtures/rekordbox_real.xml"));
+        let ours = track_attribute_names(&write(&sample(), "t"));
+        assert_eq!(real.len(), 25, "{real:?}");
+        assert_eq!(ours, real);
     }
 }

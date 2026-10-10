@@ -116,9 +116,11 @@ A missing or unreadable key writes an empty `Tonality` (and no BPM writes `Avera
 
 Paths cause most import failures, so each writer has its own tested encoder:
 
-- **Rekordbox** `Location`: `file://localhost` + the absolute path,
-  percent-encoded per segment (space, `#`, `%`, `&`, `?`, non-ASCII as UTF-8),
-  `/` kept. Windows: `file://localhost/C:/Music/…`. Paths keep the Unicode
+- **Rekordbox** `Location`: `file://localhost` + the absolute path in the
+  shape Rekordbox itself writes (checked against a Rekordbox 7.2.19 export):
+  unreserved characters, `/`, `(`, `)` and `,` stay raw; everything else
+  (space, `#`, `%`, `&`, `[`, `]`, `?`, non-ASCII as UTF-8) is percent-encoded
+  with **lowercase** hex (`%5b`, `%c4%8c`). Windows: `file://localhost/C:/Music/…`. Paths keep the Unicode
   normalization they have on disk (as read from the database), checked against
   a real export (č/ć/š in NFC vs NFD would make Rekordbox see new tracks).
 - **Traktor** `LOCATION`: `VOLUME` is the volume name — the boot volume's name
@@ -311,12 +313,12 @@ The writers are pure: no database, no disk. Everything they need comes in.
 Settled against the real exports or by hand, before the phase that needs it
 is done:
 
-- Rekordbox: attribute order and shape; `Tonality` spelling (`Abm` or `G#m`);
-  Unicode normalization of paths; which characters Rekordbox leaves
-  unencoded in `Location` (RecoDeck encodes everything outside the RFC 3986
-  unreserved set, so `(` `)` `'` `!` `,` become `%28`… — harmless if Rekordbox
-  decodes before matching, duplicates if it compares raw strings); and what
-  Rekordbox does with formats it cannot play (OGG), which the scanner accepts.
+- Rekordbox: ~~attribute order and shape~~ ✓ identical to a Rekordbox 7.2.19
+  export (pinned by a test against a sanitized fixture); ~~`Tonality`
+  spelling~~ ✓ classic notation (`Am`, `Em`, `Fm`, `Gm`; sharp/flat spelling
+  still unseen); ~~`Location` encoding~~ ✓ now matches (`(` `)` `,` raw,
+  lowercase hex); Unicode normalization of paths; and what Rekordbox does with
+  formats it cannot play (OGG), which the scanner accepts.
 - Rekordbox and Traktor: whether data (BPM, key, rating, comments) reaches
   tracks the program **already has**, or only new ones. If only new ones, the
   help text and "What it does not do" say so.
