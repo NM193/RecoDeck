@@ -25,9 +25,9 @@ It sits next to Export to folder, which stays as it is.
 ### The dialog
 
 - **Program**: Rekordbox · Traktor · Serato, as one tab bar (the shared
-  `.tabs` with the thumb). The last one used is remembered. (Phase 1 has
-  only Rekordbox: no tab bar; the tabs and `dj_export.last_target` come with
-  Traktor in phase 2.) Each program keeps
+  `.tabs` with the thumb). The last one used is remembered
+  (`dj_export.last_target`). Rekordbox and Traktor since phase 2; Serato's
+  tab comes with phase 3. Each program keeps
   its own selection: a tab shows that program's remembered playlists plus the
   playlist (or folder) the dialog was opened from; checks changed on a tab stay
   on that tab while the dialog is open.
@@ -110,9 +110,9 @@ are not.
   4B A♭, 5B E♭, 6B B♭, 7B F, 8B C, 9B G, 10B D, 11B A, 12B E — written with
   ASCII `b` / `#` in the spelling Rekordbox uses (checked against a real
   Rekordbox export, see Verification);
-- to Traktor's integer. Assumed: 0–11 = C, C♯, D, D♯, E, F, F♯, G, G♯, A, A♯,
-  B major; 12–23 = the same roots minor. Checked against a real Traktor export
-  before phase 2 is done.
+- to Traktor's integer: 0–11 = C, C♯, D, D♯, E, F, F♯, G, G♯, A, A♯, B
+  major; 12–23 = the same roots minor (checked against a Traktor 3.11.1
+  collection, its Open Key text beside each value).
 
 A missing or unreadable key writes an empty `Tonality` (and no BPM writes `AverageBpm="0.00"`), as Rekordbox's own exports do for unanalysed tracks (to be confirmed against a real export).
 
@@ -132,7 +132,12 @@ Paths cause most import failures, so each writer has its own tested encoder:
   `/Volumes/<name>` part for external drives, the drive letter (`C:`) on
   Windows. `DIR` is the folder path after the volume in Traktor's `/:` form
   (`/:Users/:dj/:Music/:`), `FILE` the file name. The playlist's `PRIMARYKEY
-  KEY` is `VOLUME` + `DIR` + `FILE`. XML attribute escaping applies on top.
+  KEY` is `VOLUME` + `DIR` + `FILE`. XML attribute escaping applies on top,
+  with `'` left raw as Traktor writes it. Files under `/Users` are on the boot
+  volume ("Macintosh HD", the `/Volumes` entry that links to `/`), and
+  `VOLUMEID` repeats `VOLUME`. Names are written NFC: Traktor 3.11.1 does so
+  even when a name is decomposed on disk, and in another form a track would
+  be new to it.
 - **Serato**: the path relative to the root of the drive the file is on,
   without the leading separator, UTF-16BE inside the crate.
 
@@ -175,9 +180,15 @@ dropped): no XML crate, so the output stays exactly as Rekordbox expects.
 UUID`), each entry a `PRIMARYKEY TYPE="TRACK"`. A playlist's UUID is derived
 from its RecoDeck id (stable across exports). Whether Traktor replaces or
 duplicates a playlist imported again is checked by hand; the Traktor help line
-says what to do. `INFO BITRATE` uses the unit the real export uses (likely bps,
-i.e. kbps × 1000); `VOLUMEID` is written if the real export shows Traktor needs
-it. Shape follows a real Traktor playlist export (Verification).
+says what to do. The shape follows Traktor 3.11.1's own files (a sanitized one
+is the fixture `traktor_real.nml`): no self-closing tags, a line break after
+each closing tag, `<SETS ENTRIES="0"></SETS>` before the playlists.
+`INFO BITRATE` is in bit/s, `FILESIZE` in KiB and `PLAYTIME` in seconds (both
+rounded up), `RANKING` stars × 51, dates
+`yyyy/m/d`, `RELEASE_DATE` `yyyy/1/1` from the year; values RecoDeck lacks are
+left out, as Traktor does. Not written: `MODIFIED_DATE` (Traktor would take the
+entry as newer than its own data), `FLAGS`, `LOCK`, `INFO KEY` (a tag's key
+text), cues and loudness.
 
 ### Serato crates
 
@@ -226,11 +237,13 @@ The stub `formats/mod.rs` gets content and is declared in `lib.rs`.
     files get `exists: false`; writers skip them and the command reports them.
 - `keys.rs` — Camelot → Rekordbox notation, Camelot → Traktor integer.
 - `rekordbox.rs` — `write(&ExportLibrary, app_version) -> String`.
-- `traktor.rs` — `write(&ExportLibrary, volumes) -> String`.
+- `traktor.rs` — `location(path, boot_volume)`, its path encoder, and
+  `write(&ExportLibrary, boot_volume) -> String`.
 - `serato.rs` — `write(&ExportLibrary, volumes) -> Vec<CrateFile { path,
   bytes }>`, and `read(bytes)` for tests.
-- `paths.rs` — the per-format path encoders and the volume lookup (boot volume
-  name, `/Volumes/<name>`, drive letters), the only part that asks the system.
+- `volumes.rs` — the boot volume's name, the only part that asks the system.
+  Each writer has its own path encoder (`rekordbox::location`,
+  `traktor::location`).
 
 The writers are pure: no database, no disk. Everything they need comes in.
 
@@ -329,9 +342,12 @@ is done:
   how-to and "What it does not do" say so.
 - Traktor: whether data (BPM, key, rating, comments) reaches tracks it
   **already has**, or only new ones.
-- Traktor: the key integers; `INFO BITRATE` unit; `VOLUMEID`; the volume name
-  for files under `/Users` ("Macintosh HD" or "Macintosh HD - Data"); what a
-  second import of the same playlist does.
+- Traktor: ~~the key integers~~ ✓; ~~`INFO BITRATE` unit~~ ✓ bit/s;
+  ~~`VOLUMEID`~~ ✓ repeats the volume name; ~~the volume name for files under
+  `/Users`~~ ✓ "Macintosh HD"; ~~Unicode normalization~~ ✓ NFC (all from
+  Traktor 3.11.1's own collection and history files); what a second import of
+  the same playlist does; `VOLUME`/`VOLUMEID` for a track on an external drive
+  (the collection has only boot-volume tracks).
 - Serato: the crate's fields beyond `vrsn` / `otrk` / `ptrk`; whether
   intermediate folder crates are needed.
 - Windows shapes (drive letters, separators, `file://localhost/C:/`) cannot be
