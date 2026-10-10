@@ -32,8 +32,8 @@ These facts come from the user's own Traktor 3.11.1 files: `~/Documents/Native I
 - `INFO KEY` is the key text from the file's tag. It often disagrees with `MUSICAL_KEY`, so it is **not** written.
 - **INFO units:**
   - `BITRATE` is in bit/s (`320000`);
-  - `FILESIZE` is in KiB, rounded (bytes / 1024; the golden `9766` depends on the rounding);
-  - `PLAYTIME` is whole seconds, rounded, and `PLAYTIME_FLOAT` is seconds with 6 decimals;
+  - `FILESIZE` is in KiB, rounded **up**;
+  - `PLAYTIME` is whole seconds rounded **up** (862 of the collection's 1,590 entries tell the rules apart, all for rounding up), and `PLAYTIME_FLOAT` is seconds with 6 decimals;
   - `RANKING` is stars × 51 (`204` = 4 stars).
 - **INFO dates:** `IMPORT_DATE` is `yyyy/m/d` without zero padding. `RELEASE_DATE` is `yyyy/1/1` when only the year is known.
 - **INFO attribute order:** `BITRATE GENRE LABEL COMMENT COVERARTID KEY PLAYCOUNT PLAYTIME PLAYTIME_FLOAT RANKING IMPORT_DATE LAST_PLAYED RELEASE_DATE FLAGS FILESIZE`. Absent values are **left out**, not written empty: `PLAYCOUNT` with no plays, `RANKING` when unrated, `ARTIST`, `ALBUM`.
@@ -1002,6 +1002,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+> **Review fix after Task 5 (applied in its own commit):** PLAYTIME and FILESIZE round **up**, and the golden file says `PLAYTIME="413"`. The sample's size is `9_999_800`, so the golden file tells the two rules apart. Other changes: a non-finite BPM writes no TEMPO; the boot volume's name is NFC too; one file stored under two normalizations gives one collection entry; the map of keys is named `primary_keys`. The Task 5 code above shows the first version.
+
+---
+
 ### Task 6: The command writes Traktor and remembers the last program
 
 **Files:**
@@ -1904,7 +1908,8 @@ it. Shape follows a real Traktor playlist export (Verification).""",
 says what to do. The shape follows Traktor 3.11.1's own files (a sanitized one
 is the fixture `traktor_real.nml`): no self-closing tags, a line break after
 each closing tag, `<SETS ENTRIES="0"></SETS>` before the playlists.
-`INFO BITRATE` is in bit/s, `FILESIZE` in KiB, `RANKING` stars × 51, dates
+`INFO BITRATE` is in bit/s, `FILESIZE` in KiB and `PLAYTIME` in seconds (both
+rounded up), `RANKING` stars × 51, dates
 `yyyy/m/d`, `RELEASE_DATE` `yyyy/1/1` from the year; values RecoDeck lacks are
 left out, as Traktor does. Not written: `MODIFIED_DATE` (Traktor would take the
 entry as newer than its own data), `FLAGS`, `LOCK`, `INFO KEY` (a tag's key
@@ -1997,7 +2002,7 @@ In `tauri dev` (port 1430, see HANDOFF) or a build:
 
 Right-click **Playlists** → **Import Playlist** → choose `~/Music/RecoDeck/RecoDeck.nml`. Note:
 1. Does a **RecoDeck** folder appear, with the folder tree and playlists inside?
-2. Are all tracks found, with no missing-file marks, including the accented one?
+2. Are all tracks found, with no missing-file marks, including the accented one and, if the library has one, a track on an external drive (its `VOLUME`/`VOLUMEID` are the volume name, unchecked so far)?
 3. On tracks **new** to Traktor: BPM, key (Key column), rating, comment, genre, label, import date?
 4. On tracks Traktor **already had**: did its BPM, key or rating change, or did it keep its own? Is any track now in the collection twice?
 5. Export again, then import again: a second copy of the playlists, or replaced in place?
