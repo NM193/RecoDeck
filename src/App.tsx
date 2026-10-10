@@ -2298,7 +2298,7 @@ function AppContent() {
         />
       )}
 
-      {/* Export to DJ software (Rekordbox XML) */}
+      {/* Export to DJ software (Rekordbox XML, Traktor NML) */}
       {djExport && (
         <DjExportModal openedFrom={djExport.openedFrom} onClose={() => setDjExport(null)} />
       )}

@@ -180,7 +180,7 @@ describe('DjExportModal', () => {
     expect(box('Friday').checked).toBe(true)
     expect(box('Warm-up').checked).toBe(false)
     expect(host.textContent).toContain(NML)
-    expect(host.textContent).toContain('Import Playlist')
+    expect(host.textContent).toContain('In Traktor')
   })
 
   it('each tab keeps its own checks, and Export writes for the open tab', async () => {
@@ -219,11 +219,61 @@ describe('DjExportModal', () => {
       tab('Rekordbox').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
     expect(tab('Traktor').getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(tab('Traktor'))
   })
 
   it('a last program without a tab here opens on Rekordbox', async () => {
     vi.mocked(tauriApi.djExportLastTarget).mockResolvedValue('serato')
     await open(null)
     expect(tab('Rekordbox').getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('Change… on the Traktor tab changes only Traktor’s file', async () => {
+    vi.mocked(tauriApi.pickDjExportFile).mockResolvedValue('/Volumes/USB/RecoDeck.nml')
+    await open(null)
+    await act(async () => {
+      tab('Traktor').click()
+    })
+    const change = [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Change…')!
+    await act(async () => {
+      change.click()
+    })
+    expect(tauriApi.pickDjExportFile).toHaveBeenCalledWith('traktor', NML)
+    expect(host.textContent).toContain('/Volumes/USB/RecoDeck.nml')
+    await act(async () => {
+      tab('Rekordbox').click()
+    })
+    expect(host.textContent).toContain(PATH)
+    expect(host.textContent).not.toContain('/Volumes/USB/RecoDeck.nml')
+  })
+
+  it('a failed export’s message goes when another program is chosen', async () => {
+    vi.mocked(tauriApi.exportToDj).mockRejectedValue({ kind: 'Internal', message: 'disk full' })
+    await open(2)
+    await act(async () => {
+      exportButton().click()
+    })
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('disk full')
+    await act(async () => {
+      tab('Traktor').click()
+    })
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('no tab is chosen, and none can be, until the dialog knows the last program', async () => {
+    let finish!: (target: DjTarget | null) => void
+    vi.mocked(tauriApi.djExportLastTarget).mockReturnValue(
+      new Promise<DjTarget | null>((resolve) => {
+        finish = resolve
+      }),
+    )
+    await open(null)
+    expect(tab('Rekordbox').getAttribute('aria-selected')).toBe('false')
+    expect(tab('Traktor').disabled).toBe(true)
+    await act(async () => {
+      finish('traktor')
+    })
+    expect(tab('Traktor').getAttribute('aria-selected')).toBe('true')
+    expect(tab('Traktor').disabled).toBe(false)
   })
 })

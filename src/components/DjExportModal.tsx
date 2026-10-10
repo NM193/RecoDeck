@@ -100,9 +100,9 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
 
   const tab = tabs?.[program] ?? null
 
-  /** Changes the open tab, leaving the others as they are. */
-  function updateTab(change: (tab: ProgramTab) => Partial<ProgramTab>) {
-    setTabs((all) => all && { ...all, [program]: { ...all[program], ...change(all[program]) } })
+  /** Changes one program's tab, leaving the others as they are. */
+  function updateTab(target: Program, change: (tab: ProgramTab) => Partial<ProgramTab>) {
+    setTabs((all) => all && { ...all, [target]: { ...all[target], ...change(all[target]) } })
   }
 
   function chooseProgram(next: Program) {
@@ -112,10 +112,12 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
 
   async function changePath() {
     if (!tab) return
+    // The tab the picker was opened for, even if another is chosen meanwhile.
+    const target = program
     setError(null)
     try {
-      const picked = await tauriApi.pickDjExportFile(program, tab.path)
-      if (picked) updateTab(() => ({ path: picked }))
+      const picked = await tauriApi.pickDjExportFile(target, tab.path)
+      if (picked) updateTab(target, () => ({ path: picked }))
     } catch (err) {
       setError(getErrorMessage(err))
     }
@@ -156,7 +158,8 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
       >
         <h3 id="dj-export-title">Export to DJ software</h3>
 
-        <ProgramTabs program={program} disabled={running} onProgram={chooseProgram} />
+        {/* No tab is shown chosen until the last program is known, so the thumb appears in place. */}
+        <ProgramTabs program={tabs ? program : null} disabled={running || tabs === null} onProgram={chooseProgram} />
 
         <div role="tabpanel" id="dj-export-panel" aria-labelledby={`dj-export-tab-${program}`}>
           <div className="dj-export__label">Playlists</div>
@@ -173,7 +176,7 @@ export function DjExportModal({ openedFrom, onClose }: DjExportModalProps) {
                 depth={0}
                 selected={tab.selected}
                 disabled={running}
-                onToggle={(node) => updateTab((current) => ({ selected: toggle(node, current.selected) }))}
+                onToggle={(node) => updateTab(program, (current) => ({ selected: toggle(node, current.selected) }))}
               />
             )}
           </div>
@@ -228,12 +231,12 @@ function ProgramTabs({
   disabled,
   onProgram,
 }: {
-  program: Program
+  program: Program | null
   disabled: boolean
   onProgram: (program: Program) => void
 }) {
   const bar = useRef<HTMLDivElement>(null)
-  const thumb = useTabThumb(bar, program)
+  const thumb = useTabThumb(bar, program ?? '')
   return (
     <div className="tabs dj-export__tabs" role="tablist" aria-label="Program" ref={bar}>
       <span className="tabs__thumb" aria-hidden="true" style={thumb} />

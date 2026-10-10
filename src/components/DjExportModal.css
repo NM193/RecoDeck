@@ -17,6 +17,10 @@
   cursor: default;
 }
 
+.dj-export__tabs .tabs__tab:disabled:not([aria-selected='true']) {
+  color: var(--text-secondary);
+}
+
 .dj-export__label {
   margin: 0 0 6px;
   color: var(--text-secondary);
