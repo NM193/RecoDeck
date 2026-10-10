@@ -14,6 +14,7 @@ import { useChannelNews } from './store/channelNewsStore'
 import { HomeView } from './components/views/HomeView'
 import { PlaylistDetailHeader } from './components/views/PlaylistDetailHeader'
 import { MiniPlayer } from './components/MiniPlayer'
+import { TooltipLayer } from './components/TooltipLayer'
 import { SettingsView } from './components/views/SettingsView'
 import { SearchView } from './components/views/SearchView'
 import { SetsView } from './components/views/SetsView'
@@ -145,6 +146,7 @@ function App() {
   // framer-motion follows the system's reduced motion: no movement, only fades.
   return (
     <MotionConfig reducedMotion="user">
+      <TooltipLayer />
       {hash === '#mini-player' ? <MiniPlayer /> : <AppContent />}
     </MotionConfig>
   )
