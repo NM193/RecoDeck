@@ -256,15 +256,26 @@ function PathText({ path }: { path: string }) {
 }
 
 /** How to load the file in Rekordbox: every step until the first export or when the file goes somewhere new, then the one that repeats. */
+// Checked in Rekordbox 7.2.19: importing again adds new tracks and duplicates nothing, but
+// tracks already in its collection keep Rekordbox's own data.
+const KEEPS_ITS_OWN = 'Tracks Rekordbox already has keep its own BPM, key and rating; new tracks take RecoDeck’s.'
+
 function HowTo({ full }: { full: boolean }) {
   if (!full) {
-    return <p className="dj-export__howto">In Rekordbox, refresh “rekordbox xml” in the tree to see the changes.</p>
+    return (
+      <p className="dj-export__howto">
+        In Rekordbox, refresh “rekordbox xml” and import the playlists again. {KEEPS_ITS_OWN}
+      </p>
+    )
   }
   return (
-    <ol className="dj-export__howto dj-export__howto--steps">
-      <li>In Rekordbox, Preferences → View → Layout: turn on “rekordbox xml”.</li>
-      <li>Preferences → Advanced → Database → rekordbox xml → Imported Library: choose this file.</li>
-      <li>Refresh “rekordbox xml” in the tree and drag the playlists where you want them.</li>
-    </ol>
+    <>
+      <ol className="dj-export__howto dj-export__howto--steps">
+        <li>In Rekordbox, Preferences → View → Layout: turn on “rekordbox xml”.</li>
+        <li>Preferences → Advanced → Database → rekordbox xml → Imported Library: choose this file.</li>
+        <li>Refresh “rekordbox xml” in the tree, then right-click a playlist → Import Playlist.</li>
+      </ol>
+      <p className="dj-export__howto dj-export__howto--note">{KEEPS_ITS_OWN}</p>
+    </>
   )
 }

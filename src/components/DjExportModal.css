@@ -115,6 +115,11 @@
   line-height: 1.5;
 }
 
+/* The note under the steps sits close to them. */
+.dj-export__howto--note {
+  margin-top: -8px;
+}
+
 .dj-export__howto--steps {
   padding-left: 18px;
 }

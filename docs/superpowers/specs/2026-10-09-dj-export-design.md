@@ -75,6 +75,10 @@ It sits next to Export to folder, which stays as it is.
 
 ### What it does not do
 
+- Rekordbox keeps its own BPM, key, rating and comments for tracks already in
+  its collection; only tracks new to it take RecoDeck's data. Importing a
+  playlist again duplicates neither tracks nor the playlist. (Checked with
+  Rekordbox 7.2.19; the dialog's how-to says so.)
 - Audio files are never modified (no tags written).
 - Serato gets the crates only: it reads BPM and key from its own analysis.
 - No cue points, beatgrids or track colours: RecoDeck has no UI for cues yet,
@@ -319,9 +323,12 @@ is done:
   still unseen); ~~`Location` encoding~~ ✓ now matches (`(` `)` `,` raw,
   lowercase hex); Unicode normalization of paths; and what Rekordbox does with
   formats it cannot play (OGG), which the scanner accepts.
-- Rekordbox and Traktor: whether data (BPM, key, rating, comments) reaches
-  tracks the program **already has**, or only new ones. If only new ones, the
-  help text and "What it does not do" say so.
+- ~~Rekordbox: whether data reaches tracks it **already has**~~ ✓ only new
+  tracks take it (Rekordbox 7.2.19: a rating changed in RecoDeck did not reach
+  a track already in the collection); importing again duplicates nothing. The
+  how-to and "What it does not do" say so.
+- Traktor: whether data (BPM, key, rating, comments) reaches tracks it
+  **already has**, or only new ones.
 - Traktor: the key integers; `INFO BITRATE` unit; `VOLUMEID`; the volume name
   for files under `/Users` ("Macintosh HD" or "Macintosh HD - Data"); what a
   second import of the same playlist does.
