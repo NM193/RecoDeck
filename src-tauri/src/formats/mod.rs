@@ -6,6 +6,7 @@
 
 pub mod keys;
 pub mod rekordbox;
+pub mod volumes;
 mod xml;
 
 use crate::db::{Database, Playlist, Track};
