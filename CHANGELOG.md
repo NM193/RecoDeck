@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-10
+
 ### Added
 - **Export to DJ software** — right-click a playlist or a playlist folder, choose Export to DJ software…, check the playlists, and RecoDeck writes them for Rekordbox or Traktor with their tracks' BPM, key, rating, genre and comments; it remembers the playlists and the file for each program and opens on the one you used last, so exporting again is one click
 
