@@ -115,9 +115,9 @@ Added Tailwind utility class mappings for all new tokens:
 ## Self-Check: PASSED
 
 Files exist:
-- FOUND: /Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/styles/globals.css
-- FOUND: /Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/tailwind.config.js
-- FOUND: /Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src/main.tsx
+- FOUND: ~/Desktop/Cursor/RecoDeck/src/styles/globals.css
+- FOUND: ~/Desktop/Cursor/RecoDeck/tailwind.config.js
+- FOUND: ~/Desktop/Cursor/RecoDeck/src/main.tsx
 
 Commits exist:
 - FOUND: 9bd86c7 (Task 1 — font install)

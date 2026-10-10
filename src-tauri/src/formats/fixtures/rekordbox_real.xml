@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="7.2.19" Company="AlphaTheta"/>
+  <COLLECTION Entries="1">
+    <TRACK TrackID="x" Name="x" Artist="x" Composer="x" Album="x" Grouping="x" Genre="x" Kind="x" Size="x" TotalTime="x" DiscNumber="x" TrackNumber="x" Year="x" AverageBpm="x" DateAdded="x" BitRate="x" SampleRate="x" Comments="x" PlayCount="x" Rating="x" Location="x" Remixer="x" Tonality="Am" Label="x" Mix="x"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="1">
+      <NODE Name="x" Type="1" KeyType="0" Entries="1">
+        <TRACK Key="x"/>
+      </NODE>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>

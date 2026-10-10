@@ -44,6 +44,8 @@ interface FolderTreeProps {
   onDeletePlaylist: (id: number) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
   onExportPlaylist?: (playlistId: number, playlistName: string) => void
+  /** Export to DJ software, from a playlist's or a playlist folder's menu. */
+  onExportToDj?: (playlistId: number) => void
   onCreateSubfolder: (parentPath: string) => void
   onRenameFolder: (folderPath: string, currentName: string) => void
   onDeleteFolder: (folderPath: string, folderName: string) => void
@@ -170,6 +172,7 @@ export function FolderTree({
   onDeletePlaylist,
   onSharePlaylist,
   onExportPlaylist,
+  onExportToDj,
   onCreateSubfolder,
   onRenameFolder,
   onDeleteFolder,
@@ -247,6 +250,9 @@ export function FolderTree({
       icon: 'Pencil',
       onSelect: () => onRenamePlaylist(playlistId, playlistName),
     }
+    const exportToDj: MenuEntry[] = onExportToDj
+      ? [{ kind: 'action', label: 'Export to DJ software…', icon: 'Disc3', onSelect: () => onExportToDj(playlistId) }]
+      : []
     switch (menu.type) {
       case 'library':
         return [
@@ -298,6 +304,7 @@ export function FolderTree({
                 } satisfies MenuEntry,
               ]
             : []),
+          ...exportToDj,
           renamePlaylist,
           deletePlaylist,
         ]
@@ -305,6 +312,7 @@ export function FolderTree({
         return [
           { kind: 'action', label: 'Create Playlist', icon: 'Plus', onSelect: () => onCreatePlaylist(playlistId) },
           { kind: 'action', label: 'Create Folder', icon: 'FolderPlus', onSelect: () => onCreateFolder(playlistId) },
+          ...exportToDj,
           { kind: 'separator' },
           renamePlaylist,
           deletePlaylist,

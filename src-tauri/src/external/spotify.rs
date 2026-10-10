@@ -758,10 +758,10 @@ mod tests {
     #[test]
     fn a_profile_carries_the_account_id_apart_from_the_name() {
         assert_eq!(
-            parse_profile(&json!({ "id": "nmarj", "display_name": "Nemanja" })),
-            Ok(Profile { id: "nmarj".into(), name: "Nemanja".into() })
+            parse_profile(&json!({ "id": "ana1", "display_name": "Ana" })),
+            Ok(Profile { id: "ana1".into(), name: "Ana".into() })
         );
-        assert!(parse_profile(&json!({ "display_name": "Nemanja" })).is_err());
+        assert!(parse_profile(&json!({ "display_name": "Ana" })).is_err());
     }
 
     #[test]
@@ -774,9 +774,9 @@ mod tests {
 
     #[test]
     fn names_the_account_by_display_name_or_id() {
-        assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": "Nemanja" })), "Nemanja");
-        assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": null })), "nm93");
-        assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": " " })), "nm93");
+        assert_eq!(profile_name(&json!({ "id": "ana93", "display_name": "Ana" })), "Ana");
+        assert_eq!(profile_name(&json!({ "id": "ana93", "display_name": null })), "ana93");
+        assert_eq!(profile_name(&json!({ "id": "ana93", "display_name": " " })), "ana93");
     }
 
     // --- what a sync fetches ------------------------------------------

@@ -464,7 +464,7 @@ cd src-tauri && cargo clippy 2>&1 | grep "^warning:" | wc -l
 ## Sources
 
 ### Primary (HIGH confidence)
-- Direct code inspection of `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/` — all findings based on reading actual source files
+- Direct code inspection of `~/Desktop/Cursor/RecoDeck/src-tauri/src/` — all findings based on reading actual source files
 - `cargo check` output — 7 warnings confirmed
 - `cargo clippy` output — 36 warnings confirmed, 18 auto-fixable
 - `grep -rn "lock().unwrap()"` — 38 occurrences confirmed across commands/ and server/

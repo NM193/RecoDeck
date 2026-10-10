@@ -1,0 +1,146 @@
+/* Export to DJ software: the playlist tree with boxes, where the file goes,
+   and how to load it in the program. Sits in the shared .modal-content. */
+
+/* The box takes focus only so keyboard and screen-reader users start inside
+   it; its controls keep their own focus rings. */
+.dj-export:focus {
+  outline: none;
+}
+
+/* The program tabs sit between the title and the tree. */
+.dj-export__tabs {
+  margin-bottom: 16px;
+}
+
+/* While it writes, the tabs stay where they are. */
+.dj-export__tabs .tabs__tab:disabled {
+  cursor: default;
+}
+
+.dj-export__tabs .tabs__tab:disabled:not([aria-selected='true']) {
+  color: var(--text-secondary);
+}
+
+.dj-export__label {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dj-export__tree {
+  max-height: 280px;
+  margin-bottom: 16px;
+  padding: 4px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.dj-export__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding-right: 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dj-export__row:hover {
+  background: var(--bg-tertiary);
+}
+
+.dj-export__row input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dj-export__row input[type='checkbox']:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.dj-export__row svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.dj-export__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dj-export__note {
+  margin: 8px 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.dj-export__note--error {
+  color: var(--color-danger);
+}
+
+.dj-export__where {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.dj-export__path {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+/* A long path gives up its folder part, never the file name. */
+.dj-export__path-folder {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dj-export__path-file {
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dj-export__howto {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* The note under the steps sits close to them. */
+.dj-export__howto--note {
+  margin-top: -8px;
+}
+
+.dj-export__howto--steps {
+  padding-left: 18px;
+}
+
+.dj-export__error {
+  margin: 0 0 16px;
+  color: var(--color-danger);
+  font-size: 12.5px;
+  line-height: 1.5;
+}

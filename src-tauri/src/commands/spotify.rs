@@ -908,7 +908,7 @@ mod tests {
         let db = fresh();
         db.set_setting(CLIENT_ID_SETTING, "0123456789abcdef0123456789abcdef").unwrap();
         db.set_setting(REFRESH_TOKEN_SETTING, "rt").unwrap();
-        db.set_setting(ACCOUNT_SETTING, "Nemanja").unwrap();
+        db.set_setting(ACCOUNT_SETTING, "Ana").unwrap();
         db.set_setting(LAST_SYNCED_SETTING, "1700000000000").unwrap();
         db.set_setting(LAST_ERROR_SETTING, "").unwrap();
         db.set_setting(NEEDS_RECONNECT_SETTING, "1").unwrap();
@@ -921,7 +921,7 @@ mod tests {
         let status = read_status(&db).unwrap();
         assert_eq!(status.client_id.as_deref(), Some("0123456789abcdef0123456789abcdef"));
         assert!(status.connected);
-        assert_eq!(status.account_name.as_deref(), Some("Nemanja"));
+        assert_eq!(status.account_name.as_deref(), Some("Ana"));
         assert!(status.needs_reconnect);
         assert_eq!(status.last_synced_at, Some(1_700_000_000_000));
         assert_eq!(status.last_error, None);
@@ -999,7 +999,7 @@ mod tests {
         let db = fresh();
         db.set_setting(CLIENT_ID_SETTING, "0123456789abcdef0123456789abcdef").unwrap();
         db.set_setting(REFRESH_TOKEN_SETTING, "rt").unwrap();
-        db.set_setting(ACCOUNT_SETTING, "Nemanja").unwrap();
+        db.set_setting(ACCOUNT_SETTING, "Ana").unwrap();
         db.set_setting(LAST_SYNCED_SETTING, "1").unwrap();
         db.set_setting(crate::db::spotify::REFUSED_SETTING, "[]").unwrap();
 
@@ -1042,15 +1042,15 @@ mod tests {
 
     #[test]
     fn another_account_is_told_by_its_id_not_its_name() {
-        let me = web_api::Profile { id: "nmarj".into(), name: "Nemanja M".into() };
+        let me = web_api::Profile { id: "ana1".into(), name: "Ana M".into() };
         // Renamed on Spotify: the same account.
-        assert!(!is_another_account(Some("nmarj"), Some("Nemanja"), &me));
-        assert!(is_another_account(Some("someone"), Some("Nemanja M"), &me));
+        assert!(!is_another_account(Some("ana1"), Some("Ana"), &me));
+        assert!(is_another_account(Some("someone"), Some("Ana M"), &me));
         // Nothing stored yet.
         assert!(!is_another_account(None, None, &me));
         // Stored before the id was kept: the name is all there is.
         assert!(is_another_account(None, Some("Someone"), &me));
-        assert!(!is_another_account(None, Some("Nemanja M"), &me));
+        assert!(!is_another_account(None, Some("Ana M"), &me));
     }
 
     #[test]
@@ -1087,7 +1087,7 @@ mod tests {
     #[test]
     fn disconnecting_forgets_the_account_id_too() {
         let db = fresh();
-        db.set_setting(ACCOUNT_ID_SETTING, "nmarj").unwrap();
+        db.set_setting(ACCOUNT_ID_SETTING, "ana1").unwrap();
         forget_account(&db).unwrap();
         assert_eq!(setting(&db, ACCOUNT_ID_SETTING).unwrap(), None);
     }

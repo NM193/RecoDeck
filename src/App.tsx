@@ -21,6 +21,7 @@ import { ChatView } from './components/ai/ChatView'
 import { PromptModal } from './components/PromptModal'
 import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { ExportPlaylistModal } from './components/ExportPlaylistModal'
+import { DjExportModal } from './components/DjExportModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
@@ -254,6 +255,9 @@ function AppContent() {
     playlistId: number
     playlistName: string
   } | null>(null)
+
+  // Export to DJ software (the playlist or folder whose menu opened it)
+  const [djExport, setDjExport] = useState<{ openedFrom: number | null } | null>(null)
 
   // AI Playlist dialog seed track
   const [aiPlaylistSeedTrack, setAiPlaylistSeedTrack] = useState<Track | null>(
@@ -1797,6 +1801,7 @@ function AppContent() {
       onExportPlaylist={(id, name) =>
         setExportModal({ playlistId: id, playlistName: name })
       }
+      onExportToDj={(id) => setDjExport({ openedFrom: id })}
       onCreateSubfolder={handleCreateSubfolder}
       onRenameFolder={handleRenameFolder}
       onDeleteFolder={handleDeleteFolder}
@@ -2291,6 +2296,11 @@ function AppContent() {
           }}
           onError={(msg) => toast(msg, { kind: 'error' })}
         />
+      )}
+
+      {/* Export to DJ software (Rekordbox XML, Traktor NML) */}
+      {djExport && (
+        <DjExportModal openedFrom={djExport.openedFrom} onClose={() => setDjExport(null)} />
       )}
 
       {/* Update available toast — click Install to download, install, and restart */}

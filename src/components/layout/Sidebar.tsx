@@ -193,6 +193,7 @@ interface SidebarProps {
   onDeletePlaylist: (id: number) => void
   onSharePlaylist?: (playlistId: number, playlistName: string) => void
   onExportPlaylist?: (playlistId: number, playlistName: string) => void
+  onExportToDj?: (playlistId: number) => void
   onCreateSubfolder: (parentPath: string) => void
   onRenameFolder: (folderPath: string, currentName: string) => void
   onDeleteFolder: (folderPath: string, folderName: string) => void
@@ -230,6 +231,7 @@ export function Sidebar({
   onDeletePlaylist,
   onSharePlaylist,
   onExportPlaylist,
+  onExportToDj,
   onCreateSubfolder,
   onRenameFolder,
   onDeleteFolder,
@@ -427,6 +429,7 @@ export function Sidebar({
     onDeletePlaylist,
     onSharePlaylist,
     onExportPlaylist,
+    onExportToDj,
     onCreateSubfolder,
     onRenameFolder,
     onDeleteFolder,
