@@ -18,6 +18,8 @@ import type { TrackFilter } from '../../lib/trackTable/filter'
 import type { SpotifyData } from '../spotify/useSpotify'
 import type { Track, Playlist } from '../../types/track'
 import { PlaylistCover } from '../PlaylistCover'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import './SearchView.css'
 
 /** A query is remembered when it stays unchanged this long while it has results. */
@@ -80,6 +82,10 @@ export function SearchView({
   const [customizing, setCustomizing] = useState(false)
   const [recentSearches, setRecentSearches] = useState<string[]>(loadRecentSearches)
   const customizeButton = useRef<HTMLButtonElement>(null)
+  // The tracks' hover slides from row to row (Micro-interactions spec, Rows).
+  const trackListRef = useRef<HTMLDivElement>(null)
+  const trackGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(trackListRef, trackGlideRef, '.search-view__track-row', GLIDE.row)
   const shownSections = useMemo(
     () => prefs.filter((pref) => pref.on).map((pref) => pref.id),
     [prefs],
@@ -314,7 +320,8 @@ export function SearchView({
                 <h3 className="search-view__section-title">Tracks</h3>
                 <span className="search-view__section-count">{filteredTracks.length}</span>
               </div>
-              <div className="search-view__track-list">
+              <div className="glide-track search-view__track-list" ref={trackListRef}>
+                <span ref={trackGlideRef} className="glide" aria-hidden="true" />
                 {filteredTracks.map((track, index) => (
                   <div
                     key={track.id}

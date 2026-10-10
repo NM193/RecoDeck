@@ -345,6 +345,7 @@
 
 .search-rows {
   display: grid;
+  --glide-bg: var(--bg-tertiary);
 }
 
 .search-row {
@@ -362,10 +363,6 @@
   text-align: left;
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease);
-}
-
-.search-row:hover {
-  background: var(--bg-tertiary);
 }
 
 .search-row:focus-visible {

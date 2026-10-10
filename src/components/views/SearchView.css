@@ -176,6 +176,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-bottom: var(--space-6);
+  --glide-bg: var(--bg-tertiary);
 }
 
 .search-view__track-row {
@@ -190,19 +191,28 @@
   gap: 0;
 }
 
-.search-view__track-row:hover {
-  background: var(--bg-tertiary);
+/* Hover: the number and the play icon cross-fade, one over the other */
+.search-view__track-number,
+.search-view__track-play {
+  display: flex;
+  align-items: center;
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
-/* Hover: hide number, show play icon */
-.search-view__track-number { display: flex; align-items: center; }
-.search-view__track-play   { display: none; color: var(--text-primary); align-items: center; }
+.search-view__track-play {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  color: var(--text-primary);
+  opacity: 0;
+}
 
-.search-view__track-row:hover .search-view__track-number { display: none; }
-.search-view__track-row:hover .search-view__track-play   { display: flex; }
+.search-view__track-row:hover .search-view__track-number { opacity: 0; }
+.search-view__track-row:hover .search-view__track-play   { opacity: 1; }
 
 /* # column */
 .search-view__track-index {
+  position: relative;
   flex: 0 0 48px;
   display: flex;
   align-items: center;

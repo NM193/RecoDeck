@@ -16,6 +16,7 @@ import type { TrackFilter } from '../../lib/trackTable/filter'
 import type { Track } from '../../types/track'
 import { genreTiles, hasContent } from './sectionContent'
 import type { SectionsData } from './useSectionsData'
+import { HoverGlide } from '../HoverGlide'
 import './SearchSections.css'
 
 export interface SectionActions {
@@ -185,7 +186,7 @@ function Section({
     case 'recently-added':
       return (
         <SectionFrame title="Recently added">
-          <div className="search-rows">
+          <HoverGlide className="search-rows" item=".search-row" kind="row">
             {data.recentlyAdded.map((track, index) => (
               <button
                 key={track.id}
@@ -210,13 +211,13 @@ function Section({
                 </span>
               </button>
             ))}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
     case 'saved-sets':
       return (
         <SectionFrame title="Sets you saved lately">
-          <div className="search-rows">
+          <HoverGlide className="search-rows" item=".search-row" kind="row">
             {data.savedSets.map((set) => (
               <button
                 key={set.video_id}
@@ -238,7 +239,7 @@ function Section({
                 </span>
               </button>
             ))}
-          </div>
+          </HoverGlide>
         </SectionFrame>
       )
   }
