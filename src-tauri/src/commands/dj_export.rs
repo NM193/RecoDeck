@@ -166,6 +166,14 @@ fn chosen_file(choice: Option<&DjExportChoice>, music_dir: &Path, target: DjTarg
         .or_else(|| default_file(music_dir, target))
 }
 
+/// Traktor keeps its whole library in a collection.nml; an export written over
+/// it would replace the DJ's collection with the exported tracks.
+fn is_traktor_collection(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("collection.nml"))
+}
+
 /// Saves a program's choice in the settings table.
 fn remember(state: &AppState, target: DjTarget, choice: &DjExportChoice) -> Result<(), String> {
     let db_lock = state.db.lock().map_err(|_| "State lock failed".to_string())?;
@@ -198,6 +206,11 @@ pub async fn export_to_dj(
     let path = path.trim().to_string();
     if path.is_empty() || !Path::new(&path).is_absolute() {
         return Err(AppError::Validation("Choose where to save the file".to_string()));
+    }
+    if target == DjTarget::Traktor && is_traktor_collection(Path::new(&path)) {
+        return Err(AppError::Validation(
+            "That is Traktor's own collection — choose another file, then import it in Traktor".to_string(),
+        ));
     }
 
     // Read under the lock, then let it go before touching the disk.
@@ -350,5 +363,13 @@ mod tests {
         // The dialog reads this through get_setting and opens on Traktor's tab.
         assert_eq!(db.get_setting("dj_export.last_target").unwrap().as_deref(), Some("\"traktor\""));
         assert_eq!(parse_choice(db.get_setting("dj_export.traktor").unwrap().as_deref()), Some(choice));
+    }
+
+    #[test]
+    fn traktors_own_collection_is_never_the_target() {
+        assert!(is_traktor_collection(Path::new("/Users/dj/Documents/Native Instruments/Traktor 3.11.1/collection.nml")));
+        assert!(is_traktor_collection(Path::new("/x/Collection.NML")));
+        assert!(!is_traktor_collection(Path::new("/Users/dj/Music/RecoDeck/RecoDeck.nml")));
+        assert!(!is_traktor_collection(Path::new("/x/my collection.nml")));
     }
 }

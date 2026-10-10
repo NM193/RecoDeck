@@ -93,7 +93,7 @@ It sits next to Export to folder, which stays as it is.
 | Key | `Tonality`, musical notation ("Am") | `MUSICAL_KEY VALUE` (0–23) | — |
 | Rating 0–5 | `Rating` = stars × 51 | `INFO RANKING` = stars × 51 | — |
 | Title, artist, album, genre, label, year, comment | yes | yes | — |
-| Duration, bitrate, sample rate, size, kind | yes | duration, bitrate | — |
+| Duration, bitrate, sample rate, size, kind | yes | duration, bitrate, size | — |
 | Play count, date added | `PlayCount`, `DateAdded` (yyyy-mm-dd) | `INFO PLAYCOUNT`, `INFO IMPORT_DATE` (yyyy/m/d) | — |
 | Folders | `NODE Type="0"` under a `RecoDeck` node | `NODE TYPE="FOLDER"` under `RecoDeck` | subcrates: `RecoDeck%%Folder%%Playlist.crate` |
 
@@ -278,7 +278,8 @@ The writers are pure: no database, no disk. Everything they need comes in.
   `ExportPlaylistModal` and on the shared controls (tabs, checkboxes, buttons).
   The playlist tree is a small checkbox tree over `get_all_playlists`.
 - `src/lib/tauri-api.ts`: `djExportDefaults` (which also answers the
-  remembered playlists), `pickDjExportFile`, `exportToDj`.
+  remembered playlists), `pickDjExportFile`, `exportToDj`, and
+  `djExportLastTarget` (reads `dj_export.last_target` through `get_setting`).
 - `src/components/FolderTree.tsx`: **Export to DJ software…** in the playlist
   and folder menus (`onExportToDj`), passed from `App.tsx` through
   `src/components/layout/Sidebar.tsx` like `onExportPlaylist`, next to the
@@ -295,6 +296,7 @@ The writers are pure: no database, no disk. Everything they need comes in.
 | A track's file is missing | Skipped; listed in the toast's detail |
 | A track has no BPM or key | Written without them; the program analyses |
 | Destination not writable / disk full | The error, with the path, shows in the dialog, which stays open (a toast would sit under the dialog's overlay); the previous file is untouched (temp file synced, then renamed) |
+| Traktor: the chosen file is Traktor's own `collection.nml` | Refused in the dialog: writing it would replace the DJ's Traktor collection |
 | Serato DJ is running | Export stops: "Close Serato DJ first, then export again." |
 | No `_Serato_` folder on the system drive | The dialog says Serato is not set up here; Export is disabled |
 | No playlist checked | Export is disabled |
