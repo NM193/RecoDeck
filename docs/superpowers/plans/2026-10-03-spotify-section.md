@@ -2767,9 +2767,9 @@ mod tests {
 
     #[test]
     fn names_the_account_by_display_name_or_id() {
-        assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": "Nemanja" })), "Nemanja");
-        assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": null })), "nm93");
-        assert_eq!(profile_name(&json!({ "id": "nm93", "display_name": " " })), "nm93");
+        assert_eq!(profile_name(&json!({ "id": "ana93", "display_name": "Ana" })), "Ana");
+        assert_eq!(profile_name(&json!({ "id": "ana93", "display_name": null })), "ana93");
+        assert_eq!(profile_name(&json!({ "id": "ana93", "display_name": " " })), "ana93");
     }
 }
 ```
@@ -4133,7 +4133,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
         let db = fresh();
         db.set_setting(CLIENT_ID_SETTING, "0123456789abcdef0123456789abcdef").unwrap();
         db.set_setting(REFRESH_TOKEN_SETTING, "rt").unwrap();
-        db.set_setting(ACCOUNT_SETTING, "Nemanja").unwrap();
+        db.set_setting(ACCOUNT_SETTING, "Ana").unwrap();
         db.set_setting(LAST_SYNCED_SETTING, "1700000000000").unwrap();
         db.set_setting(LAST_ERROR_SETTING, "").unwrap();
         db.set_setting(NEEDS_RECONNECT_SETTING, "1").unwrap();
@@ -4146,7 +4146,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
         let status = read_status(&db).unwrap();
         assert_eq!(status.client_id.as_deref(), Some("0123456789abcdef0123456789abcdef"));
         assert!(status.connected);
-        assert_eq!(status.account_name.as_deref(), Some("Nemanja"));
+        assert_eq!(status.account_name.as_deref(), Some("Ana"));
         assert!(status.needs_reconnect);
         assert_eq!(status.last_synced_at, Some(1_700_000_000_000));
         assert_eq!(status.last_error, None);
@@ -4158,7 +4158,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
         let db = fresh();
         db.set_setting(CLIENT_ID_SETTING, "0123456789abcdef0123456789abcdef").unwrap();
         db.set_setting(REFRESH_TOKEN_SETTING, "rt").unwrap();
-        db.set_setting(ACCOUNT_SETTING, "Nemanja").unwrap();
+        db.set_setting(ACCOUNT_SETTING, "Ana").unwrap();
         db.set_setting(LAST_SYNCED_SETTING, "1").unwrap();
         db.set_setting(crate::db::spotify::REFUSED_SETTING, "[]").unwrap();
 

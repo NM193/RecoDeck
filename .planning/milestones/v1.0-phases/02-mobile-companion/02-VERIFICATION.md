@@ -51,7 +51,7 @@ human_verification:
 | `mobile/components/MobilePlayer.tsx` | Compact bar + full-screen player with seek, prev/next, Media Session | VERIFIED | `mobile-player-full` class present (line 118). `onTouchMove` handler present (lines 144-149) for continuous drag seeking. BPM/key/genre metadata in full-screen view (lines 187-193). Compact bar (lines 74-113). Time display and all controls present. |
 | `src/components/SharePlaylistModal.tsx` | QR code modal for per-playlist sharing with correct URL format | VERIFIED | `shareUrl` constructed as `${companionUrl}/?token=${companionToken}&playlist=${playlistId}&name=${encodeURIComponent(playlistName)}` (line 24). `QRCodeSVG` renders with this URL (line 56). |
 | `src/components/Settings.tsx` | Companion tab with start/stop, QR, URL, token, streams, autostart | VERIFIED | `companionRunning`, `companionUrl`, `companionToken`, `companionActiveStreams`, `companionAutostart` state all present (lines 100-107). `companion` tab type defined (line 68). Settings load companion status on open (lines 153-173). `companion-started` event listener updates UI (lines 117-135). |
-| `mobile/dist/index.html` | Built PWA ready to serve | VERIFIED | File exists at `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/mobile/dist/index.html`. |
+| `mobile/dist/index.html` | Built PWA ready to serve | VERIFIED | File exists at `~/Desktop/Cursor/RecoDeck/mobile/dist/index.html`. |
 
 ---
 

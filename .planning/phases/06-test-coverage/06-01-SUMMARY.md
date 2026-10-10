@@ -68,7 +68,7 @@ Each task was committed atomically:
 **Plan metadata:** (docs commit — see final_commit step)
 
 ## Files Created/Modified
-- `/Users/nemanjamarjanovic/Desktop/Cursor/RecoDeck/src-tauri/src/ai/context_builder.rs` - Extended #[cfg(test)] block with helper functions and 13 new tests; changed is_camelot_compatible to pub(crate)
+- `~/Desktop/Cursor/RecoDeck/src-tauri/src/ai/context_builder.rs` - Extended #[cfg(test)] block with helper functions and 13 new tests; changed is_camelot_compatible to pub(crate)
 
 ## Decisions Made
 - Combined Task 1 and Task 2 into a single commit since helper functions and tests were implemented together in the same file and verified as a unit

@@ -52,3 +52,6 @@ src/lib/tracklist/__fixtures__/
 
 # Brainstorming companion: mockups and session state
 .superpowers/
+
+# Local Claude Code permissions: personal, never shared
+.claude/settings.local.json

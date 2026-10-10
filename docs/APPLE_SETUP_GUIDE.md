@@ -77,7 +77,7 @@ This guide walks you through the complete Apple Developer setup and GitHub Secre
 7. **Find your Team ID:**
    - Look at the top-right corner of the page
    - You'll see your name/organization and a 10-character code
-   - Example: **Nemanja Marjanovic (A1B2C3D4E5)**
+   - Example: **Your Name (A1B2C3D4E5)**
    - The code in parentheses is your **Team ID**
    - **SAVE THIS:** You'll need it for GitHub Secrets
 
