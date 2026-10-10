@@ -5,13 +5,15 @@
 // The track playing shows the equalizer and its title in the accent colour;
 // under the mouse, pause while it plays and ▶ while it is paused. A row is a
 // drag source carrying that one row (Interactions spec, Drag and drop).
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Icon } from '../Icon'
 import { Equalizer } from '../Equalizer'
 import { audioPlayer } from '../../lib/audioPlayer'
 import { useTrackDrag } from '../../lib/drag/useTrackDrag'
 import { useTrackDragStore } from '../../lib/drag/trackDrag'
 import type { DropTarget } from '../../lib/drag/dropTargets'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import { bpmLabel } from '../../lib/home/labels'
 import { usePlayerStore } from '../../store/playerStore'
 import type { LibraryFolder, Track } from '../../types/track'
@@ -91,10 +93,16 @@ export function HomeTrackRows<T extends Track>({
     [dragged],
   )
 
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const rowsRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(rowsRef, glideRef, '.home-row', GLIDE.row)
+
   const drawn = limit === undefined ? tracks : tracks.slice(0, limit)
 
   return (
-    <div className="home-rows">
+    <div className="glide-track home-rows" ref={rowsRef}>
+      <span ref={glideRef} className="glide" aria-hidden="true" />
       {drawn.map((track, index) => {
         const playing =
           currentTrack != null &&

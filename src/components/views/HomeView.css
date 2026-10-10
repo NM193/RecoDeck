@@ -264,8 +264,8 @@
   user-select: none;
 }
 
-.home-row:hover {
-  background: var(--bg-tertiary);
+.home-rows {
+  --glide-bg: var(--bg-tertiary);
 }
 
 .home-row--dragging {
@@ -302,11 +302,17 @@
   cursor: pointer;
   opacity: 0;
   transform: translate(-50%, -50%);
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .home-row__action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.home-row__number,
+.home-row__no .equalizer {
+  transition: opacity var(--motion-fast) var(--ease);
 }
 
 .home-row:hover .home-row__number,
@@ -391,10 +397,8 @@
   border-bottom-color: transparent;
 }
 
-.home-news:hover,
-.home-gig:hover,
-.home-set:hover {
-  background: var(--bg-tertiary);
+.home-list {
+  --glide-bg: var(--bg-tertiary);
 }
 
 .home-news:focus-visible,

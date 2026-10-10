@@ -32,6 +32,7 @@ import { homeGenreTiles, playlistGradient, userPlaylists } from './content'
 import { HomeTrackRows, type TrackRowActions } from './HomeTrackRows'
 import { PlaylistCover } from '../PlaylistCover'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { HoverGlide } from '../HoverGlide'
 import type { HomeData } from './useHomeData'
 
 /** Last playlist draws this many rows; a 2,000-track playlist would draw them all. */
@@ -286,7 +287,7 @@ function CardBody({
       const rows = newLikeRows(facts.spotify, facts.youtubeMusic)
       if (rows.length === 0) return <Empty>No new likes</Empty>
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {rows.map((row) => (
             <button
               key={`${row.service}\n${row.listId}`}
@@ -306,7 +307,7 @@ function CardBody({
               </span>
             </button>
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'new-sets': {
@@ -314,7 +315,7 @@ function CardBody({
       if (news === null) return null
       if (news.finds.length === 0) return <Empty>No new sets</Empty>
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {news.finds.map((find) => (
             <SetRow
               key={find.videoId}
@@ -324,7 +325,7 @@ function CardBody({
               onOpen={() => actions.onOpenSet(find.videoId)}
             />
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'saved-sets': {
@@ -332,7 +333,7 @@ function CardBody({
       if (data.savedSets.length === 0) return <Empty>No saved sets yet</Empty>
       const now = new Date()
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {data.savedSets.map((set) => (
             <SetRow
               key={set.video_id}
@@ -342,7 +343,7 @@ function CardBody({
               onOpen={() => actions.onOpenSet(set.video_id)}
             />
           ))}
-        </div>
+        </HoverGlide>
       )
     }
     case 'bpm-key':
@@ -406,7 +407,7 @@ function CardBody({
       if (data.gigs === null) return null
       if (data.gigs.length === 0) return <Empty>No upcoming gigs</Empty>
       return (
-        <div className="home-list">
+        <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
           {data.gigs.map((gig) => {
             const day = gigDay(gig.date)
             const where = gigWhere(gig)
@@ -428,7 +429,7 @@ function CardBody({
               </button>
             )
           })}
-        </div>
+        </HoverGlide>
       )
     case 'library-by-genre': {
       if (data.groups === null) return null
@@ -720,7 +721,7 @@ function NeedsYou({
   }
 
   return (
-    <div className="home-list">
+    <HoverGlide className="home-list" item=".home-news, .home-gig, .home-set" kind="row">
       {rows.map((row) => (
         <button
           key={row.kind}
@@ -736,6 +737,6 @@ function NeedsYou({
           </span>
         </button>
       ))}
-    </div>
+    </HoverGlide>
   )
 }
