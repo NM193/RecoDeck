@@ -2,6 +2,7 @@
 // The Plays tab: the named tracks of the DJ's saved sets, most-played first —
 // `Track · in N of M sets · Status`, with a bar for the share of their sets.
 // Its own status cell: no Yes / No, since verdicts are keyed by Spotify id.
+import { useRef } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Icon } from '../Icon'
 import { CopyButton, YouTubeButton } from '../spotify/SpotifyRowActions'
@@ -10,6 +11,8 @@ import { playSearchUrl, playText, type Play } from '../../lib/dj/plays'
 import { inSets, ownedQueue, playShare } from '../../lib/dj/tabs'
 import type { Ownership } from '../../lib/spotify/ownership'
 import type { LibraryTrack } from '../../lib/tracklist/match'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import '../views/SpotifyView.css'
 
 /** Owned ✓, or Maybe / Missing with YouTube, SelectedRecs ↗ and Copy. */
@@ -175,6 +178,11 @@ export function DjPlaysTab({
   checking,
   onPlayFiles,
 }: DjPlaysTabProps) {
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const tableRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(tableRef, glideRef, '.spotify-row--data', GLIDE.row)
+
   if (sets === null || plays === null)
     return <p className="dj-note">Reading your saved sets…</p>
   if (sets === 0) {
@@ -208,10 +216,12 @@ export function DjPlaysTab({
         </span>
       </div>
       <div
-        className="spotify-table dj-table"
+        ref={tableRef}
+        className="glide-track spotify-table dj-table"
         role="table"
         aria-label="What they play"
       >
+        <span ref={glideRef} className="glide" aria-hidden="true" />
         <div className="spotify-row spotify-row--head dj-play" role="row">
           <span className="spotify-cell--num" role="columnheader">
             #

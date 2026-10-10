@@ -3,7 +3,7 @@
 // leads to its tab ("all 9 →"), then a few rows drawn by the tabs' own
 // components. While customizing, a card has a grip and × instead, and its
 // rows show ghosted.
-import { useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { Icon, type IconName } from '../Icon'
 import { SkeletonRows } from '../Skeleton'
 import { GigRow, RaLinkCard } from './DjGigsTab'
@@ -36,6 +36,8 @@ import type { DjGig } from '../../types/dj'
 import type { LibraryTrack } from '../../lib/tracklist/match'
 import type { Verdict } from '../../types/spotify'
 import type { YtSetSummary } from '../../types/youtube'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 
 /** What the cards show — DjView's own memoised values, never classified again here. */
 export interface OverviewData {
@@ -179,6 +181,10 @@ function TracksBody({
   data: OverviewData
   actions: OverviewActions
 }) {
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const tableRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(tableRef, glideRef, '.spotify-row--data', GLIDE.row)
   if (data.tracksState === 'notConnected') {
     return (
       <div className="dj-connect">
@@ -211,9 +217,11 @@ function TracksBody({
   }
   return (
     <div
-      className={`spotify-table dj-table dj-card__table content-in${scroll ? ' dj-card__table--scroll' : ''}`}
+      ref={tableRef}
+      className={`glide-track spotify-table dj-table dj-card__table content-in${scroll ? ' dj-card__table--scroll' : ''}`}
       role="table"
     >
+      <span ref={glideRef} className="glide" aria-hidden="true" />
       {shown.map((row, index) => (
         <DjTrackRow
           key={row.track.spotifyId}

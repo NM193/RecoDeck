@@ -22,6 +22,7 @@ import {
   type YtmSetRow,
 } from '../../lib/youtube-music/rows'
 import { ALL_YTM_LISTS, LIKED_MUSIC } from '../../types/youtubeMusic'
+import { HoverGlide } from '../HoverGlide'
 import './YouTubeMusicView.css'
 
 interface YouTubeMusicViewProps {
@@ -100,7 +101,13 @@ function SetsGroup({
           Sets ({sets.length})
         </button>
       </h2>
-      <div id={rowsId} hidden={!open}>
+      <HoverGlide
+        id={rowsId}
+        hidden={!open}
+        className="ytm-sets__rows"
+        item=".ytm-sets__row"
+        kind="row"
+      >
         {sets.map(({ track }) => (
           <div className="ytm-sets__row" key={track.videoId}>
             <span className="ytm-sets__name" title={track.title}>
@@ -122,7 +129,7 @@ function SetsGroup({
             </button>
           </div>
         ))}
-      </div>
+      </HoverGlide>
     </section>
   )
 }

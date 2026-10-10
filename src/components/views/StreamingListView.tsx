@@ -16,6 +16,8 @@ import {
   type StatusFilter,
 } from '../../lib/spotify/rows'
 import { getErrorMessage, isAppError, type AppErrorKind } from '../../types/ai'
+import { GLIDE } from '../../lib/glide/glide'
+import { useHoverGlide } from '../../lib/glide/useGlide'
 import './SpotifyView.css'
 
 /** What every service's row carries. */
@@ -122,6 +124,10 @@ export function StreamingListView<R extends StreamRow>({
   const [reconnectError, setReconnectError] = useState<string | null>(null)
   /** Each Reconnect click; only the newest one's end clears "Waiting…". */
   const reconnectSeq = useRef(0)
+  // The hover slides from row to row (Micro-interactions spec, Rows).
+  const tableRef = useRef<HTMLDivElement>(null)
+  const glideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(tableRef, glideRef, '.spotify-row--data', GLIDE.row)
 
   const counts = useMemo(() => countByStatus(rows), [rows])
   const shown = useMemo(
@@ -290,7 +296,13 @@ export function StreamingListView<R extends StreamRow>({
         ))}
       </div>
 
-      <div className="spotify-table" role="table" aria-label={title}>
+      <div
+        ref={tableRef}
+        className="glide-track spotify-table"
+        role="table"
+        aria-label={title}
+      >
+        <span ref={glideRef} className="glide" aria-hidden="true" />
         <div className={rowClass('spotify-row--head')} role="row">
           <span className="spotify-cell--num" role="columnheader">
             #
