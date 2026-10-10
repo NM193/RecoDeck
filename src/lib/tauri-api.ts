@@ -183,6 +183,17 @@ export const tauriApi = {
     return await invoke('export_to_dj', { target, playlistIds, path })
   },
 
+  async djExportLastTarget(): Promise<DjTarget | null> {
+    // The program exported to last; export_to_dj saves it as JSON ("traktor").
+    const raw = await invoke<string | null>('get_setting', { key: 'dj_export.last_target' })
+    try {
+      const target: unknown = raw ? JSON.parse(raw) : null
+      return target === 'rekordbox' || target === 'traktor' || target === 'serato' ? target : null
+    } catch {
+      return null
+    }
+  },
+
   async pickExportFolder(): Promise<string | null> {
     // Use the JS-side dialog plugin directly — the Rust blocking_pick_folder
     // deadlocks on macOS, and the callback + channel pattern also hangs when

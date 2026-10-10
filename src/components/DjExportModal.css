@@ -7,6 +7,16 @@
   outline: none;
 }
 
+/* The program tabs sit between the title and the tree. */
+.dj-export__tabs {
+  margin-bottom: 16px;
+}
+
+/* While it writes, the tabs stay where they are. */
+.dj-export__tabs .tabs__tab:disabled {
+  cursor: default;
+}
+
 .dj-export__label {
   margin: 0 0 6px;
   color: var(--text-secondary);

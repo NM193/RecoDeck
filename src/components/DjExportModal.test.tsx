@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import type { DjTarget } from '../types/djExport'
 
 vi.mock('../lib/tauri-api', () => ({
   tauriApi: {
     getAllPlaylists: vi.fn(),
     djExportDefaults: vi.fn(),
+    djExportLastTarget: vi.fn(),
     exportToDj: vi.fn(),
     pickDjExportFile: vi.fn(),
   },
@@ -20,7 +22,14 @@ import { DjExportModal } from './DjExportModal'
 // React's act() in a plain DOM, without a testing library.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// jsdom has no ResizeObserver; the tab bar's thumb only needs one to exist.
+class NoResizeObserver {
+  observe() {}
+  disconnect() {}
+}
+
 const PATH = '/Users/dj/Music/RecoDeck/RecoDeck.xml'
+const NML = '/Users/dj/Music/RecoDeck/RecoDeck.nml'
 const playlists = [
   { id: 2, name: 'Friday', parent_id: 1, playlist_type: 'manual', track_count: 2 },
   { id: 1, name: 'Gigs', parent_id: null, playlist_type: 'folder', track_count: 0 },
@@ -33,13 +42,15 @@ let root: Root
 let onClose: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', NoResizeObserver)
   vi.mocked(tauriApi.getAllPlaylists).mockResolvedValue(playlists)
-  vi.mocked(tauriApi.djExportDefaults).mockResolvedValue({
-    path: PATH,
-    exists: true,
-    playlist_ids: [4],
-    remembered: true,
-  })
+  // Rekordbox last got Warm-up; Traktor last got Saturday.
+  vi.mocked(tauriApi.djExportDefaults).mockImplementation(async (target: DjTarget) =>
+    target === 'traktor'
+      ? { path: NML, exists: true, playlist_ids: [3], remembered: true }
+      : { path: PATH, exists: true, playlist_ids: [4], remembered: true },
+  )
+  vi.mocked(tauriApi.djExportLastTarget).mockResolvedValue(null)
   vi.mocked(tauriApi.exportToDj).mockResolvedValue({ playlists: 2, tracks: 3, skipped: [], written: [PATH] })
   onClose = vi.fn()
   host = document.createElement('div')
@@ -51,6 +62,7 @@ afterEach(() => {
   act(() => root.unmount())
   host.remove()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 async function open(openedFrom: number | null) {
@@ -62,10 +74,13 @@ async function open(openedFrom: number | null) {
 const box = (name: string) => host.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)!
 const exportButton = () =>
   [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.startsWith('Export'))!
+const tab = (name: string) =>
+  [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((t) => t.textContent === name)!
 
 describe('DjExportModal', () => {
   it('opens with the remembered playlists and the one it was opened from', async () => {
     await open(2)
+    expect(tab('Rekordbox').getAttribute('aria-selected')).toBe('true')
     expect(box('Friday').checked).toBe(true)
     expect(box('Warm-up').checked).toBe(true)
     expect(box('Saturday').checked).toBe(false)
@@ -139,6 +154,7 @@ describe('DjExportModal', () => {
     await act(async () => {
       change.click()
     })
+    expect(tauriApi.pickDjExportFile).toHaveBeenCalledWith('rekordbox', PATH)
     expect(host.textContent).toContain('/Volumes/USB/RecoDeck.xml')
     await act(async () => {
       exportButton().click()
@@ -154,5 +170,60 @@ describe('DjExportModal', () => {
     await open(null)
     expect(box('Empty').disabled).toBe(true)
     expect(box('Gigs').disabled).toBe(false)
+  })
+
+  it('opens on the program exported to last, with that program’s playlists and file', async () => {
+    vi.mocked(tauriApi.djExportLastTarget).mockResolvedValue('traktor')
+    await open(2)
+    expect(tab('Traktor').getAttribute('aria-selected')).toBe('true')
+    expect(box('Saturday').checked).toBe(true)
+    expect(box('Friday').checked).toBe(true)
+    expect(box('Warm-up').checked).toBe(false)
+    expect(host.textContent).toContain(NML)
+    expect(host.textContent).toContain('Import Playlist')
+  })
+
+  it('each tab keeps its own checks, and Export writes for the open tab', async () => {
+    await open(null)
+    await act(async () => {
+      box('Friday').click()
+    })
+    await act(async () => {
+      tab('Traktor').click()
+    })
+    expect(box('Friday').checked).toBe(false)
+    expect(box('Saturday').checked).toBe(true)
+    expect(box('Warm-up').checked).toBe(false)
+    await act(async () => {
+      tab('Rekordbox').click()
+    })
+    expect(box('Friday').checked).toBe(true)
+    expect(box('Warm-up').checked).toBe(true)
+    await act(async () => {
+      tab('Traktor').click()
+    })
+    vi.mocked(tauriApi.exportToDj).mockResolvedValue({ playlists: 1, tracks: 5, skipped: [], written: [NML] })
+    await act(async () => {
+      exportButton().click()
+    })
+    expect(tauriApi.exportToDj).toHaveBeenCalledWith('traktor', [3], NML)
+    expect(toast).toHaveBeenCalledWith(
+      '1 playlist, 5 tracks exported to Traktor',
+      expect.objectContaining({ kind: 'success' }),
+    )
+  })
+
+  it('the arrow keys move between the programs', async () => {
+    await open(null)
+    await act(async () => {
+      tab('Rekordbox').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(tab('Traktor').getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('a last program without a tab here opens on Rekordbox', async () => {
+    vi.mocked(tauriApi.djExportLastTarget).mockResolvedValue('serato')
+    await open(null)
+    expect(tab('Rekordbox').getAttribute('aria-selected')).toBe('true')
   })
 })
