@@ -105,17 +105,41 @@ export function modKeyLabel(platform: string = navigator.platform): string {
   return platform.startsWith('Win') ? 'Ctrl' : '⌘'
 }
 
+/** The shortcuts a tooltip can name (data-tip-keys). */
+export type ShortcutId =
+  | 'play-pause'
+  | 'next'
+  | 'previous'
+  | 'search'
+  | 'find'
+  | 'sidebar'
+  | 'shortcuts'
+  | 'cancel'
+  | 'move'
+  | 'play-selected'
+  | 'select-all'
+
 /** The sheet's rows (⌘/), in the spec's order. "⌘" is written as `modKeyLabel()`. */
-export const SHORTCUT_ROWS: ReadonlyArray<{ keys: string[]; does: string }> = [
-  { keys: ['Space'], does: 'Play or pause — the player or the set, whichever played last' },
-  { keys: ['⌘', '→'], does: 'Next track' },
-  { keys: ['⌘', '←'], does: 'Previous track' },
-  { keys: ['⌘', 'K'], does: 'Search' },
-  { keys: ['⌘', 'F'], does: "Find on this page: the page's search box" },
-  { keys: ['⌘', '\\'], does: 'Collapse or open the sidebar' },
-  { keys: ['⌘', '/'], does: 'These shortcuts' },
-  { keys: ['Esc'], does: 'Cancel a drag, close a menu, or clear the selection' },
-  { keys: ['↑', '↓'], does: 'In a track list: move the selection (Shift adds to it)' },
-  { keys: ['Enter'], does: 'In a track list: play the selected track' },
-  { keys: ['⌘', 'A'], does: 'In a track list: select every row shown' },
+export const SHORTCUT_ROWS: ReadonlyArray<{ id: ShortcutId; keys: string[]; does: string }> = [
+  { id: 'play-pause', keys: ['Space'], does: 'Play or pause — the player or the set, whichever played last' },
+  { id: 'next', keys: ['⌘', '→'], does: 'Next track' },
+  { id: 'previous', keys: ['⌘', '←'], does: 'Previous track' },
+  { id: 'search', keys: ['⌘', 'K'], does: 'Search' },
+  { id: 'find', keys: ['⌘', 'F'], does: "Find on this page: the page's search box" },
+  { id: 'sidebar', keys: ['⌘', '\\'], does: 'Collapse or open the sidebar' },
+  { id: 'shortcuts', keys: ['⌘', '/'], does: 'These shortcuts' },
+  { id: 'cancel', keys: ['Esc'], does: 'Cancel a drag, close a menu, or clear the selection' },
+  { id: 'move', keys: ['↑', '↓'], does: 'In a track list: move the selection (Shift adds to it)' },
+  { id: 'play-selected', keys: ['Enter'], does: 'In a track list: play the selected track' },
+  { id: 'select-all', keys: ['⌘', 'A'], does: 'In a track list: select every row shown' },
 ]
+
+/**
+ * A shortcut's keys as the sheet writes them, ⌘ as `modKeyLabel()`: the
+ * chips of a tooltip's data-tip-keys (Micro-interactions spec, Tooltips).
+ * Null for an id that is not in the sheet.
+ */
+export function shortcutKeys(id: string, platform: string = navigator.platform): string[] | null {
+  const row = SHORTCUT_ROWS.find((r) => r.id === id)
+  return row ? row.keys.map((key) => (key === '⌘' ? modKeyLabel(platform) : key)) : null
+}

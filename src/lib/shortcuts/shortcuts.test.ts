@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { isTextField, modKeyLabel, ownsSpace, shortcutFor, type KeyPress } from './shortcuts'
+import {
+  isTextField,
+  modKeyLabel,
+  ownsSpace,
+  SHORTCUT_ROWS,
+  shortcutFor,
+  shortcutKeys,
+  type KeyPress,
+} from './shortcuts'
 
 const press = (key: string, over: Partial<KeyPress> = {}): KeyPress => ({
   key,
@@ -76,5 +84,24 @@ describe('what focus holds', () => {
   it('writes ⌘ as Ctrl on Windows', () => {
     expect(modKeyLabel('MacIntel')).toBe('⌘')
     expect(modKeyLabel('Win32')).toBe('Ctrl')
+  })
+})
+
+describe("shortcutKeys: a tooltip's chips", () => {
+  it("are the sheet's keys, ⌘ written for the platform", () => {
+    expect(shortcutKeys('next', 'MacIntel')).toEqual(['⌘', '→'])
+    expect(shortcutKeys('next', 'Win32')).toEqual(['Ctrl', '→'])
+    expect(shortcutKeys('play-pause', 'MacIntel')).toEqual(['Space'])
+  })
+
+  it('know no other ids', () => {
+    expect(shortcutKeys('nope')).toBeNull()
+  })
+
+  it('cover every row of the sheet, each id once', () => {
+    const ids = SHORTCUT_ROWS.map((row) => row.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ids)
+      expect(shortcutKeys(id, 'MacIntel')).toEqual(SHORTCUT_ROWS.find((r) => r.id === id)?.keys)
   })
 })
