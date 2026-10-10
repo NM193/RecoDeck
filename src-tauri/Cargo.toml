@@ -34,6 +34,7 @@ notify = "6.0"
 reqwest = { version = "0.12", features = ["json"] }
 lofty = "0.22"
 walkdir = "2.5"
+unicode-normalization = "0.1"
 sha2 = "0.10"
 bliss-audio-aubio-rs = { version = "0.2", features = ["builtin", "bindgen"] }
 rustfft = "6.2"

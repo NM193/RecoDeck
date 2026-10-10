@@ -6,6 +6,7 @@
 
 pub mod keys;
 pub mod rekordbox;
+pub mod traktor;
 pub mod volumes;
 mod xml;
 
