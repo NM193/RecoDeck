@@ -27,10 +27,11 @@
   color: var(--text-primary);
 }
 
-/* The open row's icon takes the accent. */
+/* The open row's icon takes the accent. Icon sets an inline
+   color: currentColor, hence !important. */
 .folder-row.selected .folder-icon,
 .folder-row.selected .spotify-list-row__icon {
-  color: var(--accent-hover);
+  color: var(--accent-hover) !important;
 }
 
 /* Under the pointer the icon and name lean 3px right; arrow and count stay. */
