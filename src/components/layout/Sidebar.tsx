@@ -32,7 +32,7 @@ import {
   type SidebarSection,
 } from '../../lib/sidebarPrefs'
 import { EASE, MOTION } from '../../lib/motion'
-import { GLIDE } from '../../lib/glide/glide'
+import { GLIDE, menuGlide } from '../../lib/glide/glide'
 import { useGlideTo, useHoverGlide } from '../../lib/glide/useGlide'
 import './Sidebar.css'
 
@@ -42,6 +42,8 @@ const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const STORAGE_KEY = 'sidebar_width'
 const DEFAULT_WIDTH = 240
+/** The context menu's highlight: the accent, red on a destructive item. */
+const CTX_GLIDE = menuGlide('sidebar-ctx-menu__item--danger')
 
 /** The width the user dragged the full sidebar to, or the default. */
 function readStoredWidth(): number {
@@ -291,6 +293,9 @@ export function Sidebar({
   const navOpenRef = useRef<HTMLSpanElement>(null)
   useHoverGlide(navRef, navHoverRef, '.sidebar-nav-item', GLIDE.row)
   useGlideTo(navRef, navOpenRef, '.sidebar-nav-item--active', GLIDE.row)
+  // The colour menu's hover slides between its items.
+  const ctxGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(ctxRef, ctxGlideRef, '.sidebar-ctx-menu__item', CTX_GLIDE)
   // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
   useOverlay(ctxMenu !== null, () => setCtxMenu(null))
 
@@ -459,9 +464,10 @@ export function Sidebar({
   const colourMenuEl = ctxMenu && (
     <div
       ref={ctxRef}
-      className="sidebar-ctx-menu"
+      className="glide-track sidebar-ctx-menu"
       style={{ top: ctxMenu.y, left: ctxMenu.x }}
     >
+      <span ref={ctxGlideRef} className="glide" aria-hidden="true" />
       <SidebarColourMenu
         label={SECTION_LABELS[ctxMenu.section]}
         current={colourFor(ctxMenu.section, colours)}

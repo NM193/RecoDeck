@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../Icon'
-import { GLIDE } from '../../lib/glide/glide'
+import { GLIDE, menuGlide } from '../../lib/glide/glide'
 import { useGlideTo, useHoverGlide } from '../../lib/glide/useGlide'
 import { useOverlay } from '../../lib/overlays'
 import { getErrorMessage } from '../../types/ai'
@@ -14,6 +14,9 @@ import {
   LIKED_MUSIC,
   type YtmList,
 } from '../../types/youtubeMusic'
+
+/** The list menu's highlight: the accent, red on Remove. */
+const CTX_GLIDE = menuGlide('sidebar-ctx-menu__item--danger')
 
 interface YouTubeMusicListsProps {
   lists: YtmList[]
@@ -51,6 +54,9 @@ export function YouTubeMusicLists({
   const openRef = useRef<HTMLSpanElement>(null)
   useHoverGlide(bodyRef, hoverRef, '.folder-row', GLIDE.row)
   useGlideTo(bodyRef, openRef, '.folder-row.selected', GLIDE.row)
+  // The list menu's hover, red on Remove.
+  const menuGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(menuRef, menuGlideRef, '.sidebar-ctx-menu__item', CTX_GLIDE)
   // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
   useOverlay(menu !== null, () => setMenu(null))
 
@@ -202,13 +208,14 @@ export function YouTubeMusicLists({
         createPortal(
           <div
             ref={menuRef}
-            className="sidebar-ctx-menu ytm-list-menu"
+            className="glide-track sidebar-ctx-menu ytm-list-menu"
             style={{ top: menu.y, left: menu.x }}
             role="menu"
           >
+            <span ref={menuGlideRef} className="glide" aria-hidden="true" />
             <button
               type="button"
-              className="sidebar-ctx-menu__item"
+              className="sidebar-ctx-menu__item sidebar-ctx-menu__item--danger"
               role="menuitem"
               onClick={() => remove(menu.listId)}
             >

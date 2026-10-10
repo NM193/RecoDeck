@@ -240,6 +240,8 @@
   padding: 4px 0;
   min-width: 252px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /* Its hover is the glide under the items (Micro-interactions spec). */
+  --glide-bg: rgba(var(--accent-rgb), 0.22);
 }
 
 .sidebar-ctx-menu__item {
@@ -255,10 +257,8 @@
   cursor: pointer;
   text-align: left;
   transition: background var(--motion-fast) var(--ease);
-}
-
-.sidebar-ctx-menu__item:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+  /* Full-width rows: the <label> and the buttons share square corners. */
+  border-radius: 0;
 }
 
 /* ===== Drag resize handle ===== */
