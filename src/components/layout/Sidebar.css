@@ -427,22 +427,6 @@
   margin: 10px 0 12px;
 }
 
-/* ===== Tooltip (rail) — fixed, so the sidebar's overflow cannot clip it ===== */
-
-.sidebar-tooltip {
-  position: fixed;
-  z-index: 260;
-  transform: translateY(-50%);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  font-size: var(--text-xs, 11px);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 /* ===== Colour block in the right-click menu ===== */
 
 .sidebar-colour-menu__title {
