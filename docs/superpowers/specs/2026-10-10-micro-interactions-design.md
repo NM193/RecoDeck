@@ -518,6 +518,7 @@ delay).
     - `⌘` is written through `modKeyLabel()`, so Windows shows Ctrl, as the ⌘/
       sheet does;
     - a tooltip's keys therefore never drift from the sheet;
+  - `data-tip-overflow`: show only while the text is cut off (see Migration);
   - `data-tip-side`: `top`, `right` or `bottom`, read from the closest
     ancestor that has it. The default is `bottom`. `NowPlayingBar` sets `top`
     and the sidebar rail sets `right`.
@@ -565,8 +566,16 @@ delay).
 ### Hiding
 
 - **When:** the pointer leaving, a press, any scroll, `Esc`, the window losing
-  focus, or the element leaving the DOM.
-- **Keyboard:** a tooltip shown by keyboard focus hides on `focusout`.
+  focus, or the element leaving the DOM. An element that leaves the DOM while
+  its tip waits gets no tip at all.
+- **After a press or `Esc`:** the element gets no tip again until the pointer
+  leaves it.
+- **Keyboard:**
+  - a tooltip shown by keyboard focus hides on `focusout`;
+  - `Enter` or `Space` hides it too, since pressing may change what it would
+    say (Play turns into Pause).
+- **Hidden means hidden:** once faded out, the tooltip is `visibility: hidden`,
+  so a screen reader cannot reach its stale text.
 
 ### Accessibility
 
@@ -600,10 +609,14 @@ The migration handles three cases:
   - so its call sites with `title` (`settings/YouTubeSection.tsx`, and any
     other `grep` finds) migrate to `data-tip` as well;
   - the ESLint rule also forbids `title` on `Button`.
-- **Truncated text:** a `title` that shows truncated text in full (a set's
-  name, for example) migrates as-is and always shows, as today.
+- **Truncated text:** a `title` that only repeats the element's visible text
+  (a set's name, a TrackTable cell) is there for when that text is cut off.
+  - It migrates with `data-tip-overflow`, and the layer shows it only while the
+    element's text, or a descendant's, overflows (`scrollWidth > clientWidth`).
+  - Otherwise, a 200ms tooltip on every cell would follow the pointer across
+    the table.
 - **A new ESLint rule** (`no-restricted-syntax`, for `src/**/*.tsx`) forbids
-  `title` on JSX HTML elements and on `Button`, so system tooltips do not come back. It
+  `title` on JSX HTML elements, on `motion.*` elements and on `Button`, so system tooltips do not come back. It
   ignores `src/components/Player.tsx`, which is unused and out of scope, so
   `npm run lint` stays clean.
 
