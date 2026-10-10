@@ -82,6 +82,20 @@ export function NowPlayingBar({
   const addMenuRef = useRef<HTMLDivElement>(null)
   const addGlideRef = useRef<HTMLSpanElement>(null)
   useHoverGlide(addMenuRef, addGlideRef, '.now-playing-bar__playlist-item', GLIDE.menu)
+  // The small buttons' grey square slides between them, play and disabled
+  // ones skipped; the same on the right: mute and the actions (Micro-
+  // interactions spec, Player bar).
+  const controlsRef = useRef<HTMLDivElement>(null)
+  const controlsGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(
+    controlsRef,
+    controlsGlideRef,
+    '.now-playing-bar__btn:not(.now-playing-bar__btn--play):not(:disabled)',
+    GLIDE.icon,
+  )
+  const actionsRef = useRef<HTMLDivElement>(null)
+  const actionsGlideRef = useRef<HTMLSpanElement>(null)
+  useHoverGlide(actionsRef, actionsGlideRef, '.now-playing-bar__btn:not(:disabled)', GLIDE.icon)
   const volumeRef = useRef<HTMLDivElement>(null)
   const hideTimeoutRef = useRef<number | null>(null)
 
@@ -819,7 +833,8 @@ export function NowPlayingBar({
         {/* CENTER: Transport controls + progress */}
         <div className="now-playing-bar__center">
           {/* Transport controls row */}
-          <div className="now-playing-bar__controls">
+          <div className="glide-track now-playing-bar__controls" ref={controlsRef}>
+            <span ref={controlsGlideRef} className="glide" aria-hidden="true" />
             <button
               className={`now-playing-bar__btn now-playing-bar__btn--toggle ${isShuffle ? 'now-playing-bar__btn--active' : ''}`}
               onClick={() => setShuffle(!isShuffle)}
@@ -843,7 +858,17 @@ export function NowPlayingBar({
               disabled={!currentTrack || isLoading}
               title={isPlaying ? 'Pause' : 'Play'}
             >
-              <Icon name={isPlaying ? 'Pause' : 'Play'} size={20} />
+              {/* Play and pause, one over the other: the one leaving turns away. */}
+              <span
+                className={`now-playing-bar__play-icon now-playing-bar__play-icon--play${isPlaying ? ' now-playing-bar__play-icon--hidden' : ''}`}
+              >
+                <Icon name="Play" size={20} />
+              </span>
+              <span
+                className={`now-playing-bar__play-icon now-playing-bar__play-icon--pause${isPlaying ? '' : ' now-playing-bar__play-icon--hidden'}`}
+              >
+                <Icon name="Pause" size={20} />
+              </span>
             </button>
 
             <button
@@ -937,7 +962,8 @@ export function NowPlayingBar({
         </div>
 
         {/* RIGHT: Volume + extras */}
-        <div className="now-playing-bar__right">
+        <div className="glide-track now-playing-bar__right" ref={actionsRef}>
+          <span ref={actionsGlideRef} className="glide" aria-hidden="true" />
           {/* Volume */}
           <div
             className="now-playing-bar__volume"

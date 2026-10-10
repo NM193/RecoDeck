@@ -290,7 +290,8 @@
   border-radius: var(--radius-md);
   transition:
     color var(--motion-fast) var(--ease),
-    background var(--motion-fast) var(--ease);
+    background var(--motion-fast) var(--ease),
+    transform 280ms var(--ease-spring);
   flex-shrink: 0;
   position: relative;
 }
@@ -315,29 +316,25 @@
   background: var(--text-primary);
   color: var(--bg-primary);
   border-radius: var(--radius-md);
+  transition:
+    transform 320ms var(--ease-spring),
+    box-shadow 280ms ease;
 }
 
 .now-playing-bar__btn--play:hover:not(:disabled) {
   background: var(--text-primary);
   color: var(--bg-primary);
-  transform: scale(1.05);
+  transform: scale(1.1);
+  box-shadow: 0 0 0 5px rgba(var(--accent-rgb), 0.3);
+}
+
+.now-playing-bar__btn--play:active:not(:disabled) {
+  transform: scale(0.9);
 }
 
 /* Toggle buttons (shuffle, repeat) active state */
 .now-playing-bar__btn--toggle.now-playing-bar__btn--active {
   color: var(--accent) !important;
-}
-
-.now-playing-bar__btn--toggle.now-playing-bar__btn--active::after {
-  content: '';
-  position: absolute;
-  bottom: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  border-radius: 50%;
 }
 
 /* Repeat "1" badge */
@@ -633,4 +630,61 @@
   font-size: var(--text-base, 1rem);
   color: var(--text-muted);
   margin-top: var(--space-1);
+}
+
+/* The transport and the right-hand actions (Micro-interactions spec, Player
+   bar): a grey square slides under the small buttons, which spring up a
+   little and shrink when pressed. */
+.now-playing-bar__controls,
+.now-playing-bar__right {
+  --glide-bg: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+/* Isolated as a glide track, the right group would cap the volume popup and
+   the Add to playlist menu that open upward from it: it stands above the
+   main area as a whole, at the volume wrapper's own 150, and still under the
+   expanded now-playing view (200). */
+.now-playing-bar__right {
+  z-index: 150;
+}
+
+.now-playing-bar__controls .now-playing-bar__btn:not(.now-playing-bar__btn--play):hover:not(:disabled),
+.now-playing-bar__right .now-playing-bar__btn:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+
+.now-playing-bar__controls .now-playing-bar__btn:not(.now-playing-bar__btn--play):active:not(:disabled),
+.now-playing-bar__right .now-playing-bar__btn:active:not(:disabled) {
+  transform: scale(0.88);
+  transition-duration: 90ms;
+}
+
+/* Play and pause, one over the other: the one leaving turns away. */
+.now-playing-bar__play-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity 160ms ease,
+    transform 320ms var(--ease-spring);
+}
+
+.now-playing-bar__play-icon--hidden {
+  opacity: 0;
+}
+
+.now-playing-bar__play-icon--play.now-playing-bar__play-icon--hidden {
+  transform: rotate(90deg) scale(0.5);
+}
+
+.now-playing-bar__play-icon--pause.now-playing-bar__play-icon--hidden {
+  transform: rotate(-90deg) scale(0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-bar__btn,
+  .now-playing-bar__play-icon {
+    transform: none !important;
+  }
 }
