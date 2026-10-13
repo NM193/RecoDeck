@@ -206,6 +206,22 @@ pub struct ConversationMessage {
     pub created_at: i64,
 }
 
+/// Split a search query into words: every word must match somewhere, so
+/// "Artist – Title" finds a track whose artist and title are in separate fields.
+/// Stand-alone dashes and punctuation are skipped; if nothing is left the raw query is used.
+fn search_tokens(query: &str) -> Vec<String> {
+    let tokens: Vec<String> = query
+        .split_whitespace()
+        .filter(|w| w.chars().any(|c| c.is_alphanumeric()))
+        .map(|w| format!("%{}%", w))
+        .collect();
+    if tokens.is_empty() {
+        vec![format!("%{}%", query)]
+    } else {
+        tokens
+    }
+}
+
 /// Database connection wrapper
 pub struct Database {
     conn: Connection,
@@ -1821,24 +1837,27 @@ impl Database {
     /// Search tracks by query string across text fields (title, artist, album, label, comment, file_path, genre)
     /// Returns all tracks where any text field contains the query (case-insensitive)
     pub fn search_tracks(&self, query: &str) -> Result<Vec<Track>> {
-        let like_pattern = format!("%{}%", query);
-        let mut stmt = self.conn.prepare(
+        let tokens = search_tokens(query);
+        let field_match = "(title LIKE ? COLLATE NOCASE
+                OR artist LIKE ? COLLATE NOCASE
+                OR album LIKE ? COLLATE NOCASE
+                OR label LIKE ? COLLATE NOCASE
+                OR comment LIKE ? COLLATE NOCASE
+                OR file_path LIKE ? COLLATE NOCASE
+                OR genre LIKE ? COLLATE NOCASE)";
+        let where_clause = vec![field_match; tokens.len()].join(" AND ");
+        let params: Vec<&String> = tokens.iter().flat_map(|t| std::iter::repeat(t).take(7)).collect();
+        let mut stmt = self.conn.prepare(&format!(
             "SELECT id, file_path, file_hash, title, artist, album, album_artist,
                     track_number, year, label, duration_ms, file_format,
                     bitrate, sample_rate, file_size, date_added, date_modified,
                     play_count, rating, comment, artwork_path, genre, genre_source
              FROM tracks
-             WHERE title LIKE ?1 COLLATE NOCASE
-                OR artist LIKE ?1 COLLATE NOCASE
-                OR album LIKE ?1 COLLATE NOCASE
-                OR label LIKE ?1 COLLATE NOCASE
-                OR comment LIKE ?1 COLLATE NOCASE
-                OR file_path LIKE ?1 COLLATE NOCASE
-                OR genre LIKE ?1 COLLATE NOCASE
+             WHERE {where_clause}
              ORDER BY id"
-        )?;
+        ))?;
 
-        let tracks = stmt.query_map([&like_pattern], |row| {
+        let tracks = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
             Ok(Track {
                 id: row.get(0)?,
                 file_path: row.get(1)?,
@@ -1871,8 +1890,17 @@ impl Database {
 
     /// Search tracks by query, returning Track + analysis data (BPM, key) in a single JOIN query.
     pub fn search_tracks_with_analysis(&self, query: &str) -> Result<Vec<TrackWithAnalysis>> {
-        let like_pattern = format!("%{}%", query);
-        let mut stmt = self.conn.prepare(
+        let tokens = search_tokens(query);
+        let field_match = "(t.title LIKE ? COLLATE NOCASE
+                OR t.artist LIKE ? COLLATE NOCASE
+                OR t.album LIKE ? COLLATE NOCASE
+                OR t.label LIKE ? COLLATE NOCASE
+                OR t.comment LIKE ? COLLATE NOCASE
+                OR t.file_path LIKE ? COLLATE NOCASE
+                OR t.genre LIKE ? COLLATE NOCASE)";
+        let where_clause = vec![field_match; tokens.len()].join(" AND ");
+        let params: Vec<&String> = tokens.iter().flat_map(|t| std::iter::repeat(t).take(7)).collect();
+        let mut stmt = self.conn.prepare(&format!(
             "SELECT t.id, t.file_path, t.file_hash, t.title, t.artist, t.album, t.album_artist,
                     t.track_number, t.year, t.label, t.duration_ms, t.file_format,
                     t.bitrate, t.sample_rate, t.file_size, t.date_added, t.date_modified,
@@ -1880,17 +1908,11 @@ impl Database {
                     a.bpm, a.bpm_confidence, a.musical_key, a.key_confidence
              FROM tracks t
              LEFT JOIN track_analysis a ON t.id = a.track_id
-             WHERE t.title LIKE ?1 COLLATE NOCASE
-                OR t.artist LIKE ?1 COLLATE NOCASE
-                OR t.album LIKE ?1 COLLATE NOCASE
-                OR t.label LIKE ?1 COLLATE NOCASE
-                OR t.comment LIKE ?1 COLLATE NOCASE
-                OR t.file_path LIKE ?1 COLLATE NOCASE
-                OR t.genre LIKE ?1 COLLATE NOCASE
+             WHERE {where_clause}
              ORDER BY t.id"
-        )?;
+        ))?;
 
-        let rows = stmt.query_map([&like_pattern], |row| {
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
             let track = Track {
                 id: row.get(0)?,
                 file_path: row.get(1)?,
@@ -2569,11 +2591,12 @@ impl Database {
 
         if let Some(q) = query {
             if !q.is_empty() {
-                conditions.push("(t.title LIKE ? OR t.artist LIKE ? OR t.album LIKE ?)".to_string());
-                let pattern = format!("%{}%", q);
-                params_vec.push(Box::new(pattern.clone()));
-                params_vec.push(Box::new(pattern.clone()));
-                params_vec.push(Box::new(pattern));
+                for pattern in search_tokens(q) {
+                    conditions.push("(t.title LIKE ? OR t.artist LIKE ? OR t.album LIKE ?)".to_string());
+                    params_vec.push(Box::new(pattern.clone()));
+                    params_vec.push(Box::new(pattern.clone()));
+                    params_vec.push(Box::new(pattern));
+                }
             }
         }
 
@@ -3555,6 +3578,21 @@ mod tests {
 
         let results = db.search_tracks("tech-house").unwrap();
         assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_search_tracks_artist_dash_title() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let mut t = create_test_track();
+        t.file_path = "/path/to/a.mp3".to_string();
+        t.artist = Some("Some Artist".to_string());
+        t.title = Some("Great Song (Original Mix)".to_string());
+        db.create_track(&t).unwrap();
+        assert_eq!(db.search_tracks("Some Artist \u{2013} Great Song").unwrap().len(), 1);
+        assert_eq!(db.search_tracks("great some").unwrap().len(), 1);
+        assert_eq!(db.search_tracks("Some Artist - Other").unwrap().len(), 0);
+        assert_eq!(db.search_tracks_with_analysis("Some Artist \u{2013} Great Song").unwrap().len(), 1);
     }
 
     #[test]
