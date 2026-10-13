@@ -62,6 +62,11 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
+            "name": "library_health",
+            "description": "Counts showing how complete the library data is: total tracks, and how many lack a title, artist, genre, BPM or musical key, plus extra duplicate copies (same title and artist). Check this before relying on key or BPM filters.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
             "name": "get_playlist_tracks",
             "description": "List the tracks in one playlist, in playlist order (use list_playlists to find the id). Returns title, artist, genre, BPM, key, year and rating, capped at 200 tracks.",
             "inputSchema": {
@@ -108,6 +113,22 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> Value {
                 text_result(Value::Array(rows).to_string(), false)
             }
             Err(e) => text_result(format!("Failed to list playlists: {e}"), true),
+        },
+        "library_health" => match db.library_health() {
+            Ok((total, no_title, no_artist, no_genre, no_bpm, no_key, dupes)) => text_result(
+                json!({
+                    "total_tracks": total,
+                    "missing_title": no_title,
+                    "missing_artist": no_artist,
+                    "missing_genre": no_genre,
+                    "missing_bpm": no_bpm,
+                    "missing_key": no_key,
+                    "duplicate_extra_copies": dupes,
+                })
+                .to_string(),
+                false,
+            ),
+            Err(e) => text_result(format!("Failed to read library health: {e}"), true),
         },
         "get_playlist_tracks" => {
             let Some(id) = args.get("playlist_id").and_then(|v| v.as_i64()) else {

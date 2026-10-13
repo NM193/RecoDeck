@@ -230,6 +230,27 @@ impl Database {
         Ok(Database { conn })
     }
 
+    /// Summary counts of how complete the library data is (used by the MCP connector).
+    /// Returns (total, no_title, no_artist, no_genre, no_bpm, no_key, duplicate_extra_copies).
+    pub fn library_health(&self) -> Result<(i64, i64, i64, i64, i64, i64, i64)> {
+        let q = |sql: &str| -> Result<i64> { self.conn.query_row(sql, [], |r| r.get(0)) };
+        Ok((
+            q("SELECT COUNT(*) FROM tracks")?,
+            q("SELECT COUNT(*) FROM tracks WHERE title IS NULL OR TRIM(title) = ''")?,
+            q("SELECT COUNT(*) FROM tracks WHERE artist IS NULL OR TRIM(artist) = ''")?,
+            q("SELECT COUNT(*) FROM tracks WHERE genre IS NULL OR TRIM(genre) = ''")?,
+            q("SELECT COUNT(*) FROM tracks t LEFT JOIN track_analysis a ON a.track_id = t.id
+               WHERE a.bpm IS NULL")?,
+            q("SELECT COUNT(*) FROM tracks t LEFT JOIN track_analysis a ON a.track_id = t.id
+               WHERE a.musical_key IS NULL OR a.musical_key = ''")?,
+            q("SELECT COALESCE(SUM(n - 1), 0) FROM (
+                 SELECT COUNT(*) AS n FROM tracks
+                 WHERE title IS NOT NULL AND TRIM(title) <> ''
+                 GROUP BY LOWER(TRIM(title)), LOWER(TRIM(COALESCE(artist, '')))
+                 HAVING n > 1)")?,
+        ))
+    }
+
     /// Create an in-memory database (for testing)
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
