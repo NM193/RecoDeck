@@ -62,6 +62,18 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
+            "name": "create_playlist",
+            "description": "Create a new manual playlist from track ids (take the ids from search_library or get_playlist_tracks). Only adds; never changes or deletes existing playlists. The RecoDeck app must be reopened or its playlists reloaded to show it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Name of the new playlist" },
+                    "track_ids": { "type": "array", "items": { "type": "integer" }, "description": "Track ids in playlist order (max 200)" }
+                },
+                "required": ["name", "track_ids"]
+            }
+        },
+        {
             "name": "library_health",
             "description": "Counts showing how complete the library data is: total tracks, and how many lack a title, artist, genre, BPM or musical key, plus extra duplicate copies (same title and artist). Check this before relying on key or BPM filters.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -84,8 +96,45 @@ fn text_result(text: String, is_error: bool) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "isError": is_error })
 }
 
-fn call_tool(db: &Database, name: &str, args: &Value) -> Value {
+fn create_playlist(path: &std::path::Path, args: &Value) -> Value {
+    let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let ids: Vec<i64> = args
+        .get("track_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_i64()).collect())
+        .unwrap_or_default();
+    if name.is_empty() || ids.is_empty() {
+        return text_result("name and a non-empty track_ids are required".to_string(), true);
+    }
+    if ids.len() > MAX_PLAYLIST_TRACKS {
+        return text_result(format!("At most {MAX_PLAYLIST_TRACKS} tracks per playlist"), true);
+    }
+    // The only write path: a separate read-write connection, used just here.
+    let wdb = match Database::new(path) {
+        Ok(db) => db,
+        Err(e) => return text_result(format!("Cannot open database for writing: {e}"), true),
+    };
+    let playlist_id = match wdb.create_playlist(name, "manual", None) {
+        Ok(id) => id,
+        Err(e) => return text_result(format!("Failed to create playlist: {e}"), true),
+    };
+    let (mut added, mut skipped) = (0, 0);
+    for id in &ids {
+        match wdb.add_track_to_playlist(playlist_id, *id) {
+            Ok(true) => added += 1,
+            _ => skipped += 1,
+        }
+    }
+    text_result(
+        json!({ "playlist_id": playlist_id, "name": name, "tracks_added": added, "tracks_skipped": skipped })
+            .to_string(),
+        false,
+    )
+}
+
+fn call_tool(db: &Database, path: &std::path::Path, name: &str, args: &Value) -> Value {
     match name {
+        "create_playlist" => create_playlist(path, args),
         "search_library" => {
             let mut input = args.clone();
             let limit = input
@@ -161,7 +210,7 @@ fn call_tool(db: &Database, name: &str, args: &Value) -> Value {
     }
 }
 
-fn handle(db: &Database, msg: &Value) -> Option<Value> {
+fn handle(db: &Database, path: &std::path::Path, msg: &Value) -> Option<Value> {
     let method = msg.get("method")?.as_str()?;
     let id = msg.get("id").cloned();
     // Notifications carry no id and get no reply.
@@ -189,7 +238,7 @@ fn handle(db: &Database, msg: &Value) -> Option<Value> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let args = msg.pointer("/params/arguments").cloned().unwrap_or(json!({}));
-            call_tool(db, name, &args)
+            call_tool(db, path, name, &args)
         }
         _ => {
             return Some(json!({
@@ -222,7 +271,7 @@ fn main() {
         let Ok(msg) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        if let Some(reply) = handle(&db, &msg) {
+        if let Some(reply) = handle(&db, &path, &msg) {
             let _ = writeln!(stdout, "{reply}");
             let _ = stdout.flush();
         }
