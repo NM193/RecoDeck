@@ -9,6 +9,8 @@ import type { Playlist, Track } from '../../types/track'
 import { Icon } from '../Icon'
 import { WaveformVisualizer } from '../WaveformVisualizer'
 import { EQModal } from '../eq/EQModal'
+import { MasterBpmControl } from './MasterBpmControl'
+import { useCurrentMasterRate } from '../../store/masterBpmStore'
 import { useOverlay } from '../../lib/overlays'
 import { registerFileControls } from '../../lib/shortcuts/players'
 import { EASE, MOTION } from '../../lib/motion'
@@ -704,9 +706,16 @@ export function NowPlayingBar({
   }
 
   // Build metadata line for left column
+  const master = useCurrentMasterRate()
+  const bpmText =
+    currentTrack?.bpm && (master.kind === 'matched' || master.kind === 'limited')
+      ? `${Math.round(currentTrack.bpm)} BPM → ${master.heardBpm} (${master.percent > 0 ? '+' : ''}${master.percent}%${master.kind === 'limited' ? ', max' : ''})`
+      : currentTrack?.bpm
+        ? `${Math.round(currentTrack.bpm)} BPM`
+        : null
   const metadataLine = currentTrack
     ? [
-        currentTrack.bpm ? `${Math.round(currentTrack.bpm)} BPM` : null,
+        bpmText,
         currentTrack.musical_key || null,
         currentTrack.genre || null,
       ]
@@ -1045,6 +1054,9 @@ export function NowPlayingBar({
           >
             <Icon name="SlidersHorizontal" size={18} />
           </button>
+
+          {/* Master BPM */}
+          <MasterBpmControl />
 
           {/* Open Mini Player */}
           <button

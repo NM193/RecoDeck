@@ -1,4 +1,5 @@
 import { EQ_BANDS } from './eqConstants'
+import { masterRate } from './masterBpm'
 
 /**
  * HTML5 Audio-based player that uses a custom "stream" URI scheme protocol
@@ -40,6 +41,11 @@ export class AudioPlayer {
   private outgoingBpm: number | null = null
   private incomingBpm: number | null = null
   private _bpmRampRafId: number | null = null
+  private incomingBaseRate: number = 1.0 // master rate of the track fading in
+  // Master BPM: the rate the current track plays at (1 when master BPM is off).
+  // Crossfade ramps and resets return to this instead of 1.0.
+  private _baseRate: number = 1.0
+  private _masterBpm: number | null = null
   private _bpmRampStartTime: number = 0
   private _bpmRampFromRate: number = 1.0
   private readonly BPM_RAMP_DURATION_MS = 4000 // ms to ramp back to original BPM after crossfade
@@ -766,6 +772,7 @@ export class AudioPlayer {
       this.audio.preload = 'auto'
       this.audio.crossOrigin = 'anonymous'
       this.audio.volume = prevVolume
+      this.applyRate(this.audio, this._baseRate)
       this.setupEventListeners()
 
       // Reconnect the new Audio element to the existing Web Audio EQ chain.
@@ -1212,6 +1219,28 @@ export class AudioPlayer {
   }
 
   /**
+   * Master BPM. `bpm` is the global tempo, or null when it is off. Only the HTML
+   * player is stretched; the native fallback (formats the WebView cannot decode)
+   * plays as it is.
+   */
+  setMasterBpm(bpm: number | null) {
+    this._masterBpm = bpm
+  }
+
+  /** Play the current track at `rate` (1 = as recorded). Pitch is kept. */
+  setBaseRate(rate: number) {
+    this._baseRate = rate
+    this.applyRate(this.audio, rate)
+  }
+
+  private applyRate(audio: HTMLAudioElement, rate: number) {
+    // Loading a new source resets playbackRate to defaultPlaybackRate, so set both.
+    audio.defaultPlaybackRate = rate
+    audio.playbackRate = rate
+    audio.preservesPitch = true
+  }
+
+  /**
    * Start crossfade to next track (HTML mode only).
    * Preloads the incoming track, starts it at matched tempo, and fades volumes.
    */
@@ -1257,7 +1286,12 @@ export class AudioPlayer {
 
       // Calculate beatmatch playback rate
       let playbackRate = 1.0
-      if (
+      if (this._masterBpm != null) {
+        // Master BPM already puts both tracks at one tempo, so no beatmatching:
+        // the incoming track just starts at its own master rate.
+        playbackRate = masterRate(this._masterBpm, nextTrackBpm).rate
+        this.incomingBaseRate = playbackRate
+      } else if (
         this.outgoingBpm &&
         this.outgoingBpm > 0 &&
         this.incomingBpm &&
@@ -1275,7 +1309,7 @@ export class AudioPlayer {
         )
       }
 
-      this.crossfadeAudio.playbackRate = playbackRate
+      this.applyRate(this.crossfadeAudio, playbackRate)
 
       // Load incoming track
       const url = this.filePathToStreamUrl(nextTrackFilePath)
@@ -1418,8 +1452,13 @@ export class AudioPlayer {
       this.crossfadeRafId = null
     }
 
-    // Start smooth BPM ramp back to 1.0 if beatmatching was active
-    if (Math.abs(matchedRate - 1.0) > 0.005) {
+    // With master BPM the incoming track keeps its master rate; the player bar
+    // sets the same value again once the track change reaches it.
+    if (this._masterBpm != null) {
+      this._baseRate = this.incomingBaseRate
+      this.applyRate(this.audio, this._baseRate)
+    } else if (Math.abs(matchedRate - 1.0) > 0.005) {
+      // Start smooth BPM ramp back to 1.0 if beatmatching was active
       this._bpmRampFromRate = matchedRate
       this._bpmRampStartTime = Date.now()
       console.log(
@@ -1456,14 +1495,14 @@ export class AudioPlayer {
     const elapsed = Date.now() - this._bpmRampStartTime
     const progress = Math.min(1.0, elapsed / this.BPM_RAMP_DURATION_MS)
     this.audio.playbackRate =
-      this._bpmRampFromRate + (1.0 - this._bpmRampFromRate) * progress
+      this._bpmRampFromRate + (this._baseRate - this._bpmRampFromRate) * progress
 
     if (progress < 1.0) {
       this._bpmRampRafId = requestAnimationFrame(() => this.updateBpmRamp())
     } else {
-      this.audio.playbackRate = 1.0
+      this.audio.playbackRate = this._baseRate
       this._bpmRampRafId = null
-      console.log('[AudioPlayer] BPM ramp complete, playbackRate restored to 1.0')
+      console.log('[AudioPlayer] BPM ramp complete, playbackRate restored')
     }
   }
 
@@ -1490,7 +1529,7 @@ export class AudioPlayer {
     // Restore outgoing track volume and playback rate
     if (this.audio) {
       this.audio.volume = 1.0
-      this.audio.playbackRate = 1.0
+      this.audio.playbackRate = this._baseRate
     }
 
     this.isCrossfading = false
