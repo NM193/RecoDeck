@@ -219,6 +219,17 @@ impl Database {
         Ok(Database { conn })
     }
 
+    /// Open an existing database read-only (used by the MCP connector).
+    /// Never writes and never runs migrations.
+    pub fn new_read_only(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA query_only = ON;")?;
+        Ok(Database { conn })
+    }
+
     /// Create an in-memory database (for testing)
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
