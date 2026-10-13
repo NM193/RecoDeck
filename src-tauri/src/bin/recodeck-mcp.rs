@@ -62,6 +62,19 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
+            "name": "compatible_tracks",
+            "description": "Find tracks that mix well with a given track: same Camelot key, one step up or down on the wheel, or the relative major/minor, with BPM within a tolerance. Sorted by closest BPM. Needs the source track to have BPM and key analysed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "track_id": { "type": "integer", "description": "Id of the source track" },
+                    "bpm_tolerance_percent": { "type": "number", "description": "Allowed BPM difference in percent (default 3)", "default": 3 },
+                    "limit": { "type": "integer", "description": "Max tracks (default 20, max 50)", "default": 20 }
+                },
+                "required": ["track_id"]
+            }
+        },
+        {
             "name": "create_playlist",
             "description": "Create a new manual playlist from track ids (take the ids from search_library or get_playlist_tracks). Only adds; never changes or deletes existing playlists. The RecoDeck app must be reopened or its playlists reloaded to show it.",
             "inputSchema": {
@@ -94,6 +107,81 @@ fn tools() -> Value {
 
 fn text_result(text: String, is_error: bool) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "isError": is_error })
+}
+
+/// Camelot keys that mix with `key` (e.g. "8A"): itself, +-1 on the wheel, and the relative key.
+fn camelot_neighbours(key: &str) -> Option<Vec<(String, &'static str)>> {
+    let letter = key.chars().last()?.to_ascii_uppercase();
+    let num: u32 = key[..key.len() - 1].parse().ok()?;
+    if !(1..=12).contains(&num) || !(letter == 'A' || letter == 'B') {
+        return None;
+    }
+    let step = |n: u32, d: i32| ((n as i32 - 1 + d).rem_euclid(12) + 1) as u32;
+    let other = if letter == 'A' { 'B' } else { 'A' };
+    Some(vec![
+        (format!("{num}{letter}"), "same key"),
+        (format!("{}{letter}", step(num, 1)), "+1 on the wheel"),
+        (format!("{}{letter}", step(num, -1)), "-1 on the wheel"),
+        (format!("{num}{other}"), "relative major/minor"),
+    ])
+}
+
+fn compatible_tracks(db: &Database, args: &Value) -> Value {
+    let Some(id) = args.get("track_id").and_then(|v| v.as_i64()) else {
+        return text_result("track_id is required".to_string(), true);
+    };
+    let tol = args
+        .get("bpm_tolerance_percent")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(3.0)
+        .clamp(0.0, 20.0);
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20).min(MAX_LIMIT) as usize;
+
+    let analysis = match db.get_track_analysis(id) {
+        Ok(Some(a)) => a,
+        Ok(None) => return text_result("That track has not been analysed yet".to_string(), true),
+        Err(e) => return text_result(format!("Failed to read track: {e}"), true),
+    };
+    let (Some(bpm), Some(key)) = (analysis.bpm, analysis.musical_key.clone()) else {
+        return text_result("That track is missing BPM or key".to_string(), true);
+    };
+    let Some(neigh) = camelot_neighbours(&key) else {
+        return text_result(format!("Key '{key}' is not in Camelot notation"), true);
+    };
+    let (lo, hi) = (bpm * (1.0 - tol / 100.0), bpm * (1.0 + tol / 100.0));
+
+    let mut found: Vec<(f64, Value)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (k, relation) in &neigh {
+        let rows = db
+            .search_tracks_filtered(None, None, None, Some(lo), Some(hi), Some(k), None, 200)
+            .unwrap_or_default();
+        for (t, tb, tk) in rows {
+            let Some(tid) = t.id else { continue };
+            let sig = format!(
+                "{}|{}",
+                t.title.clone().unwrap_or_default().trim().to_lowercase(),
+                t.artist.clone().unwrap_or_default().trim().to_lowercase()
+            );
+            if tid == id || !seen.insert(sig) {
+                continue;
+            }
+            let tb = tb.unwrap_or(bpm);
+            found.push((
+                (tb - bpm).abs(),
+                json!({
+                    "id": tid, "title": t.title, "artist": t.artist, "genre": t.genre,
+                    "bpm": tb, "key": tk, "relation": relation,
+                }),
+            ));
+        }
+    }
+    found.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let tracks: Vec<Value> = found.into_iter().take(limit).map(|(_, v)| v).collect();
+    text_result(
+        json!({ "source": { "id": id, "bpm": bpm, "key": key }, "matches": tracks }).to_string(),
+        false,
+    )
 }
 
 fn create_playlist(path: &std::path::Path, args: &Value) -> Value {
@@ -135,6 +223,7 @@ fn create_playlist(path: &std::path::Path, args: &Value) -> Value {
 fn call_tool(db: &Database, path: &std::path::Path, name: &str, args: &Value) -> Value {
     match name {
         "create_playlist" => create_playlist(path, args),
+        "compatible_tracks" => compatible_tracks(db, args),
         "search_library" => {
             let mut input = args.clone();
             let limit = input
