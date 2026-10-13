@@ -623,6 +623,14 @@ function AppContent() {
     }
   }, [])
 
+  // Playlists can be added from outside the app (the Claude connector writes to the
+  // same database), so reload them whenever the window comes back into focus.
+  useEffect(() => {
+    const onFocus = () => void loadPlaylists()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadPlaylists])
+
   // Load genre definitions from backend
   const loadGenreDefinitions = useCallback(async () => {
     try {
