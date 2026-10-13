@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
+### Added
+- **Master BPM** — a BPM button in the player bar sets one tempo every track plays at, so you can hear how tracks sit at the tempo of the set you are planning; the pitch stays the same, a track is sped up or slowed down by at most 8%, and the button shows the tempo while it is on
+
+### Changed
+- The playlist list reloads when you come back to the window, so changes made outside the app show up on their own
+
+### Fixed
+- Searching "Artist – Title" now finds the track: every word has to match, in any field, instead of the whole text matching one field
+
 ## [0.7.0] - 2026-10-10
 
 ### Changed
