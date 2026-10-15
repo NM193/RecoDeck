@@ -249,6 +249,12 @@ fn fill_row_from(conn: &Connection, table: &str, k: i64, r: i64, skip: &[&str]) 
 /// Merges R into K and deletes R's row. Answers the playlist slots moved.
 fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     let slots = repoint_or_drop(conn, "playlist_tracks", "track_id", k, r)?;
+    // A genre the user confirmed on R stays confirmed when K has it too.
+    conn.execute(
+        "UPDATE track_genres SET is_user_label = 1 WHERE track_id = ?1 \
+         AND genre IN (SELECT genre FROM track_genres WHERE track_id = ?2 AND is_user_label = 1)",
+        params![k, r],
+    )?;
     // Unions: a clashing row is K's already, so dropping R's loses nothing.
     for table in ["track_tags", "track_genres", "track_discogs_styles", "track_instruments"] {
         repoint_or_drop(conn, table, "track_id", k, r)?;
@@ -827,5 +833,31 @@ mod tests {
 
         assert_eq!(out.removed_files.len(), 2);
         assert!(out.removed_files.iter().all(|f| f.kept_path == "/m/K.mp3"));
+    }
+
+    #[test]
+    fn a_genre_the_user_confirmed_on_the_removed_copy_stays_confirmed() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute_batch(&format!(
+                "INSERT INTO track_genres (track_id, genre, is_user_label) VALUES ({k}, 'House', 0), ({r}, 'House', 1), ({r}, 'Techno', 0);"
+            ))
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let label = |genre: &str| -> bool {
+            db.conn
+                .query_row(
+                    "SELECT is_user_label FROM track_genres WHERE track_id = ?1 AND genre = ?2",
+                    params![k, genre],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        assert!(label("House"));
+        assert!(!label("Techno"));
     }
 }
