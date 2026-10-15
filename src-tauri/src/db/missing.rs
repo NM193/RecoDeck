@@ -102,7 +102,9 @@ impl Database {
     }
 
     /// Spec section 1: what a scan does with a file of this content hash.
-    /// Both scan paths call this.
+    /// Both scan paths call this. A file on an unplugged drive counts as gone,
+    /// so a copy found elsewhere takes the track over. The spec accepts that:
+    /// the track keeps playing, and the drive's file is skipped when it is back.
     pub fn match_scanned_hash(&self, file_hash: &str) -> Result<HashMatch> {
         if file_hash == "unknown" {
             return Ok(HashMatch::New);
@@ -200,16 +202,23 @@ mod tests {
         let db = db();
         let id = insert(&db, "/old/song.mp3", "old-hash");
         db.conn
-            .execute("INSERT INTO skipped_files (file_path) VALUES ('/new/song.wav')", [])
+            .execute(
+                "INSERT INTO skipped_files (file_path) VALUES ('/new/song.wav'), ('/m/other.wav')",
+                [],
+            )
             .unwrap();
 
         db.relink_track(id, &facts("/new/song.wav")).unwrap();
 
-        let left: i64 = db
+        let left: Vec<String> = db
             .conn
-            .query_row("SELECT COUNT(*) FROM skipped_files", [], |r| r.get(0))
+            .prepare("SELECT file_path FROM skipped_files")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_>>()
             .unwrap();
-        assert_eq!(left, 0);
+        assert_eq!(left, vec!["/m/other.wav".to_string()]);
     }
 
     #[test]
@@ -259,9 +268,16 @@ mod tests {
     #[test]
     fn when_every_track_with_the_hash_lost_its_file_the_lowest_id_follows() {
         let db = db();
-        let first = insert(&db, "/gone/a.mp3", "h");
-        insert(&db, "/gone/b.mp3", "h");
+        // The higher id goes in first, so only ORDER BY id can pick 10.
+        for (id, path) in [(50, "/gone/a.mp3"), (10, "/gone/b.mp3")] {
+            db.conn
+                .execute(
+                    "INSERT INTO tracks (id, file_path, file_hash) VALUES (?1, ?2, 'h')",
+                    params![id, path],
+                )
+                .unwrap();
+        }
 
-        assert_eq!(db.match_scanned_hash("h").unwrap(), HashMatch::Moved(first));
+        assert_eq!(db.match_scanned_hash("h").unwrap(), HashMatch::Moved(10));
     }
 }
