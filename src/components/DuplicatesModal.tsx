@@ -1,11 +1,34 @@
 // Large modal opened from Settings → Database Maintenance. Shows every
-// duplicate group the backend detected across three passes, lets the user
-// pick which tracks to remove, and bulk-deletes the selection.
+// duplicate group the backend detected across three passes. In each group
+// the user keeps one copy and merges the others into it (Duplicates Merge
+// spec): merged copies hand over their playlists, tags, plays and analysis,
+// and their files are skipped on future scans.
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { tauriApi } from '../lib/tauri-api'
 import { useOverlay } from '../lib/overlays'
-import type { DuplicateGroup, DuplicateReason, Track } from '../types/track'
+import { formatTime } from '../lib/trackTable/cells'
+import { getErrorMessage } from '../types/ai'
+import {
+  allMerged,
+  buildMerges,
+  groupKey,
+  initialChoice,
+  mergeCount,
+  pickKeep,
+  rowState,
+  setMergeAll,
+  slotsMoving,
+  toggleMerge,
+  type MergeChoice,
+  type RowState,
+} from '../lib/duplicates/mergeChoice'
+import type {
+  DuplicateGroup,
+  DuplicateReason,
+  DuplicateTrack,
+  MergeSummary,
+} from '../types/track'
 import { Icon } from './Icon'
 import './DuplicatesModal.css'
 
@@ -33,6 +56,14 @@ const FILTER_TABS: { value: FilterValue; label: string }[] = [
   { value: 'same_title_artist', label: 'Same title & artist' },
 ]
 
+const LOSSLESS = new Set(['wav', 'aif', 'aiff', 'flac'])
+
+const STATUS: Record<RowState, string> = {
+  keep: 'Stays in your library',
+  merge: 'Merges into the kept copy',
+  left: 'Left as is',
+}
+
 function formatMB(bytes?: number): string {
   if (bytes == null) return '—'
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -41,6 +72,35 @@ function formatMB(bytes?: number): string {
 function formatDate(iso?: string): string {
   if (!iso) return '—'
   return iso.split(' ')[0] ?? iso.split('T')[0] ?? iso
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/** "WAV", "AIFF", "MP3 320": lossless formats without their bitrate. */
+function formatAudio(track: DuplicateTrack): string {
+  const ext = (track.file_format ?? '').toLowerCase()
+  const name = ext === 'aif' ? 'AIFF' : ext.toUpperCase() || '—'
+  if (LOSSLESS.has(ext) || !track.bitrate) return name
+  return `${name} ${track.bitrate}`
+}
+
+function statusText(state: RowState, slots: number): string {
+  if (state !== 'merge' || slots === 0) return STATUS[state]
+  return `${STATUS.merge} · its ${plural(slots, 'playlist slot', 'playlist slots')} ${slots === 1 ? 'moves' : 'move'} over`
+}
+
+function summaryMessage(s: MergeSummary): string {
+  const parts = [
+    `Merged ${s.merged}`,
+    `${plural(s.playlist_slots_moved, 'playlist slot', 'playlist slots')} moved`,
+  ]
+  if (s.trashed > 0) parts.push(`${plural(s.trashed, 'file', 'files')} in Trash`)
+  if (s.trash_failed.length > 0) {
+    parts.push(`${s.trash_failed.length} could not be moved to Trash`)
+  }
+  return parts.join(' · ')
 }
 
 export function DuplicatesModal({
@@ -52,31 +112,21 @@ export function DuplicatesModal({
   useOverlay(true, onClose)
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all')
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [choice, setChoice] = useState<MergeChoice>(() => initialChoice([]))
+  const [moveToTrash, setMoveToTrash] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [deleting, setDeleting] = useState(false)
+  const [merging, setMerging] = useState(false)
 
   const loadGroups = useCallback(async () => {
     setLoading(true)
     try {
       const data = await tauriApi.getDuplicateGroups()
       setGroups(data)
-      // Pre-select every non-first track (the recommended deletions).
-      const initial = new Set<number>()
-      for (const g of data) {
-        for (let i = 1; i < g.tracks.length; i++) {
-          const t = g.tracks[i]
-          if (typeof t.id === 'number') initial.add(t.id)
-        }
-      }
-      setSelectedIds(initial)
+      setChoice(initialChoice(data))
     } catch (err) {
-      onNotification(
-        err instanceof Error ? err.message : String(err),
-        'error',
-      )
+      onNotification(getErrorMessage(err), 'error')
       setGroups([])
-      setSelectedIds(new Set())
+      setChoice(initialChoice([]))
     } finally {
       setLoading(false)
     }
@@ -94,65 +144,35 @@ export function DuplicatesModal({
     [groups, activeFilter],
   )
 
-  const visibleSelectableIds = useMemo(() => {
-    const ids: number[] = []
-    for (const g of filteredGroups) {
-      for (const t of g.tracks) {
-        if (typeof t.id === 'number') ids.push(t.id)
-      }
-    }
-    return ids
-  }, [filteredGroups])
+  const toMerge = mergeCount(choice, groups)
+  const visibleAllMerged = allMerged(choice, filteredGroups)
 
-  const allVisibleSelected =
-    visibleSelectableIds.length > 0 &&
-    visibleSelectableIds.every((id) => selectedIds.has(id))
-
-  function toggleOne(id: number) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function toggleAllVisible() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (allVisibleSelected) {
-        for (const id of visibleSelectableIds) next.delete(id)
-      } else {
-        for (const id of visibleSelectableIds) next.add(id)
-      }
-      return next
-    })
-  }
-
-  async function deleteSelected() {
-    if (selectedIds.size === 0 || deleting) return
-    setDeleting(true)
+  async function mergeSelected() {
+    const merges = buildMerges(choice, groups)
+    if (merges.length === 0) return
+    setMerging(true)
     try {
-      const removed = await tauriApi.deleteTracksBulk(Array.from(selectedIds))
+      const result = await tauriApi.mergeDuplicateTracks(merges, moveToTrash)
       onNotification(
-        `Removed ${removed} duplicate track${removed === 1 ? '' : 's'}`,
-        'success',
+        summaryMessage(result),
+        result.trash_failed.length > 0 ? 'warning' : 'success',
       )
       onTracksChanged()
-      setSelectedIds(new Set())
       await loadGroups()
     } catch (err) {
-      onNotification(
-        err instanceof Error ? err.message : String(err),
-        'error',
-      )
+      onNotification(getErrorMessage(err), 'error')
     } finally {
-      setDeleting(false)
+      setMerging(false)
     }
   }
 
   const totalGroups = groups.length
-  const summary = `${totalGroups} group${totalGroups === 1 ? '' : 's'} · ${selectedIds.size} track${selectedIds.size === 1 ? '' : 's'} selected for removal`
+  const summary = `${plural(totalGroups, 'group', 'groups')} · ${toMerge} ${toMerge === 1 ? 'copy' : 'copies'} will be merged`
+  const actionLabel = merging
+    ? 'Merging…'
+    : moveToTrash
+      ? `Merge ${toMerge} & move to Trash`
+      : `Merge ${toMerge}`
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -175,7 +195,7 @@ export function DuplicatesModal({
           </button>
         </header>
 
-        {/* Sticky filter + select-all bar */}
+        {/* Sticky filter + merge-all bar */}
         <div className="dup-modal__toolbar">
           <div className="dup-modal__tabs">
             {FILTER_TABS.map((tab) => {
@@ -200,16 +220,16 @@ export function DuplicatesModal({
           <button
             type="button"
             className="dup-toolbar-btn"
-            onClick={toggleAllVisible}
-            disabled={
-              loading || deleting || visibleSelectableIds.length === 0
+            onClick={() =>
+              setChoice(setMergeAll(choice, filteredGroups, !visibleAllMerged))
             }
+            disabled={loading || merging || filteredGroups.length === 0}
           >
             <Icon
-              name={allVisibleSelected ? 'SquareCheckBig' : 'Square'}
+              name={visibleAllMerged ? 'SquareCheckBig' : 'Square'}
               size={14}
             />
-            <span>{allVisibleSelected ? 'Deselect all' : 'Select all'}</span>
+            <span>{visibleAllMerged ? 'Merge none' : 'Merge all'}</span>
           </button>
         </div>
 
@@ -232,12 +252,16 @@ export function DuplicatesModal({
             </div>
           ) : (
             <div className="dup-modal__groups">
-              {filteredGroups.map((group, gi) => (
+              {filteredGroups.map((group) => (
                 <GroupCard
-                  key={`${group.detection_reason}-${gi}-${group.tracks[0]?.id ?? gi}`}
+                  key={groupKey(group)}
                   group={group}
-                  selectedIds={selectedIds}
-                  onToggleOne={toggleOne}
+                  choice={choice}
+                  disabled={merging}
+                  onPickKeep={(id) => setChoice(pickKeep(choice, group, id))}
+                  onToggleMerge={(id) =>
+                    setChoice(toggleMerge(choice, group, id))
+                  }
                 />
               ))}
             </div>
@@ -246,26 +270,36 @@ export function DuplicatesModal({
 
         {/* Footer */}
         <footer className="dup-modal__footer">
+          <div className="dup-trash">
+            <label className="dup-trash__label">
+              <input
+                type="checkbox"
+                checked={moveToTrash}
+                onChange={(e) => setMoveToTrash(e.target.checked)}
+                disabled={merging}
+              />
+              <span>Also move removed files to Trash</span>
+            </label>
+            <span className="dup-trash__hint">
+              Either way, removed files are skipped on future scans.
+            </span>
+          </div>
           <button
             type="button"
             className="btn"
             onClick={onClose}
-            disabled={deleting}
+            disabled={merging}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn--danger dup-modal__delete"
-            onClick={deleteSelected}
-            disabled={deleting || selectedIds.size === 0}
+            className={`btn ${moveToTrash ? 'btn--danger' : 'btn--primary'} dup-modal__merge`}
+            onClick={mergeSelected}
+            disabled={merging || toMerge === 0}
           >
-            <Icon name="Trash2" size={14} />
-            <span>
-              {deleting
-                ? 'Removing…'
-                : `Delete selected (${selectedIds.size})`}
-            </span>
+            <Icon name={moveToTrash ? 'Trash2' : 'GitMerge'} size={14} />
+            <span>{actionLabel}</span>
           </button>
         </footer>
       </div>
@@ -275,13 +309,19 @@ export function DuplicatesModal({
 
 function GroupCard({
   group,
-  selectedIds,
-  onToggleOne,
+  choice,
+  disabled,
+  onPickKeep,
+  onToggleMerge,
 }: {
   group: DuplicateGroup
-  selectedIds: Set<number>
-  onToggleOne: (id: number) => void
+  choice: MergeChoice
+  disabled: boolean
+  onPickKeep: (id: number) => void
+  onToggleMerge: (id: number) => void
 }) {
+  const key = groupKey(group)
+  const keepId = choice.keep.get(key) ?? group.recommended_keep_id
   return (
     <section className={`dup-card dup-card--${group.detection_reason}`}>
       <header className="dup-card__header">
@@ -293,17 +333,21 @@ function GroupCard({
         <span className="dup-card__count">{group.tracks.length} tracks</span>
       </header>
       <ul className="dup-card__rows">
-        {group.tracks.map((track, i) => (
+        {group.tracks.map((track) => (
           <TrackRow
-            key={track.id ?? `${track.file_path}-${i}`}
+            key={track.id}
             track={track}
-            recommendedKeep={i === 0}
-            checked={
-              typeof track.id === 'number' && selectedIds.has(track.id)
+            radioName={`dup-keep-${key}`}
+            state={rowState(choice, group, track.id)}
+            recommendReason={
+              track.id === group.recommended_keep_id
+                ? group.recommend_reason
+                : null
             }
-            onToggle={() => {
-              if (typeof track.id === 'number') onToggleOne(track.id)
-            }}
+            slots={slotsMoving(group, keepId, track)}
+            disabled={disabled}
+            onPickKeep={() => onPickKeep(track.id)}
+            onToggleMerge={() => onToggleMerge(track.id)}
           />
         ))}
       </ul>
@@ -313,27 +357,48 @@ function GroupCard({
 
 function TrackRow({
   track,
-  recommendedKeep,
-  checked,
-  onToggle,
+  radioName,
+  state,
+  recommendReason,
+  slots,
+  disabled,
+  onPickKeep,
+  onToggleMerge,
 }: {
-  track: Track
-  recommendedKeep: boolean
-  checked: boolean
-  onToggle: () => void
+  track: DuplicateTrack
+  radioName: string
+  state: RowState
+  recommendReason: string | null
+  slots: number
+  disabled: boolean
+  onPickKeep: () => void
+  onToggleMerge: () => void
 }) {
   return (
-    <li
-      className={`dup-row ${recommendedKeep ? 'dup-row--keep' : ''} ${checked ? 'dup-row--selected' : ''}`}
-    >
-      <label className="dup-row__check">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggle}
-          disabled={typeof track.id !== 'number'}
-        />
-      </label>
+    <li className={`dup-row dup-row--${state}`}>
+      <div className="dup-row__controls">
+        <label className="dup-row__control">
+          <input
+            type="radio"
+            name={radioName}
+            checked={state === 'keep'}
+            onChange={onPickKeep}
+            disabled={disabled}
+          />
+          <span>Keep</span>
+        </label>
+        <label
+          className={`dup-row__control ${state === 'keep' ? 'dup-row__control--off' : ''}`}
+        >
+          <input
+            type="checkbox"
+            checked={state === 'merge'}
+            onChange={onToggleMerge}
+            disabled={disabled || state === 'keep'}
+          />
+          <span>Merge</span>
+        </label>
+      </div>
       <div className="dup-row__info">
         <div className="dup-row__line1">
           <span className="dup-row__title">
@@ -346,17 +411,42 @@ function TrackRow({
               <span className="dup-muted">Unknown artist</span>
             )}
           </span>
-          {recommendedKeep && (
-            <span className="dup-keep-badge">Recommended keep</span>
+          {recommendReason && (
+            <span className="dup-keep-badge">
+              <b>Recommended</b> {recommendReason}
+            </span>
           )}
         </div>
         <div className="dup-row__path" data-tip={track.file_path} data-tip-overflow>
           {track.file_path}
         </div>
         <div className="dup-row__meta">
+          <span>{formatAudio(track)}</span>
+          <span className="dup-row__sep">·</span>
+          <span>{formatTime(track.duration_ms)}</span>
+          <span className="dup-row__sep">·</span>
           <span>{formatMB(track.file_size)}</span>
           <span className="dup-row__sep">·</span>
+          <span>{track.analyzed ? 'analyzed' : 'not analyzed'}</span>
+          <span className="dup-row__sep">·</span>
+          <span>{plural(track.plays, 'play', 'plays')}</span>
+          <span className="dup-row__sep">·</span>
           <span>added {formatDate(track.date_added)}</span>
+        </div>
+        <div className="dup-row__playlists">
+          <span className="dup-row__playlists-label">Playlists:</span>
+          {track.playlists.length === 0 ? (
+            <span className="dup-muted">not in any playlist</span>
+          ) : (
+            track.playlists.map((p) => (
+              <span key={p.id} className="dup-chip">
+                {p.name}
+              </span>
+            ))
+          )}
+        </div>
+        <div className={`dup-row__status dup-row__status--${state}`}>
+          {statusText(state, slots)}
         </div>
       </div>
     </li>
