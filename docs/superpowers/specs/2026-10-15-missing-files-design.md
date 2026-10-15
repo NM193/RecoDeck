@@ -100,7 +100,8 @@ BPM and key still hold, and the waveform and cues stay close enough.
 2. Build a name index by walking the library folders (setting
    `library_folders`) with `Scanner::scan_directory` (supported audio
    extensions only). The index maps each lower-cased file name to its
-   normalized paths.
+   normalized paths, without repeats: library folders can overlap (a parent
+   and its subfolder).
 3. A missing track's candidates are the index entries for its own file name,
    lower-cased, ordered by path.
 4. For each candidate, read with lofty:
@@ -113,10 +114,10 @@ BPM and key still hold, and the waveform and cues stay close enough.
        no longer exists, or is itself a missing track (Relink also takes it
        off the skip list);
      - otherwise, a library candidate of that `kept_track_id`;
+   - **otherwise:** free file.
 
    So a library candidate's track always has its file on disk. It is never a
    row in this review.
-   - **otherwise:** free file.
 6. Drive check: a path under `/Volumes/<name>/` whose `/Volumes/<name>` does
    not exist reports `drive_missing: Some(name)`.
 
@@ -156,9 +157,16 @@ transaction, as in `scan_directory`. That keeps the app responsive while about
   `skipped` when:
   - it no longer exists: `file is gone`;
   - lofty or the hash can't read it: `file can't be read`.
-- **Inside the transaction**, each relink checks its path again, under the
-  lock. A path that a scan made another track's file in the meantime is
-  skipped with `file is now another track`. It is not a rollback.
+- **Inside the transaction**, under the lock, each change is checked again.
+  The list doesn't reload on library events, so a watcher scan may have
+  changed things while the modal was open:
+  - a relink whose path is now another track's file is skipped with
+    `file is now another track`;
+  - a relink whose path is already this track's own path is a no-op;
+  - a merge or remove whose track's file exists again is skipped with
+    `file is back`. A scan may have followed it.
+
+  None of these is a rollback.
 - **One transaction**, in order: relinks, then merges, then removes.
   - **Merges** reuse the duplicates merge (`db/merge.rs`) inside this
     transaction. `merge_tracks` is split so its body runs on a given
@@ -266,27 +274,38 @@ went missing.`
         Found card;
       - **a file outside:** its folder goes through **Add to library**, and
         then the file is described as above.
-  - A picked file stays on its row across reloads.
+  - A picked file stays on its row across reloads. Each reload calls
+    `describe_file` for it again, because an apply or a scan may have made
+    it a library track.
+  - **Row tints:** Relink/Merge = faint success, Remove = faint danger,
+    Leave = plain.
 
 ### Add to library
 
 A folder outside every library folder is offered as a new library folder.
-"Inside" means its path equals a library folder or starts with one plus `/`.
-A pure TS helper decides this, with a vitest test.
+- **"Inside"** means the path equals a library folder, or starts with one
+  plus `/`. A pure TS helper decides this, with a vitest test. It checks
+  against `SettingsContext`'s `folders`.
 - **The question** (Tauri `ask`): `Add "<folder name>" to your library
   folders? Its tracks are imported, and moved files are followed.` The
   buttons are `Add` and `Cancel`.
-- **Add:** the modal adds and scans the folder the way Settings → Library
-  does (`addLibraryFolder`, then `scanDirectory`, then `onFoldersChanged`).
-  It shows `Adding <folder name>…` and can't close until that finishes. The
-  scan follows moved files with identical content by itself (section 1).
-  Then the list reloads, and those tracks are gone from it.
-- **Locate… after Add:** if the picked file's track was followed by the scan,
-  that row is simply gone. Otherwise the file is now a library track, and
-  the row offers Merge into it.
+- **Add:** `SettingsContext` gets one shared `addFolderAndScan(path)`. The
+  existing `handleAddFolder` and the modal both use it. It:
+  - calls `addLibraryFolder`;
+  - updates `folders`, so the Library section and Rescan all see the new
+    folder at once;
+  - calls `scanDirectory` and shows the `Followed N moved file(s)` notice;
+  - calls `onFoldersChanged`;
+  - returns the `ScanResult`.
+
+  The modal shows `Adding <folder name>…` and can't close until that
+  finishes. The scan follows moved files with identical content by itself
+  (section 1). Then the list reloads, and those tracks are gone from it.
+- **Locate… after Add:** if the scan followed the picked file's track, that
+  row is simply gone. Otherwise the file is described per rule 5: Merge when
+  it is now a library track, Relink when it is not. The scan can skip it, for
+  example when it is a skipped file or the same content as a live track.
 - **Cancel:** nothing changes.
-  - **Row tints:** Relink/Merge = faint success, Remove = faint danger,
-    Leave = plain.
 
 ### Defaults
 
@@ -358,11 +377,19 @@ The fix: both use Remove's complete delete (section 4) for each matching
 track, all in one transaction. Either every matching track goes completely,
 or nothing changes. Which tracks match does not change.
 
+`delete_track` and `delete_tracks_bulk` have the same flaw, but no frontend
+code calls them. They stay out of scope: they are already listed as dead code
+to clean up.
+
 ## Errors
 
 - **The apply transaction fails:** nothing changed. Show an error toast and
   keep the choices.
-- **Add to library fails:** an error toast. The list stays as it was.
+- **Add to library fails:**
+  - When `addLibraryFolder` fails: an error toast, and nothing changed.
+  - When the folder was added but the scan fails: the folder is in the
+    library either way. `folders` updates, `onFoldersChanged` runs, an error
+    toast names the scan failure, and the list reloads.
 - **A relink file vanished, or became another track's file, before the
   apply:** that row is skipped and counted in the toast. The rest applies.
 - **Loading fails:** the modal shows the error with a Retry button.
@@ -382,7 +409,8 @@ Rust (in-memory DB with migrations and FK on, plus `tempfile` dirs):
   - is refused for another track's path.
 - **Candidates:**
   - the file name matches case-insensitively;
-  - library folders come first;
+  - candidates are ordered by path, and a file under two overlapping
+    library folders is listed once;
   - a library candidate carries its id;
   - the `skipped_files` rules, including a `kept_track_id` that is itself
     missing;
@@ -403,6 +431,7 @@ Rust (in-memory DB with migrations and FK on, plus `tempfile` dirs):
   - a vanished relink file is reported, and the rest applies;
   - a relink path that became another track's file inside the transaction
     is skipped, not rolled back;
+  - a merge or remove whose file is back is skipped;
   - a merge whose K is gone is reported.
 - **`merge_tracks`** behaves exactly as before after the split (its existing
   tests).
