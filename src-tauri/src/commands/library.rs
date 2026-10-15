@@ -859,7 +859,8 @@ fn with_db<T>(
 }
 
 /// Tracks whose file is gone, with same-name files in the library folders
-/// (Missing Files spec, section 3). The disk work runs without the DB lock.
+/// (Missing Files spec, section 3). The heavy disk work (walking the folders,
+/// reading lengths) runs without the DB lock.
 #[tauri::command]
 pub async fn get_missing_tracks(app: AppHandle) -> Result<Vec<MissingTrackDTO>, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -895,6 +896,9 @@ pub async fn describe_file(app: AppHandle, track_id: i64, path: String) -> Resul
         let path = normalize_scanned_path(&path);
         if missing_files::is_missing(&path) {
             return Err(AppError::Validation(format!("File is gone: {path}")));
+        }
+        if !Path::new(&path).is_file() {
+            return Err(AppError::Validation(format!("Not a file: {path}")));
         }
         let file = missing_files::probe(&path);
         let candidate = with_db(&state, "Failed to describe the file", |db| {
