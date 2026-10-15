@@ -622,24 +622,21 @@ impl Database {
         Ok(rows)
     }
 
-    /// Delete all tracks whose file_path is within `folder_path`. Cleans up
-    /// related rows in track_analysis and playlist_tracks first to respect FKs.
-    /// Returns number of track rows deleted.
+    /// Delete all tracks whose file_path is within `folder_path`, each completely,
+    /// in one transaction (Missing Files spec, section 6). Returns number of track rows deleted.
     pub fn delete_tracks_in_folder_prefix(&self, folder_path: &str) -> Result<usize> {
         let like_pattern = format!("{}/%", folder_path);
-        self.conn.execute(
-            "DELETE FROM track_analysis WHERE track_id IN (SELECT id FROM tracks WHERE file_path LIKE ?1)",
-            params![like_pattern],
-        )?;
-        self.conn.execute(
-            "DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM tracks WHERE file_path LIKE ?1)",
-            params![like_pattern],
-        )?;
-        let rows = self.conn.execute(
-            "DELETE FROM tracks WHERE file_path LIKE ?1",
-            params![like_pattern],
-        )?;
-        Ok(rows)
+        let tx = self.conn.unchecked_transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt = tx.prepare("SELECT id FROM tracks WHERE file_path LIKE ?1")?;
+            let rows = stmt.query_map([&like_pattern], |row| row.get(0))?;
+            rows.collect::<Result<_>>()?
+        };
+        for &id in &ids {
+            missing::delete_track_on(&tx, id)?;
+        }
+        tx.commit()?;
+        Ok(ids.len())
     }
 
     /// Count total tracks
@@ -1781,21 +1778,11 @@ impl Database {
     /// Remove tracks that are NOT under any of the given library folder paths.
     /// Used to clean up stray tracks (e.g., from Viber or other apps) that were accidentally imported.
     /// Returns the number of deleted tracks.
-    /// OPTIMIZED: Uses pure SQL instead of loading all tracks into memory.
+    /// Each track goes completely, in one transaction (Missing Files spec, section 6).
     pub fn remove_tracks_not_in_folders(&self, library_folders: &[String]) -> Result<usize> {
-        if library_folders.is_empty() {
-            // No folders configured - delete ALL tracks
-            self.conn.execute("DELETE FROM track_analysis WHERE track_id IN (SELECT id FROM tracks)", [])?;
-            self.conn.execute("DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM tracks)", [])?;
-            let count = self.conn.execute("DELETE FROM tracks", [])?;
-            return Ok(count);
-        }
-
-        // Build SQL WHERE clause to find tracks NOT in any library folder
-        // Use "NOT (file_path LIKE 'folder1/%' OR file_path LIKE 'folder2/%' ...)"
+        // "NOT (file_path LIKE 'folder1/%' OR ...)"; no folders means every track.
         let mut conditions = Vec::new();
         let mut params: Vec<String> = Vec::new();
-
         for folder in library_folders {
             let folder_normalized = if folder.ends_with('/') {
                 folder.to_string()
@@ -1805,33 +1792,23 @@ impl Database {
             conditions.push(format!("file_path LIKE ?{}", params.len() + 1));
             params.push(format!("{}%", folder_normalized));
         }
+        let query = if conditions.is_empty() {
+            "SELECT id FROM tracks".to_string()
+        } else {
+            format!("SELECT id FROM tracks WHERE NOT ({})", conditions.join(" OR "))
+        };
 
-        let where_clause = format!("NOT ({})", conditions.join(" OR "));
-
-        // Delete using SQL only - no need to load tracks into memory
-        let delete_query = format!(
-            "DELETE FROM tracks WHERE id IN (SELECT id FROM tracks WHERE {})",
-            where_clause
-        );
-
-        // Delete related data first
-        let analysis_query = format!(
-            "DELETE FROM track_analysis WHERE track_id IN (SELECT id FROM tracks WHERE {})",
-            where_clause
-        );
-        let playlist_query = format!(
-            "DELETE FROM playlist_tracks WHERE track_id IN (SELECT id FROM tracks WHERE {})",
-            where_clause
-        );
-
-        // Execute deletions
-        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-
-        self.conn.execute(&analysis_query, rusqlite::params_from_iter(params_refs.iter()))?;
-        self.conn.execute(&playlist_query, rusqlite::params_from_iter(params_refs.iter()))?;
-        let deleted = self.conn.execute(&delete_query, rusqlite::params_from_iter(params_refs.iter()))?;
-
-        Ok(deleted)
+        let tx = self.conn.unchecked_transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt = tx.prepare(&query)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| row.get(0))?;
+            rows.collect::<Result<_>>()?
+        };
+        for &id in &ids {
+            missing::delete_track_on(&tx, id)?;
+        }
+        tx.commit()?;
+        Ok(ids.len())
     }
 
     /// Search tracks by query string across text fields (title, artist, album, label, comment, file_path, genre)

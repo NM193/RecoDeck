@@ -95,6 +95,32 @@ pub(crate) fn relink_on(conn: &Connection, track_id: i64, facts: &FileFacts) -> 
     Ok(RelinkOutcome::Relinked)
 }
 
+/// Every table with a `track_id` that does not cascade on delete.
+/// `play_history` cascades, and the Spotify / YouTube Music verdicts go by
+/// their delete triggers.
+const TRACK_TABLES: [&str; 10] = [
+    "playlist_tracks",
+    "track_tags",
+    "track_genres",
+    "track_discogs_styles",
+    "track_instruments",
+    "track_embeddings",
+    "track_fingerprints",
+    "track_analysis",
+    "track_deep_analysis",
+    "cue_points",
+];
+
+/// Deletes a track and every row that references it, on `conn` (inside the
+/// caller's transaction). Files on disk are never touched. Answers whether
+/// the track existed.
+pub(crate) fn delete_track_on(conn: &Connection, track_id: i64) -> Result<bool> {
+    for table in TRACK_TABLES {
+        conn.execute(&format!("DELETE FROM {table} WHERE track_id = ?1"), [track_id])?;
+    }
+    Ok(conn.execute("DELETE FROM tracks WHERE id = ?1", [track_id])? > 0)
+}
+
 impl Database {
     /// Points a track at its file's new place. See `relink_on`.
     pub fn relink_track(&self, track_id: i64, facts: &FileFacts) -> Result<RelinkOutcome> {
@@ -279,5 +305,99 @@ mod tests {
         }
 
         assert_eq!(db.match_scanned_hash("h").unwrap(), HashMatch::Moved(10));
+    }
+
+    /// A track with a row in every table that references tracks.
+    fn track_with_everything(db: &Database, path: &str) -> i64 {
+        let id = insert(db, path, path);
+        let c = &db.conn;
+        c.execute("INSERT INTO playlists (name) VALUES ('P')", []).unwrap();
+        let playlist = c.last_insert_rowid();
+        c.execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, 1)",
+            params![playlist, id],
+        )
+        .unwrap();
+        c.execute("INSERT OR IGNORE INTO tags (name) VALUES ('warm')", []).unwrap();
+        let tag: i64 = c.query_row("SELECT id FROM tags WHERE name = 'warm'", [], |r| r.get(0)).unwrap();
+        c.execute("INSERT INTO track_tags (track_id, tag_id) VALUES (?1, ?2)", params![id, tag]).unwrap();
+        c.execute("INSERT INTO track_genres (track_id, genre) VALUES (?1, 'House')", [id]).unwrap();
+        c.execute("INSERT INTO track_discogs_styles (track_id, style) VALUES (?1, 'Deep House')", [id]).unwrap();
+        c.execute("INSERT INTO track_instruments (track_id, instrument) VALUES (?1, 'piano')", [id]).unwrap();
+        c.execute("INSERT INTO track_embeddings (track_id) VALUES (?1)", [id]).unwrap();
+        c.execute("INSERT INTO track_fingerprints (track_id, chromaprint) VALUES (?1, 'fp')", [id]).unwrap();
+        c.execute("INSERT INTO track_analysis (track_id, bpm) VALUES (?1, 124.0)", [id]).unwrap();
+        c.execute("INSERT INTO track_deep_analysis (track_id, energy_arousal) VALUES (?1, 0.5)", [id]).unwrap();
+        c.execute("INSERT INTO cue_points (track_id, position_ms) VALUES (?1, 1000)", [id]).unwrap();
+        c.execute("INSERT INTO play_history (track_id) VALUES (?1)", [id]).unwrap();
+        c.execute(
+            "INSERT INTO spotify_match_verdicts (spotify_id, library_track_id, verdict) VALUES ('s', ?1, 'yes')",
+            [id],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO ytm_match_verdicts (video_id, library_track_id, verdict) VALUES ('v', ?1, 'yes')",
+            [id],
+        )
+        .unwrap();
+        id
+    }
+
+    /// Rows anywhere that reference the track, its own row included.
+    /// `track_with_everything` makes 14.
+    fn rows_for(db: &Database, id: i64) -> i64 {
+        let count = |sql: String| -> i64 { db.conn.query_row(&sql, [id], |r| r.get(0)).unwrap() };
+        let mut n = count("SELECT COUNT(*) FROM tracks WHERE id = ?1".into());
+        for table in TRACK_TABLES.iter().chain(["play_history"].iter()) {
+            n += count(format!("SELECT COUNT(*) FROM {table} WHERE track_id = ?1"));
+        }
+        for table in ["spotify_match_verdicts", "ytm_match_verdicts"] {
+            n += count(format!("SELECT COUNT(*) FROM {table} WHERE library_track_id = ?1"));
+        }
+        n
+    }
+
+    #[test]
+    fn a_complete_delete_leaves_nothing_that_references_the_track() {
+        let db = db();
+        let id = track_with_everything(&db, "/gone/a.mp3");
+        assert_eq!(rows_for(&db, id), 14);
+
+        assert!(delete_track_on(&db.conn, id).unwrap());
+
+        assert_eq!(rows_for(&db, id), 0);
+    }
+
+    #[test]
+    fn folder_cleanups_remove_a_track_completely() {
+        let db = db();
+        let keep = track_with_everything(&db, "/music/keep.mp3");
+        let stray = track_with_everything(&db, "/elsewhere/stray.mp3");
+
+        assert_eq!(db.remove_tracks_not_in_folders(&["/music".to_string()]).unwrap(), 1);
+        assert_eq!(rows_for(&db, stray), 0);
+        assert_eq!(rows_for(&db, keep), 14);
+
+        let inside = track_with_everything(&db, "/music/sub/x.mp3");
+        assert_eq!(db.delete_tracks_in_folder_prefix("/music/sub").unwrap(), 1);
+        assert_eq!(rows_for(&db, inside), 0);
+        assert_eq!(rows_for(&db, keep), 14);
+    }
+
+    #[test]
+    fn a_failing_folder_cleanup_changes_nothing() {
+        let db = db();
+        let a = track_with_everything(&db, "/elsewhere/a.mp3");
+        let b = track_with_everything(&db, "/elsewhere/b.mp3");
+        db.conn
+            .execute_batch(&format!(
+                "CREATE TRIGGER fail BEFORE DELETE ON tracks WHEN OLD.id = {b} BEGIN SELECT RAISE(ABORT, 'boom'); END;"
+            ))
+            .unwrap();
+
+        assert!(db.remove_tracks_not_in_folders(&["/music".to_string()]).is_err());
+
+        assert_eq!(rows_for(&db, a), 14);
+        assert_eq!(rows_for(&db, b), 14);
     }
 }
