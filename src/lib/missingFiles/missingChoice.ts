@@ -174,6 +174,25 @@ export function withLocated(
   return { ...choice, located }
 }
 
+/** After a reload: a chosen file that is no longer offered is forgotten,
+ *  and the row goes to leave (unless the user picked remove). The row never
+ *  moves to a file the user did not see, and its Relink works again. */
+export function pruneChoice(
+  tracks: MissingTrack[],
+  choice: MissingChoice,
+): MissingChoice {
+  const chosen = new Map(choice.chosen)
+  const picked = new Map(choice.picked)
+  for (const track of tracks) {
+    const path = choice.chosen.get(track.id)
+    if (path === undefined) continue
+    if (candidatesOf(track, choice).some((c) => c.path === path)) continue
+    chosen.delete(track.id)
+    if (picked.get(track.id) !== 'remove') picked.set(track.id, 'leave')
+  }
+  return { ...choice, chosen, picked }
+}
+
 /** What the backend gets. */
 export function buildFixes(
   tracks: MissingTrack[],

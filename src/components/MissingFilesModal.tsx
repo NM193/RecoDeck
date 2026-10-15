@@ -25,6 +25,7 @@ import {
   locate,
   rowViews,
   setState,
+  pruneChoice,
   withLocated,
   type FixState,
   type MissingChoice,
@@ -110,7 +111,7 @@ export function MissingFilesModal({
         }
       }
       setTracks(data)
-      setChoice((c) => withLocated(c, located))
+      setChoice((c) => pruneChoice(data, withLocated(c, located)))
     } catch (err) {
       setLoadError(getErrorMessage(err))
     } finally {

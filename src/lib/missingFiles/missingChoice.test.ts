@@ -6,6 +6,7 @@ import {
   chooseFile,
   emptyChoice,
   locate,
+  pruneChoice,
   rowViews,
   setState,
   withLocated,
@@ -172,6 +173,36 @@ describe('stale lists', () => {
     const tracks = [missing(1, [file('/m/x.mp3', 300_000, 2)]), missing(2)]
     expect(rowViews(tracks, emptyChoice()).get(1)?.state).toBe('leave')
     expect(buildFixes(tracks, emptyChoice()).merges).toEqual([])
+  })
+})
+
+describe('pruneChoice', () => {
+  const reloaded = [missing(1, [file('/m/a.mp3')])]
+
+  it('forgets a chosen file that is gone, so Relink works again', () => {
+    const chosen = chooseFile(emptyChoice(), 1, '/m/b.mp3')
+    const pruned = pruneChoice(reloaded, chosen)
+    expect(rowViews(reloaded, pruned).get(1)?.state).toBe('leave')
+    const fixed = rowViews(reloaded, setState(pruned, 1, 'fix')).get(1)
+    expect(fixed?.state).toBe('fix')
+    expect(fixed?.candidate?.path).toBe('/m/a.mp3')
+  })
+
+  it('keeps a chosen file that is still offered', () => {
+    const chosen = chooseFile(emptyChoice(), 1, '/m/a.mp3')
+    const pruned = pruneChoice(reloaded, chosen)
+    expect(pruned.chosen.get(1)).toBe('/m/a.mp3')
+    expect(rowViews(reloaded, pruned).get(1)?.state).toBe('fix')
+  })
+
+  it('keeps remove when the chosen file is gone', () => {
+    const chosen = setState(
+      chooseFile(emptyChoice(), 1, '/m/b.mp3'),
+      1,
+      'remove',
+    )
+    const pruned = pruneChoice(reloaded, chosen)
+    expect(rowViews(reloaded, pruned).get(1)?.state).toBe('remove')
   })
 })
 
