@@ -136,7 +136,12 @@ export function MissingFilesModal({
     const name = baseName(folder)
     const yes = await ask(
       `Add "${name}" to your library folders? Its tracks are imported, and moved files are followed.`,
-      { title: 'Add to library', kind: 'info', okLabel: 'Add', cancelLabel: 'Cancel' },
+      {
+        title: 'Add to library',
+        kind: 'info',
+        okLabel: 'Add',
+        cancelLabel: 'Cancel',
+      },
     )
     if (!yes) return false
     setBusy(`Adding ${name}…`)
@@ -155,32 +160,36 @@ export function MissingFilesModal({
   }
 
   async function searchFolder() {
-    const picked = await open({
-      directory: true,
-      multiple: false,
-      title: 'Search another folder',
-    })
-    if (typeof picked !== 'string') return
-    if (isInsideFolders(picked, folders)) {
-      notifyRef.current('Already in your library folders', 'info')
-      return
+    try {
+      const picked = await open({
+        directory: true,
+        multiple: false,
+        title: 'Search another folder',
+      })
+      if (typeof picked !== 'string') return
+      if (isInsideFolders(picked, folders)) {
+        notifyRef.current('Already in your library folders', 'info')
+        return
+      }
+      await offerFolder(picked)
+    } catch (err) {
+      notifyRef.current(getErrorMessage(err), 'error')
     }
-    await offerFolder(picked)
   }
 
   async function pickFile(track: MissingTrack) {
-    const picked = await open({
-      directory: false,
-      multiple: false,
-      title: `Locate "${track.title || baseName(track.file_path)}"`,
-      filters: [{ name: 'Audio', extensions: AUDIO_EXTENSIONS }],
-    })
-    if (typeof picked !== 'string') return
-    if (!isInsideFolders(picked, folders)) {
-      const added = await offerFolder(parentFolder(picked))
-      if (!added) return
-    }
     try {
+      const picked = await open({
+        directory: false,
+        multiple: false,
+        title: `Locate "${track.title || baseName(track.file_path)}"`,
+        filters: [{ name: 'Audio', extensions: AUDIO_EXTENSIONS }],
+      })
+      if (typeof picked !== 'string') return
+      if (!isInsideFolders(picked, folders)) {
+        const added = await offerFolder(parentFolder(picked))
+        if (!added) return
+      }
       const file = await tauriApi.describeFile(track.id, picked)
       setChoice((c) => locate(c, track.id, file))
     } catch (err) {
@@ -218,7 +227,8 @@ export function MissingFilesModal({
     track,
     view: views.get(track.id) as RowView,
     disabled: busy !== null,
-    onState: (state: FixState) => setChoice((c) => setState(c, track.id, state)),
+    onState: (state: FixState) =>
+      setChoice((c) => setState(c, track.id, state)),
     onChoose: (path: string) => setChoice((c) => chooseFile(c, track.id, path)),
     onPick: () => void pickFile(track),
   })
@@ -271,7 +281,8 @@ export function MissingFilesModal({
         </div>
 
         <div className="dup-modal__body">
-          {loading ? (
+          {/* A reload keeps the list on screen, so the scroll position stays. */}
+          {loading && tracks.length === 0 ? (
             <div className="dup-modal__state">
               <Icon name="Loader" size={28} />
               <p>Looking for missing files…</p>
@@ -322,7 +333,9 @@ export function MissingFilesModal({
                     <div className="mf-card__head">
                       <span className="mf-card__title">
                         Not found
-                        <span className="mf-card__count">{notFound.length}</span>
+                        <span className="mf-card__count">
+                          {notFound.length}
+                        </span>
                       </span>
                       <span className="mf-card__hint">
                         Moved off this Mac, or deleted
@@ -411,7 +424,10 @@ function MissingRow({
         : 'no playlists',
   })
   if (view.state === 'fix' && view.merge) {
-    facts.push({ text: 'plays, playlists and analysis move into it', tone: 'moves' })
+    facts.push({
+      text: 'plays, playlists and analysis move into it',
+      tone: 'moves',
+    })
   }
   if (view.state === 'remove' && track.playlists.length > 0) {
     facts.push({
@@ -517,7 +533,8 @@ function MissingRow({
               aria-pressed={view.state === s}
               onClick={() => onState(s)}
               disabled={
-                disabled || (s === 'fix' && (!c || view.blockedBy !== undefined))
+                disabled ||
+                (s === 'fix' && (!c || view.blockedBy !== undefined))
               }
             >
               {s === 'fix'
