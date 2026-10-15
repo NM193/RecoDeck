@@ -9,6 +9,8 @@ pub mod file_trash;
 pub mod formats;
 pub mod scanner;
 pub mod server;
+#[cfg(test)]
+mod test_support;
 
 use commands::{library::AppState, playback::PlaybackState, server::CompanionState, watcher::WatcherState};
 use std::sync::atomic::AtomicBool;

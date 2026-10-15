@@ -7,6 +7,7 @@ pub mod dj;
 pub mod duplicates;
 pub mod home;
 pub mod merge;
+pub mod missing;
 pub mod sections;
 pub mod spotify;
 pub mod youtube_music;
