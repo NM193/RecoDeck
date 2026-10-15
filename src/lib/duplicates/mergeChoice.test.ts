@@ -8,8 +8,8 @@ import {
   pickKeep,
   rowState,
   setMergeAll,
+  setLeft,
   slotsMoving,
-  toggleMerge,
 } from './mergeChoice'
 
 function copy(id: number, playlistIds: number[] = []): DuplicateTrack {
@@ -22,6 +22,7 @@ function copy(id: number, playlistIds: number[] = []): DuplicateTrack {
     playlists: playlistIds.map((p) => ({ id: p, name: `P${p}` })),
     analyzed: false,
     plays: 0,
+    file_missing: false,
   }
 }
 
@@ -57,25 +58,25 @@ describe('mergeChoice', () => {
     expect(buildMerges(c, [g1])).toEqual([{ keep_id: 3, remove_ids: [1, 2] }])
   })
 
-  it('unchecking Merge leaves a copy as is, and the kept copy cannot be unchecked', () => {
-    let c = toggleMerge(initialChoice([g1]), g1, 3)
+  it('Leave keeps a copy as is, Merge brings it back, and the kept copy ignores both', () => {
+    let c = setLeft(initialChoice([g1]), g1, 3, true)
     expect(rowState(c, g1, 3)).toBe('left')
     expect(buildMerges(c, [g1])).toEqual([{ keep_id: 2, remove_ids: [1] }])
-    c = toggleMerge(c, g1, 2)
+    c = setLeft(c, g1, 2, true)
     expect(rowState(c, g1, 2)).toBe('keep')
-    c = toggleMerge(c, g1, 3)
+    c = setLeft(c, g1, 3, false)
     expect(rowState(c, g1, 3)).toBe('merge')
   })
 
   it('picking a left copy as the keep clears its left mark', () => {
-    let c = toggleMerge(initialChoice([g1]), g1, 3)
+    let c = setLeft(initialChoice([g1]), g1, 3, true)
     c = pickKeep(c, g1, 3)
     c = pickKeep(c, g1, 2)
     expect(rowState(c, g1, 3)).toBe('merge')
   })
 
   it('a group with nothing to merge sends no request', () => {
-    let c = toggleMerge(initialChoice([g2]), g2, 5)
+    let c = setLeft(initialChoice([g2]), g2, 5, true)
     expect(buildMerges(c, [g2])).toEqual([])
     expect(mergeCount(c, [g2])).toBe(0)
     c = setMergeAll(c, [g2], true)

@@ -2,7 +2,11 @@
 // in each group one kept copy, and every other copy either merged into it or
 // left as is. Pure functions, so the modal only renders.
 
-import type { DuplicateGroup, DuplicateTrack, MergeRequest } from '../../types/track'
+import type {
+  DuplicateGroup,
+  DuplicateTrack,
+  MergeRequest,
+} from '../../types/track'
 
 export interface MergeChoice {
   /** group key → the kept copy's id */
@@ -52,16 +56,17 @@ export function pickKeep(
   return { keep, left }
 }
 
-/** Merge ↔ left as is. The kept copy does not toggle. */
-export function toggleMerge(
+/** Leave a copy as is (true) or merge it (false). The kept copy ignores both. */
+export function setLeft(
   choice: MergeChoice,
   group: DuplicateGroup,
   trackId: number,
+  leave: boolean,
 ): MergeChoice {
   if (rowState(choice, group, trackId) === 'keep') return choice
   const left = new Set(choice.left)
-  if (left.has(trackId)) left.delete(trackId)
-  else left.add(trackId)
+  if (leave) left.add(trackId)
+  else left.delete(trackId)
   return { keep: choice.keep, left }
 }
 
@@ -83,7 +88,10 @@ export function setMergeAll(
 }
 
 /** True when the groups have a copy to merge and every one is checked. */
-export function allMerged(choice: MergeChoice, groups: DuplicateGroup[]): boolean {
+export function allMerged(
+  choice: MergeChoice,
+  groups: DuplicateGroup[],
+): boolean {
   let any = false
   for (const g of groups) {
     for (const t of g.tracks) {
@@ -112,8 +120,14 @@ export function buildMerges(
   return out
 }
 
-export function mergeCount(choice: MergeChoice, groups: DuplicateGroup[]): number {
-  return buildMerges(choice, groups).reduce((n, m) => n + m.remove_ids.length, 0)
+export function mergeCount(
+  choice: MergeChoice,
+  groups: DuplicateGroup[],
+): number {
+  return buildMerges(choice, groups).reduce(
+    (n, m) => n + m.remove_ids.length,
+    0,
+  )
 }
 
 /** This copy's playlist slots that move: playlists the kept copy is not in. */

@@ -602,6 +602,8 @@ pub struct DuplicateTrackDTO {
     pub analyzed: bool,
     /// Rows in the play history.
     pub plays: i64,
+    /// The file is not on disk.
+    pub file_missing: bool,
 }
 
 /// A group of duplicate tracks for the merge flow. `tracks` is ordered by id
@@ -650,6 +652,7 @@ pub fn get_duplicate_groups(
                     .collect(),
                 analyzed: f.analyzed,
                 plays: f.plays,
+                file_missing: f.file_missing,
             })
             .collect();
         out.push(DuplicateGroupDTO {

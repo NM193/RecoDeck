@@ -17,6 +17,8 @@ pub struct CopyFacts {
     pub playlists: Vec<(i64, String)>,
     /// Rows in the play history (`tracks.play_count` is not kept up to date).
     pub plays: i64,
+    /// The file is not on disk (a stale row, e.g. its folder was moved).
+    pub file_missing: bool,
 }
 
 /// The lossless label for a copy, or None when it is lossy. `file_format`
@@ -31,9 +33,12 @@ pub fn lossless_label(format: Option<&str>, bitrate: Option<i32>) -> Option<&'st
     }
 }
 
-/// Rules 1–5 as a sortable key, bigger is better.
-fn rank(c: &CopyFacts) -> (bool, i32, bool, usize, i64) {
+/// The rules as a sortable key, bigger is better. A copy whose file is gone
+/// never wins over one on disk, however much history it has: the merge moves
+/// that history onto the copy that can still play.
+fn rank(c: &CopyFacts) -> (bool, bool, i32, bool, usize, i64) {
     (
+        !c.file_missing,
         lossless_label(c.file_format.as_deref(), c.bitrate).is_some(),
         c.bitrate.unwrap_or(0),
         c.analyzed,
@@ -46,10 +51,13 @@ fn counted(n: usize, one: &str, many: &str) -> String {
     if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
 }
 
-/// Every rule 1–5 where the winner beats the runner-up, in rule order, the
+/// Every rule where the winner beats the runner-up, in rule order, the
 /// first two joined with " · "; "added first" when only the id decided.
 fn reason(winner: &CopyFacts, runner_up: &CopyFacts) -> String {
     let mut parts: Vec<String> = Vec::new();
+    if !winner.file_missing && runner_up.file_missing {
+        parts.push("file on disk".into());
+    }
     let label = lossless_label(winner.file_format.as_deref(), winner.bitrate);
     let runner_up_lossless = lossless_label(runner_up.file_format.as_deref(), runner_up.bitrate).is_some();
     match label {
@@ -120,6 +128,7 @@ impl Database {
                     analyzed,
                     playlists,
                     plays,
+                    file_missing: !std::path::Path::new(&t.file_path).exists(),
                 })
             })
             .collect()
@@ -139,7 +148,47 @@ mod tests {
             analyzed,
             playlists: (0..playlists).map(|i| (i, format!("P{i}"))).collect(),
             plays,
+            file_missing: false,
         }
+    }
+
+    fn missing(mut c: CopyFacts) -> CopyFacts {
+        c.file_missing = true;
+        c
+    }
+
+    #[test]
+    fn a_copy_whose_file_is_gone_never_wins() {
+        let copies = [missing(copy(1, "wav", 1411, true, 3, 10)), copy(2, "mp3", 128, false, 0, 0)];
+        assert_eq!(rec(&copies), (2, "file on disk".into()));
+    }
+
+    #[test]
+    fn file_on_disk_comes_first_in_the_reason() {
+        let copies = [missing(copy(1, "mp3", 320, false, 0, 0)), copy(2, "mp3", 320, true, 0, 0)];
+        assert_eq!(rec(&copies), (2, "file on disk · analyzed".into()));
+    }
+
+    #[test]
+    fn copy_facts_flags_a_file_that_is_not_on_disk() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let here = dir.path().join("here.mp3");
+        std::fs::write(&here, b"x").unwrap();
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO tracks (id, file_path, file_hash) VALUES (1, ?1, 'a'), (2, '/m/gone.mp3', 'b')",
+                [here.to_string_lossy().to_string()],
+            )
+            .unwrap();
+        let mut tracks = db.get_all_tracks().unwrap();
+        tracks.sort_by_key(|t| t.id);
+
+        let facts = db.copy_facts(&tracks).unwrap();
+
+        assert!(!facts[0].file_missing);
+        assert!(facts[1].file_missing);
     }
 
     fn rec(copies: &[CopyFacts]) -> (i64, String) {

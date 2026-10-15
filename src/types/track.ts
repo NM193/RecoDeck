@@ -161,6 +161,8 @@ export interface DuplicateTrack extends Track {
   analyzed: boolean
   /** Rows in the play history. */
   plays: number
+  /** The file is not on disk (a stale row, e.g. its folder was moved). */
+  file_missing: boolean
 }
 
 export interface DuplicateGroup {

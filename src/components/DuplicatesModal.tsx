@@ -7,8 +7,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { tauriApi } from '../lib/tauri-api'
 import { useOverlay } from '../lib/overlays'
-import { formatTime } from '../lib/trackTable/cells'
 import { getErrorMessage } from '../types/ai'
+import { copyFacts, copyPlace } from '../lib/duplicates/copyFacts'
 import {
   allMerged,
   buildMerges,
@@ -17,9 +17,9 @@ import {
   mergeCount,
   pickKeep,
   rowState,
+  setLeft,
   setMergeAll,
   slotsMoving,
-  toggleMerge,
   type MergeChoice,
   type RowState,
 } from '../lib/duplicates/mergeChoice'
@@ -51,23 +51,16 @@ const REASON_LABELS: Record<DuplicateReason, string> = {
 
 const FILTER_TABS: { value: FilterValue; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'identical_content', label: 'Identical content' },
-  { value: 'identical_filename_size', label: 'Same filename & size' },
-  { value: 'same_title_artist', label: 'Same title & artist' },
+  { value: 'identical_content', label: 'Identical' },
+  { value: 'identical_filename_size', label: 'Same file' },
+  { value: 'same_title_artist', label: 'Title & artist' },
 ]
 
-const LOSSLESS = new Set(['wav', 'aif', 'aiff', 'flac'])
-
-const STATUS: Record<RowState, string> = {
-  keep: 'Stays in your library',
-  merge: 'Merges into the kept copy',
-  left: 'Left as is',
-}
-
-function formatMB(bytes?: number): string {
-  if (bytes == null) return '—'
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+const STATES: { state: RowState; label: string }[] = [
+  { state: 'keep', label: 'Keep' },
+  { state: 'merge', label: 'Merge' },
+  { state: 'left', label: 'Leave' },
+]
 
 function formatDate(iso?: string): string {
   if (!iso) return '—'
@@ -76,19 +69,6 @@ function formatDate(iso?: string): string {
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
-}
-
-/** "WAV", "AIFF", "MP3 320": lossless formats without their bitrate. */
-function formatAudio(track: DuplicateTrack): string {
-  const ext = (track.file_format ?? '').toLowerCase()
-  const name = ext === 'aif' ? 'AIFF' : ext.toUpperCase() || '—'
-  if (LOSSLESS.has(ext) || !track.bitrate) return name
-  return `${name} ${track.bitrate}`
-}
-
-function statusText(state: RowState, slots: number): string {
-  if (state !== 'merge' || slots === 0) return STATUS[state]
-  return `${STATUS.merge} · its ${plural(slots, 'playlist slot', 'playlist slots')} ${slots === 1 ? 'moves' : 'move'} over`
 }
 
 function summaryMessage(s: MergeSummary): string {
@@ -187,12 +167,12 @@ export function DuplicatesModal({
     filteredGroups.length === totalGroups
       ? plural(totalGroups, 'group', 'groups')
       : `${filteredGroups.length} of ${plural(totalGroups, 'group', 'groups')}`
-  const summary = `${groupsLabel} · ${toMerge} ${toMerge === 1 ? 'copy' : 'copies'} will be merged`
+  const summary = `${groupsLabel} · ${toMerge === 1 ? '1 copy' : `${toMerge} copies`} will merge into the kept copy`
   const actionLabel = merging
     ? 'Merging…'
     : moveToTrash
       ? `Merge ${toMerge} & move to Trash`
-      : `Merge ${toMerge}`
+      : `Merge ${toMerge === 1 ? '1 copy' : `${toMerge} copies`}`
 
   return (
     <div className="modal-overlay" onClick={closeUnlessMerging}>
@@ -215,9 +195,8 @@ export function DuplicatesModal({
           </button>
         </header>
 
-        {/* Sticky filter + merge-all bar */}
         <div className="dup-modal__toolbar">
-          <div className="dup-modal__tabs">
+          <div className="dup-tabs" role="tablist">
             {FILTER_TABS.map((tab) => {
               const count =
                 tab.value === 'all'
@@ -228,6 +207,8 @@ export function DuplicatesModal({
                 <button
                   key={tab.value}
                   type="button"
+                  role="tab"
+                  aria-selected={activeFilter === tab.value}
                   className={`dup-tab ${activeFilter === tab.value ? 'dup-tab--active' : ''}`}
                   onClick={() => setActiveFilter(tab.value)}
                 >
@@ -239,21 +220,16 @@ export function DuplicatesModal({
           </div>
           <button
             type="button"
-            className="dup-toolbar-btn"
+            className="dup-text-btn"
             onClick={() =>
               setChoice(setMergeAll(choice, filteredGroups, !visibleAllMerged))
             }
             disabled={loading || merging || filteredGroups.length === 0}
           >
-            <Icon
-              name={visibleAllMerged ? 'SquareCheckBig' : 'Square'}
-              size={14}
-            />
-            <span>{visibleAllMerged ? 'Merge none' : 'Merge all'}</span>
+            {visibleAllMerged ? 'Leave all' : 'Merge all'}
           </button>
         </div>
 
-        {/* Body */}
         <div className="dup-modal__body">
           {loading ? (
             <div className="dup-modal__state">
@@ -278,9 +254,12 @@ export function DuplicatesModal({
                   group={group}
                   choice={choice}
                   disabled={merging}
-                  onPickKeep={(id) => setChoice(pickKeep(choice, group, id))}
-                  onToggleMerge={(id) =>
-                    setChoice(toggleMerge(choice, group, id))
+                  onPick={(id, state) =>
+                    setChoice(
+                      state === 'keep'
+                        ? pickKeep(choice, group, id)
+                        : setLeft(choice, group, id, state === 'left'),
+                    )
                   }
                 />
               ))}
@@ -288,7 +267,6 @@ export function DuplicatesModal({
           )}
         </div>
 
-        {/* Footer */}
         <footer className="dup-modal__footer">
           <div className="dup-trash">
             <label className="dup-trash__label">
@@ -301,7 +279,7 @@ export function DuplicatesModal({
               <span>Also move removed files to Trash</span>
             </label>
             <span className="dup-trash__hint">
-              Either way, removed files are skipped on future scans.
+              Merged copies are skipped on future scans either way.
             </span>
           </div>
           <button
@@ -331,32 +309,42 @@ function GroupCard({
   group,
   choice,
   disabled,
-  onPickKeep,
-  onToggleMerge,
+  onPick,
 }: {
   group: DuplicateGroup
   choice: MergeChoice
   disabled: boolean
-  onPickKeep: (id: number) => void
-  onToggleMerge: (id: number) => void
+  onPick: (id: number, state: RowState) => void
 }) {
-  const key = groupKey(group)
-  const keepId = choice.keep.get(key) ?? group.recommended_keep_id
+  const keepId = choice.keep.get(groupKey(group)) ?? group.recommended_keep_id
+  const facts = copyFacts(group)
   return (
-    <section className={`dup-card dup-card--${group.detection_reason}`}>
+    <section className="dup-card">
       <header className="dup-card__header">
-        <span className={`dup-badge dup-badge--${group.detection_reason}`}>
-          {REASON_LABELS[group.detection_reason]}
-        </span>
-        <span className="dup-card__count">{group.tracks.length} tracks</span>
+        <div className="dup-card__top">
+          <span className="dup-card__title">{facts.heading}</span>
+          <span className="dup-card__aside">
+            <span
+              className={`dup-reason dup-reason--${group.detection_reason}`}
+            >
+              {REASON_LABELS[group.detection_reason]}
+            </span>
+            <span>{plural(group.tracks.length, 'copy', 'copies')}</span>
+          </span>
+        </div>
+        {facts.shared.length > 0 && (
+          <div className="dup-card__shared">
+            Same for all: {facts.shared.join(' · ')}
+          </div>
+        )}
       </header>
       <ul className="dup-card__rows">
         {group.tracks.map((track) => (
           <TrackRow
             key={track.id}
             track={track}
-            radioName={`dup-keep-${key}`}
             state={rowState(choice, group, track.id)}
+            differ={facts.differ.get(track.id) ?? []}
             recommendReason={
               track.id === group.recommended_keep_id
                 ? group.recommend_reason
@@ -364,8 +352,7 @@ function GroupCard({
             }
             slots={slotsMoving(group, keepId, track)}
             disabled={disabled}
-            onPickKeep={() => onPickKeep(track.id)}
-            onToggleMerge={() => onToggleMerge(track.id)}
+            onPick={(state) => onPick(track.id, state)}
           />
         ))}
       </ul>
@@ -375,101 +362,80 @@ function GroupCard({
 
 function TrackRow({
   track,
-  radioName,
   state,
+  differ,
   recommendReason,
   slots,
   disabled,
-  onPickKeep,
-  onToggleMerge,
+  onPick,
 }: {
   track: DuplicateTrack
-  radioName: string
   state: RowState
+  differ: string[]
   recommendReason: string | null
   slots: number
   disabled: boolean
-  onPickKeep: () => void
-  onToggleMerge: () => void
+  onPick: (state: RowState) => void
 }) {
+  const place = copyPlace(track.file_path)
+  const inPlaylists =
+    track.playlists.length === 0
+      ? 'no playlists'
+      : `in ${track.playlists.map((p) => p.name).join(', ')}`
+  const moves = state === 'merge' && slots > 0
   return (
     <li className={`dup-row dup-row--${state}`}>
-      <div className="dup-row__controls">
-        <label className="dup-row__control">
-          <input
-            type="radio"
-            name={radioName}
-            checked={state === 'keep'}
-            onChange={onPickKeep}
-            disabled={disabled}
-          />
-          <span>Keep</span>
-        </label>
-        <label
-          className={`dup-row__control ${state === 'keep' ? 'dup-row__control--off' : ''}`}
-        >
-          <input
-            type="checkbox"
-            checked={state === 'merge'}
-            onChange={onToggleMerge}
-            disabled={disabled || state === 'keep'}
-          />
-          <span>Merge</span>
-        </label>
-      </div>
-      <div className="dup-row__info">
-        <div className="dup-row__line1">
-          <span className="dup-row__title">
-            {track.title || <span className="dup-muted">Untitled</span>}
-          </span>
-          <span className="dup-row__artist">
-            {track.artist ? (
-              <>by {track.artist}</>
-            ) : (
-              <span className="dup-muted">Unknown artist</span>
+      <div className="dup-row__main">
+        <div className="dup-row__place">
+          <span
+            className="dup-row__path"
+            data-tip={`${track.file_path} · added ${formatDate(track.date_added)}`}
+          >
+            {place.folder && (
+              <span className="dup-row__folder">{place.folder} / </span>
             )}
+            {place.file}
           </span>
           {recommendReason && (
-            <span className="dup-keep-badge">
-              <b>Recommended</b> {recommendReason}
+            <span className="dup-rec">Recommended · {recommendReason}</span>
+          )}
+        </div>
+        <div className="dup-row__facts">
+          {track.file_missing && (
+            <span className="dup-fact dup-fact--missing">file missing</span>
+          )}
+          {differ.map((fact, i) => (
+            <span key={i} className="dup-fact dup-fact--differs">
+              {fact}
             </span>
-          )}
+          ))}
+          <span className="dup-fact">
+            {track.plays > 0
+              ? plural(track.plays, 'play', 'plays')
+              : 'no plays'}
+          </span>
+          <span className={`dup-fact ${moves ? 'dup-fact--moves' : ''}`}>
+            {moves ? `${inPlaylists} → moves to the kept copy` : inPlaylists}
+          </span>
         </div>
-        <div
-          className="dup-row__path"
-          data-tip={track.file_path}
-          data-tip-overflow
-        >
-          {track.file_path}
-        </div>
-        <div className="dup-row__meta">
-          <span>{formatAudio(track)}</span>
-          <span className="dup-row__sep">·</span>
-          <span>{formatTime(track.duration_ms)}</span>
-          <span className="dup-row__sep">·</span>
-          <span>{formatMB(track.file_size)}</span>
-          <span className="dup-row__sep">·</span>
-          <span>{track.analyzed ? 'analyzed' : 'not analyzed'}</span>
-          <span className="dup-row__sep">·</span>
-          <span>{plural(track.plays, 'play', 'plays')}</span>
-          <span className="dup-row__sep">·</span>
-          <span>added {formatDate(track.date_added)}</span>
-        </div>
-        <div className="dup-row__playlists">
-          <span className="dup-row__playlists-label">Playlists:</span>
-          {track.playlists.length === 0 ? (
-            <span className="dup-muted">not in any playlist</span>
-          ) : (
-            track.playlists.map((p) => (
-              <span key={p.id} className="dup-chip">
-                {p.name}
-              </span>
-            ))
-          )}
-        </div>
-        <div className={`dup-row__status dup-row__status--${state}`}>
-          {statusText(state, slots)}
-        </div>
+      </div>
+      <div
+        className="dup-seg"
+        role="group"
+        aria-label="What happens to this copy"
+      >
+        {STATES.map((s) => (
+          <button
+            key={s.state}
+            type="button"
+            className={`dup-seg__btn ${state === s.state ? `dup-seg__btn--${s.state}` : ''}`}
+            aria-pressed={state === s.state}
+            onClick={() => onPick(s.state)}
+            disabled={disabled || (state === 'keep' && s.state !== 'keep')}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
     </li>
   )

@@ -77,6 +77,7 @@ ids. It is left alone.
 The backend picks a recommended K per group. The copies are sorted by these
 rules, and the first rule that tells two copies apart wins:
 
+0. the file is on disk. A copy whose file is gone (a stale row, e.g. its folder was moved) never wins over one that can play; the merge moves the stale row's playlists, plays and analysis onto the copy on disk. Added 2026-10-15, after the first real merge kept 132 stale rows over their moved files.
 1. lossless beats lossy. `file_format` holds the lowercased file extension. Lossless means:
    - `wav`, `aif`, `aiff`, `flac`;
    - `m4a` with `bitrate` ≥ 500 kbps (ALAC; AAC never gets that high).
@@ -89,11 +90,12 @@ rules, and the first rule that tells two copies apart wins:
 6. lower id (the earlier import).
 
 **Reason text.** It compares the winner with the runner-up (the second copy
-in the sorted order). It lists, in rule order, every rule from 1 to 5 where
+in the sorted order). It lists, in rule order, every rule from 0 to 5 where
 the winner is strictly better, and shows the first two:
 
 | Rule | Text |
 |---|---|
+| 0 | `file on disk` |
 | 1 | `WAV (lossless)`, `AIFF (lossless)` (`aif` and `aiff`), `FLAC (lossless)`, `ALAC (lossless)` (`m4a`) |
 | 2 | `320 kbps`, the winner's bitrate. Left out when rule 1 already applies. |
 | 3 | `analyzed` |
@@ -101,7 +103,7 @@ the winner is strictly better, and shows the first two:
 | 5 | `1 play` / `N plays`, the winner's count |
 
 The parts are joined with ` · `, e.g. `WAV (lossless) · in 3 playlists`. If
-none of rules 1–5 applies, the reason is `added first`.
+none of rules 0–5 applies, the reason is `added first`.
 
 ## Files
 
@@ -178,30 +180,21 @@ is the same file, R is not trashed and is reported in `trash_failed`.
 - `src/types/track.ts`: `DuplicateGroup` gains the new fields, plus a `DuplicateTrack` type;
 - `src/lib/tauri-api.ts`: a new `mergeDuplicateTracks`. `deleteTracksBulk` stays.
 
-- Each copy row has two controls on the left:
-  - **Keep**: a radio, one per group;
-  - **Merge**: a checkbox, disabled on the kept row.
-- When the modal opens, Keep = the recommended copy and every other copy is checked for Merge. Picking Keep on another copy makes it K, and the old K becomes a checked Merge row.
-- Per copy:
-  - line 1: title, artist, and a green `RECOMMENDED <reason>` badge on the recommended copy;
-  - line 2: path, in mono;
-  - line 3: format and bitrate, duration, size, analyzed / not analyzed, plays (`plays`), date added;
-  - line 4: `Playlists:` with one chip per playlist, or `not in any playlist`;
-  - line 5: a status line —
-    - kept row: `Stays in your library` (green);
-    - merged row: `Merges into the kept copy · its N playlist slot(s) move over` (indigo). N counts R's playlists that K is not in, matched by playlist id. When N = 0 the second part is left out. If two merged copies share a playlist K is not in, both rows count it. That small over-count is accepted; the toast reports the real number.
-    - left row: `Left as is` (grey).
-- Row tints:
-  - kept: `rgba(34,197,94,.06)`;
-  - merged: `rgba(99,102,241,.07)`;
-  - left: none.
-- Header summary: `N groups · M copies will be merged`, or `V of N groups · …` while a filter tab hides some groups.
+- Layout redesigned 2026-10-15 from the user-approved mockup (direction A, "rows"). The modal is `min(900px, 92vw)` wide.
+- Group header: the recommended copy's `title — artist`, the detection reason as a coloured dot plus its name, and `N copies`. Below it: `Same for all: …`, listing the facts every copy shares (format and bitrate, length, size, analyzed).
+- One row per copy:
+  - line 1: `folder / file name`, with the full path and date added in the tooltip, plus a green `Recommended · <reason>` pill on the recommended copy;
+  - line 2: a red `file missing` when the copy's file is not on disk, then only the facts that differ between copies (highlighted). A copy whose title or artist differs shows its own. Then plays (`N plays` / `no plays`) and playlists (`in A, B` / `no playlists`). On a merged row whose playlists K is not in, this reads `in A, B → moves to the kept copy` (accent colour).
+  - on the right, ONE segmented control: **Keep · Merge · Leave**. Picking Keep makes that copy K, and the old K becomes Merge. Merge and Leave are disabled on the kept row.
+- When the modal opens, Keep = the recommended copy and every other copy is Merge.
+- Row looks: kept = a faint success tint; left = its text dimmed; merged = plain.
+- Header summary: `N groups · M copies will merge into the kept copy`, or `V of N groups · …` while a filter tab hides some groups.
 - Only the groups on the active tab merge: M and the action button count and merge the visible groups only (user decision 2026-10-15, so a hidden "Same title & artist" group never merges by surprise).
-- Toolbar: the filter tabs stay. "Select all" becomes **Merge all / Merge none**, acting on the visible groups' Merge boxes.
+- Toolbar: the filter tabs sit in one row with short names (All, Identical, Same file, Title & artist). On the right is a quiet **Merge all / Leave all** text button, acting on the visible groups.
 - Footer:
-  - left: a checkbox **Also move removed files to Trash**, off by default, with the hint `Either way, removed files are skipped on future scans.`;
+  - left: a checkbox **Also move removed files to Trash**, off by default, with the hint `Merged copies are skipped on future scans either way.`;
   - right: Cancel, then the action button:
-    - unchecked: `Merge M` (primary);
+    - unchecked: `Merge M copies` (primary);
     - checked: `Merge M & move to Trash` (danger);
     - disabled when M = 0.
 - After a merge:
