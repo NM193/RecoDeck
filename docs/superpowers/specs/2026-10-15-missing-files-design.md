@@ -28,15 +28,20 @@ In:
 - Settings → Database → **Review Missing Files**, with a count;
 - the review suggests files with the same name and lets the user pick
   **Relink / Merge · Leave · Remove** per track;
-- per-track **Locate…** and a session-only **Search another folder…**.
+- per-track **Locate…** / **Other file…** and a **Search another folder…**.
+  A file or folder outside the library folders is offered as a new library
+  folder (user decision 2026-10-15), so a track never ends up outside the
+  library;
+- a related fix: the folder cleanups delete a track completely, in one
+  transaction (section 6, user decision 2026-10-15).
 
 Out:
 - matching by anything but the exact file name (another extension, fuzzy
-  names). Locate… covers those;
+  names, the other Unicode form of an accented name). Locate… covers those;
 - re-reading tags from the new file, or re-analysing it;
 - an un-skip UI for `skipped_files`;
 - Undo. Remove is never pre-selected;
-- remembering extra search folders between sessions.
+- relinking to a file outside the library folders.
 
 ## Terms
 
@@ -90,23 +95,27 @@ BPM and key still hold, and the waveform and cues stay close enough.
 
 ## 3. Finding candidates
 
-`get_missing_tracks(extra_folders)` works like this:
+`get_missing_tracks()` works like this:
 1. Collect the missing tracks.
 2. Build a name index by walking the library folders (setting
-   `library_folders`) plus `extra_folders`, with `Scanner::scan_directory`
-   (supported audio extensions only). The index maps each lower-cased file
-   name to its normalized paths.
+   `library_folders`) with `Scanner::scan_directory` (supported audio
+   extensions only). The index maps each lower-cased file name to its
+   normalized paths.
 3. A missing track's candidates are the index entries for its own file name,
-   lower-cased. Order: files under a library folder first, then by path.
+   lower-cased, ordered by path.
 4. For each candidate, read with lofty:
    - `duration_ms` (properties only, no hash);
    - `file_size` from the file's metadata.
 5. Decide whether each candidate is a free file or a library candidate:
    - **a `tracks` row has the path:** library candidate, carrying that row's id;
    - **the path is in `skipped_files`:**
-     - free file when its `kept_track_id` is this missing track, is NULL, or
-       no longer exists (Relink also takes it off the skip list);
+     - free file when its `kept_track_id` is this missing track, is NULL,
+       no longer exists, or is itself a missing track (Relink also takes it
+       off the skip list);
      - otherwise, a library candidate of that `kept_track_id`;
+
+   So a library candidate's track always has its file on disk. It is never a
+   row in this review.
    - **otherwise:** free file.
 6. Drive check: a path under `/Volumes/<name>/` whose `/Volumes/<name>` does
    not exist reports `drive_missing: Some(name)`.
@@ -115,8 +124,12 @@ BPM and key still hold, and the waveform and cues stay close enough.
 calls it to show the number.
 
 `describe_file(track_id, path)` serves Locate… and Other file…. It returns the
-same candidate shape for one picked file: duration, size, and the library
-track id per rule 5. The rule needs `track_id`.
+same candidate shape for one picked file: the normalized path, duration, size,
+and the library track id per rule 5. The rule needs `track_id`.
+
+Every path the review shows, compares or sends is normalized with
+`normalize_scanned_path`. The frontend conflict check and the backend
+validation therefore compare the same strings.
 
 **Threading:** every one of these commands runs in `spawn_blocking`. The disk
 work happens without the `state.db` lock: the walk, lofty reads, stat calls,
@@ -138,10 +151,14 @@ transaction, as in `scan_directory`. That keeps the app responsive while about
   Several merges may share a `keep_id`. Two stale rows can merge into the same
   live track. Merges are grouped by `keep_id` into one `MergeRequest` each, so
   the duplicates validator (`validate_requests`) still holds for them.
-- **Before the transaction**, each relink's file is read:
-  - its hash, size and audio properties;
-  - a file that no longer exists, or that is now another track's path, is
-    dropped from the batch and reported in `skipped`.
+- **Before the transaction**, each relink's file is read: its hash, size and
+  audio properties. A file is dropped from the batch and reported in
+  `skipped` when:
+  - it no longer exists: `file is gone`;
+  - lofty or the hash can't read it: `file can't be read`.
+- **Inside the transaction**, each relink checks its path again, under the
+  lock. A path that a scan made another track's file in the meantime is
+  skipped with `file is now another track`. It is not a rollback.
 - **One transaction**, in order: relinks, then merges, then removes.
   - **Merges** reuse the duplicates merge (`db/merge.rs`) inside this
     transaction. `merge_tracks` is split so its body runs on a given
@@ -160,6 +177,9 @@ transaction, as in `scan_directory`. That keeps the app responsive while about
     Files on disk are never touched.
 - A track id that no longer exists is skipped, not an error. It goes into
   `skipped` with the reason `track no longer exists`.
+- A merge whose K no longer exists is skipped the same way, with
+  `kept track no longer exists`. The split merge body reports these. Today
+  `merge_tracks` drops them silently, and its own result does not change.
 - **Returns** `{ relinked, merged, removed, skipped: Vec<{ track_id, reason }> }`.
 
 New code goes in `db/missing.rs` (the queries, relink, full delete, apply).
@@ -205,15 +225,17 @@ went missing.`
 - **Toolbar:**
   - tabs **All · Found · Not found**, with counts;
   - on the right, a quiet `Search another folder…` text button. It opens a
-    folder picker, then reloads the list with that folder added to
-    `extra_folders` for this session.
+    folder picker:
+    - a folder inside the library folders is already searched. A toast says
+      `Already in your library folders`;
+    - a folder outside goes through **Add to library** (below).
 - **Two cards:**
   - **Found by file name**, hint `Same file name somewhere in your folders`;
   - **Not found**, hint `Moved off this Mac, or deleted`.
 
   A tab shows only its card.
 - **One row per track:**
-  - **line 1:** `title — artist`. A pill:
+  - **line 1:** `title — artist`. Pills, and both can show:
     - `Already in library` (blue) when the chosen candidate is a library
       candidate;
     - `Length differs` (amber) when the lengths differ.
@@ -237,10 +259,32 @@ went missing.`
       **Merge** when the chosen candidate is a library candidate, and it is
       disabled when there is no candidate.
     - Rows with no candidate also get a `Locate…` button. It opens a file
-      picker for audio files, calls `describe_file`, adds the result as the
-      row's chosen candidate and sets the row to Relink / Merge. The row then
-      has a candidate, so it moves to the Found card.
+      picker for audio files:
+      - **a file inside the library folders:** calls `describe_file`, adds
+        the result as the row's chosen candidate and sets the row to
+        Relink / Merge. The row then has a candidate, so it moves to the
+        Found card;
+      - **a file outside:** its folder goes through **Add to library**, and
+        then the file is described as above.
   - A picked file stays on its row across reloads.
+
+### Add to library
+
+A folder outside every library folder is offered as a new library folder.
+"Inside" means its path equals a library folder or starts with one plus `/`.
+A pure TS helper decides this, with a vitest test.
+- **The question** (Tauri `ask`): `Add "<folder name>" to your library
+  folders? Its tracks are imported, and moved files are followed.` The
+  buttons are `Add` and `Cancel`.
+- **Add:** the modal adds and scans the folder the way Settings → Library
+  does (`addLibraryFolder`, then `scanDirectory`, then `onFoldersChanged`).
+  It shows `Adding <folder name>…` and can't close until that finishes. The
+  scan follows moved files with identical content by itself (section 1).
+  Then the list reloads, and those tracks are gone from it.
+- **Locate… after Add:** if the picked file's track was followed by the scan,
+  that row is simply gone. Otherwise the file is now a library track, and
+  the row offers Merge into it.
+- **Cancel:** nothing changes.
   - **Row tints:** Relink/Merge = faint success, Remove = faint danger,
     Leave = plain.
 
@@ -259,17 +303,18 @@ went missing.`
 The state is computed so the backend's validation can never fail:
 - **One free file, one relink.** A row's Relink is blocked while a row with a
   lower track id relinks the same path. The fact reads `same file as <title>`.
-- **A merge target must stay as it is.** A row's Merge is blocked while its K
-  is a row in this list whose choice is not Leave. The fact reads `<title> is
-  changing too`.
+- **Merges never conflict.** A merge's K is always a live track, never a row
+  in this list (rule 5). Several rows may merge into one K.
 - **A blocked row counts as Leave**, but the user's choice is kept. When the
   blocking row changes (to Leave or to another file), the choice applies
-  again.
+  again. Blocking compares the rows' selected choices, so it does not depend
+  on evaluation order.
 - After an apply, a file that was relinked is a library track, so the next
   review offers Merge for the other row.
-- **After a reload** (Search another folder…):
+- **After any reload** (after Add to library, or after an apply):
   - a row the user already set keeps its choice;
   - untouched rows take the new defaults.
+- Picked files last while the modal is open.
 
 ### Footer
 
@@ -287,17 +332,37 @@ The state is computed so the backend's validation can never fail:
 
 - The list loads **once** when the modal opens. It does not reload on library
   events, so playback can't reset the user's choices (the Duplicate Tracks
-  lesson). It reloads only after Search another folder… and after an apply.
-- The modal can't close while an apply runs.
+  lesson). It reloads only after Add to library and after an apply.
+- The modal can't close while an apply or an Add to library runs.
 - After an apply:
   - a toast: `Relinked R · merged M · removed X`, non-zero parts only, plus
     `· S skipped` when files vanished;
   - then `onTracksChanged()`, and the list reloads with what is left.
 
+## 6. Related fix: folder cleanups delete completely
+
+Two existing functions delete tracks the same broken way:
+- `remove_tracks_not_in_folders`, used by Remove Library Folder →
+  `cleanup_stray_tracks`;
+- `delete_tracks_in_folder_prefix`, used by deleting a folder in the app.
+
+Today they run without a transaction:
+1. they delete `track_analysis` and `playlist_tracks`;
+2. then they delete the `tracks` rows.
+
+With FK on, step 2 fails for a track that has tags, genres, cues and so on.
+The track stays in the library, but its playlist slots and analysis are
+already gone, and the frontend swallows the error.
+
+The fix: both use Remove's complete delete (section 4) for each matching
+track, all in one transaction. Either every matching track goes completely,
+or nothing changes. Which tracks match does not change.
+
 ## Errors
 
 - **The apply transaction fails:** nothing changed. Show an error toast and
   keep the choices.
+- **Add to library fails:** an error toast. The list stays as it was.
 - **A relink file vanished, or became another track's file, before the
   apply:** that row is skipped and counted in the toast. The rest applies.
 - **Loading fails:** the modal shows the error with a Retry button.
@@ -319,10 +384,14 @@ Rust (in-memory DB with migrations and FK on, plus `tempfile` dirs):
   - the file name matches case-insensitively;
   - library folders come first;
   - a library candidate carries its id;
-  - both `skipped_files` rules;
+  - the `skipped_files` rules, including a `kept_track_id` that is itself
+    missing;
   - durations are read;
-  - extra folders are searched;
+  - only library folders are searched;
   - `/Volumes` drive detection.
+- **Folder cleanups:** a track with rows in every track-linked table is
+  removed completely by both functions with FK on. A failure inside changes
+  nothing.
 - **Apply:**
   - each validation rule;
   - two merges with one `keep_id` both apply;
@@ -331,7 +400,10 @@ Rust (in-memory DB with migrations and FK on, plus `tempfile` dirs):
     track-linked table, and the delete succeeds with FK on;
   - a failure inside the transaction changes nothing (a `BEFORE DELETE`
     trigger that raises);
-  - a vanished relink file is reported, and the rest applies.
+  - a vanished relink file is reported, and the rest applies;
+  - a relink path that became another track's file inside the transaction
+    is skipped, not rolled back;
+  - a merge whose K is gone is reported.
 - **`merge_tracks`** behaves exactly as before after the split (its existing
   tests).
 
@@ -340,9 +412,11 @@ Frontend (vitest, `missingChoice.ts`):
   connected even with a matching length;
 - conflicts:
   - one free file, one relink, with the lower id winning;
-  - a merge into a K that is changing is blocked;
   - a blocked choice comes back when its blocker goes to Leave;
   - two rows merging into one K are both allowed;
 - a choice survives a reload, and untouched rows take the new defaults;
 - Merge vs Relink comes from the chosen candidate;
-- building `relinks / merges / removes`, and the button label.
+- building `relinks / merges / removes`, and the button label;
+- the inside-the-library-folders helper: an equal path, a subfolder, a
+  sibling with the same prefix (`/Music2` is not inside `/Music`), and a
+  trailing slash.
