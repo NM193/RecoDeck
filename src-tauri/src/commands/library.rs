@@ -3,6 +3,7 @@
 use crate::db::{Database, Track};
 use crate::db::duplicates::recommend;
 use crate::db::merge::{validate_requests, MergeRequest};
+use crate::db::missing::{FileFacts, HashMatch, RelinkOutcome};
 use crate::file_trash;
 use crate::error::AppError;
 use crate::scanner::{ScanResult, Scanner};
@@ -140,6 +141,7 @@ pub struct ScanResultDTO {
     pub total_files: usize,
     pub imported: usize,
     pub skipped: usize,
+    pub relinked: usize,
     pub errors: Vec<ScanErrorDTO>,
 }
 
@@ -155,6 +157,7 @@ impl From<ScanResult> for ScanResultDTO {
             total_files: result.total_files,
             imported: result.imported,
             skipped: result.skipped,
+            relinked: result.relinked,
             errors: result
                 .errors
                 .into_iter()
@@ -291,6 +294,7 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
         let total_files = files.len();
         let mut imported = 0;
         let mut skipped = 0;
+        let mut relinked = 0;
         let mut errors = Vec::new();
         let mut last_emit = Instant::now();
         let emit_interval = std::time::Duration::from_millis(150);
@@ -329,12 +333,23 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
                 let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
                 let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
-                // Check for duplicate hash
-                if track.file_hash != "unknown"
-                    && db.track_exists_with_hash(&track.file_hash).unwrap_or(false) {
+                // Same content already in the library: skip it, unless every
+                // track with that content lost its file, then the lowest one
+                // follows this file (Missing Files spec, section 1).
+                match db.match_scanned_hash(&track.file_hash) {
+                    Ok(HashMatch::Duplicate) => {
                         skipped += 1;
                         continue;
                     }
+                    Ok(HashMatch::Moved(id)) => {
+                        match db.relink_track(id, &FileFacts::from_track(&track)) {
+                            Ok(RelinkOutcome::Relinked) | Ok(RelinkOutcome::AlreadyThere) => relinked += 1,
+                            _ => skipped += 1,
+                        }
+                        continue;
+                    }
+                    Ok(HashMatch::New) | Err(_) => {}
+                }
 
                 match db.create_track(&track) {
                     Ok(id) => {
@@ -383,6 +398,7 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
             total_files,
             imported,
             skipped,
+            relinked,
             errors,
         }))
     }).await.map_err(|e| AppError::Internal(format!("Scan task failed: {}", e)))?

@@ -57,6 +57,8 @@ export interface ScanResult {
   total_files: number
   imported: number
   skipped: number
+  /** Tracks whose file was gone, now pointing at the moved file. */
+  relinked: number
   errors: ScanError[]
 }
 

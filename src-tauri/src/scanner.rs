@@ -1,5 +1,6 @@
 // Library scanner - Find and extract metadata from audio files
 
+use crate::db::missing::{FileFacts, HashMatch, RelinkOutcome};
 use crate::db::{Database, Track};
 use lofty::prelude::*;
 use lofty::read_from_path;
@@ -18,6 +19,8 @@ pub struct ScanResult {
     pub total_files: usize,
     pub imported: usize,
     pub skipped: usize,
+    /// Tracks whose file was gone, now pointing at the moved file (Missing Files spec).
+    pub relinked: usize,
     pub errors: Vec<ScanError>,
 }
 
@@ -26,6 +29,14 @@ pub struct ScanResult {
 pub struct ScanError {
     pub file_path: PathBuf,
     pub error: String,
+}
+
+/// What importing one file did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportOutcome {
+    Imported(i64),
+    /// A track whose file was gone now points at this file (Missing Files spec).
+    Relinked(i64),
 }
 
 /// Library scanner
@@ -168,16 +179,28 @@ impl Scanner {
     /// Import a single file into the database.
     /// If the file has BPM in its tags (e.g. from Traktor), it is saved to track_analysis so RecoDeck matches.
     /// If the file has Genre in its tags, it is saved with source='tag'.
-    /// Skips files whose content hash already exists (prevents duplicate content at different paths).
-    pub fn import_file(db: &Database, path: &Path) -> Result<i64, String> {
+    /// A file whose content is already in the library is skipped, unless every
+    /// track with that content lost its file: then the lowest one follows this
+    /// file (Missing Files spec, section 1).
+    pub fn import_file(db: &Database, path: &Path) -> Result<ImportOutcome, String> {
         let (track, tag_bpm, tag_genre) = Self::extract_metadata(path)?;
 
-        // Skip if a track with the same content hash already exists (different path, same file)
-        if track.file_hash != "unknown"
-            && db.track_exists_with_hash(&track.file_hash)
-                .map_err(|e| format!("Database error: {}", e))? {
-                return Err("DUPLICATE_HASH".to_string());
+        match db
+            .match_scanned_hash(&track.file_hash)
+            .map_err(|e| format!("Database error: {}", e))?
+        {
+            HashMatch::Duplicate => return Err("DUPLICATE_HASH".to_string()),
+            HashMatch::Moved(id) => {
+                return match db
+                    .relink_track(id, &FileFacts::from_track(&track))
+                    .map_err(|e| format!("Database error: {}", e))?
+                {
+                    RelinkOutcome::Relinked | RelinkOutcome::AlreadyThere => Ok(ImportOutcome::Relinked(id)),
+                    RelinkOutcome::Taken | RelinkOutcome::TrackGone => Err("DUPLICATE_HASH".to_string()),
+                };
             }
+            HashMatch::New => {}
+        }
 
         let id = db.create_track(&track)
             .map_err(|e| format!("Database error: {}", e))?;
@@ -193,7 +216,7 @@ impl Scanner {
             let _ = db.save_track_genre(id, &genre, "tag");
         }
 
-        Ok(id)
+        Ok(ImportOutcome::Imported(id))
     }
 
     /// Import all files from a directory
@@ -202,6 +225,7 @@ impl Scanner {
         let total_files = files.len();
         let mut imported = 0;
         let mut skipped = 0;
+        let mut relinked = 0;
         let mut errors = Vec::new();
 
         // Load all known paths in one query for fast lookups
@@ -216,7 +240,8 @@ impl Scanner {
             }
 
             match Self::import_file(db, &file_path) {
-                Ok(_) => imported += 1,
+                Ok(ImportOutcome::Imported(_)) => imported += 1,
+                Ok(ImportOutcome::Relinked(_)) => relinked += 1,
                 Err(e) => {
                     // Check if it's a duplicate (unique constraint violation or same content hash)
                     if e.contains("UNIQUE constraint") || e.contains("DUPLICATE_HASH") {
@@ -235,6 +260,7 @@ impl Scanner {
             total_files,
             imported,
             skipped,
+            relinked,
             errors,
         }
     }
@@ -443,5 +469,89 @@ mod tests {
         assert_eq!(normalize_scanned_path("/m//a///b.mp3"), "/m/a/b.mp3");
         assert_eq!(normalize_scanned_path("file:///m/a.mp3"), "/m/a.mp3");
         assert_eq!(normalize_scanned_path("/m/dir/"), "/m/dir");
+    }
+
+    fn blank_track(path: &str, hash: &str) -> Track {
+        Track {
+            id: None,
+            file_path: path.into(),
+            file_hash: hash.into(),
+            title: None,
+            artist: None,
+            album: None,
+            album_artist: None,
+            track_number: None,
+            year: None,
+            label: None,
+            duration_ms: None,
+            file_format: None,
+            bitrate: None,
+            sample_rate: None,
+            file_size: None,
+            date_added: None,
+            date_modified: None,
+            play_count: 0,
+            rating: 0,
+            comment: None,
+            artwork_path: None,
+            genre: None,
+            genre_source: None,
+        }
+    }
+
+    #[test]
+    fn a_moved_file_with_the_same_content_relinks_its_track() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let dir = TempDir::new().unwrap();
+        let old = dir.path().join("a/song.wav");
+        crate::test_support::write_wav(&old, 1000, 1);
+        assert_eq!(Scanner::import_directory(&db, dir.path()).imported, 1);
+        let id = db.get_all_tracks().unwrap()[0].id;
+
+        std::fs::create_dir_all(dir.path().join("b")).unwrap();
+        std::fs::rename(&old, dir.path().join("b/song.wav")).unwrap();
+        let second = Scanner::import_directory(&db, dir.path());
+
+        assert_eq!((second.imported, second.relinked, second.skipped), (0, 1, 0));
+        let tracks = db.get_all_tracks().unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].id, id);
+        assert!(tracks[0].file_path.ends_with("/b/song.wav"));
+    }
+
+    #[test]
+    fn a_copy_of_a_track_that_still_has_its_file_is_skipped() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let dir = TempDir::new().unwrap();
+        let original = dir.path().join("a/song.wav");
+        crate::test_support::write_wav(&original, 1000, 1);
+        Scanner::import_directory(&db, dir.path());
+
+        std::fs::create_dir_all(dir.path().join("b")).unwrap();
+        std::fs::copy(&original, dir.path().join("b/copy.wav")).unwrap();
+        let second = Scanner::import_directory(&db, dir.path());
+
+        assert_eq!((second.imported, second.relinked, second.skipped), (0, 0, 2));
+        assert_eq!(db.count_tracks().unwrap(), 1);
+    }
+
+    #[test]
+    fn of_two_stale_tracks_with_the_same_content_the_lowest_id_relinks() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("song.wav");
+        crate::test_support::write_wav(&file, 1000, 1);
+        let hash = Scanner::calculate_file_hash(&file).unwrap();
+        let first = db.create_track(&blank_track("/gone/a.wav", &hash)).unwrap();
+        let second = db.create_track(&blank_track("/gone/b.wav", &hash)).unwrap();
+
+        let result = Scanner::import_directory(&db, dir.path());
+
+        assert_eq!(result.relinked, 1);
+        assert!(db.get_track(first).unwrap().file_path.ends_with("/song.wav"));
+        assert_eq!(db.get_track(second).unwrap().file_path, "/gone/b.wav");
     }
 }

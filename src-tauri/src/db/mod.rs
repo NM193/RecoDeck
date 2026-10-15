@@ -1278,17 +1278,6 @@ impl Database {
         Ok(set)
     }
 
-    /// Check if a track with the given file_hash already exists in the database.
-    /// Used to prevent importing duplicate content at different file paths.
-    pub fn track_exists_with_hash(&self, file_hash: &str) -> Result<bool> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM tracks WHERE file_hash = ?",
-            [file_hash],
-            |row| row.get(0),
-        )?;
-        Ok(count > 0)
-    }
-
     /// Remove duplicate tracks.
     ///
     /// Detection methods (in order):
