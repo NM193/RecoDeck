@@ -94,19 +94,29 @@ export function rowViews(
 ): Map<number, RowView> {
   const views = new Map<number, RowView>()
   const claims = new Map<string, MissingTrack>()
+  const listed = new Set(tracks.map((t) => t.id))
   for (const track of [...tracks].sort((a, b) => a.id - b.id)) {
     const candidates = candidatesOf(track, choice)
     const candidate = chosenCandidate(track, choice, candidates)
+    // A file the user chose that a reload no longer offers voids the fix:
+    // the row never moves to a file the user did not see.
+    const chosenPath = choice.chosen.get(track.id)
+    const chosenGone =
+      chosenPath !== undefined && !candidates.some((c) => c.path === chosenPath)
     let selected = choice.picked.get(track.id) ?? defaultState(track, candidate)
-    if (selected === 'fix' && !candidate) selected = 'leave'
+    if (selected === 'fix' && (!candidate || chosenGone)) selected = 'leave'
     const merge = candidate?.library_track_id != null
     let blockedBy: MissingTrack | undefined
     if (selected === 'fix' && candidate && !merge) {
       blockedBy = claims.get(candidate.path)
       if (!blockedBy) claims.set(candidate.path, track)
     }
+    // Only a stale list can name a merge target that is a row here too; the
+    // backend would reject the whole apply, so that merge waits.
+    const staleTarget =
+      merge && listed.has(candidate?.library_track_id as number)
     views.set(track.id, {
-      state: blockedBy ? 'leave' : selected,
+      state: blockedBy || staleTarget ? 'leave' : selected,
       selected,
       candidates,
       candidate,
@@ -153,7 +163,7 @@ export function locate(
   chosen.set(trackId, file.path)
   const picked = new Map(choice.picked)
   picked.set(trackId, 'fix')
-  return { picked, chosen, located }
+  return { ...choice, picked, chosen, located }
 }
 
 /** After a reload: the picked files as described again (gone ones left out). */
@@ -178,7 +188,8 @@ export function buildFixes(
       fixes.removes.push(track.id)
     } else if (view.state === 'fix' && view.candidate) {
       const keep = view.candidate.library_track_id
-      if (keep != null) fixes.merges.push({ keep_id: keep, remove_id: track.id })
+      if (keep != null)
+        fixes.merges.push({ keep_id: keep, remove_id: track.id })
       else fixes.relinks.push({ track_id: track.id, path: view.candidate.path })
     }
   }

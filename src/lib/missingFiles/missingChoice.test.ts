@@ -68,9 +68,13 @@ describe('defaults', () => {
 
   it('chooses the first file whose length matches, else the first', () => {
     const t = missing(1, [file('/m/a.mp3', 100_000), file('/m/b.mp3')])
-    expect(rowViews([t], emptyChoice()).get(1)?.candidate?.path).toBe('/m/b.mp3')
+    expect(rowViews([t], emptyChoice()).get(1)?.candidate?.path).toBe(
+      '/m/b.mp3',
+    )
     const u = missing(2, [file('/m/c.mp3', 1), file('/m/d.mp3', 2)])
-    expect(rowViews([u], emptyChoice()).get(2)?.candidate?.path).toBe('/m/c.mp3')
+    expect(rowViews([u], emptyChoice()).get(2)?.candidate?.path).toBe(
+      '/m/c.mp3',
+    )
   })
 })
 
@@ -88,7 +92,10 @@ describe('conflicts', () => {
   const shared = file('/m/same.mp3')
 
   it('lets only the lower id relink a shared free file', () => {
-    const views = rowViews([missing(5, [shared]), missing(2, [shared])], emptyChoice())
+    const views = rowViews(
+      [missing(5, [shared]), missing(2, [shared])],
+      emptyChoice(),
+    )
     expect(views.get(2)?.state).toBe('fix')
     expect(views.get(5)?.state).toBe('leave')
     expect(views.get(5)?.selected).toBe('fix')
@@ -104,7 +111,10 @@ describe('conflicts', () => {
 
   it('allows two rows to merge into one library track', () => {
     const lib = file('/m/lib.mp3', 300_000, 9)
-    const fixes = buildFixes([missing(1, [lib]), missing(2, [lib])], emptyChoice())
+    const fixes = buildFixes(
+      [missing(1, [lib]), missing(2, [lib])],
+      emptyChoice(),
+    )
     expect(fixes.merges).toEqual([
       { keep_id: 9, remove_id: 1 },
       { keep_id: 9, remove_id: 2 },
@@ -124,7 +134,10 @@ describe('picked files', () => {
   it('keeps choices across a reload, and untouched rows take new defaults', () => {
     const before = [missing(1, [file('/m/a.mp3')]), missing(2)]
     const choice = setState(emptyChoice(), 1, 'remove')
-    const after = [missing(1, [file('/m/a.mp3')]), missing(2, [file('/m/b.mp3')])]
+    const after = [
+      missing(1, [file('/m/a.mp3')]),
+      missing(2, [file('/m/b.mp3')]),
+    ]
     const views = rowViews(after, choice)
     expect(rowViews(before, choice).get(2)?.state).toBe('leave')
     expect(views.get(1)?.state).toBe('remove')
@@ -134,8 +147,31 @@ describe('picked files', () => {
   it('a picked file described again replaces the old description', () => {
     const t = missing(1)
     const choice = locate(emptyChoice(), 1, file('/m/p.mp3'))
-    const again = withLocated(choice, new Map([[1, file('/m/p.mp3', 300_000, 4)]]))
+    const again = withLocated(
+      choice,
+      new Map([[1, file('/m/p.mp3', 300_000, 4)]]),
+    )
     expect(rowViews([t], again).get(1)?.merge).toBe(true)
+  })
+
+  it('sends a row to leave when its chosen file is no longer offered', () => {
+    const chosen = chooseFile(emptyChoice(), 1, '/m/b.mp3')
+    const after = [missing(1, [file('/m/a.mp3')])]
+    expect(rowViews(after, chosen).get(1)?.state).toBe('leave')
+
+    const picked = withLocated(
+      locate(emptyChoice(), 1, file('/m/picked.mp3')),
+      new Map(),
+    )
+    expect(rowViews(after, picked).get(1)?.state).toBe('leave')
+  })
+})
+
+describe('stale lists', () => {
+  it('never merges into a track that is itself in the list', () => {
+    const tracks = [missing(1, [file('/m/x.mp3', 300_000, 2)]), missing(2)]
+    expect(rowViews(tracks, emptyChoice()).get(1)?.state).toBe('leave')
+    expect(buildFixes(tracks, emptyChoice()).merges).toEqual([])
   })
 })
 
