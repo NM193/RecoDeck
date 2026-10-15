@@ -4,6 +4,7 @@
 //! without the DB lock and take the lock only for the `Database` steps.
 
 use crate::db::duplicates::CopyFacts;
+use crate::db::missing::{FileFacts, RelinkFix, SkippedFix};
 use crate::db::{Database, Track};
 use crate::scanner::{normalize_scanned_path, Scanner};
 use lofty::prelude::*;
@@ -166,6 +167,29 @@ pub fn describe(db: &Database, view: DiskView) -> rusqlite::Result<Vec<MissingTr
 pub fn find_missing_tracks(db: &Database) -> rusqlite::Result<Vec<MissingTrack>> {
     let view = look_on_disk(db.get_all_tracks()?, &db.library_folders()?);
     describe(db, view)
+}
+
+/// Reads each relink's file before the transaction (hash, size, audio
+/// properties). A file that is gone or unreadable is reported instead.
+/// Paths must already be normalized.
+pub fn read_relinks(relinks: &[(i64, String)]) -> (Vec<RelinkFix>, Vec<SkippedFix>) {
+    let mut ready = Vec::new();
+    let mut skipped = Vec::new();
+    for (track_id, path) in relinks {
+        let reason = if is_missing(path) {
+            "file is gone"
+        } else {
+            match Scanner::extract_metadata(Path::new(path)) {
+                Ok((track, _, _)) if track.file_hash != "unknown" => {
+                    ready.push(RelinkFix { track_id: *track_id, facts: FileFacts::from_track(&track) });
+                    continue;
+                }
+                _ => "file can't be read",
+            }
+        };
+        skipped.push(SkippedFix { track_id: *track_id, reason: reason.to_string() });
+    }
+    (ready, skipped)
 }
 
 #[cfg(test)]
@@ -368,5 +392,27 @@ mod tests {
 
         assert_eq!(found[0].candidates.len(), 20);
         assert_eq!(found[0].candidates[0].path, norm(&lib.join("d00/song.wav")));
+    }
+
+    #[test]
+    fn relink_files_are_read_before_the_apply_and_bad_ones_reported() {
+        let dir = TempDir::new().unwrap();
+        let good = dir.path().join("good.wav");
+        write_wav(&good, 1000, 1);
+        let junk = dir.path().join("junk.mp3");
+        std::fs::write(&junk, b"not audio").unwrap();
+
+        let (ready, skipped) = read_relinks(&[
+            (1, norm(&good)),
+            (2, "/gone/nothing.wav".to_string()),
+            (3, norm(&junk)),
+        ]);
+
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].track_id, 1);
+        assert_eq!(ready[0].facts.path, norm(&good));
+        assert_eq!(ready[0].facts.duration_ms, Some(1000));
+        let reasons: Vec<(i64, &str)> = skipped.iter().map(|s| (s.track_id, s.reason.as_str())).collect();
+        assert_eq!(reasons, vec![(2, "file is gone"), (3, "file can't be read")]);
     }
 }

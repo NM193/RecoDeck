@@ -4,8 +4,10 @@
 //! new place, merged into the library track that has the file now, or
 //! removed completely.
 
+use super::merge::{merge_on, MergeRequest};
 use super::{Database, Track};
 use rusqlite::{params, Connection, OptionalExtension, Result};
+use std::collections::{BTreeMap, HashSet};
 
 /// The file columns a relink takes from the file itself (spec section 2).
 #[derive(Debug, Clone, PartialEq)]
@@ -122,6 +124,87 @@ pub(crate) fn delete_track_on(conn: &Connection, track_id: i64) -> Result<bool> 
     Ok(conn.prepare_cached("DELETE FROM tracks WHERE id = ?1")?.execute([track_id])? > 0)
 }
 
+/// A relink the review asked for, with the facts read from its file before
+/// the transaction.
+#[derive(Debug, Clone)]
+pub struct RelinkFix {
+    pub track_id: i64,
+    pub facts: FileFacts,
+}
+
+/// Everything one apply does (spec section 4). `merges` are
+/// (keep_id, remove_id) pairs; several may share a keep_id.
+#[derive(Debug, Clone, Default)]
+pub struct MissingFixes {
+    pub relinks: Vec<RelinkFix>,
+    pub merges: Vec<(i64, i64)>,
+    pub removes: Vec<i64>,
+}
+
+/// A change the apply left out, and why.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkippedFix {
+    pub track_id: i64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FixOutcome {
+    pub relinked: usize,
+    pub merged: usize,
+    pub removed: usize,
+    pub skipped: Vec<SkippedFix>,
+}
+
+/// Rejects a request the review can never build (spec section 4). Paths
+/// must already be normalized.
+pub fn validate_fixes(
+    relinks: &[(i64, String)],
+    merges: &[(i64, i64)],
+    removes: &[i64],
+) -> std::result::Result<(), String> {
+    let mut changing = HashSet::new();
+    let ids = relinks
+        .iter()
+        .map(|(id, _)| *id)
+        .chain(merges.iter().map(|(_, remove)| *remove))
+        .chain(removes.iter().copied());
+    for id in ids {
+        if !changing.insert(id) {
+            return Err(format!("Track {id} appears more than once"));
+        }
+    }
+    let mut paths = HashSet::new();
+    for (_, path) in relinks {
+        if !paths.insert(path.as_str()) {
+            return Err(format!("{path} is relinked twice"));
+        }
+    }
+    if let Some((keep, _)) = merges.iter().find(|(keep, _)| changing.contains(keep)) {
+        return Err(format!("Track {keep} is merged into while it changes too"));
+    }
+    Ok(())
+}
+
+fn track_path(conn: &Connection, id: i64) -> Result<Option<String>> {
+    conn.query_row("SELECT file_path FROM tracks WHERE id = ?1", [id], |row| row.get(0))
+        .optional()
+}
+
+/// Why a missing track can no longer be merged away or removed: a scan may
+/// have run while the review was open.
+fn cannot_go(conn: &Connection, id: i64) -> Result<Option<&'static str>> {
+    Ok(match track_path(conn, id)? {
+        None => Some("track no longer exists"),
+        Some(path) if !crate::missing_files::is_missing(&path) => Some("file is back"),
+        Some(_) => None,
+    })
+}
+
+fn skip(out: &mut FixOutcome, track_id: i64, reason: &str) {
+    out.skipped.push(SkippedFix { track_id, reason: reason.to_string() });
+}
+
 impl Database {
     /// Points a track at its file's new place. See `relink_on`.
     pub fn relink_track(&self, track_id: i64, facts: &FileFacts) -> Result<RelinkOutcome> {
@@ -194,6 +277,49 @@ impl Database {
             .query_row("SELECT file_path FROM tracks WHERE id = ?1", [kept], |row| row.get(0))
             .optional()?;
         Ok(kept_path.filter(|p| !crate::missing_files::is_missing(p)).map(|_| kept))
+    }
+    /// Applies the review in one transaction: relinks, then merges, then
+    /// removes (spec section 4). A change that no longer fits is skipped, not
+    /// rolled back. Any other error rolls everything back.
+    pub fn apply_missing_fixes(&self, fixes: &MissingFixes) -> Result<FixOutcome> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut out = FixOutcome::default();
+
+        for fix in &fixes.relinks {
+            match relink_on(&tx, fix.track_id, &fix.facts)? {
+                RelinkOutcome::Relinked | RelinkOutcome::AlreadyThere => out.relinked += 1,
+                RelinkOutcome::Taken => skip(&mut out, fix.track_id, "file is now another track"),
+                RelinkOutcome::TrackGone => skip(&mut out, fix.track_id, "track no longer exists"),
+            }
+        }
+
+        let mut groups: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
+        for &(keep, remove) in &fixes.merges {
+            if track_path(&tx, keep)?.is_none() {
+                skip(&mut out, remove, "kept track no longer exists");
+            } else if let Some(reason) = cannot_go(&tx, remove)? {
+                skip(&mut out, remove, reason);
+            } else {
+                groups.entry(keep).or_default().push(remove);
+            }
+        }
+        let requests: Vec<MergeRequest> = groups
+            .into_iter()
+            .map(|(keep_id, remove_ids)| MergeRequest { keep_id, remove_ids })
+            .collect();
+        out.merged = merge_on(&tx, &requests)?.merged;
+
+        for &id in &fixes.removes {
+            if let Some(reason) = cannot_go(&tx, id)? {
+                skip(&mut out, id, reason);
+                continue;
+            }
+            delete_track_on(&tx, id)?;
+            out.removed += 1;
+        }
+
+        tx.commit()?;
+        Ok(out)
     }
 }
 
@@ -525,5 +651,119 @@ mod tests {
         for path in ["/m/to-dead.wav", "/m/to-me.wav", "/m/to-null.wav", "/m/to-gone.wav"] {
             assert_eq!(db.library_track_for(path, me).unwrap(), None, "{path}");
         }
+    }
+
+    #[test]
+    fn validation_rejects_what_the_review_can_never_send() {
+        let relinks = vec![(1, "/m/a.wav".to_string())];
+        assert!(validate_fixes(&relinks, &[(9, 2)], &[3]).is_ok());
+        // a track twice
+        assert!(validate_fixes(&relinks, &[(9, 1)], &[]).is_err());
+        assert!(validate_fixes(&[], &[], &[3, 3]).is_err());
+        // a path twice
+        assert!(validate_fixes(&[(1, "/m/a.wav".into()), (2, "/m/a.wav".into())], &[], &[]).is_err());
+        // merging into a track that changes too
+        assert!(validate_fixes(&relinks, &[(1, 2)], &[]).is_err());
+        assert!(validate_fixes(&[], &[(3, 2)], &[3]).is_err());
+        // two merges into one kept track are fine
+        assert!(validate_fixes(&[], &[(9, 2), (9, 3)], &[]).is_ok());
+    }
+
+    #[test]
+    fn apply_relinks_merges_and_removes_in_one_go() {
+        let db = db();
+        let relink = insert(&db, "/gone/r.wav", "r");
+        let keep = insert(&db, "/m/k.wav", "k");
+        let merge_a = track_with_everything(&db, "/gone/a.wav");
+        let merge_b = insert(&db, "/gone/b.wav", "b");
+        let remove = track_with_everything(&db, "/gone/x.wav");
+
+        let out = db
+            .apply_missing_fixes(&MissingFixes {
+                relinks: vec![RelinkFix { track_id: relink, facts: facts("/m/r.wav") }],
+                merges: vec![(keep, merge_a), (keep, merge_b)],
+                removes: vec![remove],
+            })
+            .unwrap();
+
+        assert_eq!(out, FixOutcome { relinked: 1, merged: 2, removed: 1, skipped: vec![] });
+        assert_eq!(db.get_track(relink).unwrap().file_path, "/m/r.wav");
+        let keep_slots: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM playlist_tracks WHERE track_id = ?1", [keep], |r| r.get(0))
+            .unwrap();
+        let keep_plays: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM play_history WHERE track_id = ?1", [keep], |r| r.get(0))
+            .unwrap();
+        assert_eq!((keep_slots, keep_plays), (1, 1));
+        assert!(db.get_track(merge_a).is_err());
+        assert!(db.get_track(merge_b).is_err());
+        assert_eq!(rows_for(&db, remove), 0);
+    }
+
+    #[test]
+    fn changes_that_no_longer_fit_are_skipped_not_rolled_back() {
+        let db = db();
+        let dir = TempDir::new().unwrap();
+        let back = dir.path().join("back.wav");
+        std::fs::write(&back, b"x").unwrap();
+        let back_too = dir.path().join("back-too.wav");
+        std::fs::write(&back_too, b"y").unwrap();
+        let taken_by = insert(&db, "/m/taken.wav", "t");
+        let wants_taken = insert(&db, "/gone/t.wav", "w");
+        let file_is_back = insert(&db, &back.to_string_lossy(), "b");
+        let merge_is_back = insert(&db, &back_too.to_string_lossy(), "bt");
+        let orphan = insert(&db, "/gone/o.wav", "o");
+        let fine = insert(&db, "/gone/f.wav", "f");
+
+        let out = db
+            .apply_missing_fixes(&MissingFixes {
+                relinks: vec![
+                    RelinkFix { track_id: wants_taken, facts: facts("/m/taken.wav") },
+                    RelinkFix { track_id: fine, facts: facts("/m/f.wav") },
+                ],
+                merges: vec![(9999, orphan), (taken_by, merge_is_back)],
+                removes: vec![file_is_back, 8888],
+            })
+            .unwrap();
+
+        assert_eq!((out.relinked, out.merged, out.removed), (1, 0, 0));
+        let reasons: Vec<(i64, &str)> = out.skipped.iter().map(|s| (s.track_id, s.reason.as_str())).collect();
+        assert_eq!(
+            reasons,
+            vec![
+                (wants_taken, "file is now another track"),
+                (orphan, "kept track no longer exists"),
+                (merge_is_back, "file is back"),
+                (file_is_back, "file is back"),
+                (8888, "track no longer exists"),
+            ]
+        );
+        assert_eq!(db.get_track(fine).unwrap().file_path, "/m/f.wav");
+        assert!(db.get_track(file_is_back).is_ok());
+        assert!(db.get_track(merge_is_back).is_ok());
+        assert!(db.get_track(taken_by).is_ok());
+    }
+
+    #[test]
+    fn a_failure_inside_the_apply_changes_nothing() {
+        let db = db();
+        let relink = insert(&db, "/gone/r.wav", "r");
+        let remove = insert(&db, "/gone/x.wav", "x");
+        db.conn
+            .execute_batch(&format!(
+                "CREATE TRIGGER fail BEFORE DELETE ON tracks WHEN OLD.id = {remove} BEGIN SELECT RAISE(ABORT, 'boom'); END;"
+            ))
+            .unwrap();
+
+        let result = db.apply_missing_fixes(&MissingFixes {
+            relinks: vec![RelinkFix { track_id: relink, facts: facts("/m/r.wav") }],
+            merges: vec![],
+            removes: vec![remove],
+        });
+
+        assert!(result.is_err());
+        assert_eq!(db.get_track(relink).unwrap().file_path, "/gone/r.wav");
     }
 }
