@@ -433,6 +433,11 @@ impl Database {
                 .execute_batch(include_str!("migrations/019_playlist_cover.sql"))?;
         }
 
+        // Migration 020: files of duplicate copies merged away, skipped on scans.
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/020_skipped_files.sql"))?;
+
         Ok(())
     }
 
@@ -1255,10 +1260,13 @@ impl Database {
         Ok(count > 0)
     }
 
-    /// Get all file paths currently in the database.
-    /// Used for fast batch existence checks during directory scanning.
+    /// Every path a folder scan should skip: the files in the library, plus
+    /// the files of duplicate copies merged away (`skipped_files`), so a
+    /// merged copy never comes back. Used for fast batch existence checks.
     pub fn get_all_file_paths(&self) -> Result<std::collections::HashSet<String>> {
-        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_path FROM tracks UNION SELECT file_path FROM skipped_files")?;
         let paths = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut set = std::collections::HashSet::new();
         for p in paths.flatten() {
@@ -4843,5 +4851,28 @@ mod tests {
             Some(("Deep House".to_string(), "tag".to_string()))
         );
         assert_eq!(db.get_track_genre(ids[1]).unwrap(), None);
+    }
+}
+
+#[cfg(test)]
+mod skipped_files_tests {
+    use super::*;
+
+    #[test]
+    fn get_all_file_paths_includes_skipped_files() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        db.conn
+            .execute("INSERT INTO tracks (file_path, file_hash) VALUES ('/m/a.mp3', 'a')", [])
+            .unwrap();
+        db.conn
+            .execute("INSERT INTO skipped_files (file_path) VALUES ('/m/gone.mp3')", [])
+            .unwrap();
+
+        let paths = db.get_all_file_paths().unwrap();
+
+        assert!(paths.contains("/m/a.mp3"));
+        assert!(paths.contains("/m/gone.mp3"));
+        assert_eq!(paths.len(), 2);
     }
 }
