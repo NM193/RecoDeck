@@ -584,7 +584,9 @@ pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, AppError> {
         .map_err(|e| AppError::Database(format!("Failed to get library folders: {}", e)))?;
 
     let library_folders: Vec<String> = match folders_json {
-        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        Some(json) => serde_json::from_str(&json).map_err(|e| {
+            AppError::Internal(format!("Library folders setting is unreadable: {e}"))
+        })?,
         None => Vec::new(),
     };
 
