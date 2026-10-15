@@ -4,7 +4,7 @@
 // spec): merged copies hand over their playlists, tags, plays and analysis,
 // and their files are skipped on future scans.
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { tauriApi } from '../lib/tauri-api'
 import { useOverlay } from '../lib/overlays'
 import { formatTime } from '../lib/trackTable/cells'
@@ -122,6 +122,14 @@ export function DuplicatesModal({
   // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
   useOverlay(true, closeUnlessMerging)
 
+  // The parent passes a new onNotification every render (about 4 times a
+  // second while music plays). Held in a ref, it can't retrigger the load
+  // and wipe the user's choices.
+  const notifyRef = useRef(onNotification)
+  useEffect(() => {
+    notifyRef.current = onNotification
+  })
+
   const loadGroups = useCallback(async () => {
     setLoading(true)
     try {
@@ -129,13 +137,13 @@ export function DuplicatesModal({
       setGroups(data)
       setChoice(initialChoice(data))
     } catch (err) {
-      onNotification(getErrorMessage(err), 'error')
+      notifyRef.current(getErrorMessage(err), 'error')
       setGroups([])
       setChoice(initialChoice([]))
     } finally {
       setLoading(false)
     }
-  }, [onNotification])
+  }, [])
 
   useEffect(() => {
     void loadGroups()
