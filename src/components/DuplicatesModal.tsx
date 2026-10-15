@@ -96,7 +96,8 @@ function summaryMessage(s: MergeSummary): string {
     `Merged ${s.merged}`,
     `${plural(s.playlist_slots_moved, 'playlist slot', 'playlist slots')} moved`,
   ]
-  if (s.trashed > 0) parts.push(`${plural(s.trashed, 'file', 'files')} in Trash`)
+  if (s.trashed > 0)
+    parts.push(`${plural(s.trashed, 'file', 'files')} in Trash`)
   if (s.trash_failed.length > 0) {
     parts.push(`${s.trash_failed.length} could not be moved to Trash`)
   }
@@ -157,12 +158,13 @@ export function DuplicatesModal({
     [groups, activeFilter],
   )
 
-  const toMerge = mergeCount(choice, groups)
+  // Only the groups on the active tab merge: what you see is what merges.
+  const toMerge = mergeCount(choice, filteredGroups)
   const visibleAllMerged = allMerged(choice, filteredGroups)
 
   async function mergeSelected() {
     if (merging) return
-    const merges = buildMerges(choice, groups)
+    const merges = buildMerges(choice, filteredGroups)
     if (merges.length === 0) return
     setMerging(true)
     try {
@@ -181,7 +183,11 @@ export function DuplicatesModal({
   }
 
   const totalGroups = groups.length
-  const summary = `${plural(totalGroups, 'group', 'groups')} · ${toMerge} ${toMerge === 1 ? 'copy' : 'copies'} will be merged`
+  const groupsLabel =
+    filteredGroups.length === totalGroups
+      ? plural(totalGroups, 'group', 'groups')
+      : `${filteredGroups.length} of ${plural(totalGroups, 'group', 'groups')}`
+  const summary = `${groupsLabel} · ${toMerge} ${toMerge === 1 ? 'copy' : 'copies'} will be merged`
   const actionLabel = merging
     ? 'Merging…'
     : moveToTrash
@@ -339,9 +345,7 @@ function GroupCard({
   return (
     <section className={`dup-card dup-card--${group.detection_reason}`}>
       <header className="dup-card__header">
-        <span
-          className={`dup-badge dup-badge--${group.detection_reason}`}
-        >
+        <span className={`dup-badge dup-badge--${group.detection_reason}`}>
           {REASON_LABELS[group.detection_reason]}
         </span>
         <span className="dup-card__count">{group.tracks.length} tracks</span>
@@ -431,7 +435,11 @@ function TrackRow({
             </span>
           )}
         </div>
-        <div className="dup-row__path" data-tip={track.file_path} data-tip-overflow>
+        <div
+          className="dup-row__path"
+          data-tip={track.file_path}
+          data-tip-overflow
+        >
           {track.file_path}
         </div>
         <div className="dup-row__meta">

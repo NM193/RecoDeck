@@ -195,7 +195,8 @@ is the same file, R is not trashed and is reported in `trash_failed`.
   - kept: `rgba(34,197,94,.06)`;
   - merged: `rgba(99,102,241,.07)`;
   - left: none.
-- Header summary: `N groups · M copies will be merged`.
+- Header summary: `N groups · M copies will be merged`, or `V of N groups · …` while a filter tab hides some groups.
+- Only the groups on the active tab merge: M and the action button count and merge the visible groups only (user decision 2026-10-15, so a hidden "Same title & artist" group never merges by surprise).
 - Toolbar: the filter tabs stay. "Select all" becomes **Merge all / Merge none**, acting on the visible groups' Merge boxes.
 - Footer:
   - left: a checkbox **Also move removed files to Trash**, off by default, with the hint `Either way, removed files are skipped on future scans.`;
