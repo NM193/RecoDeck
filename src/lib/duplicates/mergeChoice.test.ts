@@ -92,4 +92,25 @@ describe('mergeChoice', () => {
     }
     expect(slotsMoving(g, 1, g.tracks[1])).toBe(2)
   })
+
+  it("falls back to the first track when the recommended id is not in the group", () => {
+    const bad = group([7, 8], 99)
+    const c = initialChoice([bad])
+    expect(rowState(c, bad, 7)).toBe('keep')
+    expect(rowState(c, bad, 8)).toBe('merge')
+    const ids = bad.tracks.map((t) => t.id)
+    for (const m of buildMerges(c, [bad])) expect(ids).toContain(m.keep_id)
+  })
+
+  it('pickKeep with an id outside the group leaves the choice unchanged', () => {
+    const c = initialChoice([g1])
+    expect(pickKeep(c, g1, 99)).toBe(c)
+  })
+
+  it('a request never removes its own kept copy', () => {
+    const c = initialChoice([g1, g2])
+    for (const m of buildMerges(c, [g1, g2])) {
+      expect(m.remove_ids).not.toContain(m.keep_id)
+    }
+  })
 })

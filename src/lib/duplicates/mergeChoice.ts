@@ -21,7 +21,11 @@ export function groupKey(group: DuplicateGroup): number {
 /** On open: keep the recommended copy, merge every other one. */
 export function initialChoice(groups: DuplicateGroup[]): MergeChoice {
   const keep = new Map<number, number>()
-  for (const g of groups) keep.set(groupKey(g), g.recommended_keep_id)
+  for (const g of groups) {
+    if (g.tracks.length === 0) continue
+    const valid = g.tracks.some((t) => t.id === g.recommended_keep_id)
+    keep.set(groupKey(g), valid ? g.recommended_keep_id : g.tracks[0].id)
+  }
   return { keep, left: new Set() }
 }
 
@@ -40,6 +44,7 @@ export function pickKeep(
   group: DuplicateGroup,
   trackId: number,
 ): MergeChoice {
+  if (!group.tracks.some((t) => t.id === trackId)) return choice
   const keep = new Map(choice.keep)
   keep.set(groupKey(group), trackId)
   const left = new Set(choice.left)
