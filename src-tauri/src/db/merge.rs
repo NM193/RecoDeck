@@ -112,9 +112,38 @@ fn repoint_or_drop(conn: &Connection, table: &str, column: &str, k: i64, r: i64)
     Ok(moved)
 }
 
+/// Cue points: R's move to K only when K has none. Another file can start
+/// at a different offset, so mixing two cue sets would be wrong.
+fn merge_cues(conn: &Connection, k: i64, r: i64) -> Result<()> {
+    let k_has: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM cue_points WHERE track_id = ?1)",
+        [k],
+        |row| row.get(0),
+    )?;
+    if k_has {
+        conn.execute("DELETE FROM cue_points WHERE track_id = ?1", [r])?;
+    } else {
+        conn.execute("UPDATE cue_points SET track_id = ?1 WHERE track_id = ?2", params![k, r])?;
+    }
+    Ok(())
+}
+
 /// Merges R into K and deletes R's row. Answers the playlist slots moved.
 fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     let slots = repoint_or_drop(conn, "playlist_tracks", "track_id", k, r)?;
+    // Unions: a clashing row is K's already, so dropping R's loses nothing.
+    for table in ["track_tags", "track_genres", "track_discogs_styles", "track_instruments"] {
+        repoint_or_drop(conn, table, "track_id", k, r)?;
+    }
+    // K's own verdict wins on a clash.
+    for table in ["spotify_match_verdicts", "ytm_match_verdicts"] {
+        repoint_or_drop(conn, table, "library_track_id", k, r)?;
+    }
+    // One row per track: K's if it has one, else R's moves.
+    for table in ["track_embeddings", "track_fingerprints"] {
+        repoint_or_drop(conn, table, "track_id", k, r)?;
+    }
+    merge_cues(conn, k, r)?;
     // Before R's row goes: play_history cascades on delete.
     conn.execute("UPDATE play_history SET track_id = ?1 WHERE track_id = ?2", params![k, r])?;
     conn.execute("DELETE FROM tracks WHERE id = ?1", [r])?;
@@ -331,5 +360,124 @@ mod tests {
         assert_eq!(count(&db, "SELECT COUNT(*) FROM tracks WHERE id = ?1", b), 1);
         assert_eq!(slots(&db, p), vec![(b, 0)]);
         assert_eq!(db.conn.query_row("SELECT COUNT(*) FROM skipped_files", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn tags_genres_styles_and_instruments_become_the_union() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn.execute_batch("INSERT INTO tags (id, name) VALUES (1, 'warm'), (2, 'dark');").unwrap();
+        for (id, tag) in [(k, 1), (r, 1), (r, 2)] {
+            db.conn
+                .execute("INSERT INTO track_tags (track_id, tag_id) VALUES (?1, ?2)", params![id, tag])
+                .unwrap();
+        }
+        for (id, genre) in [(k, "House"), (r, "House"), (r, "Tech House")] {
+            db.conn
+                .execute("INSERT INTO track_genres (track_id, genre) VALUES (?1, ?2)", params![id, genre])
+                .unwrap();
+        }
+        db.conn
+            .execute("INSERT INTO track_discogs_styles (track_id, style) VALUES (?1, 'Electronic---Deep House')", [r])
+            .unwrap();
+        db.conn
+            .execute("INSERT INTO track_instruments (track_id, instrument) VALUES (?1, 'piano')", [r])
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_tags WHERE track_id = ?1", k), 2);
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_genres WHERE track_id = ?1", k), 2);
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_discogs_styles WHERE track_id = ?1", k), 1);
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_instruments WHERE track_id = ?1", k), 1);
+        for table in ["track_tags", "track_genres", "track_discogs_styles", "track_instruments"] {
+            assert_eq!(count(&db, &format!("SELECT COUNT(*) FROM {table} WHERE track_id = ?1"), r), 0);
+        }
+    }
+
+    #[test]
+    fn verdicts_move_and_the_kept_copys_own_verdict_wins() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute_batch(&format!(
+                "INSERT INTO spotify_match_verdicts (spotify_id, library_track_id, verdict)
+                   VALUES ('s1', {k}, 'no'), ('s1', {r}, 'yes'), ('s2', {r}, 'yes');
+                 INSERT INTO ytm_match_verdicts (video_id, library_track_id, verdict)
+                   VALUES ('v1', {r}, 'yes');"
+            ))
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let verdict = |sql: &str, key: &str| -> String {
+            db.conn.query_row(sql, params![key, k], |row| row.get(0)).unwrap()
+        };
+        let spotify = "SELECT verdict FROM spotify_match_verdicts WHERE spotify_id = ?1 AND library_track_id = ?2";
+        assert_eq!(verdict(spotify, "s1"), "no");
+        assert_eq!(verdict(spotify, "s2"), "yes");
+        assert_eq!(
+            verdict("SELECT verdict FROM ytm_match_verdicts WHERE video_id = ?1 AND library_track_id = ?2", "v1"),
+            "yes"
+        );
+    }
+
+    #[test]
+    fn embeddings_and_fingerprints_keep_the_kept_copys_row_else_take_the_removed_one() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute_batch(&format!(
+                "INSERT INTO track_fingerprints (track_id, chromaprint) VALUES ({k}, 'K-print'), ({r}, 'R-print');
+                 INSERT INTO track_embeddings (track_id, model_version) VALUES ({r}, 'v1');"
+            ))
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let print: String = db
+            .conn
+            .query_row("SELECT chromaprint FROM track_fingerprints WHERE track_id = ?1", [k], |row| row.get(0))
+            .unwrap();
+        let model: String = db
+            .conn
+            .query_row("SELECT model_version FROM track_embeddings WHERE track_id = ?1", [k], |row| row.get(0))
+            .unwrap();
+        assert_eq!(print, "K-print");
+        assert_eq!(model, "v1");
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_fingerprints WHERE track_id = ?1", r), 0);
+    }
+
+    #[test]
+    fn cue_points_move_only_when_the_kept_copy_has_none() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        let k2 = track(&db, "K2");
+        let r2 = track(&db, "R2");
+        db.conn
+            .execute_batch(&format!(
+                "INSERT INTO cue_points (track_id, position_ms) VALUES ({k}, 1000), ({r}, 2000), ({r2}, 3000);"
+            ))
+            .unwrap();
+
+        db.merge_tracks(&[
+            MergeRequest { keep_id: k, remove_ids: vec![r] },
+            MergeRequest { keep_id: k2, remove_ids: vec![r2] },
+        ])
+        .unwrap();
+
+        let cues = |id: i64| -> Vec<i64> {
+            let mut stmt = db
+                .conn
+                .prepare("SELECT position_ms FROM cue_points WHERE track_id = ?1 ORDER BY position_ms")
+                .unwrap();
+            stmt.query_map([id], |row| row.get(0)).unwrap().map(|v| v.unwrap()).collect()
+        };
+        assert_eq!(cues(k), vec![1000]);
+        assert_eq!(cues(k2), vec![3000]);
     }
 }
