@@ -60,6 +60,10 @@ impl Database {
             };
             let kept_path = crate::scanner::normalize_scanned_path(&kept.path);
             for &remove_id in &request.remove_ids {
+                // Merging a track into itself would delete it.
+                if remove_id == request.keep_id {
+                    continue;
+                }
                 let Some(file) = removed_file(&tx, remove_id)? else {
                     continue;
                 };
@@ -94,6 +98,11 @@ fn removed_file(conn: &Connection, id: i64) -> Result<Option<RemovedFile>> {
 /// Moves R's rows in `table` to K where K has no row with the same key
 /// (UPDATE OR IGNORE skips those that would clash), then deletes what is
 /// left of R's. Answers how many rows moved.
+///
+/// Only valid for tables where the one constraint that can clash is the
+/// (owner, track_id) primary/unique key: UPDATE OR IGNORE also swallows NOT
+/// NULL, CHECK and FK failures, and the DELETE after it would then drop those
+/// rows. `table` and `column` are interpolated, so they must be literals.
 fn repoint_or_drop(conn: &Connection, table: &str, column: &str, k: i64, r: i64) -> Result<usize> {
     let moved = conn.execute(
         &format!("UPDATE OR IGNORE {table} SET {column} = ?1 WHERE {column} = ?2"),
@@ -249,7 +258,25 @@ mod tests {
 
         merge(&db, k, &[r]);
 
-        assert_eq!(count(&db, "SELECT COUNT(*) FROM skipped_files WHERE ?1 = ?1", 0), 0);
+        assert_eq!(db.conn.query_row("SELECT COUNT(*) FROM skipped_files", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn merging_a_track_into_itself_changes_nothing() {
+        let db = db();
+        let k = track(&db, "K");
+        let p = playlist(&db, "P");
+        add(&db, p, k, 0);
+        db.conn
+            .execute("INSERT INTO play_history (track_id, played_at) VALUES (?1, 100)", [k])
+            .unwrap();
+
+        let out = merge(&db, k, &[k]);
+
+        assert_eq!(out.merged, 0);
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM tracks WHERE id = ?1", k), 1);
+        assert_eq!(slots(&db, p), vec![(k, 0)]);
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM play_history WHERE track_id = ?1", k), 1);
     }
 
     #[test]
@@ -303,6 +330,6 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(count(&db, "SELECT COUNT(*) FROM tracks WHERE id = ?1", b), 1);
         assert_eq!(slots(&db, p), vec![(b, 0)]);
-        assert_eq!(count(&db, "SELECT COUNT(*) FROM skipped_files WHERE ?1 = ?1", 0), 0);
+        assert_eq!(db.conn.query_row("SELECT COUNT(*) FROM skipped_files", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
     }
 }
