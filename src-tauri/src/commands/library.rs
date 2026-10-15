@@ -712,10 +712,12 @@ pub fn merge_duplicate_tracks(
         // The merge is committed: a failure from here on is a Trash failure,
         // never an error for the whole request.
         for file in &outcome.removed_files {
-            let Ok(remaining) = db.track_paths_with_size(file.file_size) else {
+            let Ok(mut remaining) = db.track_paths_with_size(file.file_size, &file.path) else {
                 trash_failed.push(file.path.clone());
                 continue;
             };
+            // The kept copy's file is always compared, whatever the sizes say.
+            remaining.push(file.kept_path.clone());
             let path = Path::new(&file.path);
             let moved = file_trash::safe_to_trash(path, &remaining)
                 && match file_trash::move_to_trash(path) {

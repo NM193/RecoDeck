@@ -16,11 +16,13 @@ pub struct MergeRequest {
 }
 
 /// A copy that was merged away: where its file is and how big it is
-/// (the Trash step compares it with the files that stay).
+/// (the Trash step compares it with the files that stay), and the path of
+/// the copy it merged into (always checked, whatever the sizes say).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemovedFile {
     pub path: String,
     pub file_size: Option<i64>,
+    pub kept_path: String,
 }
 
 /// What a merge did.
@@ -77,22 +79,30 @@ impl Database {
                     )?;
                 }
                 outcome.merged += 1;
-                outcome.removed_files.push(file);
+                outcome.removed_files.push(RemovedFile { kept_path: kept.path.clone(), ..file });
             }
         }
         tx.commit()?;
         Ok(outcome)
     }
 
-    /// The paths of the tracks whose file has this size (every track when the
-    /// size is unknown), plus tracks with an unknown size: the files a Trash
-    /// move must not touch. Read this AFTER the merge transaction commits,
-    /// otherwise the removed rows would block their own files.
-    pub fn track_paths_with_size(&self, size: Option<i64>) -> Result<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT file_path FROM tracks WHERE ?1 IS NULL OR file_size = ?1 OR file_size IS NULL")?;
-        let rows = stmt.query_map([size], |row| row.get(0))?;
+    /// The paths of the tracks that might be the same physical file as
+    /// `file_path`: those whose file has this size (every track when the size
+    /// is unknown), those with an unknown size, and those whose path ends with
+    /// the same file name in any letter case (a re-tagged copy changes size).
+    /// These are the files a Trash move must not touch. Read this AFTER the
+    /// merge transaction commits, otherwise the removed rows would block
+    /// their own files.
+    pub fn track_paths_with_size(&self, size: Option<i64>, file_path: &str) -> Result<Vec<String>> {
+        let name = file_path.rsplit('/').next().unwrap_or(file_path);
+        // LIKE wildcards (`_`, `%`) inside the file name only widen the
+        // candidate set, which is the safe direction, so they are not escaped.
+        let pattern = format!("%/{}", name.to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT file_path FROM tracks \
+             WHERE ?1 IS NULL OR file_size = ?1 OR file_size IS NULL OR lower(file_path) LIKE ?2",
+        )?;
+        let rows = stmt.query_map(params![size, pattern], |row| row.get(0))?;
         rows.collect()
     }
 }
@@ -102,7 +112,7 @@ fn removed_file(conn: &Connection, id: i64) -> Result<Option<RemovedFile>> {
     conn.query_row(
         "SELECT file_path, file_size FROM tracks WHERE id = ?1",
         [id],
-        |row| Ok(RemovedFile { path: row.get(0)?, file_size: row.get(1)? }),
+        |row| Ok(RemovedFile { path: row.get(0)?, file_size: row.get(1)?, kept_path: String::new() }),
     )
     .optional()
 }
@@ -113,7 +123,7 @@ fn removed_file(conn: &Connection, id: i64) -> Result<Option<RemovedFile>> {
 ///
 /// Only valid for tables where the one constraint that can clash is the
 /// (owner, track_id) primary/unique key: UPDATE OR IGNORE also swallows NOT
-/// NULL, CHECK and FK failures, and the DELETE after it would then drop those
+/// NULL and CHECK failures, and the DELETE after it would then drop those
 /// rows. `table` and `column` are interpolated, so they must be literals.
 fn repoint_or_drop(conn: &Connection, table: &str, column: &str, k: i64, r: i64) -> Result<usize> {
     let moved = conn.execute(
@@ -381,7 +391,11 @@ mod tests {
         assert!(db.get_all_file_paths().unwrap().contains("/m/old/R.mp3"));
         assert_eq!(
             out.removed_files,
-            vec![RemovedFile { path: "/m//old/R.mp3".into(), file_size: Some(1000) }]
+            vec![RemovedFile {
+                path: "/m//old/R.mp3".into(),
+                file_size: Some(1000),
+                kept_path: "/m/K.mp3".into(),
+            }]
         );
     }
 
@@ -778,9 +792,40 @@ mod tests {
             .execute("INSERT INTO tracks (file_path, file_hash) VALUES ('/m/unknown.mp3', 'unk')", [])
             .unwrap();
 
-        let mut same_size = db.track_paths_with_size(Some(1000)).unwrap();
+        let mut same_size = db.track_paths_with_size(Some(1000), "/x/none.mp3").unwrap();
         same_size.sort();
         assert_eq!(same_size, vec!["/m/A.mp3".to_string(), "/m/unknown.mp3".to_string()]);
-        assert_eq!(db.track_paths_with_size(None).unwrap().len(), 3);
+        assert_eq!(db.track_paths_with_size(None, "/x/none.mp3").unwrap().len(), 3);
+    }
+
+    #[test]
+    fn track_paths_with_size_also_finds_a_same_named_file_of_another_size_and_case() {
+        let db = db();
+        db.conn
+            .execute(
+                "INSERT INTO tracks (file_path, file_hash, file_size) VALUES ('/Music//TRACK One.mp3', 'k', 4321)",
+                [],
+            )
+            .unwrap();
+        db.conn
+            .execute("INSERT INTO tracks (file_path, file_hash, file_size) VALUES ('/m/other.mp3', 'o', 4321)", [])
+            .unwrap();
+
+        let found = db.track_paths_with_size(Some(1000), "/m/old/track one.mp3").unwrap();
+
+        assert_eq!(found, vec!["/Music//TRACK One.mp3".to_string()]);
+    }
+
+    #[test]
+    fn merge_reports_the_kept_path_for_each_removed_file() {
+        let db = db();
+        let k = track(&db, "K");
+        let r1 = track(&db, "R1");
+        let r2 = track(&db, "R2");
+
+        let out = merge(&db, k, &[r1, r2]);
+
+        assert_eq!(out.removed_files.len(), 2);
+        assert!(out.removed_files.iter().all(|f| f.kept_path == "/m/K.mp3"));
     }
 }
