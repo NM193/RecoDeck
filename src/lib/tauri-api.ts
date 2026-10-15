@@ -32,6 +32,10 @@ import type {
   DuplicateGroup,
   MergeRequest,
   MergeSummary,
+  MissingCandidate,
+  MissingFixes,
+  MissingFixSummary,
+  MissingTrack,
   TrackGenre,
   LibraryFolder,
   MoveReport,
@@ -300,6 +304,23 @@ export const tauriApi = {
     moveToTrash: boolean,
   ): Promise<MergeSummary> {
     return await invoke('merge_duplicate_tracks', { merges, moveToTrash })
+  },
+
+  // Missing files (spec 2026-10-15)
+  async getMissingTracks(): Promise<MissingTrack[]> {
+    return await invoke('get_missing_tracks')
+  },
+
+  async countMissingTracks(): Promise<number> {
+    return await invoke('count_missing_tracks')
+  },
+
+  async describeFile(trackId: number, path: string): Promise<MissingCandidate> {
+    return await invoke('describe_file', { trackId, path })
+  },
+
+  async applyMissingFixes(fixes: MissingFixes): Promise<MissingFixSummary> {
+    return await invoke('apply_missing_fixes', { ...fixes })
   },
 
   // Debug: get all tracks with their hashes (for troubleshooting)

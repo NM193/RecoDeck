@@ -189,3 +189,40 @@ export interface MergeSummary {
   /** Paths that could not go to the Trash. */
   trash_failed: string[]
 }
+
+// Missing files (spec 2026-10-15)
+
+/** A file that might be a missing track's file. */
+export interface MissingCandidate {
+  path: string
+  duration_ms: number | null
+  file_size: number | null
+  /** Set when the file already is a library track: the row offers Merge into it. */
+  library_track_id: number | null
+}
+
+/** A track whose file is gone, with what the review shows about it. */
+export interface MissingTrack extends Track {
+  playlists: PlaylistRef[]
+  /** Has BPM or key. */
+  analyzed: boolean
+  /** Rows in the play history. */
+  plays: number
+  /** The unplugged drive its file was on. */
+  drive_missing: string | null
+  /** Same-name files in the library folders, ordered by path. */
+  candidates: MissingCandidate[]
+}
+
+export interface MissingFixes {
+  relinks: { track_id: number; path: string }[]
+  merges: { keep_id: number; remove_id: number }[]
+  removes: number[]
+}
+
+export interface MissingFixSummary {
+  relinked: number
+  merged: number
+  removed: number
+  skipped: { track_id: number; reason: string }[]
+}
