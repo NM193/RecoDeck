@@ -191,6 +191,39 @@ fn merge_track_columns(conn: &Connection, k: i64, r: i64) -> Result<()> {
     Ok(())
 }
 
+/// Columns that describe a file's own audio: never carried to another copy.
+/// The app regenerates a missing waveform on demand.
+const AUDIO_PICTURE_COLUMNS: [&str; 3] = ["waveform_overview", "waveform_detail", "spectrogram_data"];
+
+/// Fills each NULL column of K's row in `table` (keyed by `track_id`) from
+/// R's row, except the `skip` columns. Creates K's row if it has none. Then
+/// deletes R's row.
+fn fill_row_from(conn: &Connection, table: &str, k: i64, r: i64, skip: &[&str]) -> Result<()> {
+    let r_has: bool = conn.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE track_id = ?1)"),
+        [r],
+        |row| row.get(0),
+    )?;
+    if r_has {
+        let mut stmt = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?;
+        let columns: Vec<String> = stmt.query_map([], |row| row.get(0))?.collect::<Result<_>>()?;
+        let sets: Vec<String> = columns
+            .iter()
+            .filter(|c| c.as_str() != "track_id" && !skip.contains(&c.as_str()))
+            .map(|c| format!("{c} = COALESCE({c}, (SELECT {c} FROM {table} WHERE track_id = ?2))"))
+            .collect();
+        conn.execute(&format!("INSERT OR IGNORE INTO {table} (track_id) VALUES (?1)"), [k])?;
+        if !sets.is_empty() {
+            conn.execute(
+                &format!("UPDATE {table} SET {} WHERE track_id = ?1", sets.join(", ")),
+                params![k, r],
+            )?;
+        }
+    }
+    conn.execute(&format!("DELETE FROM {table} WHERE track_id = ?1"), [r])?;
+    Ok(())
+}
+
 /// Merges R into K and deletes R's row. Answers the playlist slots moved.
 fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     let slots = repoint_or_drop(conn, "playlist_tracks", "track_id", k, r)?;
@@ -206,6 +239,9 @@ fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     for table in ["track_embeddings", "track_fingerprints"] {
         repoint_or_drop(conn, table, "track_id", k, r)?;
     }
+    // Partial rows are common (waveform-only, tag-BPM-only): fill column by column.
+    fill_row_from(conn, "track_analysis", k, r, &AUDIO_PICTURE_COLUMNS)?;
+    fill_row_from(conn, "track_deep_analysis", k, r, &[])?;
     merge_cues(conn, k, r)?;
     merge_track_columns(conn, k, r)?;
     // Before R's row goes: play_history cascades on delete.
@@ -630,5 +666,91 @@ mod tests {
         merge(&db, k, &[r1, r2]);
 
         assert_eq!(columns(&db, k).1.as_deref(), Some("k / x"));
+    }
+
+    #[test]
+    fn analysis_merges_column_by_column_and_the_waveform_never_moves() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute("INSERT INTO track_analysis (track_id, waveform_overview) VALUES (?1, x'0102')", [k])
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO track_analysis (track_id, bpm, musical_key, waveform_overview) VALUES (?1, 124.0, '8A', x'0909')",
+                [r],
+            )
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let row: (Option<f64>, Option<String>, Option<Vec<u8>>) = db
+            .conn
+            .query_row(
+                "SELECT bpm, musical_key, waveform_overview FROM track_analysis WHERE track_id = ?1",
+                [k],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (Some(124.0), Some("8A".into()), Some(vec![1, 2])));
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_analysis WHERE track_id = ?1", r), 0);
+    }
+
+    #[test]
+    fn a_kept_copy_without_analysis_gets_the_scalars_but_no_waveform() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute(
+                "INSERT INTO track_analysis (track_id, bpm, waveform_overview, waveform_detail) VALUES (?1, 126.0, x'09', x'09')",
+                [r],
+            )
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let row: (Option<f64>, Option<Vec<u8>>, Option<Vec<u8>>) = db
+            .conn
+            .query_row(
+                "SELECT bpm, waveform_overview, waveform_detail FROM track_analysis WHERE track_id = ?1",
+                [k],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (Some(126.0), None, None));
+    }
+
+    #[test]
+    fn the_kept_copys_own_bpm_wins_and_deep_analysis_fills_missing_columns() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute_batch(&format!(
+                "INSERT INTO track_analysis (track_id, bpm) VALUES ({k}, 120.0), ({r}, 124.0);
+                 INSERT INTO track_deep_analysis (track_id, danceability) VALUES ({k}, 0.5);
+                 INSERT INTO track_deep_analysis (track_id, danceability, energy_arousal) VALUES ({r}, 0.9, 0.7);"
+            ))
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let bpm: f64 = db
+            .conn
+            .query_row("SELECT bpm FROM track_analysis WHERE track_id = ?1", [k], |row| row.get(0))
+            .unwrap();
+        let deep: (f64, f64) = db
+            .conn
+            .query_row(
+                "SELECT danceability, energy_arousal FROM track_deep_analysis WHERE track_id = ?1",
+                [k],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(bpm, 120.0);
+        assert_eq!(deep, (0.5, 0.7));
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM track_deep_analysis WHERE track_id = ?1", r), 0);
     }
 }
