@@ -49,9 +49,10 @@ Out:
 
 ## 1. Scanner follows moved files
 
-This applies in both scan paths: `commands/library.rs::scan_directory` and
-`Scanner::import_file`. When a scanned file's hash (not `"unknown"`) matches
-existing rows:
+The decision lives in one function in `db/missing.rs`, and both scan paths call
+it: `commands/library.rs::scan_directory` (the one the app uses) and
+`Scanner::import_file` (used by tests). This way the tests cover the real
+path. When a scanned file's hash (not `"unknown"`) matches existing rows:
 - **some row with that hash has its file on disk:** skip, as today;
 - **no row with that hash has its file on disk:** relink the row with the
   lowest id to the scanned file (see Relink below). It counts as `relinked`,
@@ -103,8 +104,8 @@ BPM and key still hold, and the waveform and cues stay close enough.
 5. Decide whether each candidate is a free file or a library candidate:
    - **a `tracks` row has the path:** library candidate, carrying that row's id;
    - **the path is in `skipped_files`:**
-     - free file when its `kept_track_id` is this missing track, or no longer
-       exists (Relink also takes it off the skip list);
+     - free file when its `kept_track_id` is this missing track, is NULL, or
+       no longer exists (Relink also takes it off the skip list);
      - otherwise, a library candidate of that `kept_track_id`;
    - **otherwise:** free file.
 6. Drive check: a path under `/Volumes/<name>/` whose `/Volumes/<name>` does
@@ -113,8 +114,15 @@ BPM and key still hold, and the waveform and cues stay close enough.
 `count_missing_tracks()` stats every track path and returns the count. Settings
 calls it to show the number.
 
-`describe_file(path)` is for Locate…. It returns the same candidate shape for
-one picked file: duration, size, and the library track id per rule 5.
+`describe_file(track_id, path)` serves Locate… and Other file…. It returns the
+same candidate shape for one picked file: duration, size, and the library
+track id per rule 5. The rule needs `track_id`.
+
+**Threading:** every one of these commands runs in `spawn_blocking`. The disk
+work happens without the `state.db` lock: the walk, lofty reads, stat calls,
+and hashing in the apply. The lock is held only for the queries and the
+transaction, as in `scan_directory`. That keeps the app responsive while about
+100 WAVs are hashed.
 
 ## 4. Applying
 
@@ -122,9 +130,14 @@ one picked file: duration, size, and the library track id per rule 5.
 - `relinks: Vec<{ track_id, path }>`, `merges: Vec<{ keep_id, remove_id }>`,
   `removes: Vec<track_id>`.
 - **Validation (rejects the whole call):**
-  - a track id appears twice across all three lists;
+  - a track id appears twice across the relinked ids, the merge `remove_id`s
+    and the removes;
   - a relink path appears twice;
-  - a merge whose `keep_id` is also a relinked, merged or removed track.
+  - a merge whose `keep_id` is also a relinked, merged-away or removed track.
+
+  Several merges may share a `keep_id`. Two stale rows can merge into the same
+  live track. Merges are grouped by `keep_id` into one `MergeRequest` each, so
+  the duplicates validator (`validate_requests`) still holds for them.
 - **Before the transaction**, each relink's file is read:
   - its hash, size and audio properties;
   - a file that no longer exists, or that is now another track's path, is
@@ -145,7 +158,8 @@ one picked file: duration, size, and the library track id per rule 5.
       YouTube Music verdicts go by their delete triggers.
 
     Files on disk are never touched.
-- A track id that no longer exists is skipped, not an error.
+- A track id that no longer exists is skipped, not an error. It goes into
+  `skipped` with the reason `track no longer exists`.
 - **Returns** `{ relinked, merged, removed, skipped: Vec<{ track_id, reason }> }`.
 
 New code goes in `db/missing.rs` (the queries, relink, full delete, apply).
@@ -176,7 +190,9 @@ UI text is English. The state logic lives in a pure
 
 In Settings → Database, below Review Duplicate Tracks:
 - a full-width button `Review Missing Files`, with a count badge when the
-  count is > 0;
+  count is > 0. The count loads in the background, so the button shows at
+  once without a badge. It is counted again when the section mounts and when
+  the modal closes;
 - the hint `Tracks whose file was moved, renamed or deleted.`
 
 The section's description becomes `Clean up duplicate tracks and files that
@@ -204,7 +220,10 @@ went missing.`
   - **line 2:** the old `folder / file` (muted, full path in a tooltip), then
     `→`. After it:
     - one candidate: its `folder / file`;
-    - several candidates: a `<select>` of them.
+    - several candidates: a `<select>` of them;
+    - then a quiet `Other file…` text button. It works like Locate…, for when
+      the same-name file is the wrong one (generic names like
+      `01 Track.mp3`).
   - **line 3**, facts:
     - `length differs: X in library, Y found` (amber), when it applies;
     - `on drive NAME, not connected`, when `drive_missing`;
@@ -219,7 +238,9 @@ went missing.`
       disabled when there is no candidate.
     - Rows with no candidate also get a `Locate…` button. It opens a file
       picker for audio files, calls `describe_file`, adds the result as the
-      row's chosen candidate and sets the row to Relink / Merge.
+      row's chosen candidate and sets the row to Relink / Merge. The row then
+      has a candidate, so it moves to the Found card.
+  - A picked file stays on its row across reloads.
   - **Row tints:** Relink/Merge = faint success, Remove = faint danger,
     Leave = plain.
 
@@ -228,12 +249,24 @@ went missing.`
 - **Chosen candidate:** the first one whose length matches, else the first.
 - **Length matches:** both durations are known and within 2 seconds.
 - **The row starts on Relink/Merge** when its chosen candidate's length
-  matches, and **on Leave** otherwise. That includes length unknown, no
-  candidate and drive not connected.
-- **One free file, one relink:** when two rows would relink the same free
-  file, only the lower track id starts on Relink. The other row's Relink is
-  disabled, with the fact `same file as <title>`. After the apply, that file
-  is a library track, so the next review offers Merge.
+  matches and its drive is not the missing one. Otherwise it starts **on
+  Leave**: no candidate, length unknown, length differs, or drive not
+  connected. On an unplugged drive the file is probably still there, so a
+  same-name file elsewhere is not pre-selected, even when its length matches.
+
+### Conflicts (always true, not only at start)
+
+The state is computed so the backend's validation can never fail:
+- **One free file, one relink.** A row's Relink is blocked while a row with a
+  lower track id relinks the same path. The fact reads `same file as <title>`.
+- **A merge target must stay as it is.** A row's Merge is blocked while its K
+  is a row in this list whose choice is not Leave. The fact reads `<title> is
+  changing too`.
+- **A blocked row counts as Leave**, but the user's choice is kept. When the
+  blocking row changes (to Leave or to another file), the choice applies
+  again.
+- After an apply, a file that was relinked is a library track, so the next
+  review offers Merge for the other row.
 - **After a reload** (Search another folder…):
   - a row the user already set keeps its choice;
   - untouched rows take the new defaults.
@@ -292,6 +325,7 @@ Rust (in-memory DB with migrations and FK on, plus `tempfile` dirs):
   - `/Volumes` drive detection.
 - **Apply:**
   - each validation rule;
+  - two merges with one `keep_id` both apply;
   - a merge moves the missing track's playlists and plays into K;
   - Remove leaves no row referencing the id. One fixture has a row in every
     track-linked table, and the delete succeeds with FK on;
@@ -302,8 +336,13 @@ Rust (in-memory DB with migrations and FK on, plus `tempfile` dirs):
   tests).
 
 Frontend (vitest, `missingChoice.ts`):
-- the defaults: length match, unknown, no candidate, drive missing;
-- one free file, one relink;
+- the defaults: length match, unknown, differs, no candidate, and drive not
+  connected even with a matching length;
+- conflicts:
+  - one free file, one relink, with the lower id winning;
+  - a merge into a K that is changing is blocked;
+  - a blocked choice comes back when its blocker goes to Leave;
+  - two rows merging into one K are both allowed;
 - a choice survives a reload, and untouched rows take the new defaults;
 - Merge vs Relink comes from the chosen candidate;
 - building `relinks / merges / removes`, and the button label.
