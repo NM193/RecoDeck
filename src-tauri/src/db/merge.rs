@@ -147,7 +147,9 @@ fn merged_comment(k: Option<String>, r: Option<String>) -> Option<String> {
     let k = k.filter(|s| !s.trim().is_empty());
     let r = r.filter(|s| !s.trim().is_empty());
     match (k, r) {
-        (Some(k), Some(r)) if k.trim() != r.trim() => Some(format!("{k} / {r}")),
+        (Some(k), Some(r)) if !k.split(" / ").any(|part| part.trim() == r.trim()) => {
+            Some(format!("{k} / {r}"))
+        }
         (Some(k), _) => Some(k),
         (None, r) => r,
     }
@@ -613,5 +615,20 @@ mod tests {
         let (_, comment, genre, source, _) = columns(&db, k);
         assert_eq!(comment.as_deref(), Some("warm"));
         assert_eq!((genre.as_deref(), source.as_deref()), (Some("Techno"), Some("ai")));
+    }
+
+    #[test]
+    fn a_comment_already_in_the_kept_copy_is_not_added_twice() {
+        let db = db();
+        let k = track(&db, "K");
+        let r1 = track(&db, "R1");
+        let r2 = track(&db, "R2");
+        set_columns(&db, k, 0, Some("k"), None, None, "2024-01-01 00:00:00");
+        set_columns(&db, r1, 0, Some("x"), None, None, "2024-01-01 00:00:00");
+        set_columns(&db, r2, 0, Some("x"), None, None, "2024-01-01 00:00:00");
+
+        merge(&db, k, &[r1, r2]);
+
+        assert_eq!(columns(&db, k).1.as_deref(), Some("k / x"));
     }
 }
