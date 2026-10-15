@@ -115,10 +115,12 @@ const TRACK_TABLES: [&str; 10] = [
 /// caller's transaction). Files on disk are never touched. Answers whether
 /// the track existed.
 pub(crate) fn delete_track_on(conn: &Connection, track_id: i64) -> Result<bool> {
+    // Cached: a folder cleanup runs these for thousands of tracks.
     for table in TRACK_TABLES {
-        conn.execute(&format!("DELETE FROM {table} WHERE track_id = ?1"), [track_id])?;
+        conn.prepare_cached(&format!("DELETE FROM {table} WHERE track_id = ?1"))?
+            .execute([track_id])?;
     }
-    Ok(conn.execute("DELETE FROM tracks WHERE id = ?1", [track_id])? > 0)
+    Ok(conn.prepare_cached("DELETE FROM tracks WHERE id = ?1")?.execute([track_id])? > 0)
 }
 
 impl Database {
@@ -355,6 +357,40 @@ mod tests {
             n += count(format!("SELECT COUNT(*) FROM {table} WHERE library_track_id = ?1"));
         }
         n
+    }
+
+    /// A migration that adds a table pointing at tracks must add it to
+    /// TRACK_TABLES too, or every complete delete fails on its foreign key.
+    #[test]
+    fn track_tables_lists_every_table_that_references_tracks() {
+        let db = db();
+        let tables: Vec<String> = db
+            .conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_>>()
+            .unwrap();
+        let mut referencing: Vec<String> = tables
+            .into_iter()
+            .filter(|t| {
+                db.conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM pragma_foreign_key_list(?1) WHERE \"table\" = 'tracks'",
+                        [t],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap()
+                    > 0
+            })
+            .collect();
+        referencing.sort();
+        // play_history cascades on delete.
+        let mut expected: Vec<String> =
+            TRACK_TABLES.iter().chain(["play_history"].iter()).map(|t| t.to_string()).collect();
+        expected.sort();
+        assert_eq!(referencing, expected);
     }
 
     #[test]
