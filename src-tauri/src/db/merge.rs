@@ -83,6 +83,16 @@ impl Database {
         tx.commit()?;
         Ok(outcome)
     }
+
+    /// The paths of the tracks whose file has this size (every track when the
+    /// size is unknown): the files a Trash move must not touch.
+    pub fn track_paths_with_size(&self, size: Option<i64>) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_path FROM tracks WHERE ?1 IS NULL OR file_size = ?1")?;
+        let rows = stmt.query_map([size], |row| row.get(0))?;
+        rows.collect()
+    }
 }
 
 /// A track's file path and size, or None when the track no longer exists.
@@ -752,5 +762,17 @@ mod tests {
         assert_eq!(bpm, 120.0);
         assert_eq!(deep, (0.5, 0.7));
         assert_eq!(count(&db, "SELECT COUNT(*) FROM track_deep_analysis WHERE track_id = ?1", r), 0);
+    }
+
+    #[test]
+    fn track_paths_with_size_finds_same_size_files_or_all_when_unknown() {
+        let db = db();
+        track(&db, "A");
+        db.conn
+            .execute("INSERT INTO tracks (file_path, file_hash, file_size) VALUES ('/m/big.mp3', 'big', 5000)", [])
+            .unwrap();
+
+        assert_eq!(db.track_paths_with_size(Some(1000)).unwrap(), vec!["/m/A.mp3".to_string()]);
+        assert_eq!(db.track_paths_with_size(None).unwrap().len(), 2);
     }
 }
