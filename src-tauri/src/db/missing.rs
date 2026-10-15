@@ -286,8 +286,21 @@ impl Database {
         let mut out = FixOutcome::default();
 
         for fix in &fixes.relinks {
+            match track_path(&tx, fix.track_id)? {
+                None => {
+                    skip(&mut out, fix.track_id, "track no longer exists");
+                    continue;
+                }
+                Some(path) if path == fix.facts.path => continue,
+                Some(path) if !crate::missing_files::is_missing(&path) => {
+                    skip(&mut out, fix.track_id, "file is back");
+                    continue;
+                }
+                Some(_) => {}
+            }
             match relink_on(&tx, fix.track_id, &fix.facts)? {
-                RelinkOutcome::Relinked | RelinkOutcome::AlreadyThere => out.relinked += 1,
+                RelinkOutcome::Relinked => out.relinked += 1,
+                RelinkOutcome::AlreadyThere => {}
                 RelinkOutcome::Taken => skip(&mut out, fix.track_id, "file is now another track"),
                 RelinkOutcome::TrackGone => skip(&mut out, fix.track_id, "track no longer exists"),
             }
@@ -295,8 +308,11 @@ impl Database {
 
         let mut groups: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
         for &(keep, remove) in &fixes.merges {
-            if track_path(&tx, keep)?.is_none() {
+            let keep_path = track_path(&tx, keep)?;
+            if keep_path.is_none() {
                 skip(&mut out, remove, "kept track no longer exists");
+            } else if keep_path.is_some_and(|p| crate::missing_files::is_missing(&p)) {
+                skip(&mut out, remove, "kept track's file is missing");
             } else if let Some(reason) = cannot_go(&tx, remove)? {
                 skip(&mut out, remove, reason);
             } else {
@@ -672,8 +688,11 @@ mod tests {
     #[test]
     fn apply_relinks_merges_and_removes_in_one_go() {
         let db = db();
+        let dir = TempDir::new().unwrap();
+        let keep_path = dir.path().join("k.wav");
+        std::fs::write(&keep_path, b"k").unwrap();
         let relink = insert(&db, "/gone/r.wav", "r");
-        let keep = insert(&db, "/m/k.wav", "k");
+        let keep = insert(&db, &keep_path.to_string_lossy(), "k");
         let merge_a = track_with_everything(&db, "/gone/a.wav");
         let merge_b = insert(&db, "/gone/b.wav", "b");
         let remove = track_with_everything(&db, "/gone/x.wav");
@@ -710,7 +729,9 @@ mod tests {
         std::fs::write(&back, b"x").unwrap();
         let back_too = dir.path().join("back-too.wav");
         std::fs::write(&back_too, b"y").unwrap();
-        let taken_by = insert(&db, "/m/taken.wav", "t");
+        let taken_path = dir.path().join("taken.wav");
+        std::fs::write(&taken_path, b"t").unwrap();
+        let taken_by = insert(&db, &taken_path.to_string_lossy(), "t");
         let wants_taken = insert(&db, "/gone/t.wav", "w");
         let file_is_back = insert(&db, &back.to_string_lossy(), "b");
         let merge_is_back = insert(&db, &back_too.to_string_lossy(), "bt");
@@ -720,7 +741,7 @@ mod tests {
         let out = db
             .apply_missing_fixes(&MissingFixes {
                 relinks: vec![
-                    RelinkFix { track_id: wants_taken, facts: facts("/m/taken.wav") },
+                    RelinkFix { track_id: wants_taken, facts: facts(&taken_path.to_string_lossy()) },
                     RelinkFix { track_id: fine, facts: facts("/m/f.wav") },
                 ],
                 merges: vec![(9999, orphan), (taken_by, merge_is_back)],
@@ -744,6 +765,51 @@ mod tests {
         assert!(db.get_track(file_is_back).is_ok());
         assert!(db.get_track(merge_is_back).is_ok());
         assert!(db.get_track(taken_by).is_ok());
+    }
+
+    #[test]
+    fn a_relink_whose_file_is_back_or_already_done_changes_nothing() {
+        let db = db();
+        let dir = TempDir::new().unwrap();
+        let a_path = dir.path().join("a.wav");
+        std::fs::write(&a_path, b"a").unwrap();
+        let b_path = dir.path().join("b.wav");
+        std::fs::write(&b_path, b"b").unwrap();
+        let a = insert(&db, &a_path.to_string_lossy(), "a");
+        let b = insert(&db, &b_path.to_string_lossy(), "b");
+
+        let out = db
+            .apply_missing_fixes(&MissingFixes {
+                relinks: vec![
+                    RelinkFix { track_id: a, facts: facts("/m/elsewhere.wav") },
+                    RelinkFix { track_id: b, facts: facts(&b_path.to_string_lossy()) },
+                    RelinkFix { track_id: 9998, facts: facts("/m/nine.wav") },
+                ],
+                merges: vec![],
+                removes: vec![],
+            })
+            .unwrap();
+
+        assert_eq!(out.relinked, 0);
+        let reasons: Vec<(i64, &str)> = out.skipped.iter().map(|s| (s.track_id, s.reason.as_str())).collect();
+        assert_eq!(reasons, vec![(a, "file is back"), (9998, "track no longer exists")]);
+        assert_eq!(db.get_track(a).unwrap().file_path, a_path.to_string_lossy());
+    }
+
+    #[test]
+    fn a_merge_into_a_track_whose_file_is_gone_is_skipped() {
+        let db = db();
+        let keep = insert(&db, "/gone/k.wav", "k");
+        let remove = insert(&db, "/gone/r.wav", "r");
+
+        let out = db
+            .apply_missing_fixes(&MissingFixes { relinks: vec![], merges: vec![(keep, remove)], removes: vec![] })
+            .unwrap();
+
+        assert_eq!(out.merged, 0);
+        let reasons: Vec<(i64, &str)> = out.skipped.iter().map(|s| (s.track_id, s.reason.as_str())).collect();
+        assert_eq!(reasons, vec![(remove, "kept track's file is missing")]);
+        assert!(db.get_track(remove).is_ok());
     }
 
     #[test]

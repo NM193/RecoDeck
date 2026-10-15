@@ -162,9 +162,12 @@ transaction, as in `scan_directory`. That keeps the app responsive while about
   changed things while the modal was open:
   - a relink whose path is now another track's file is skipped with
     `file is now another track`;
-  - a relink whose path is already this track's own path is a no-op;
-  - a merge or remove whose track's file exists again is skipped with
-    `file is back`. A scan may have followed it.
+  - a relink whose path is already this track's own path is a no-op. It is
+    not counted and not reported;
+  - a relink, merge or remove whose track's file exists again is skipped with
+    `file is back`. A scan may have followed it;
+  - a merge whose kept track lost its file in the meantime is skipped with
+    `kept track's file is missing`, so history never moves onto a dead track.
 
   None of these is a rollback.
 - **One transaction**, in order: relinks, then merges, then removes.
