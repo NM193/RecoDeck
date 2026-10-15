@@ -7,6 +7,7 @@ pub mod error;
 pub mod external;
 pub mod file_trash;
 pub mod formats;
+pub mod missing_files;
 pub mod scanner;
 pub mod server;
 #[cfg(test)]

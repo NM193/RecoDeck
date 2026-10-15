@@ -151,6 +151,51 @@ impl Database {
         }
         Ok(HashMatch::Moved(lowest))
     }
+
+    /// The library folders (setting `library_folders`, a JSON list).
+    pub fn library_folders(&self) -> Result<Vec<String>> {
+        Ok(self
+            .get_setting("library_folders")?
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default())
+    }
+
+    /// Every track's file path, so missing files can be counted without the lock.
+    pub fn all_track_paths(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT file_path FROM tracks")?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect()
+    }
+
+    /// Rule 5 of spec section 3: the library track a file on disk already
+    /// is, or None for a free file. A file merged away earlier belongs to the
+    /// track it was merged into, but only while that track is alive and has
+    /// its own file. So the answer is always a live track, never a row of the
+    /// review.
+    pub fn library_track_for(&self, path: &str, missing_track_id: i64) -> Result<Option<i64>> {
+        let owner: Option<i64> = self
+            .conn
+            .query_row("SELECT id FROM tracks WHERE file_path = ?1", [path], |row| row.get(0))
+            .optional()?;
+        if owner.is_some() {
+            return Ok(owner);
+        }
+        let kept: Option<Option<i64>> = self
+            .conn
+            .query_row("SELECT kept_track_id FROM skipped_files WHERE file_path = ?1", [path], |row| row.get(0))
+            .optional()?;
+        let Some(Some(kept)) = kept else {
+            return Ok(None);
+        };
+        if kept == missing_track_id {
+            return Ok(None);
+        }
+        let kept_path: Option<String> = self
+            .conn
+            .query_row("SELECT file_path FROM tracks WHERE id = ?1", [kept], |row| row.get(0))
+            .optional()?;
+        Ok(kept_path.filter(|p| Path::new(p).exists()).map(|_| kept))
+    }
 }
 
 #[cfg(test)]
@@ -435,5 +480,51 @@ mod tests {
 
         assert_eq!(rows_for(&db, a), 14);
         assert_eq!(rows_for(&db, b), 14);
+    }
+
+    #[test]
+    fn library_folders_reads_the_setting() {
+        let db = db();
+        assert!(db.library_folders().unwrap().is_empty());
+        db.set_setting("library_folders", r#"["/music","/more"]"#).unwrap();
+        assert_eq!(db.library_folders().unwrap(), vec!["/music".to_string(), "/more".to_string()]);
+    }
+
+    #[test]
+    fn a_file_that_is_a_track_is_that_track() {
+        let db = db();
+        let me = insert(&db, "/gone/me.wav", "me");
+        let live = insert(&db, "/m/live.wav", "live");
+        assert_eq!(db.library_track_for("/m/live.wav", me).unwrap(), Some(live));
+        assert_eq!(db.library_track_for("/m/free.wav", me).unwrap(), None);
+    }
+
+    #[test]
+    fn a_skipped_file_belongs_to_its_kept_track_only_while_that_track_has_its_file() {
+        let db = db();
+        let dir = TempDir::new().unwrap();
+        let live_file = dir.path().join("k.wav");
+        std::fs::write(&live_file, b"k").unwrap();
+        let live = insert(&db, &live_file.to_string_lossy(), "k");
+        let dead = insert(&db, "/gone/d.wav", "d");
+        let me = insert(&db, "/gone/me.wav", "me");
+        let skip = |path: &str, kept: Option<i64>| {
+            db.conn
+                .execute(
+                    "INSERT INTO skipped_files (file_path, kept_track_id) VALUES (?1, ?2)",
+                    params![path, kept],
+                )
+                .unwrap();
+        };
+        skip("/m/to-live.wav", Some(live));
+        skip("/m/to-dead.wav", Some(dead));
+        skip("/m/to-me.wav", Some(me));
+        skip("/m/to-null.wav", None);
+        skip("/m/to-gone.wav", Some(9999));
+
+        assert_eq!(db.library_track_for("/m/to-live.wav", me).unwrap(), Some(live));
+        for path in ["/m/to-dead.wav", "/m/to-me.wav", "/m/to-null.wav", "/m/to-gone.wav"] {
+            assert_eq!(db.library_track_for(path, me).unwrap(), None, "{path}");
+        }
     }
 }
