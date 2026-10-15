@@ -6,7 +6,6 @@
 
 use super::{Database, Track};
 use rusqlite::{params, Connection, OptionalExtension, Result};
-use std::path::Path;
 
 /// The file columns a relink takes from the file itself (spec section 2).
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +145,7 @@ impl Database {
         let Some(lowest) = rows.first().map(|(id, _)| *id) else {
             return Ok(HashMatch::New);
         };
-        if rows.iter().any(|(_, path)| Path::new(path).exists()) {
+        if rows.iter().any(|(_, path)| !crate::missing_files::is_missing(path)) {
             return Ok(HashMatch::Duplicate);
         }
         Ok(HashMatch::Moved(lowest))
@@ -194,7 +193,7 @@ impl Database {
             .conn
             .query_row("SELECT file_path FROM tracks WHERE id = ?1", [kept], |row| row.get(0))
             .optional()?;
-        Ok(kept_path.filter(|p| Path::new(p).exists()).map(|_| kept))
+        Ok(kept_path.filter(|p| !crate::missing_files::is_missing(p)).map(|_| kept))
     }
 }
 

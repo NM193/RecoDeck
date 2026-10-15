@@ -46,8 +46,11 @@ pub struct DiskView {
     pub drives: HashMap<i64, String>,
 }
 
+/// Only a definite "not found" counts. A stat that fails for another
+/// reason (no permission, a half-mounted network drive) is not a missing
+/// file: such a track must never be offered for removal or taken over.
 pub fn is_missing(path: &str) -> bool {
-    !Path::new(path).exists()
+    matches!(Path::new(path).try_exists(), Ok(false))
 }
 
 pub fn count_missing(paths: &[String]) -> usize {
@@ -89,6 +92,10 @@ pub fn probe(path: &str) -> FoundFile {
     FoundFile { path: path.to_string(), duration_ms, file_size }
 }
 
+/// Generic names like "01 Track.mp3" can match hundreds of files; Locate…
+/// covers the rest.
+const MAX_CANDIDATES: usize = 20;
+
 /// Which tracks lost their file, and the same-name files in the library
 /// folders. No database access: the commands run this without the lock.
 pub fn look_on_disk(tracks: Vec<Track>, folders: &[String]) -> DiskView {
@@ -98,10 +105,16 @@ pub fn look_on_disk(tracks: Vec<Track>, folders: &[String]) -> DiskView {
         return view;
     }
     let index = name_index(folders);
+    let mut probed: HashMap<String, FoundFile> = HashMap::new();
     for track in &missing {
         let id = track.id.unwrap_or(0);
         if let Some(paths) = index.get(&name_key(&track.file_path)) {
-            view.found.insert(id, paths.iter().map(|p| probe(p)).collect());
+            let files = paths
+                .iter()
+                .take(MAX_CANDIDATES)
+                .map(|p| probed.entry(p.clone()).or_insert_with(|| probe(p)).clone())
+                .collect();
+            view.found.insert(id, files);
         }
         if let Some(drive) = drive_missing(&track.file_path) {
             view.drives.insert(id, drive);
@@ -128,6 +141,10 @@ fn sort_key(value: &Option<String>) -> String {
 
 /// What the database says about each missing track and its files. Sorted by
 /// artist, then title.
+///
+/// Runs under the DB lock. Its only disk work is `copy_facts`'s file check per
+/// missing track and rule 5's check of a kept track's file — about one stat
+/// per row, which the spec accepts.
 pub fn describe(db: &Database, view: DiskView) -> rusqlite::Result<Vec<MissingTrack>> {
     let facts = db.copy_facts(&view.missing)?;
     let DiskView { missing, mut found, drives } = view;
@@ -299,5 +316,57 @@ mod tests {
         assert_eq!(c.duration_ms, Some(3000));
         assert!(c.file_size.unwrap() > 0);
         assert_eq!(c.library_track_id, None);
+    }
+
+    #[test]
+    fn two_missing_tracks_with_the_same_name_both_get_the_file() {
+        let dir = TempDir::new().unwrap();
+        let lib = dir.path().join("lib");
+        let file = lib.join("a/song.wav");
+        write_wav(&file, 2000, 1);
+        let db = db_with_folders(&[&lib]);
+        add(&db, "/gone/1/song.wav", "Artist", "One");
+        add(&db, "/gone/2/song.wav", "Artist", "Two");
+
+        let found = find_missing_tracks(&db).unwrap();
+
+        assert_eq!(found.len(), 2);
+        for m in &found {
+            assert_eq!(m.candidates.len(), 1);
+            assert_eq!(m.candidates[0].path, norm(&file));
+            assert_eq!(m.candidates[0].duration_ms, Some(2000));
+        }
+    }
+
+    #[test]
+    fn a_file_that_is_not_audio_gets_no_length() {
+        let dir = TempDir::new().unwrap();
+        let lib = dir.path().join("lib");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::write(lib.join("song.mp3"), b"not audio").unwrap();
+        let db = db_with_folders(&[&lib]);
+        add(&db, "/gone/song.mp3", "Artist", "Song");
+
+        let found = find_missing_tracks(&db).unwrap();
+
+        assert_eq!(found[0].candidates.len(), 1);
+        assert_eq!(found[0].candidates[0].duration_ms, None);
+        assert_eq!(found[0].candidates[0].file_size, Some(9));
+    }
+
+    #[test]
+    fn candidates_are_capped_per_track() {
+        let dir = TempDir::new().unwrap();
+        let lib = dir.path().join("lib");
+        for i in 0..25 {
+            write_wav(&lib.join(format!("d{i:02}/song.wav")), 100, 1);
+        }
+        let db = db_with_folders(&[&lib]);
+        add(&db, "/gone/song.wav", "Artist", "Song");
+
+        let found = find_missing_tracks(&db).unwrap();
+
+        assert_eq!(found[0].candidates.len(), 20);
+        assert_eq!(found[0].candidates[0].path, norm(&lib.join("d00/song.wav")));
     }
 }
