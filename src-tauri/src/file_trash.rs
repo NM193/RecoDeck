@@ -25,7 +25,9 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 /// True when `file` may go to the Trash: none of the `remaining` paths
-/// (tracks still in the library) names the same file.
+/// (tracks still in the library) names the same file. `remaining` must be
+/// read AFTER the merge transaction commits, otherwise the removed rows
+/// would block their own files.
 pub fn safe_to_trash(file: &Path, remaining: &[String]) -> bool {
     !remaining.iter().any(|p| same_file(file, Path::new(p)))
 }
@@ -85,5 +87,51 @@ mod tests {
         let doubled = format!("{}//a.mp3", dir.path().to_string_lossy());
 
         assert!(same_file(Path::new(&doubled), &a));
+    }
+
+    #[test]
+    fn a_hard_link_is_the_same_file() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.mp3");
+        let b = dir.path().join("b.mp3");
+        fs::write(&a, b"audio").unwrap();
+        fs::hard_link(&a, &b).unwrap();
+
+        assert!(same_file(&a, &b));
+        assert!(!safe_to_trash(&a, &[b.to_string_lossy().to_string()]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_to_the_file_blocks_trashing_it() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.mp3");
+        let link = dir.path().join("link.mp3");
+        fs::write(&a, b"audio").unwrap();
+        std::os::unix::fs::symlink(&a, &link).unwrap();
+
+        assert!(!safe_to_trash(&a, &[link.to_string_lossy().to_string()]));
+    }
+
+    #[test]
+    fn a_case_variant_is_the_same_file_on_a_case_insensitive_volume() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.mp3");
+        fs::write(&a, b"audio").unwrap();
+        let upper = dir.path().join("A.mp3");
+        if !upper.exists() {
+            return; // case-sensitive volume: nothing to check
+        }
+
+        assert!(!safe_to_trash(&a, &[upper.to_string_lossy().to_string()]));
+    }
+
+    #[test]
+    fn a_missing_file_is_not_the_same_file() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.mp3");
+        fs::write(&a, b"audio").unwrap();
+
+        assert!(!same_file(&a, &dir.path().join("missing.mp3")));
     }
 }

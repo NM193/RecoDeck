@@ -85,11 +85,13 @@ impl Database {
     }
 
     /// The paths of the tracks whose file has this size (every track when the
-    /// size is unknown): the files a Trash move must not touch.
+    /// size is unknown), plus tracks with an unknown size: the files a Trash
+    /// move must not touch. Read this AFTER the merge transaction commits,
+    /// otherwise the removed rows would block their own files.
     pub fn track_paths_with_size(&self, size: Option<i64>) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT file_path FROM tracks WHERE ?1 IS NULL OR file_size = ?1")?;
+            .prepare("SELECT file_path FROM tracks WHERE ?1 IS NULL OR file_size = ?1 OR file_size IS NULL")?;
         let rows = stmt.query_map([size], |row| row.get(0))?;
         rows.collect()
     }
@@ -772,7 +774,13 @@ mod tests {
             .execute("INSERT INTO tracks (file_path, file_hash, file_size) VALUES ('/m/big.mp3', 'big', 5000)", [])
             .unwrap();
 
-        assert_eq!(db.track_paths_with_size(Some(1000)).unwrap(), vec!["/m/A.mp3".to_string()]);
-        assert_eq!(db.track_paths_with_size(None).unwrap().len(), 2);
+        db.conn
+            .execute("INSERT INTO tracks (file_path, file_hash) VALUES ('/m/unknown.mp3', 'unk')", [])
+            .unwrap();
+
+        let mut same_size = db.track_paths_with_size(Some(1000)).unwrap();
+        same_size.sort();
+        assert_eq!(same_size, vec!["/m/A.mp3".to_string(), "/m/unknown.mp3".to_string()]);
+        assert_eq!(db.track_paths_with_size(None).unwrap().len(), 3);
     }
 }
