@@ -181,6 +181,27 @@ mod tests {
     }
 
     #[test]
+    fn relink_keeps_playlist_slots_and_plays() {
+        let db = db();
+        let id = insert(&db, "/old/song.mp3", "old-hash");
+        db.conn.execute("INSERT INTO playlists (name) VALUES ('P')", []).unwrap();
+        let playlist = db.conn.last_insert_rowid();
+        db.conn
+            .execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, 1)",
+                params![playlist, id],
+            )
+            .unwrap();
+        db.conn.execute("INSERT INTO play_history (track_id) VALUES (?1)", [id]).unwrap();
+
+        db.relink_track(id, &facts("/new/song.wav")).unwrap();
+
+        let count = |sql: &str| -> i64 { db.conn.query_row(sql, [id], |r| r.get(0)).unwrap() };
+        assert_eq!(count("SELECT COUNT(*) FROM playlist_tracks WHERE track_id = ?1"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM play_history WHERE track_id = ?1"), 1);
+    }
+
+    #[test]
     fn relink_takes_the_path_off_the_skip_list() {
         let db = db();
         let id = insert(&db, "/old/song.mp3", "old-hash");
@@ -387,7 +408,7 @@ impl Database {
 - [ ] **Step 5: Run the tests to make sure they pass**
 
 Run: `cd src-tauri && cargo test --lib db::missing`
-Expected: 8 passed.
+Expected: 9 passed.
 
 - [ ] **Step 6: Commit**
 
@@ -1478,9 +1499,12 @@ Add these to `mod tests` in `db/missing.rs`:
         let dir = TempDir::new().unwrap();
         let back = dir.path().join("back.wav");
         std::fs::write(&back, b"x").unwrap();
+        let back_too = dir.path().join("back-too.wav");
+        std::fs::write(&back_too, b"y").unwrap();
         let taken_by = insert(&db, "/m/taken.wav", "t");
         let wants_taken = insert(&db, "/gone/t.wav", "w");
         let file_is_back = insert(&db, &back.to_string_lossy(), "b");
+        let merge_is_back = insert(&db, &back_too.to_string_lossy(), "bt");
         let orphan = insert(&db, "/gone/o.wav", "o");
         let fine = insert(&db, "/gone/f.wav", "f");
 
@@ -1490,24 +1514,26 @@ Add these to `mod tests` in `db/missing.rs`:
                     RelinkFix { track_id: wants_taken, facts: facts("/m/taken.wav") },
                     RelinkFix { track_id: fine, facts: facts("/m/f.wav") },
                 ],
-                merges: vec![(9999, orphan)],
+                merges: vec![(9999, orphan), (taken_by, merge_is_back)],
                 removes: vec![file_is_back, 8888],
             })
             .unwrap();
 
-        assert_eq!(out.relinked, 1);
+        assert_eq!((out.relinked, out.merged, out.removed), (1, 0, 0));
         let reasons: Vec<(i64, &str)> = out.skipped.iter().map(|s| (s.track_id, s.reason.as_str())).collect();
         assert_eq!(
             reasons,
             vec![
                 (wants_taken, "file is now another track"),
                 (orphan, "kept track no longer exists"),
+                (merge_is_back, "file is back"),
                 (file_is_back, "file is back"),
                 (8888, "track no longer exists"),
             ]
         );
         assert_eq!(db.get_track(fine).unwrap().file_path, "/m/f.wav");
         assert!(db.get_track(file_is_back).is_ok());
+        assert!(db.get_track(merge_is_back).is_ok());
         assert!(db.get_track(taken_by).is_ok());
     }
 
