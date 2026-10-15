@@ -186,8 +186,9 @@ transaction, as in `scan_directory`. That keeps the app responsive while about
 - A track id that no longer exists is skipped, not an error. It goes into
   `skipped` with the reason `track no longer exists`.
 - A merge whose K no longer exists is skipped the same way, with
-  `kept track no longer exists`. The split merge body reports these. Today
-  `merge_tracks` drops them silently, and its own result does not change.
+  `kept track no longer exists`. The apply checks K inside the transaction,
+  before it calls the merge body. Today `merge_tracks` drops these silently,
+  and that does not change.
 - **Returns** `{ relinked, merged, removed, skipped: Vec<{ track_id, reason }> }`.
 
 New code goes in `db/missing.rs` (the queries, relink, full delete, apply).
