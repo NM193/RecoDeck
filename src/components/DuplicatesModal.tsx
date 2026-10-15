@@ -108,14 +108,19 @@ export function DuplicatesModal({
   onTracksChanged,
   onNotification,
 }: DuplicatesModalProps) {
-  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
-  useOverlay(true, onClose)
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all')
   const [choice, setChoice] = useState<MergeChoice>(() => initialChoice([]))
   const [moveToTrash, setMoveToTrash] = useState(false)
   const [loading, setLoading] = useState(true)
   const [merging, setMerging] = useState(false)
+
+  // Closing mid-merge would hide the result, so every way out waits for it.
+  const closeUnlessMerging = () => {
+    if (!merging) onClose()
+  }
+  // Open, it tells the app (useOverlay): Esc closes it, and the set video steps aside.
+  useOverlay(true, closeUnlessMerging)
 
   const loadGroups = useCallback(async () => {
     setLoading(true)
@@ -148,6 +153,7 @@ export function DuplicatesModal({
   const visibleAllMerged = allMerged(choice, filteredGroups)
 
   async function mergeSelected() {
+    if (merging) return
     const merges = buildMerges(choice, groups)
     if (merges.length === 0) return
     setMerging(true)
@@ -175,7 +181,7 @@ export function DuplicatesModal({
       : `Merge ${toMerge}`
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={closeUnlessMerging}>
       <div
         className="modal-content dup-modal"
         onClick={(e) => e.stopPropagation()}
@@ -188,7 +194,7 @@ export function DuplicatesModal({
           <button
             type="button"
             className="dup-modal__close"
-            onClick={onClose}
+            onClick={closeUnlessMerging}
             aria-label="Close"
           >
             <Icon name="X" size={18} />
