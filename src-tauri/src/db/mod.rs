@@ -5,6 +5,7 @@ use std::path::Path;
 
 pub mod dj;
 pub mod home;
+pub mod merge;
 pub mod sections;
 pub mod spotify;
 pub mod youtube_music;
