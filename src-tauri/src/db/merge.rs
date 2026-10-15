@@ -128,6 +128,67 @@ fn merge_cues(conn: &Connection, k: i64, r: i64) -> Result<()> {
     Ok(())
 }
 
+/// Ranks a genre source the way the app does: user > tag > ai.
+fn source_rank(source: Option<&str>) -> i32 {
+    match source {
+        Some("user") => 3,
+        Some("tag") => 2,
+        Some("ai") => 1,
+        _ => 0,
+    }
+}
+
+fn has_text(value: &Option<String>) -> bool {
+    value.as_deref().is_some_and(|s| !s.trim().is_empty())
+}
+
+/// K's comment; R's when K has none; both when they differ.
+fn merged_comment(k: Option<String>, r: Option<String>) -> Option<String> {
+    let k = k.filter(|s| !s.trim().is_empty());
+    let r = r.filter(|s| !s.trim().is_empty());
+    match (k, r) {
+        (Some(k), Some(r)) if k.trim() != r.trim() => Some(format!("{k} / {r}")),
+        (Some(k), _) => Some(k),
+        (None, r) => r,
+    }
+}
+
+/// The earlier of two `datetime('now')` strings (they sort as text).
+fn earliest(a: Option<String>, b: Option<String>) -> Option<String> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(if b < a { b } else { a }),
+        (a, b) => a.or(b),
+    }
+}
+
+type TrackColumns = (Option<i32>, Option<String>, Option<String>, Option<String>, Option<String>);
+
+fn track_columns(conn: &Connection, id: i64) -> Result<TrackColumns> {
+    conn.query_row(
+        "SELECT rating, comment, genre, genre_source, date_added FROM tracks WHERE id = ?1",
+        [id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+    )
+}
+
+/// Rating: the higher. Comment: see `merged_comment`. Genre: R's when K has
+/// none or R's source ranks higher. Date added: the earlier.
+fn merge_track_columns(conn: &Connection, k: i64, r: i64) -> Result<()> {
+    let (k_rating, k_comment, k_genre, k_source, k_added) = track_columns(conn, k)?;
+    let (r_rating, r_comment, r_genre, r_source, r_added) = track_columns(conn, r)?;
+    let rating = k_rating.unwrap_or(0).max(r_rating.unwrap_or(0));
+    let comment = merged_comment(k_comment, r_comment);
+    let r_wins_genre = has_text(&r_genre)
+        && (!has_text(&k_genre) || source_rank(r_source.as_deref()) > source_rank(k_source.as_deref()));
+    let (genre, source) = if r_wins_genre { (r_genre, r_source) } else { (k_genre, k_source) };
+    let added = earliest(k_added, r_added);
+    conn.execute(
+        "UPDATE tracks SET rating = ?1, comment = ?2, genre = ?3, genre_source = ?4, date_added = ?5 WHERE id = ?6",
+        params![rating, comment, genre, source, added, k],
+    )?;
+    Ok(())
+}
+
 /// Merges R into K and deletes R's row. Answers the playlist slots moved.
 fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     let slots = repoint_or_drop(conn, "playlist_tracks", "track_id", k, r)?;
@@ -144,6 +205,7 @@ fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
         repoint_or_drop(conn, table, "track_id", k, r)?;
     }
     merge_cues(conn, k, r)?;
+    merge_track_columns(conn, k, r)?;
     // Before R's row goes: play_history cascades on delete.
     conn.execute("UPDATE play_history SET track_id = ?1 WHERE track_id = ?2", params![k, r])?;
     conn.execute("DELETE FROM tracks WHERE id = ?1", [r])?;
@@ -479,5 +541,77 @@ mod tests {
         };
         assert_eq!(cues(k), vec![1000]);
         assert_eq!(cues(k2), vec![3000]);
+    }
+
+    fn set_columns(db: &Database, id: i64, rating: i32, comment: Option<&str>, genre: Option<&str>, source: Option<&str>, added: &str) {
+        db.conn
+            .execute(
+                "UPDATE tracks SET rating = ?2, comment = ?3, genre = ?4, genre_source = ?5, date_added = ?6 WHERE id = ?1",
+                params![id, rating, comment, genre, source, added],
+            )
+            .unwrap();
+    }
+
+    fn columns(db: &Database, id: i64) -> (i32, Option<String>, Option<String>, Option<String>, String) {
+        db.conn
+            .query_row(
+                "SELECT rating, comment, genre, genre_source, date_added FROM tracks WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn rating_comment_genre_and_date_added_follow_their_rules() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        set_columns(&db, k, 2, Some("warm"), Some("House"), Some("tag"), "2025-01-01 00:00:00");
+        set_columns(&db, r, 4, Some("peak"), Some("Deep House"), Some("user"), "2024-06-01 00:00:00");
+
+        merge(&db, k, &[r]);
+
+        assert_eq!(
+            columns(&db, k),
+            (
+                4,
+                Some("warm / peak".into()),
+                Some("Deep House".into()),
+                Some("user".into()),
+                "2024-06-01 00:00:00".into()
+            )
+        );
+    }
+
+    #[test]
+    fn a_tag_genre_never_beats_a_user_genre_and_an_empty_comment_takes_the_other() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        set_columns(&db, k, 0, None, Some("House"), Some("user"), "2024-01-01 00:00:00");
+        set_columns(&db, r, 0, Some("x"), Some("Techno"), Some("tag"), "2025-01-01 00:00:00");
+
+        merge(&db, k, &[r]);
+
+        let (_, comment, genre, source, added) = columns(&db, k);
+        assert_eq!(comment.as_deref(), Some("x"));
+        assert_eq!((genre.as_deref(), source.as_deref()), (Some("House"), Some("user")));
+        assert_eq!(added, "2024-01-01 00:00:00");
+    }
+
+    #[test]
+    fn the_same_comment_is_not_doubled_and_a_kept_copy_without_genre_takes_the_removed_one() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        set_columns(&db, k, 0, Some("warm"), None, None, "2024-01-01 00:00:00");
+        set_columns(&db, r, 0, Some("warm"), Some("Techno"), Some("ai"), "2024-01-01 00:00:00");
+
+        merge(&db, k, &[r]);
+
+        let (_, comment, genre, source, _) = columns(&db, k);
+        assert_eq!(comment.as_deref(), Some("warm"));
+        assert_eq!((genre.as_deref(), source.as_deref()), (Some("Techno"), Some("ai")));
     }
 }
