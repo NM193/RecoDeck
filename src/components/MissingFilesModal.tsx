@@ -148,15 +148,18 @@ export function MissingFilesModal({
     setBusy(`Adding ${name}…`)
     let added = true
     try {
-      await addFolderAndScan(folder)
-    } catch (err) {
-      added = false
-      notifyRef.current(getErrorMessage(err), 'error')
+      try {
+        await addFolderAndScan(folder)
+      } catch (err) {
+        added = false
+        notifyRef.current(getErrorMessage(err), 'error')
+      }
+      // Reload either way: when only the scan failed, the folder is in the
+      // library. Busy holds until the list is fresh.
+      await load()
     } finally {
       setBusy(null)
     }
-    // Reload either way: when only the scan failed, the folder is in the library.
-    await load()
     return added
   }
 
@@ -227,7 +230,7 @@ export function MissingFilesModal({
   const rowProps = (track: MissingTrack) => ({
     track,
     view: views.get(track.id) as RowView,
-    disabled: busy !== null,
+    disabled: busy !== null || loading,
     onState: (state: FixState) =>
       setChoice((c) => setState(c, track.id, state)),
     onChoose: (path: string) => setChoice((c) => chooseFile(c, track.id, path)),
@@ -372,7 +375,7 @@ export function MissingFilesModal({
             type="button"
             className={`btn ${fixes.removes.length > 0 ? 'btn--danger' : 'btn--primary'}`}
             onClick={() => void apply()}
-            disabled={busy !== null || nothing}
+            disabled={busy !== null || loading || loadError !== null || nothing}
           >
             {busy === 'Applying…' ? 'Applying…' : actionLabel(fixes)}
           </button>
