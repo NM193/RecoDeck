@@ -344,7 +344,11 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
                     Ok(HashMatch::Moved(id)) => {
                         match db.relink_track(id, &FileFacts::from_track(&track)) {
                             Ok(RelinkOutcome::Relinked) | Ok(RelinkOutcome::AlreadyThere) => relinked += 1,
-                            _ => skipped += 1,
+                            Ok(RelinkOutcome::Taken) | Ok(RelinkOutcome::TrackGone) => skipped += 1,
+                            Err(e) => errors.push(crate::scanner::ScanError {
+                                file_path: file_path.clone(),
+                                error: format!("Failed to relink: {}", e),
+                            }),
                         }
                         continue;
                     }
