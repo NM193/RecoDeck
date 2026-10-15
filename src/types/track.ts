@@ -149,8 +149,39 @@ export type DuplicateReason =
   | 'identical_filename_size'
   | 'same_title_artist'
 
+export interface PlaylistRef {
+  id: number
+  name: string
+}
+
+/** One copy in a duplicate group: the track plus what the modal shows about it. */
+export interface DuplicateTrack extends Track {
+  playlists: PlaylistRef[]
+  /** Has BPM or key (a waveform-only analysis does not count). */
+  analyzed: boolean
+  /** Rows in the play history. */
+  plays: number
+}
+
 export interface DuplicateGroup {
   detection_reason: DuplicateReason
-  /** Sorted by id ASC — first track is the earliest import (recommended keep). */
-  tracks: Track[]
+  /** The copy the backend suggests keeping, and why. */
+  recommended_keep_id: number
+  recommend_reason: string
+  /** Sorted by id ASC. */
+  tracks: DuplicateTrack[]
+}
+
+/** One group to merge: `keep_id` stays, `remove_ids` merge into it. */
+export interface MergeRequest {
+  keep_id: number
+  remove_ids: number[]
+}
+
+export interface MergeSummary {
+  merged: number
+  playlist_slots_moved: number
+  trashed: number
+  /** Paths that could not go to the Trash. */
+  trash_failed: string[]
 }

@@ -30,6 +30,8 @@ import type {
   GenreCount,
   GenreDefinition,
   DuplicateGroup,
+  MergeRequest,
+  MergeSummary,
   TrackGenre,
   LibraryFolder,
   MoveReport,
@@ -291,6 +293,13 @@ export const tauriApi = {
 
   async deleteTracksBulk(trackIds: number[]): Promise<number> {
     return await invoke('delete_tracks_bulk', { trackIds })
+  },
+
+  async mergeDuplicateTracks(
+    merges: MergeRequest[],
+    moveToTrash: boolean,
+  ): Promise<MergeSummary> {
+    return await invoke('merge_duplicate_tracks', { merges, moveToTrash })
   },
 
   // Debug: get all tracks with their hashes (for troubleshooting)
