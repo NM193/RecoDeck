@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
 pub mod dj;
+pub mod duplicates;
 pub mod home;
 pub mod merge;
 pub mod sections;
