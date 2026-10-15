@@ -5,6 +5,7 @@ pub mod commands;
 pub mod db;
 pub mod error;
 pub mod external;
+pub mod file_trash;
 pub mod formats;
 pub mod scanner;
 pub mod server;
@@ -510,6 +511,7 @@ pub fn run() {
             commands::library::cleanup_duplicate_tracks,
             commands::library::get_duplicate_groups,
             commands::library::delete_tracks_bulk,
+            commands::library::merge_duplicate_tracks,
             commands::library::normalize_file_paths,
             commands::library::get_debug_tracks,
             commands::library::get_track_artwork,

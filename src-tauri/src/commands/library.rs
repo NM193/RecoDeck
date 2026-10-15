@@ -1,6 +1,9 @@
 // Tauri commands for library management
 
 use crate::db::{Database, Track};
+use crate::db::duplicates::recommend;
+use crate::db::merge::{validate_requests, MergeRequest};
+use crate::file_trash;
 use crate::error::AppError;
 use crate::scanner::{ScanResult, Scanner};
 use serde::{Deserialize, Serialize};
@@ -582,16 +585,39 @@ pub fn cleanup_duplicate_tracks(state: State<AppState>) -> Result<usize, AppErro
         .map_err(|e| AppError::Database(format!("Failed to cleanup duplicates: {}", e)))
 }
 
-/// A group of duplicate tracks, returned by the "review" flow (get_duplicate_groups).
-/// `tracks` is ordered by id ASC — the first element is the earliest import and
-/// the recommended "keep". `detection_reason` explains why the group was flagged.
+/// A playlist a duplicate copy is in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistRefDTO {
+    pub id: i64,
+    pub name: String,
+}
+
+/// One copy in a duplicate group: the track, plus what the modal shows about it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateTrackDTO {
+    #[serde(flatten)]
+    pub track: TrackDTO,
+    pub playlists: Vec<PlaylistRefDTO>,
+    /// Has BPM or key (a waveform-only analysis does not count).
+    pub analyzed: bool,
+    /// Rows in the play history.
+    pub plays: i64,
+    /// The file is not on disk.
+    pub file_missing: bool,
+}
+
+/// A group of duplicate tracks for the merge flow. `tracks` is ordered by id
+/// ASC. `recommended_keep_id` is the copy the backend suggests keeping, and
+/// `recommend_reason` says why (Duplicates Merge spec, Recommended keep).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateGroupDTO {
     pub detection_reason: String,
-    pub tracks: Vec<TrackDTO>,
+    pub recommended_keep_id: i64,
+    pub recommend_reason: String,
+    pub tracks: Vec<DuplicateTrackDTO>,
 }
 
-/// Return every duplicate group the app can detect, without deleting anything.
+/// Return every duplicate group the app can detect, without changing anything.
 #[tauri::command]
 pub fn get_duplicate_groups(
     state: State<AppState>,
@@ -608,13 +634,116 @@ pub fn get_duplicate_groups(
         .get_duplicate_groups()
         .map_err(|e| AppError::Database(format!("Failed to get duplicate groups: {}", e)))?;
 
-    Ok(groups
-        .into_iter()
-        .map(|(reason, tracks)| DuplicateGroupDTO {
+    let mut out = Vec::with_capacity(groups.len());
+    for (reason, tracks) in groups {
+        let facts = db
+            .copy_facts(&tracks)
+            .map_err(|e| AppError::Database(format!("Failed to read duplicate details: {}", e)))?;
+        let (recommended_keep_id, recommend_reason) = recommend(&facts).unwrap_or_default();
+        let tracks = tracks
+            .into_iter()
+            .zip(facts)
+            .map(|(track, f)| DuplicateTrackDTO {
+                track: TrackDTO::from(track),
+                playlists: f
+                    .playlists
+                    .into_iter()
+                    .map(|(id, name)| PlaylistRefDTO { id, name })
+                    .collect(),
+                analyzed: f.analyzed,
+                plays: f.plays,
+                file_missing: f.file_missing,
+            })
+            .collect();
+        out.push(DuplicateGroupDTO {
             detection_reason: reason,
-            tracks: tracks.into_iter().map(TrackDTO::from).collect(),
-        })
-        .collect())
+            recommended_keep_id,
+            recommend_reason,
+            tracks,
+        });
+    }
+    Ok(out)
+}
+
+/// One group to merge, as the modal sends it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MergeRequestDTO {
+    pub keep_id: i64,
+    pub remove_ids: Vec<i64>,
+}
+
+/// What a merge did, for the modal's toast.
+#[derive(Debug, Clone, Serialize)]
+pub struct MergeSummaryDTO {
+    pub merged: usize,
+    pub playlist_slots_moved: usize,
+    pub trashed: usize,
+    /// Paths that could not go to the Trash (missing, in use, refused).
+    pub trash_failed: Vec<String>,
+}
+
+/// Merge duplicate copies into the copy each group keeps (Duplicates Merge
+/// spec). With `move_to_trash`, each merged copy's file then goes to the
+/// Trash, unless a track that stays uses the same file.
+#[tauri::command]
+pub fn merge_duplicate_tracks(
+    state: State<AppState>,
+    merges: Vec<MergeRequestDTO>,
+    move_to_trash: bool,
+) -> Result<MergeSummaryDTO, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let requests: Vec<MergeRequest> = merges
+        .into_iter()
+        .map(|m| MergeRequest { keep_id: m.keep_id, remove_ids: m.remove_ids })
+        .collect();
+    validate_requests(&requests).map_err(AppError::Internal)?;
+
+    let outcome = db
+        .merge_tracks(&requests)
+        .map_err(|e| AppError::Database(format!("Failed to merge duplicates: {}", e)))?;
+
+    let mut trashed = 0;
+    let mut trash_failed = Vec::new();
+    if move_to_trash {
+        // The merge is committed: a failure from here on is a Trash failure,
+        // never an error for the whole request.
+        for file in &outcome.removed_files {
+            let Ok(mut remaining) = db.track_paths_with_size(file.file_size, &file.path) else {
+                trash_failed.push(file.path.clone());
+                continue;
+            };
+            // The kept copy's file is always compared, whatever the sizes say.
+            remaining.push(file.kept_path.clone());
+            let path = Path::new(&file.path);
+            let moved = file_trash::safe_to_trash(path, &remaining)
+                && match file_trash::move_to_trash(path) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        eprintln!("[merge_duplicate_tracks] Trash failed: {}", e);
+                        false
+                    }
+                };
+            if moved {
+                trashed += 1;
+            } else {
+                trash_failed.push(file.path.clone());
+            }
+        }
+    }
+
+    Ok(MergeSummaryDTO {
+        merged: outcome.merged,
+        playlist_slots_moved: outcome.playlist_slots_moved,
+        trashed,
+        trash_failed,
+    })
 }
 
 /// Delete a list of tracks in bulk. Cleans up `track_analysis` and

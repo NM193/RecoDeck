@@ -135,67 +135,6 @@ impl Scanner {
                 .map(|s| s.to_string())
         });
 
-        // Normalize file path: MINIMAL normalization to preserve special characters.
-        // This function ONLY:
-        // 1. Strips file:// prefix if present
-        // 2. On Windows: converts backslash path separators to forward slashes
-        // 3. Collapses repeated slashes (//) 
-        // 4. Removes trailing slash
-        // 5. Ensures absolute path on Unix
-        // 
-        // IMPORTANT: All other characters (spaces, commas, brackets, backslashes on macOS/Linux, etc.)
-        // are preserved exactly as-is. DJ music files often have special characters in names.
-        fn normalize_scanned_path(input: &str) -> String {
-            let mut s = input.trim().to_string();
-            if s.is_empty() {
-                return s;
-            }
-            
-            // Strip file:// prefix if present
-            if let Some(rest) = s.strip_prefix("file://") {
-                s = rest.to_string();
-            }
-            
-            // On Windows: convert backslashes (path separators) to forward slashes
-            // On macOS/Linux: preserve backslashes (they're valid filename characters)
-            #[cfg(target_os = "windows")]
-            {
-                s = s.replace('\\', "/");
-            }
-            
-            // Collapse repeated slashes (//) while preserving ALL other characters
-            let mut out = String::with_capacity(s.len());
-            let mut prev_slash = false;
-            for ch in s.chars() {
-                if ch == '/' {
-                    if prev_slash {
-                        continue; // Skip duplicate slash
-                    }
-                    prev_slash = true;
-                    out.push(ch);
-                } else {
-                    prev_slash = false;
-                    out.push(ch); // Keep everything else: spaces, commas, brackets, etc.
-                }
-            }
-            s = out;
-            
-            // Remove trailing slash (except for root /)
-            while s.ends_with('/') && s.len() > 1 {
-                s.pop();
-            }
-            
-            // Ensure absolute path on Unix systems
-            #[cfg(not(target_os = "windows"))]
-            {
-                if !s.starts_with('/') {
-                    s = format!("/{}", s);
-                }
-            }
-            
-            s
-        }
-
         let raw_path = path.to_string_lossy().to_string();
         let normalized_path = normalize_scanned_path(&raw_path);
 
@@ -299,6 +238,67 @@ impl Scanner {
             errors,
         }
     }
+}
+
+// Normalize file path: MINIMAL normalization to preserve special characters.
+// This function ONLY:
+// 1. Strips file:// prefix if present
+// 2. On Windows: converts backslash path separators to forward slashes
+// 3. Collapses repeated slashes (//) 
+// 4. Removes trailing slash
+// 5. Ensures absolute path on Unix
+// 
+// IMPORTANT: All other characters (spaces, commas, brackets, backslashes on macOS/Linux, etc.)
+// are preserved exactly as-is. DJ music files often have special characters in names.
+pub(crate) fn normalize_scanned_path(input: &str) -> String {
+    let mut s = input.trim().to_string();
+    if s.is_empty() {
+        return s;
+    }
+
+    // Strip file:// prefix if present
+    if let Some(rest) = s.strip_prefix("file://") {
+        s = rest.to_string();
+    }
+
+    // On Windows: convert backslashes (path separators) to forward slashes
+    // On macOS/Linux: preserve backslashes (they're valid filename characters)
+    #[cfg(target_os = "windows")]
+    {
+        s = s.replace('\\', "/");
+    }
+
+    // Collapse repeated slashes (//) while preserving ALL other characters
+    let mut out = String::with_capacity(s.len());
+    let mut prev_slash = false;
+    for ch in s.chars() {
+        if ch == '/' {
+            if prev_slash {
+                continue; // Skip duplicate slash
+            }
+            prev_slash = true;
+            out.push(ch);
+        } else {
+            prev_slash = false;
+            out.push(ch); // Keep everything else: spaces, commas, brackets, etc.
+        }
+    }
+    s = out;
+
+    // Remove trailing slash (except for root /)
+    while s.ends_with('/') && s.len() > 1 {
+        s.pop();
+    }
+
+    // Ensure absolute path on Unix systems
+    #[cfg(not(target_os = "windows"))]
+    {
+        if !s.starts_with('/') {
+            s = format!("/{}", s);
+        }
+    }
+
+    s
 }
 
 #[cfg(test)]
@@ -436,5 +436,12 @@ mod tests {
         assert_eq!(result.imported, 0);
         assert_eq!(result.skipped, 0);
         assert_eq!(result.errors.len(), 0);
+    }
+
+    #[test]
+    fn normalize_scanned_path_collapses_slashes_and_strips_file_scheme() {
+        assert_eq!(normalize_scanned_path("/m//a///b.mp3"), "/m/a/b.mp3");
+        assert_eq!(normalize_scanned_path("file:///m/a.mp3"), "/m/a.mp3");
+        assert_eq!(normalize_scanned_path("/m/dir/"), "/m/dir");
     }
 }

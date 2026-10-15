@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-15
+
+### Added
+- **Merge duplicates** — Review Duplicate Tracks (Settings › Database) now merges copies instead of deleting them: in each group you keep one copy, and the others hand it their playlist places, plays, tags, ratings, cue points and analysis, so nothing drops out of a playlist. The app recommends which copy to keep and says why (a copy whose file is on disk first, then lossless, bitrate, analyzed, playlists, plays)
+- Merged copies' files are skipped on future scans, so they don't come back; tick "Also move removed files to Trash" to clear them off the disk too (a file another track still uses is never moved)
+
+### Changed
+- The Duplicate Tracks window is wider and easier to read: each copy is one row showing only what differs from the others, with one Keep · Merge · Leave choice, and only the groups on the selected tab are merged
+
 ## [0.8.0] - 2026-10-13
 
 ### Added
