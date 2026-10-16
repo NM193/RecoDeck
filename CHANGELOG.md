@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-16
+
+### Added
+- **Missing files** — Review Missing Files (Settings › Database) lists the tracks whose file was moved, renamed or deleted, with their count on the button. For each one: Relink to a same-name file found in your folders (playlists, plays, analysis and rating stay), Merge into the track that already has that file, Leave, or Remove. Locate… picks a file yourself, and Search another folder… looks outside your library and offers to add that folder
+- A rescan follows moved files on its own: a file whose content matches a track that lost its file takes that track's place, with its playlists and plays ("Followed N moved files")
+- **Share links for one playlist** — Share playlist now makes a link that opens that playlist only, for 24 hours, 7 days or 30 days, with Copy link. Settings › Mobile Companion lists every shared playlist, and Stop sharing ends a link at once; on the phone a stopped or expired link says so
+
+### Changed
+- The choices in Review Duplicate Tracks and Review Missing Files explain themselves in tooltips
+- A file with damaged tags is imported (its title comes from the file name) instead of failing on every scan
+- A copy that matches only by title and artist joins its song's duplicate group right away
+- Playlist counts, Home and the play queue follow merges, removed tracks and relinked files
+
+### Fixed
+- **Security:** a shared playlist link carried the key to your whole library. Links shared before 0.10.0 still do until you press Regenerate Token in Settings › Mobile Companion
+- **Security:** the shared playlist page could run code from a crafted link
+- Removing a library folder removes its tracks completely; it used to stop half way
+- Messages after Merge or Apply were hidden behind the window they came from
+- Search another folder… never offers to add a folder that holds your library (such as your home folder)
+
 ## [0.9.0] - 2026-10-15
 
 ### Added
