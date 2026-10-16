@@ -835,6 +835,10 @@ function AppContent() {
       console.warn('Failed to restart file watcher')
     }
     loadTracks()
+    // A removed folder, a merge or a Missing Files apply also changes the
+    // playlists' counts and what Home shows.
+    void loadPlaylists()
+    setDataVersion((version) => version + 1)
   }
 
   function handleThemeChanged(theme: string) {
