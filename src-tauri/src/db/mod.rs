@@ -1278,7 +1278,9 @@ impl Database {
     /// Return all duplicate groups (2+ tracks each) without deleting anything.
     /// Three passes — by file_hash, then by (lowercase filename, file_size),
     /// finally by (lowercase title, lowercase artist). A track can only appear
-    /// in one group total (first-seen pass wins). Each group's tracks are
+    /// in one group total (first-seen pass wins); a track left over for the
+    /// third pass joins the group of an earlier-grouped track with its title
+    /// and artist. Each group's tracks are
     /// sorted by id ASC, so `tracks[0]` is the earliest import (recommended keep).
     pub fn get_duplicate_groups(&self) -> Result<Vec<(String, Vec<Track>)>> {
         let mut groups: Vec<(String, Vec<Track>)> = Vec::new();
@@ -1393,16 +1395,24 @@ impl Database {
             }
         }
 
-        // Pass 3: remaining tracks grouped by (lowercase trimmed title, artist).
+        // Pass 3: tracks grouped by (lowercase trimmed title, artist).
         // These are "probable" duplicates — different bytes but the same song.
+        // A copy that matches a track already grouped joins that group, so
+        // every copy of a song shows at once.
         {
+            let mut group_of: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
+            for (index, (_, tracks)) in groups.iter().enumerate() {
+                for id in tracks.iter().filter_map(|t| t.id) {
+                    group_of.insert(id, index);
+                }
+            }
             let mut by_title_artist: std::collections::HashMap<
                 (String, String),
                 Vec<Track>,
             > = std::collections::HashMap::new();
 
             for track in &all_tracks {
-                if track.id.map(|id| seen_ids.contains(&id)).unwrap_or(true) {
+                if track.id.is_none() {
                     continue;
                 }
                 let title = match &track.title {
@@ -1425,10 +1435,19 @@ impl Database {
                     .push(track.clone());
             }
 
-            for (_, mut tracks) in by_title_artist {
-                if tracks.len() > 1 {
-                    tracks.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
-                    groups.push(("same_title_artist".to_string(), tracks));
+            for (_, tracks) in by_title_artist {
+                let grouped = tracks.iter().find_map(|t| t.id.and_then(|id| group_of.get(&id)).copied());
+                let mut unseen: Vec<Track> = tracks
+                    .into_iter()
+                    .filter(|t| t.id.map(|id| !seen_ids.contains(&id)).unwrap_or(false))
+                    .collect();
+                if let Some(index) = grouped {
+                    let members = &mut groups[index].1;
+                    members.append(&mut unseen);
+                    members.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                } else if unseen.len() > 1 {
+                    unseen.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    groups.push(("same_title_artist".to_string(), unseen));
                 }
             }
         }
@@ -3210,6 +3229,33 @@ mod tests {
     fn test_database_creation() {
         let db = Database::new_in_memory().expect("Failed to create in-memory database");
         db.run_migrations().expect("Failed to run migrations");
+    }
+
+    #[test]
+    fn a_copy_that_matches_only_by_title_and_artist_joins_the_group_of_its_song() {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let add = |path: &str, hash: &str, size: i64| {
+            db.create_track(&Track {
+                file_path: path.to_string(),
+                file_hash: hash.to_string(),
+                file_size: Some(size),
+                title: Some("Dup Song".to_string()),
+                artist: Some("Artist".to_string()),
+                ..create_test_track()
+            })
+            .unwrap()
+        };
+        let one = add("/m/One/Dup Song.mp3", "h1", 100);
+        let two = add("/m/Two/Dup Song.mp3", "h2", 100);
+        let three = add("/m/Three/Dup Song (Copy).mp3", "h3", 200);
+
+        let groups = db.get_duplicate_groups().unwrap();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "identical_filename_size");
+        let ids: Vec<i64> = groups[0].1.iter().filter_map(|t| t.id).collect();
+        assert_eq!(ids, vec![one, two, three]);
     }
 
     #[test]
