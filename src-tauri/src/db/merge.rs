@@ -281,6 +281,8 @@ fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     merge_track_columns(conn, k, r)?;
     // Before R's row goes: play_history cascades on delete.
     conn.execute("UPDATE play_history SET track_id = ?1 WHERE track_id = ?2", params![k, r])?;
+    // Files merged into R earlier now stand for K.
+    conn.execute("UPDATE skipped_files SET kept_track_id = ?1 WHERE kept_track_id = ?2", params![k, r])?;
     conn.execute("DELETE FROM tracks WHERE id = ?1", [r])?;
     Ok(slots)
 }
@@ -410,6 +412,27 @@ mod tests {
                 kept_path: "/m/K.mp3".into(),
             }]
         );
+    }
+
+    #[test]
+    fn files_skipped_for_a_copy_follow_it_when_it_merges_away_later() {
+        let db = db();
+        let a = track(&db, "A");
+        let b = track(&db, "B");
+        let c = track(&db, "C");
+        merge(&db, b, &[a]);
+
+        merge(&db, c, &[b]);
+
+        let kept: Vec<(String, i64)> = db
+            .conn
+            .prepare("SELECT file_path, kept_track_id FROM skipped_files ORDER BY file_path")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|row| row.unwrap())
+            .collect();
+        assert_eq!(kept, vec![("/m/A.mp3".to_string(), c), ("/m/B.mp3".to_string(), c)]);
     }
 
     #[test]
