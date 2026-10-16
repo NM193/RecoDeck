@@ -250,7 +250,6 @@ function AppContent() {
     playlistId: number
     playlistName: string
     companionUrl: string
-    companionToken: string
   } | null>(null)
 
   // Export playlist modal
@@ -1217,11 +1216,12 @@ function AppContent() {
     }
   }
 
-  // Share playlist — open modal with QR code if Companion is running
+  // Share playlist — open modal with QR code if Companion is running. The
+  // modal gets only the URL: the link carries its own share token.
   async function handleSharePlaylist(playlistId: number, playlistName: string) {
     try {
       const status = await tauriApi.getCompanionStatus()
-      if (!status.running || !status.url || !status.token) {
+      if (!status.running || !status.url) {
         toast('Enable Companion in Settings first', { kind: 'warning' })
         return
       }
@@ -1230,7 +1230,6 @@ function AppContent() {
         playlistId,
         playlistName,
         companionUrl: status.url,
-        companionToken: status.token,
       })
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to get Companion status', {
@@ -2295,7 +2294,6 @@ function AppContent() {
           playlistId={sharePlaylistModal.playlistId}
           playlistName={sharePlaylistModal.playlistName}
           companionUrl={sharePlaylistModal.companionUrl}
-          companionToken={sharePlaylistModal.companionToken}
           onClose={() => setSharePlaylistModal(null)}
         />
       )}

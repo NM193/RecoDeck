@@ -3,6 +3,7 @@ import { useSettingsContext } from './SettingsContext'
 import { ToggleSwitch } from './ToggleSwitch'
 import { Button } from '../Button'
 import { Skeleton } from '../Skeleton'
+import { SharedPlaylists } from './SharedPlaylists'
 
 export function CompanionSection() {
   const {
@@ -118,12 +119,20 @@ export function CompanionSection() {
             </button>
           </div>
 
+          <p className="companion-token-note">
+            Playlist links shared before version 0.10.0 carry this token.
+            Regenerate it once to close them; your phone pairs again with the new QR.
+          </p>
+
           <p className="settings-hint" style={{ marginTop: '1rem', fontSize: '0.7rem', opacity: 0.6 }}>
             Your token and port are saved — your phone stays paired across restarts.
             Regenerating the token will disconnect all connected devices.
           </p>
         </div>
       )}
+
+      {/* Playlist share links (shown when running: Copy link needs the URL) */}
+      {companionRunning && companionUrl && <SharedPlaylists companionUrl={companionUrl} />}
 
       {/* Auto-start toggle */}
       <div className="sv-setting-row" style={{ marginTop: '1.5rem' }}>

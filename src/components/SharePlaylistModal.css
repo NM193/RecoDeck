@@ -1,7 +1,11 @@
+/* Share playlist (spec 2026-10-16): a link that opens one playlist, its QR,
+   how long it works, and where it works. */
+
 .share-playlist-backdrop {
   position: fixed;
   inset: 0;
   background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -9,30 +13,45 @@
 }
 
 .share-playlist-modal {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 20px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  min-width: 320px;
-  max-width: 400px;
+  border-radius: var(--radius-xl);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .share-playlist-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.share-playlist-heading {
+  min-width: 0;
 }
 
 .share-playlist-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text-primary);
 }
 
+.share-playlist-name {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .share-playlist-close {
+  flex-shrink: 0;
   padding: 4px;
   background: none;
   border: none;
@@ -46,22 +65,107 @@
   background: var(--bg-tertiary);
 }
 
+/* The QR on white, so any phone camera reads it, with the hint beside it. */
+.share-playlist-qr-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
 .share-playlist-qr {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1rem;
-  margin-bottom: 1rem;
+  flex-shrink: 0;
+  padding: 10px;
   background: white;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
-.share-playlist-qr-hint {
+.share-playlist-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+.share-playlist-label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.share-playlist-link {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.share-playlist-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  outline: none;
+}
+
+.share-playlist-input:focus {
+  border-color: var(--accent);
+}
+
+/* Copy link and Copied keep one width, so the field does not jump. */
+.share-playlist-copy {
+  min-width: 104px;
+}
+
+.share-playlist-days .segmented__item {
+  padding: 7px 0;
+  font-size: var(--text-sm);
+}
+
+.share-playlist-days .segmented__item:disabled {
+  cursor: default;
+}
+
+.share-playlist-expiry {
+  min-height: 1.5em;
+  margin: 8px 0 16px;
   color: var(--text-muted);
   font-size: var(--text-sm);
-  margin-top: 0.5rem;
+  line-height: 1.5;
 }
 
-.share-playlist-open-btn {
-  width: 100%;
+.share-playlist-expiry-date {
+  color: var(--text-secondary);
+}
+
+.share-playlist-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.share-playlist-note svg {
+  color: var(--text-muted);
+}
+
+.share-playlist-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

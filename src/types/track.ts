@@ -233,3 +233,17 @@ export interface MissingFixSummary {
   removed: number
   skipped: { track_id: number; reason: string }[]
 }
+
+// Playlist share links (spec 2026-10-16)
+
+/** A live share link: opens one playlist until expires_at. Times are unix seconds. */
+export interface ShareLink {
+  /** 64 hex characters; the share URL is `<companion url>/?share=<token>`. */
+  token: string
+  playlist_id: number
+  playlist_name: string
+  /** The duration last picked. */
+  days: 1 | 7 | 30
+  created_at: number
+  expires_at: number
+}

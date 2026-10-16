@@ -39,6 +39,7 @@ import type {
   TrackGenre,
   LibraryFolder,
   MoveReport,
+  ShareLink,
 } from '../types/track'
 import type {
   ChatMessage,
@@ -1110,6 +1111,32 @@ export const tauriApi = {
     active_streams: number
   }> {
     return await invoke('regenerate_companion_token')
+  },
+
+  // Playlist share links (spec 2026-10-16): one playlist, for 1, 7 or 30 days.
+
+  /** The playlist's live share link, else a new one for 7 days. */
+  async getOrCreateShareLink(playlistId: number): Promise<ShareLink> {
+    return await invoke('get_or_create_share_link', { playlistId })
+  },
+
+  /** Restarts the link's time from now. Errors when the link is gone. */
+  async setShareLinkDays(token: string, days: ShareLink['days']): Promise<ShareLink> {
+    return await invoke('set_share_link_days', { token, days })
+  },
+
+  /** The live share links, newest first. */
+  async listShareLinks(): Promise<ShareLink[]> {
+    return await invoke('list_share_links')
+  },
+
+  async stopShareLink(token: string): Promise<void> {
+    return await invoke('stop_share_link', { token })
+  },
+
+  /** Stops every share link; answers how many were stopped. */
+  async stopAllShareLinks(): Promise<number> {
+    return await invoke('stop_all_share_links')
   },
 
   // Dashboard
