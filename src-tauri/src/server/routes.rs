@@ -3,7 +3,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -12,7 +12,7 @@ use axum::extract::Request;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use super::CompanionServerState;
+use super::{Access, CompanionServerState};
 use crate::db::Track;
 
 // ---- Sanitized DTOs (never expose file_path) ----
@@ -101,7 +101,20 @@ pub struct SearchParams {
 pub struct StatusResponse {
     pub name: String,
     pub version: String,
+    /// The library's count; under share access, the shared playlist's.
     pub track_count: i64,
+    /// Only under share access: the playlist the link opens.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share: Option<ShareStatus>,
+}
+
+/// The playlist a share link opens, and until when.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ShareStatus {
+    pub playlist_id: i64,
+    pub playlist_name: String,
+    /// Unix seconds.
+    pub expires_at: i64,
 }
 
 #[derive(Deserialize)]
@@ -503,16 +516,40 @@ async fn get_self_url(request: Request) -> Json<SelfUrlResponse> {
 
 async fn get_status(
     State(state): State<Arc<CompanionServerState>>,
+    Extension(access): Extension<Access>,
 ) -> Result<Json<StatusResponse>, StatusCode> {
     let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let track_count = db.count_tracks().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let (track_count, share) = match access {
+        Access::Full => (
+            db.count_tracks()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            None,
+        ),
+        // A share link sees its playlist only, never the library's count.
+        Access::Share { playlist_id } => {
+            let link = db
+                .share_link_for(playlist_id)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .ok_or(StatusCode::UNAUTHORIZED)?;
+            let count = db
+                .count_playlist_tracks(playlist_id)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let share = ShareStatus {
+                playlist_id,
+                playlist_name: link.playlist_name,
+                expires_at: link.expires_at,
+            };
+            (count, Some(share))
+        }
+    };
 
     Ok(Json(StatusResponse {
         name: "RecoDeck".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         track_count,
+        share,
     }))
 }
 
@@ -589,11 +626,21 @@ async fn get_playlist_tracks(
 
 async fn create_stream_ticket(
     State(state): State<Arc<CompanionServerState>>,
+    Extension(access): Extension<Access>,
     Json(body): Json<StreamTicketRequest>,
 ) -> Result<Json<StreamTicketResponse>, StatusCode> {
     // Verify the track exists
     let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    // A share link streams the tracks of its own playlist only.
+    if let Access::Share { playlist_id } = access {
+        let in_playlist = db
+            .playlist_has_track(playlist_id, body.track_id)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if !in_playlist {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
     let _track = db.get_track(body.track_id).map_err(|_| StatusCode::NOT_FOUND)?;
     drop(db_lock);
 
@@ -605,4 +652,167 @@ async fn create_stream_ticket(
         expires_in: 600,
         stream_url,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    fn track(db: &Database, name: &str) -> i64 {
+        db.create_track(&Track {
+            id: None,
+            file_path: format!("/m/{name}.mp3"),
+            file_hash: name.to_string(),
+            title: Some(name.to_string()),
+            artist: None,
+            album: None,
+            album_artist: None,
+            track_number: None,
+            year: None,
+            label: None,
+            duration_ms: None,
+            file_format: None,
+            bitrate: None,
+            sample_rate: None,
+            file_size: None,
+            date_added: None,
+            date_modified: None,
+            play_count: 0,
+            rating: 0,
+            comment: None,
+            artwork_path: None,
+            genre: None,
+            genre_source: None,
+        })
+        .unwrap()
+    }
+
+    /// A library of three tracks; the shared playlist holds the first one.
+    fn setup() -> (Arc<CompanionServerState>, i64, [i64; 3]) {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let tracks = [track(&db, "a"), track(&db, "b"), track(&db, "c")];
+        let playlist = db.create_playlist("Warm-up", "manual", None).unwrap();
+        db.add_track_to_playlist(playlist, tracks[0]).unwrap();
+        db.create_share_link(playlist, 7).unwrap();
+        (
+            Arc::new(CompanionServerState::for_tests(db, "companion")),
+            playlist,
+            tracks,
+        )
+    }
+
+    #[tokio::test]
+    async fn status_under_full_access_counts_the_library() {
+        let (state, _, _) = setup();
+
+        let Json(status) = get_status(State(state), Extension(Access::Full))
+            .await
+            .unwrap();
+
+        assert_eq!(status.track_count, 3);
+        let json = serde_json::to_value(&status).unwrap();
+        assert!(json.get("share").is_none(), "{json}");
+        assert_eq!(json["name"], "RecoDeck");
+    }
+
+    #[tokio::test]
+    async fn status_under_share_access_names_the_playlist_and_counts_it() {
+        let (state, playlist, _) = setup();
+        let expires_at = {
+            let db = state.db.lock().unwrap();
+            db.as_ref()
+                .unwrap()
+                .share_link_for(playlist)
+                .unwrap()
+                .unwrap()
+                .expires_at
+        };
+
+        let Json(status) = get_status(
+            State(state),
+            Extension(Access::Share {
+                playlist_id: playlist,
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(status.track_count, 1);
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(
+            json["share"],
+            serde_json::json!({ "playlist_id": playlist, "playlist_name": "Warm-up", "expires_at": expires_at })
+        );
+    }
+
+    #[tokio::test]
+    async fn status_after_the_link_stopped_is_unauthorized() {
+        let (state, playlist, _) = setup();
+        state
+            .db
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .delete_all_share_links()
+            .unwrap();
+
+        let result = get_status(
+            State(state),
+            Extension(Access::Share {
+                playlist_id: playlist,
+            }),
+        )
+        .await;
+
+        assert_eq!(result.err(), Some(StatusCode::UNAUTHORIZED));
+    }
+
+    #[tokio::test]
+    async fn a_share_link_gets_tickets_for_its_own_tracks_only() {
+        let (state, playlist, tracks) = setup();
+        let access = Access::Share {
+            playlist_id: playlist,
+        };
+
+        let ok = create_stream_ticket(
+            State(state.clone()),
+            Extension(access),
+            Json(StreamTicketRequest {
+                track_id: tracks[0],
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(state.validate_ticket(&ok.ticket), Some(tracks[0]));
+
+        let refused = create_stream_ticket(
+            State(state.clone()),
+            Extension(access),
+            Json(StreamTicketRequest {
+                track_id: tracks[1],
+            }),
+        )
+        .await;
+        assert_eq!(refused.err(), Some(StatusCode::FORBIDDEN));
+    }
+
+    #[tokio::test]
+    async fn full_access_gets_a_ticket_for_any_track() {
+        let (state, _, tracks) = setup();
+
+        let ticket = create_stream_ticket(
+            State(state.clone()),
+            Extension(Access::Full),
+            Json(StreamTicketRequest {
+                track_id: tracks[2],
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(state.validate_ticket(&ticket.ticket), Some(tracks[2]));
+    }
 }

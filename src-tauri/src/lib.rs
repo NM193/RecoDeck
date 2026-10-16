@@ -608,6 +608,11 @@ pub fn run() {
             commands::server::stop_companion_server,
             commands::server::get_companion_status,
             commands::server::regenerate_companion_token,
+            commands::server::get_or_create_share_link,
+            commands::server::set_share_link_days,
+            commands::server::list_share_links,
+            commands::server::stop_share_link,
+            commands::server::stop_all_share_links,
             // Dashboard commands
             commands::dashboard::record_play_event,
             commands::dashboard::get_played_track_ids,

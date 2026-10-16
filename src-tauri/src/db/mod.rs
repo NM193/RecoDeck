@@ -9,6 +9,7 @@ pub mod home;
 pub mod merge;
 pub mod missing;
 pub mod sections;
+pub mod share;
 pub mod spotify;
 pub mod youtube_music;
 
@@ -440,6 +441,11 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/020_skipped_files.sql"))?;
+
+        // Migration 021: playlist share links for the companion server.
+        // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
+        self.conn
+            .execute_batch(include_str!("migrations/021_share_links.sql"))?;
 
         Ok(())
     }

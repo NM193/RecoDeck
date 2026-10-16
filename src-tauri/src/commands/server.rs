@@ -1,6 +1,7 @@
 // Tauri commands for the mobile companion server lifecycle
 
 use crate::commands::library::AppState;
+use crate::db::share::{ShareLink, SHARE_LINK_DAYS};
 use crate::db::Database;
 use crate::error::AppError;
 use crate::server::{self, RunningServer};
@@ -70,6 +71,34 @@ pub struct CompanionServerInfo {
     pub token: Option<String>,
     pub port: Option<u16>,
     pub active_streams: usize,
+}
+
+/// A playlist share link (spec docs/superpowers/specs/2026-10-16-share-links-design.md).
+/// The frontend builds the URL: `<companion url>/?share=<token>`.
+#[derive(Debug, Serialize)]
+pub struct ShareLinkDTO {
+    pub token: String,
+    pub playlist_id: i64,
+    pub playlist_name: String,
+    /// The duration last picked: 1, 7 or 30.
+    pub days: i64,
+    /// Unix seconds.
+    pub created_at: i64,
+    /// Unix seconds.
+    pub expires_at: i64,
+}
+
+impl From<ShareLink> for ShareLinkDTO {
+    fn from(link: ShareLink) -> Self {
+        ShareLinkDTO {
+            token: link.token,
+            playlist_id: link.playlist_id,
+            playlist_name: link.playlist_name,
+            days: link.days,
+            created_at: link.created_at,
+            expires_at: link.expires_at,
+        }
+    }
 }
 
 /// Find the mobile PWA dist directory.
@@ -431,5 +460,154 @@ pub async fn auto_start_companion(app_handle: tauri::AppHandle) {
         Err(e) => {
             eprintln!("[companion] Auto-start failed: {}", e);
         }
+    }
+}
+
+// ---- Playlist share links ----
+
+/// A share link lasts 1, 7 or 30 days.
+fn check_share_days(days: i64) -> Result<(), AppError> {
+    if SHARE_LINK_DAYS.contains(&days) {
+        Ok(())
+    } else {
+        Err(AppError::Validation(format!(
+            "A share link lasts 1, 7 or 30 days, not {days}"
+        )))
+    }
+}
+
+fn share_db_error(e: rusqlite::Error) -> AppError {
+    AppError::Database(format!("Share link: {e}"))
+}
+
+/// The playlist's live share link, else a new one for 7 days.
+#[tauri::command]
+pub fn get_or_create_share_link(
+    state: State<AppState>,
+    playlist_id: i64,
+) -> Result<ShareLinkDTO, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    if let Some(link) = db.share_link_for(playlist_id).map_err(share_db_error)? {
+        return Ok(link.into());
+    }
+    db.get_playlist(playlist_id).map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => {
+            AppError::NotFound("That playlist no longer exists".to_string())
+        }
+        e => share_db_error(e),
+    })?;
+    Ok(db
+        .create_share_link(playlist_id, 7)
+        .map_err(share_db_error)?
+        .into())
+}
+
+/// Gives a live link a new duration, counted from now.
+#[tauri::command]
+pub fn set_share_link_days(
+    state: State<AppState>,
+    token: String,
+    days: i64,
+) -> Result<ShareLinkDTO, AppError> {
+    check_share_days(days)?;
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    db.set_share_link_days(&token, days)
+        .map_err(share_db_error)?
+        .map(ShareLinkDTO::from)
+        .ok_or_else(|| AppError::NotFound("This share link has expired or was stopped".to_string()))
+}
+
+/// The live share links, newest first.
+#[tauri::command]
+pub fn list_share_links(state: State<AppState>) -> Result<Vec<ShareLinkDTO>, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let links = db.list_share_links().map_err(share_db_error)?;
+    Ok(links.into_iter().map(ShareLinkDTO::from).collect())
+}
+
+/// Stops one share link. Stopping a link that is already gone is not an error.
+#[tauri::command]
+pub fn stop_share_link(state: State<AppState>, token: String) -> Result<(), AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    db.delete_share_link(&token).map_err(share_db_error)?;
+    Ok(())
+}
+
+/// Stops every share link; answers how many were live.
+#[tauri::command]
+pub fn stop_all_share_links(state: State<AppState>) -> Result<usize, AppError> {
+    let db_lock = state
+        .db
+        .lock()
+        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+    let db = db_lock
+        .as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    db.delete_all_share_links().map_err(share_db_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_share_link_lasts_1_7_or_30_days() {
+        for days in [1, 7, 30] {
+            assert!(check_share_days(days).is_ok(), "{days}");
+        }
+        for days in [0, -1, 2, 14, 31, 365] {
+            assert!(
+                matches!(check_share_days(days), Err(AppError::Validation(_))),
+                "{days}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_dto_is_snake_case() {
+        let dto = ShareLinkDTO::from(ShareLink {
+            token: "t".into(),
+            playlist_id: 3,
+            playlist_name: "P".into(),
+            days: 7,
+            created_at: 100,
+            expires_at: 200,
+        });
+        assert_eq!(
+            serde_json::to_value(&dto).unwrap(),
+            serde_json::json!({
+                "token": "t", "playlist_id": 3, "playlist_name": "P",
+                "days": 7, "created_at": 100, "expires_at": 200
+            })
+        );
     }
 }

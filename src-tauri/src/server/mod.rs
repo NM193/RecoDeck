@@ -106,6 +106,90 @@ impl CompanionServerState {
     pub fn active_stream_count(&self) -> usize {
         self.active_streams.load(Ordering::Relaxed)
     }
+
+    /// Who a Bearer token belongs to: the companion token, a live share link,
+    /// or no one (unknown, expired or stopped).
+    fn bearer_for(&self, provided: &str) -> Result<Bearer, StatusCode> {
+        if provided.is_empty() {
+            return Ok(Bearer::Unknown);
+        }
+        if tokens_match(provided, &self.token) {
+            return Ok(Bearer::Companion);
+        }
+        let db_lock = self
+            .db
+            .lock()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+        let playlist = db
+            .shared_playlist(provided, crate::db::share::unix_now())
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        Ok(playlist.map_or(Bearer::Unknown, Bearer::Share))
+    }
+}
+
+/// What a request may reach. `auth_middleware` puts it in the request
+/// extensions; handlers that serve share links read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    /// The companion token: the whole library.
+    Full,
+    /// A live share link: one playlist only.
+    Share { playlist_id: i64 },
+}
+
+/// Who a Bearer token belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bearer {
+    Companion,
+    /// A live share link of this playlist.
+    Share(i64),
+    /// No token, an unknown one, or an expired or stopped share link.
+    Unknown,
+}
+
+/// Compares a provided token with the expected one in constant time: a
+/// length mismatch fails, equal lengths are compared with a byte-wise XOR
+/// fold that never stops early.
+fn tokens_match(provided: &str, expected: &str) -> bool {
+    let (a, b) = (provided.as_bytes(), expected.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let diff = a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y));
+    std::hint::black_box(diff) == 0
+}
+
+/// The middleware's decision for a Bearer route: the companion token reaches
+/// everything; a share link reaches its status, its own playlist and stream
+/// tickets (the handler checks the track is in the playlist), and nothing
+/// else (403); anyone else gets 401.
+fn access_for(bearer: Bearer, path: &str, method: &Method) -> Result<Access, StatusCode> {
+    let playlist_id = match bearer {
+        Bearer::Unknown => return Err(StatusCode::UNAUTHORIZED),
+        Bearer::Companion => return Ok(Access::Full),
+        Bearer::Share(playlist_id) => playlist_id,
+    };
+    let allowed = if method == Method::GET {
+        path == "/api/status" || playlist_in_path(path) == Some(playlist_id)
+    } else if method == Method::POST {
+        path == "/api/stream-ticket"
+    } else {
+        false
+    };
+    if allowed {
+        Ok(Access::Share { playlist_id })
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+/// The playlist id of a `/api/playlists/{id}/tracks` path.
+fn playlist_in_path(path: &str) -> Option<i64> {
+    path.strip_prefix("/api/playlists/")?
+        .strip_suffix("/tracks")?
+        .parse()
+        .ok()
 }
 
 /// Holds the running server's shutdown mechanism
@@ -153,29 +237,96 @@ async fn serve_asset(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-/// Parse query params from URI (token, playlist, name) — used when opening shared playlist link
-fn parse_share_params(query: Option<&str>) -> (Option<String>, Option<i64>, Option<String>) {
+/// What a link to the page carries: a share link (`share`), or an old-style
+/// link with the companion token (`token`, `playlist`, `name`).
+#[derive(Debug, Default, PartialEq)]
+struct IndexParams {
+    token: Option<String>,
+    playlist_id: Option<i64>,
+    playlist_name: Option<String>,
+    share: Option<String>,
+}
+
+/// Parse query params from URI (share, token, playlist, name) — used when opening shared playlist link
+fn parse_share_params(query: Option<&str>) -> IndexParams {
     let query = query.unwrap_or("");
-    let mut token = None;
-    let mut playlist_id = None;
-    let mut playlist_name = None;
+    let mut params = IndexParams::default();
     for pair in query.split('&') {
         if let Some((k, v)) = pair.split_once('=') {
             match k {
-                "token" => token = Some(v.to_string()),
-                "playlist" => playlist_id = v.parse().ok(),
-                "name" => playlist_name = Some(
+                "token" => params.token = Some(v.to_string()),
+                "playlist" => params.playlist_id = v.parse().ok(),
+                "name" => params.playlist_name = Some(
                     urlencoding::decode(v).map(|c| c.into_owned()).unwrap_or_else(|_| v.to_string()),
                 ),
+                "share" => params.share = Some(v.to_string()),
                 _ => {}
             }
         }
     }
-    (token, playlist_id, playlist_name)
+    params
+}
+
+/// A value as a JavaScript string literal that is safe inside an inline
+/// `<script>`: JSON-encoded, then `<`, `>`, `&`, U+2028 and U+2029 written as
+/// `\u` escapes, so no value can end the script or the string.
+fn js_string_literal(value: &str) -> String {
+    serde_json::to_string(value)
+        .unwrap_or_else(|_| String::from("\"\""))
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
+}
+
+/// A value escaped for a double-quoted HTML attribute.
+fn html_attr_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// The `<meta>` and `<script>` put into the page's `<head>`: the server URL
+/// and whatever the link carries.
+fn index_injection(url: &str, params: &IndexParams) -> String {
+    let mut script_parts = vec![format!(
+        "window.__RECODECK_SERVER_URL__={};",
+        js_string_literal(url)
+    )];
+    if let Some(ref t) = params.token {
+        script_parts.push(format!(
+            "window.__RECODECK_TOKEN__={};",
+            js_string_literal(t)
+        ));
+    }
+    if let Some(pid) = params.playlist_id {
+        script_parts.push(format!("window.__RECODECK_PLAYLIST_ID__={};", pid));
+    }
+    if let Some(ref pn) = params.playlist_name {
+        script_parts.push(format!(
+            "window.__RECODECK_PLAYLIST_NAME__={};",
+            js_string_literal(pn)
+        ));
+    }
+    if let Some(ref s) = params.share {
+        script_parts.push(format!(
+            "window.__RECODECK_SHARE__={};",
+            js_string_literal(s)
+        ));
+    }
+    format!(
+        r#"<meta name="recodeck-server-url" content="{}"><script>{}</script>"#,
+        html_attr_escape(url),
+        script_parts.join(" ")
+    )
 }
 
 /// Serves index.html with server URL injected for PWA auto-fill (window.location unreliable in standalone)
-/// When URL has ?token=...&playlist=...&name=..., injects them so mobile app can read even in PWA mode
+/// When URL has ?share=... (or the old ?token=...&playlist=...&name=...), injects them so mobile app can read even in PWA mode
 async fn serve_index_with_url(
     Extension(index_path): Extension<PathBuf>,
     request: Request,
@@ -191,43 +342,24 @@ async fn serve_index_with_url(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("http");
     let url = format!("{}://{}", scheme, host);
-    let (token, playlist_id, playlist_name) = parse_share_params(request.uri().query());
+    let params = parse_share_params(request.uri().query());
 
     let html = tokio::fs::read_to_string(&index_path)
         .await
         .unwrap_or_else(|_| String::from("<html><body>Error</body></html>"));
 
-    let mut script_parts = vec![format!("window.__RECODECK_SERVER_URL__=\"{}\";", url)];
-    if let Some(ref t) = token {
-        script_parts.push(format!(
-            "window.__RECODECK_TOKEN__=\"{}\";",
-            t.replace('\\', "\\\\").replace('"', "\\\"")
-        ));
-    }
-    if let Some(pid) = playlist_id {
-        script_parts.push(format!("window.__RECODECK_PLAYLIST_ID__={};", pid));
-    }
-    if let Some(ref pn) = playlist_name {
-        script_parts.push(format!(
-            "window.__RECODECK_PLAYLIST_NAME__=\"{}\";",
-            pn.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ")
-        ));
-    }
-
-    let injection = format!(
-        r#"<meta name="recodeck-server-url" content="{}"><script>{}</script>"#,
-        url,
-        script_parts.join(" ")
-    );
+    let injection = index_injection(&url, &params);
     let html = html.replace("</head>", &format!("{}\n  </head>", injection));
     Html(html)
 }
 
 /// Auth middleware - validates Bearer token on every request.
 /// Stream endpoints use ticket-based auth instead (checked in handler).
+/// The companion token gets full access; a live share link gets its own
+/// playlist only (see `access_for`). The `Access` goes into the extensions.
 async fn auth_middleware(
     state: axum::extract::State<Arc<CompanionServerState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let path = request.uri().path();
@@ -242,22 +374,19 @@ async fn auth_middleware(
     }
 
     // All other endpoints require Bearer token
-    let auth_header = request
+    let provided_token = request
         .headers()
         .get("authorization")
-        .and_then(|v| v.to_str().ok());
+        .and_then(|v| v.to_str().ok())
+        .and_then(|header| header.strip_prefix("Bearer "));
+    let bearer = match provided_token {
+        Some(token) => state.bearer_for(token)?,
+        None => Bearer::Unknown,
+    };
 
-    match auth_header {
-        Some(header) if header.starts_with("Bearer ") => {
-            let provided_token = &header[7..];
-            if provided_token == state.token {
-                Ok(next.run(request).await)
-            } else {
-                Err(StatusCode::UNAUTHORIZED)
-            }
-        }
-        _ => Err(StatusCode::UNAUTHORIZED),
-    }
+    let access = access_for(bearer, request.uri().path(), request.method())?;
+    request.extensions_mut().insert(access);
+    Ok(next.run(request).await)
 }
 
 /// Start the companion HTTP server on the given port.
@@ -406,4 +535,270 @@ async fn try_bind(preferred_port: u16) -> Result<SocketAddr, String> {
     }
 
     Err("Failed to bind to any port".to_string())
+}
+
+#[cfg(test)]
+impl CompanionServerState {
+    /// A server state over `db`, with `token` as the companion token.
+    pub(crate) fn for_tests(db: Database, token: &str) -> Self {
+        CompanionServerState {
+            token: token.to_string(),
+            db: Arc::new(Mutex::new(Some(db))),
+            library_folders: Arc::new(Mutex::new(Vec::new())),
+            tickets: Mutex::new(HashMap::new()),
+            active_streams: AtomicUsize::new(0),
+            max_streams: 3,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const COMPANION: &str = "c0ffee";
+
+    // ---- constant-time token comparison ----
+
+    #[test]
+    fn tokens_match_only_on_the_same_bytes() {
+        let token = generate_token();
+        assert!(tokens_match(&token, &token.clone()));
+
+        let mut last_differs = token.clone();
+        last_differs.pop();
+        last_differs.push(if token.ends_with('0') { '1' } else { '0' });
+        assert!(!tokens_match(&last_differs, &token));
+
+        let mut first_differs = token.clone();
+        first_differs.replace_range(0..1, if token.starts_with('0') { "1" } else { "0" });
+        assert!(!tokens_match(&first_differs, &token));
+    }
+
+    #[test]
+    fn tokens_of_another_length_never_match() {
+        let token = generate_token();
+        assert!(!tokens_match(&token[..63], &token));
+        assert!(!tokens_match(&format!("{token}0"), &token));
+        assert!(!tokens_match("", &token));
+    }
+
+    // ---- access_for: the middleware's decision ----
+
+    const SHARED: i64 = 5;
+
+    fn share() -> Bearer {
+        Bearer::Share(SHARED)
+    }
+
+    #[test]
+    fn an_unknown_token_is_unauthorized_everywhere() {
+        for (method, path) in [
+            (Method::GET, "/api/status"),
+            (Method::GET, "/api/tracks"),
+            (Method::GET, "/api/tracks/search"),
+            (Method::GET, "/api/playlists/5/tracks"),
+            (Method::POST, "/api/stream-ticket"),
+        ] {
+            assert_eq!(
+                access_for(Bearer::Unknown, path, &method),
+                Err(StatusCode::UNAUTHORIZED),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_companion_token_has_full_access_everywhere() {
+        for (method, path) in [
+            (Method::GET, "/api/status"),
+            (Method::GET, "/api/tracks"),
+            (Method::GET, "/api/tracks/search"),
+            (Method::GET, "/api/playlists/5/tracks"),
+            (Method::GET, "/api/playlists/6/tracks"),
+            (Method::POST, "/api/stream-ticket"),
+        ] {
+            assert_eq!(
+                access_for(Bearer::Companion, path, &method),
+                Ok(Access::Full),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_share_token_gets_status_its_playlist_and_tickets() {
+        let ok = Ok(Access::Share {
+            playlist_id: SHARED,
+        });
+        assert_eq!(access_for(share(), "/api/status", &Method::GET), ok);
+        assert_eq!(
+            access_for(share(), "/api/playlists/5/tracks", &Method::GET),
+            ok
+        );
+        assert_eq!(access_for(share(), "/api/stream-ticket", &Method::POST), ok);
+    }
+
+    #[test]
+    fn a_share_token_is_forbidden_the_library_and_other_playlists() {
+        for (method, path) in [
+            (Method::GET, "/api/tracks"),
+            (Method::GET, "/api/tracks/search"),
+            (Method::GET, "/api/playlists/6/tracks"),
+            (Method::GET, "/api/playlists/55/tracks"),
+            (Method::GET, "/api/playlists/5"),
+            (Method::GET, "/api/playlists/5/tracks/x"),
+            (Method::GET, "/api/playlists/x/tracks"),
+            (Method::GET, "/api/unknown"),
+            // Allowed routes, wrong method.
+            (Method::POST, "/api/status"),
+            (Method::POST, "/api/playlists/5/tracks"),
+            (Method::GET, "/api/stream-ticket"),
+        ] {
+            assert_eq!(
+                access_for(share(), path, &method),
+                Err(StatusCode::FORBIDDEN),
+                "{method} {path}"
+            );
+        }
+    }
+
+    // ---- who a Bearer token belongs to ----
+
+    fn db_with_playlist() -> (Database, i64) {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let playlist = db.create_playlist("P", "manual", None).unwrap();
+        (db, playlist)
+    }
+
+    #[test]
+    fn bearer_for_tells_the_companion_token_from_a_share_link() {
+        let (db, playlist) = db_with_playlist();
+        let link = db.create_share_link(playlist, 7).unwrap();
+        let state = CompanionServerState::for_tests(db, COMPANION);
+
+        assert_eq!(state.bearer_for(COMPANION), Ok(Bearer::Companion));
+        assert_eq!(state.bearer_for(&link.token), Ok(Bearer::Share(playlist)));
+        assert_eq!(state.bearer_for("not-a-token"), Ok(Bearer::Unknown));
+        assert_eq!(state.bearer_for(""), Ok(Bearer::Unknown));
+    }
+
+    #[test]
+    fn a_stopped_share_link_is_unknown() {
+        let (db, playlist) = db_with_playlist();
+        let link = db.create_share_link(playlist, 7).unwrap();
+        db.delete_share_link(&link.token).unwrap();
+        let state = CompanionServerState::for_tests(db, COMPANION);
+
+        assert_eq!(state.bearer_for(&link.token), Ok(Bearer::Unknown));
+    }
+
+    // ---- the share page's injection ----
+
+    const NASTY: [&str; 7] = [
+        "</script><script>alert(1)</script>",
+        "</SCRIPT ><img src=x onerror=alert(1)>",
+        "\"; alert(1); //",
+        "a\u{2028}b\u{2029}c",
+        "back\\slash\\\" quote",
+        "<!-- & -->",
+        "line\nbreak",
+    ];
+
+    #[test]
+    fn a_js_string_literal_cannot_leave_its_string_or_end_the_script() {
+        for value in NASTY {
+            let literal = js_string_literal(value);
+            for c in ['<', '>', '&', '\u{2028}', '\u{2029}', '\n'] {
+                assert!(!literal.contains(c), "{c:?} left raw in {literal}");
+            }
+            // One JSON string, nothing after it: it parses back to the value.
+            let back: String = serde_json::from_str(&literal).unwrap();
+            assert_eq!(back, value);
+        }
+    }
+
+    #[test]
+    fn an_attribute_value_cannot_leave_its_quotes() {
+        assert_eq!(
+            html_attr_escape(r#"http://h"><script>a&b"#),
+            "http://h&quot;&gt;&lt;script&gt;a&amp;b"
+        );
+        assert_eq!(
+            html_attr_escape("http://192.168.1.2:8384"),
+            "http://192.168.1.2:8384"
+        );
+    }
+
+    #[test]
+    fn the_injection_holds_exactly_one_script_whatever_the_values() {
+        for value in NASTY {
+            let params = IndexParams {
+                token: Some(value.to_string()),
+                playlist_id: Some(7),
+                playlist_name: Some(value.to_string()),
+                share: Some(value.to_string()),
+            };
+            let injection = index_injection(&format!("http://h{value}"), &params);
+            let lower = injection.to_lowercase();
+
+            assert_eq!(lower.matches("<script").count(), 1, "{injection}");
+            assert_eq!(lower.matches("</script").count(), 1, "{injection}");
+            assert!(injection.ends_with("</script>"), "{injection}");
+            let script = &injection[injection.find("<script>").unwrap()..];
+            assert!(
+                !script.contains('\u{2028}') && !script.contains('\u{2029}'),
+                "{script}"
+            );
+            // The meta tag ends where it should: its value holds no raw quote.
+            let meta_end = injection.find("\"><script>").unwrap();
+            let content_start = injection.find("content=\"").unwrap() + "content=\"".len();
+            assert!(
+                !injection[content_start..meta_end].contains('"'),
+                "{injection}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_injection_sets_every_value() {
+        let params = IndexParams {
+            token: Some("tok".into()),
+            playlist_id: Some(7),
+            playlist_name: Some("Warm up".into()),
+            share: Some("abc123".into()),
+        };
+        let injection = index_injection("http://10.0.0.2:8384", &params);
+
+        assert!(injection.contains(r#"content="http://10.0.0.2:8384""#));
+        assert!(injection.contains(r#"window.__RECODECK_SERVER_URL__="http://10.0.0.2:8384";"#));
+        assert!(injection.contains(r#"window.__RECODECK_TOKEN__="tok";"#));
+        assert!(injection.contains("window.__RECODECK_PLAYLIST_ID__=7;"));
+        assert!(injection.contains(r#"window.__RECODECK_PLAYLIST_NAME__="Warm up";"#));
+        assert!(injection.contains(r#"window.__RECODECK_SHARE__="abc123";"#));
+    }
+
+    #[test]
+    fn the_injection_leaves_out_what_the_link_does_not_carry() {
+        let injection = index_injection("http://h", &IndexParams::default());
+        assert!(!injection.contains("__RECODECK_TOKEN__"));
+        assert!(!injection.contains("__RECODECK_SHARE__"));
+        assert!(!injection.contains("__RECODECK_PLAYLIST_ID__"));
+    }
+
+    #[test]
+    fn share_params_are_read_from_the_query() {
+        let params = parse_share_params(Some("share=abc&token=t&playlist=5&name=My%20Mix"));
+        assert_eq!(
+            params,
+            IndexParams {
+                token: Some("t".into()),
+                playlist_id: Some(5),
+                playlist_name: Some("My Mix".into()),
+                share: Some("abc".into()),
+            }
+        );
+        assert_eq!(parse_share_params(None), IndexParams::default());
+    }
 }
