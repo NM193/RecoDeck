@@ -181,6 +181,7 @@ export function SharePlaylistModal({
             className="btn share-playlist-copy"
             onClick={copyLink}
             disabled={!link}
+            aria-live="polite"
           >
             <Icon name={copied ? 'Check' : 'Copy'} size={14} />
             {copied ? 'Copied' : 'Copy link'}

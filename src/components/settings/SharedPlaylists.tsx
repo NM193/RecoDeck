@@ -42,6 +42,10 @@ export function SharedPlaylists({ companionUrl }: { companionUrl: string }) {
 
   useEffect(() => {
     void load()
+    // Settings can stay open for hours: keep "expires in" fresh and let
+    // links that ran out leave the list.
+    const timer = setInterval(() => void load(), 60_000)
+    return () => clearInterval(timer)
   }, [load])
 
   useEffect(
@@ -141,6 +145,7 @@ export function SharedPlaylists({ companionUrl }: { companionUrl: string }) {
                 type="button"
                 className="btn btn--sm companion-share__copy"
                 onClick={() => copyLink(link.token)}
+                aria-live="polite"
               >
                 {copiedToken === link.token ? 'Copied' : 'Copy link'}
               </button>
