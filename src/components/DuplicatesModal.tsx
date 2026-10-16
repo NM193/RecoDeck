@@ -49,17 +49,41 @@ const REASON_LABELS: Record<DuplicateReason, string> = {
   same_title_artist: 'Same title & artist',
 }
 
-const FILTER_TABS: { value: FilterValue; label: string }[] = [
+const FILTER_TABS: { value: FilterValue; label: string; tip?: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'identical_content', label: 'Identical' },
-  { value: 'identical_filename_size', label: 'Same file' },
-  { value: 'same_title_artist', label: 'Title & artist' },
+  {
+    value: 'identical_content',
+    label: 'Identical',
+    tip: 'The same file, byte for byte.',
+  },
+  {
+    value: 'identical_filename_size',
+    label: 'Same file',
+    tip: 'Same file name and size, in different folders.',
+  },
+  {
+    value: 'same_title_artist',
+    label: 'Title & artist',
+    tip: 'Same title and artist. Can be another version or mix, so check before merging.',
+  },
 ]
 
-const STATES: { state: RowState; label: string }[] = [
-  { state: 'keep', label: 'Keep' },
-  { state: 'merge', label: 'Merge' },
-  { state: 'left', label: 'Leave' },
+const STATES: { state: RowState; label: string; tip: string }[] = [
+  {
+    state: 'keep',
+    label: 'Keep',
+    tip: 'This copy stays. The merged copies hand it their playlists, plays, tags and analysis.',
+  },
+  {
+    state: 'merge',
+    label: 'Merge',
+    tip: 'Merge into the kept copy: its playlists, plays, tags and analysis move over, then it leaves the library.',
+  },
+  {
+    state: 'left',
+    label: 'Leave',
+    tip: 'Not a duplicate. This copy stays a separate track.',
+  },
 ]
 
 function formatDate(iso?: string): string {
@@ -211,6 +235,7 @@ export function DuplicatesModal({
                   aria-selected={activeFilter === tab.value}
                   className={`dup-tab ${activeFilter === tab.value ? 'dup-tab--active' : ''}`}
                   onClick={() => setActiveFilter(tab.value)}
+                  data-tip={tab.tip}
                 >
                   {tab.label}
                   <span className="dup-tab__count">{count}</span>
@@ -432,6 +457,7 @@ function TrackRow({
             aria-pressed={state === s.state}
             onClick={() => onPick(s.state)}
             disabled={disabled || (state === 'keep' && s.state !== 'keep')}
+            data-tip={s.tip}
           >
             {s.label}
           </button>

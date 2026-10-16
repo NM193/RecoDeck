@@ -52,6 +52,19 @@ const AUDIO_EXTENSIONS = ['mp3', 'flac', 'wav', 'aiff', 'aif', 'm4a', 'ogg']
 
 const STATES: FixState[] = ['fix', 'leave', 'remove']
 
+/** What a state's button does, as its tooltip. */
+function stateTip(state: FixState, merge: boolean): string {
+  if (state === 'fix') {
+    return merge
+      ? "This file is already another track in your library. That track gets this one's playlists, plays and rating; this one goes away."
+      : 'Point this track at the chosen file. Playlists, plays, analysis and rating stay.'
+  }
+  if (state === 'leave') {
+    return 'Change nothing now. The track stays in your library without a file.'
+  }
+  return 'Take the track out of your library and its playlists. Files on disk are never touched.'
+}
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
 }
@@ -219,10 +232,25 @@ export function MissingFilesModal({
     }
   }
 
-  const tabs: { value: FilterValue; label: string; count: number }[] = [
+  const tabs: {
+    value: FilterValue
+    label: string
+    count: number
+    tip?: string
+  }[] = [
     { value: 'all', label: 'All', count: tracks.length },
-    { value: 'found', label: 'Found', count: found.length },
-    { value: 'missing', label: 'Not found', count: notFound.length },
+    {
+      value: 'found',
+      label: 'Found',
+      count: found.length,
+      tip: 'A file with the same name is in your library folders.',
+    },
+    {
+      value: 'missing',
+      label: 'Not found',
+      count: notFound.length,
+      tip: 'No file with the same name in your library folders. Locate it, or search another folder.',
+    },
   ]
   const summary = `${plural(tracks.length, 'track points', 'tracks point')} to a file that isn't there · ${found.length} found by file name`
   const showFound = filter !== 'missing' && found.length > 0
@@ -268,6 +296,7 @@ export function MissingFilesModal({
                 aria-selected={filter === tab.value}
                 className={`dup-tab ${filter === tab.value ? 'dup-tab--active' : ''}`}
                 onClick={() => setFilter(tab.value)}
+                data-tip={tab.tip}
               >
                 {tab.label}
                 <span className="dup-tab__count">{tab.count}</span>
@@ -279,6 +308,7 @@ export function MissingFilesModal({
             className="dup-text-btn"
             onClick={() => void searchFolder()}
             disabled={loading || busy !== null}
+            data-tip="Look for same-name files in a folder outside your library."
           >
             Search another folder…
           </button>
@@ -496,6 +526,7 @@ function MissingRow({
                 className="mf-link"
                 onClick={onPick}
                 disabled={disabled}
+                data-tip="Pick a different file for this track."
               >
                 Other file…
               </button>
@@ -520,6 +551,7 @@ function MissingRow({
             className="mf-locate"
             onClick={onPick}
             disabled={disabled}
+            data-tip="Pick the file yourself, anywhere on your computer."
           >
             Locate…
           </button>
@@ -540,6 +572,7 @@ function MissingRow({
                 disabled ||
                 (s === 'fix' && (!c || view.blockedBy !== undefined))
               }
+              data-tip={stateTip(s, view.merge)}
             >
               {s === 'fix'
                 ? view.merge

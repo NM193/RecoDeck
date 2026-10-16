@@ -44,7 +44,9 @@ export function DatabaseSection() {
             Review Duplicate Tracks
           </button>
           <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
-            Review and selectively remove duplicate tracks from your library.
+            Finds copies of the same track. Merge keeps one copy and moves
+            playlists, plays, rating and analysis onto it. Files stay on disk
+            unless you choose Trash.
           </p>
         </div>
         <div>
@@ -59,7 +61,8 @@ export function DatabaseSection() {
             )}
           </button>
           <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
-            Tracks whose file was moved, renamed or deleted.
+            Tracks whose file was moved, renamed or deleted. A rescan follows
+            moved files on its own; review the rest here.
           </p>
         </div>
       </div>
