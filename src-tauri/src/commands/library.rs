@@ -196,10 +196,9 @@ pub fn init_database(
         .map_err(|e| AppError::Database(format!("Failed to run migrations: {}", e)))?;
 
     // PERFORMANCE: Skip expensive maintenance operations on startup
-    // Users can run these manually via settings if needed:
-    // - remove_duplicate_tracks() - loads all tracks into memory
+    // Users can run this manually if needed:
     // - normalize_all_file_paths() - loads all tracks into memory
-    // Both are now exposed as manual commands: cleanup_duplicate_tracks, normalize_file_paths
+    // It is exposed as a manual command: normalize_file_paths
 
     // Panic on init is acceptable -- app cannot start without DB
     *state.db_path.lock().unwrap() = Some(db_path);
@@ -596,18 +595,6 @@ pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, AppError> {
         .map_err(|e| AppError::Database(format!("Failed to cleanup tracks: {}", e)))
 }
 
-/// Remove duplicate tracks that share the same file content (same hash) or same filename.
-/// Keeps the track with the lowest ID (earliest import) for each duplicate group.
-/// Returns the number of deleted duplicates.
-#[tauri::command]
-pub fn cleanup_duplicate_tracks(state: State<AppState>) -> Result<usize, AppError> {
-    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-
-    db.remove_duplicate_tracks()
-        .map_err(|e| AppError::Database(format!("Failed to cleanup duplicates: {}", e)))
-}
-
 /// A playlist a duplicate copy is in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistRefDTO {
@@ -951,25 +938,6 @@ pub async fn apply_missing_fixes(
     })
     .await
     .map_err(|e| AppError::Internal(format!("Missing files task failed: {}", e)))?
-}
-
-/// Delete a list of tracks in bulk. Cleans up `track_analysis` and
-/// `playlist_tracks` rows for each id. Returns the number of rows removed.
-#[tauri::command]
-pub fn delete_tracks_bulk(
-    state: State<AppState>,
-    track_ids: Vec<i64>,
-) -> Result<usize, AppError> {
-    let db_lock = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-    let db = db_lock
-        .as_ref()
-        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-
-    db.bulk_delete_tracks(&track_ids)
-        .map_err(|e| AppError::Database(format!("Failed to bulk-delete tracks: {}", e)))
 }
 
 /// Normalize all file paths in the database (remove double slashes, trailing slashes).

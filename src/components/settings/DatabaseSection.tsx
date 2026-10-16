@@ -5,8 +5,7 @@ import { MissingFilesModal } from '../MissingFilesModal'
 import { tauriApi } from '../../lib/tauri-api'
 
 export function DatabaseSection() {
-  const { cleaningDuplicates, onFoldersChanged, onNotification } =
-    useSettingsContext()
+  const { onFoldersChanged, onNotification } = useSettingsContext()
 
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
   const [showMissingModal, setShowMissingModal] = useState(false)
@@ -37,7 +36,6 @@ export function DatabaseSection() {
         <div>
           <button
             onClick={() => setShowDuplicatesModal(true)}
-            disabled={cleaningDuplicates}
             className="btn btn--primary btn--sm"
             style={{ width: '100%' }}
           >

@@ -53,9 +53,6 @@ export interface SettingsContextValue {
   handleCrossfadeEnabledChange: (enabled: boolean) => Promise<void>
   handleCrossfadeDurationChange: (duration: number) => Promise<void>
 
-  // Database
-  cleaningDuplicates: boolean
-  handleCleanupDuplicates: () => Promise<void>
   // Callbacks surfaced for sub-components that need them (e.g. DuplicatesModal)
   onFoldersChanged: () => void
   onNotification?: (
@@ -144,7 +141,6 @@ export function SettingsProvider({
   const [scanningFolder, setScanningFolder] = useState<string | null>(null)
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [scanStartTime, setScanStartTime] = useState<number | null>(null)
-  const [cleaningDuplicates, setCleaningDuplicates] = useState(false)
   const [updateChecking, setUpdateChecking] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null)
@@ -435,28 +431,6 @@ export function SettingsProvider({
     }
   }
 
-  // --- Database handlers ---
-
-  async function handleCleanupDuplicates() {
-    try {
-      setError(null)
-      setCleaningDuplicates(true)
-      const duplicatesRemoved = await tauriApi.cleanupDuplicateTracks()
-      if (duplicatesRemoved > 0) {
-        onNotification?.(`Successfully removed ${duplicatesRemoved} duplicate track${duplicatesRemoved > 1 ? 's' : ''}`, 'success')
-        onFoldersChanged()
-      } else {
-        onNotification?.('No duplicates found', 'info')
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      setError(errorMsg)
-      onNotification?.(errorMsg, 'error')
-    } finally {
-      setCleaningDuplicates(false)
-    }
-  }
-
   // --- AI handlers ---
 
   async function handleSaveApiKey() {
@@ -717,8 +691,6 @@ export function SettingsProvider({
     currentTheme, handleThemeChange,
     crossfadeEnabled, crossfadeDuration,
     handleCrossfadeEnabledChange, handleCrossfadeDurationChange,
-    cleaningDuplicates,
-    handleCleanupDuplicates,
     onFoldersChanged, onNotification,
     isApiKeyConfigured, apiKeyInput, setApiKeyInput, showApiKey, setShowApiKey, aiSaving,
     handleSaveApiKey, handleDeleteApiKey,

@@ -285,18 +285,9 @@ export const tauriApi = {
     return await invoke('cleanup_stray_tracks')
   },
 
-  // Cleanup command - removes duplicate tracks (same file hash or filename)
-  async cleanupDuplicateTracks(): Promise<number> {
-    return await invoke('cleanup_duplicate_tracks')
-  },
-
   // Review-based duplicate management
   async getDuplicateGroups(): Promise<DuplicateGroup[]> {
     return await invoke('get_duplicate_groups')
-  },
-
-  async deleteTracksBulk(trackIds: number[]): Promise<number> {
-    return await invoke('delete_tracks_bulk', { trackIds })
   },
 
   async mergeDuplicateTracks(

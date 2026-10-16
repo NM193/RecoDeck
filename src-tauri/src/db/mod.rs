@@ -1275,105 +1275,6 @@ impl Database {
         Ok(set)
     }
 
-    /// Remove duplicate tracks.
-    ///
-    /// Detection methods (in order):
-    /// 1. Same file_hash (excluding 'unknown') - exact same file content
-    /// 2. Same file name + file size - catches identical copies at different paths
-    ///
-    /// NOTE: We do NOT dedupe by title alone - different artists can have songs with the same name.
-    /// Keeps the track with the lowest id (earliest import) for each duplicate group.
-    /// Also cleans up related analysis data and playlist associations for removed tracks.
-    /// Returns the number of deleted tracks.
-    pub fn remove_duplicate_tracks(&self) -> Result<usize> {
-        let mut dup_ids: Vec<i64> = Vec::new();
-
-        // 1. Find duplicates by file_hash (excluding 'unknown')
-        {
-            let mut stmt = self.conn.prepare(
-                "SELECT t1.id, t1.file_path, t1.file_hash FROM tracks t1
-                 INNER JOIN tracks t2 ON t1.file_hash = t2.file_hash
-                 WHERE t1.id > t2.id AND t1.file_hash != 'unknown'"
-            )?;
-            let rows = stmt.query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-            })?;
-
-            for row in rows {
-                let (id, path, hash) = row?;
-                println!("  Duplicate (by hash): ID {} - {} (hash: {}...)", id, path, &hash[..8.min(hash.len())]);
-                dup_ids.push(id);
-            }
-
-            if !dup_ids.is_empty() {
-                println!("Found {} duplicates by file_hash", dup_ids.len());
-            }
-        }
-
-        // 2. Find duplicates by file name + file size (catches copies with 'unknown' hash)
-        {
-            let all_tracks = self.get_all_tracks()?;
-            // Key: (lowercase filename, file_size) -> first track ID with this key
-            let mut seen: std::collections::HashMap<(String, i64), i64> = std::collections::HashMap::new();
-            let mut filename_dups = 0;
-
-            for track in &all_tracks {
-                if let (Some(id), Some(size)) = (track.id, track.file_size) {
-                    // Skip if already marked as duplicate by hash
-                    if dup_ids.contains(&id) {
-                        continue;
-                    }
-
-                    // Extract filename from path
-                    let filename = track.file_path
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or(&track.file_path)
-                        .to_lowercase();
-
-                    let key = (filename.clone(), size);
-
-                    if let Some(&first_id) = seen.get(&key) {
-                        // This is a duplicate - keep the one with lower ID
-                        if id > first_id {
-                            println!("  Duplicate (by filename+size): ID {} - {} (same as ID {})", id, track.file_path, first_id);
-                            dup_ids.push(id);
-                            filename_dups += 1;
-                        }
-                    } else {
-                        seen.insert(key, id);
-                    }
-                }
-            }
-
-            if filename_dups > 0 {
-                println!("Found {} duplicates by filename+size", filename_dups);
-            }
-        }
-
-        // NOTE: We intentionally do NOT dedupe by title alone.
-        // Different artists can have songs with the same name, and users may have
-        // different versions/remixes of the same track - these are NOT duplicates.
-
-        if dup_ids.is_empty() {
-            println!("No duplicates found");
-            return Ok(0);
-        }
-
-        let count = dup_ids.len();
-        println!("Removing {} duplicate tracks...", count);
-
-        for id in &dup_ids {
-            // Remove related data first
-            self.conn.execute("DELETE FROM track_analysis WHERE track_id = ?", [id])?;
-            self.conn.execute("DELETE FROM playlist_tracks WHERE track_id = ?", [id])?;
-            self.conn.execute("DELETE FROM tracks WHERE id = ?", [id])?;
-        }
-
-        println!("Successfully removed {} duplicate tracks", count);
-        Ok(count)
-    }
-
     /// Return all duplicate groups (2+ tracks each) without deleting anything.
     /// Three passes — by file_hash, then by (lowercase filename, file_size),
     /// finally by (lowercase title, lowercase artist). A track can only appear
@@ -1533,24 +1434,6 @@ impl Database {
         }
 
         Ok(groups)
-    }
-
-    /// Delete a batch of tracks, cleaning up related analysis + playlist rows.
-    /// Returns the number of track rows actually deleted (may be less than
-    /// `ids.len()` if some ids were already gone).
-    pub fn bulk_delete_tracks(&self, ids: &[i64]) -> Result<usize> {
-        let mut deleted: usize = 0;
-        for id in ids {
-            self.conn
-                .execute("DELETE FROM track_analysis WHERE track_id = ?", [id])?;
-            self.conn
-                .execute("DELETE FROM playlist_tracks WHERE track_id = ?", [id])?;
-            let n = self
-                .conn
-                .execute("DELETE FROM tracks WHERE id = ?", [id])?;
-            deleted += n;
-        }
-        Ok(deleted)
     }
 
     /// Count tracks whose file_path starts with a given folder path prefix.
