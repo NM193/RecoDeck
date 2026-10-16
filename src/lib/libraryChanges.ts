@@ -57,23 +57,29 @@ export async function followInQueue(
   if (changes.moved.size > 0) {
     usePlayerStore.getState().patchTrackPaths(changes.moved)
   }
-  const { queue, originalQueue, currentTrack } = usePlayerStore.getState()
-  const queued = new Set(
-    [...queue, ...originalQueue, ...(currentTrack ? [currentTrack] : [])].map(
-      (t) => t.id,
-    ),
-  )
+  const queuedIds = () => {
+    const { queue, originalQueue, currentTrack } = usePlayerStore.getState()
+    return new Set(
+      [...queue, ...originalQueue, ...(currentTrack ? [currentTrack] : [])].map(
+        (t) => t.id,
+      ),
+    )
+  }
+  const kept = new Map<number, Track | null>()
+  const before = queuedIds()
+  for (const [removed, keep] of changes.merged) {
+    if (before.has(removed) && !kept.has(keep)) {
+      kept.set(keep, await getTrack(keep).catch(() => null))
+    }
+  }
+  // The queue may have changed while the kept tracks were read.
+  const queued = queuedIds()
   const replacements = new Map<number, Track | null>()
   for (const id of changes.removed) {
     if (queued.has(id)) replacements.set(id, null)
   }
-  const kept = new Map<number, Track | null>()
   for (const [removed, keep] of changes.merged) {
-    if (!queued.has(removed)) continue
-    if (!kept.has(keep)) {
-      kept.set(keep, await getTrack(keep).catch(() => null))
-    }
-    replacements.set(removed, kept.get(keep) ?? null)
+    if (queued.has(removed)) replacements.set(removed, kept.get(keep) ?? null)
   }
   if (replacements.size > 0) {
     usePlayerStore.getState().replaceTracks(replacements)

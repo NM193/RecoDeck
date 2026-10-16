@@ -52,8 +52,8 @@ interface PlayerState {
   patchTrackPaths: (paths: ReadonlyMap<number, string>) => void
   /**
    * Tracks that left the library: a merged copy becomes the track it merged
-   * into, a removed one (null) leaves the queue. The playing track keeps
-   * playing; nothing reloads.
+   * into, a removed one (null) leaves the queue. The playing entry stays and
+   * keeps playing; nothing reloads.
    */
   replaceTracks: (replacements: ReadonlyMap<number, Track | null>) => void
 }
@@ -251,18 +251,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   replaceTracks: (replacements) => {
     const { queue, originalQueue, currentTrack, currentTrackIndex } = get()
-    // The playing entry's new index: the entries kept before it, minus one
-    // when it is dropped itself, so next plays the entry after it.
+    // The playing entry stays as it is: NowPlayingBar reloads when the id at
+    // the index changes, which would restart the song. Next moves on from it.
+    const playing = queue[currentTrackIndex]
+    const others = new Map(replacements)
+    if (playing) others.delete(playing.id)
     const before = queue
       .slice(0, Math.max(currentTrackIndex, 0))
-      .filter((t) => replacements.get(t.id) !== null).length
-    const current = queue[currentTrackIndex]
-    const dropped = current !== undefined && replacements.get(current.id) === null
+      .filter((t) => others.get(t.id) !== null).length
+    // The player shows (and records plays for) the track a playing copy merged into.
     const replacement = currentTrack ? replacements.get(currentTrack.id) : undefined
     set({
-      queue: withReplacements(queue, replacements),
-      originalQueue: withReplacements(originalQueue, replacements),
-      currentTrackIndex: currentTrackIndex < 0 ? currentTrackIndex : dropped ? before - 1 : before,
+      queue: withReplacements(queue, others),
+      originalQueue: withReplacements(originalQueue, others),
+      currentTrackIndex: currentTrackIndex < 0 ? currentTrackIndex : before,
       currentTrack: replacement ?? currentTrack,
     })
   },
