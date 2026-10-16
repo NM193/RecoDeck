@@ -108,18 +108,29 @@ import {
 } from './components/MobileShare'
 import {
   clearSessionShare,
+  isReloadNavigation,
   isShareTokenShaped,
   isUnauthorized,
+  linkPairingToken,
   pickShareToken,
   readSessionShare,
   saveSessionShare,
   shareFromLink,
+  shareLinkGone,
 } from './share'
 
 // Share mode: a share link, or a reload of one in this tab. The share token is kept
-// in sessionStorage only — never in localStorage, never the saved pairing.
+// in sessionStorage only — never in localStorage, never the saved pairing. Any other
+// navigation in the tab (e.g. the plain companion URL) leaves share mode.
 const SHARE_TOKEN = INITIAL_URL
-  ? pickShareToken(INITIAL_URL, readSessionShare())
+  ? pickShareToken(
+      INITIAL_URL,
+      isReloadNavigation(
+        typeof performance !== 'undefined' ? performance : undefined,
+      )
+        ? readSessionShare()
+        : null,
+    )
   : undefined
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -130,8 +141,12 @@ export function MobileApp() {
   const [serverUrl, setServerUrl] = useState(
     () => INITIAL_URL?.origin || localStorage.getItem('companion_url') || '',
   )
+  // In share mode a companion token in the link never reaches state
   const [token, setToken] = useState(
-    () => INITIAL_URL?.token || localStorage.getItem('companion_token') || '',
+    () =>
+      (INITIAL_URL && linkPairingToken(INITIAL_URL, SHARE_TOKEN)) ||
+      localStorage.getItem('companion_token') ||
+      '',
   )
   const [errorMessage, setErrorMessage] = useState('')
   const [pasteLinkValue, setPasteLinkValue] = useState('')
@@ -263,7 +278,7 @@ export function MobileApp() {
         new URLSearchParams(u.hash.replace(/^#/, '').replace(/^\?/, '')).get(
           'token',
         )
-      if (tokenFromUrl && !token) setToken(tokenFromUrl)
+      if (tokenFromUrl && !token && !SHARE_TOKEN) setToken(tokenFromUrl)
       if (!serverUrl && u.origin && u.origin !== 'null') setServerUrl(u.origin)
     } catch {
       /* ignore */
@@ -480,6 +495,14 @@ export function MobileApp() {
     }
     const handleError = () => {
       setIsPlaying(false)
+      // Share mode: stopping or expiring the link revokes its stream tickets, so the
+      // stream fails mid-track. Ask the server; a 401 means the link is gone. (An
+      // emptied src is not a stream failure: handleShareExpired sets one.)
+      if (SHARE_TOKEN && audio.getAttribute('src')) {
+        shareLinkGone(() => httpApi.getStatus()).then((gone) => {
+          if (gone) handleShareExpired()
+        })
+      }
     }
 
     audio.addEventListener('ended', handleEnded)
@@ -489,7 +512,7 @@ export function MobileApp() {
       audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('error', handleError)
     }
-  }, [audio, handleNext])
+  }, [audio, handleNext, handleShareExpired])
 
   // Media Session API for lock screen controls
   useEffect(() => {

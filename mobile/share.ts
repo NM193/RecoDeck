@@ -56,6 +56,40 @@ export function pickShareToken(
   return nonEmpty(sessionShare)
 }
 
+/** The companion token a link carries, for the pairing state: none in share mode */
+export function linkPairingToken(
+  link: { token?: string },
+  shareToken: string | undefined,
+): string | undefined {
+  return shareToken ? undefined : link.token
+}
+
+/** What isReloadNavigation reads: window.performance, or a stand-in */
+export interface NavigationTimingSource {
+  getEntriesByType?: (type: string) => ReadonlyArray<object>
+  /** Deprecated PerformanceNavigation: type 1 is a reload */
+  navigation?: { type?: number }
+}
+
+/**
+ * Whether this page load is a reload. Only a reload reuses the session's share
+ * token, so opening the plain companion URL in the same tab leaves share mode.
+ * Without the timing APIs it is not a reload.
+ */
+export function isReloadNavigation(
+  perf: NavigationTimingSource | undefined,
+): boolean {
+  try {
+    const entry = perf?.getEntriesByType?.('navigation')?.[0] as
+      | { type?: unknown }
+      | undefined
+    if (entry && typeof entry.type === 'string') return entry.type === 'reload'
+    return perf?.navigation?.type === 1
+  } catch {
+    return false
+  }
+}
+
 /** Whether a token is shaped like one the desktop app makes: 64 lowercase hex characters */
 export function isShareTokenShaped(token: string): boolean {
   return /^[0-9a-f]{64}$/.test(token)
@@ -64,6 +98,21 @@ export function isShareTokenShaped(token: string): boolean {
 /** A 401: the share link expired, was stopped, or never existed */
 export function isUnauthorized(err: unknown): boolean {
   return err instanceof HttpStatusError && err.status === 401
+}
+
+/**
+ * Whether the share link is gone, by asking the server (e.g. GET /api/status).
+ * Only a 401 says so; a network error or any other failure does not.
+ */
+export async function shareLinkGone(
+  probe: () => Promise<unknown>,
+): Promise<boolean> {
+  try {
+    await probe()
+    return false
+  } catch (err) {
+    return isUnauthorized(err)
+  }
 }
 
 /** "Oct 23": the day a share link stops working, in local time */

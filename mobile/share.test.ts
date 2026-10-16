@@ -7,12 +7,16 @@ import {
   formatTotalLength,
   formatTrackCount,
   formatTrackLength,
+  isReloadNavigation,
   isShareTokenShaped,
   isUnauthorized,
+  linkPairingToken,
   pickShareToken,
   readSessionShare,
   saveSessionShare,
   shareFromLink,
+  shareLinkGone,
+  type NavigationTimingSource,
 } from './share'
 
 const TOKEN = 'a'.repeat(64)
@@ -83,6 +87,77 @@ describe('pickShareToken', () => {
   it('is not share mode without any share', () => {
     expect(pickShareToken({}, null)).toBe(undefined)
     expect(pickShareToken({}, '')).toBe(undefined)
+  })
+})
+
+describe('linkPairingToken', () => {
+  it('keeps the link token out of the pairing state in share mode', () => {
+    expect(linkPairingToken({ token: OTHER }, TOKEN)).toBe(undefined)
+  })
+
+  it('passes the link token through otherwise', () => {
+    expect(linkPairingToken({ token: OTHER }, undefined)).toBe(OTHER)
+    expect(linkPairingToken({}, undefined)).toBe(undefined)
+  })
+})
+
+describe('isReloadNavigation', () => {
+  const timing = (type: string) => ({
+    getEntriesByType: (kind: string) =>
+      kind === 'navigation' ? [{ type }] : [],
+  })
+
+  it('reads the navigation timing entry', () => {
+    expect(isReloadNavigation(timing('reload'))).toBe(true)
+    expect(isReloadNavigation(timing('navigate'))).toBe(false)
+    expect(isReloadNavigation(timing('back_forward'))).toBe(false)
+  })
+
+  it('falls back to the legacy navigation type', () => {
+    expect(
+      isReloadNavigation({
+        getEntriesByType: () => [],
+        navigation: { type: 1 },
+      }),
+    ).toBe(true)
+    expect(isReloadNavigation({ navigation: { type: 0 } })).toBe(false)
+  })
+
+  it('is not a reload without the APIs, or when they throw', () => {
+    expect(isReloadNavigation(undefined)).toBe(false)
+    expect(isReloadNavigation({})).toBe(false)
+    expect(
+      isReloadNavigation({
+        getEntriesByType: () => {
+          throw new Error('unsupported')
+        },
+      }),
+    ).toBe(false)
+  })
+
+  it('combined with pickShareToken: only a reload reuses the session share', () => {
+    const session = (perf: NavigationTimingSource) =>
+      isReloadNavigation(perf) ? OTHER : null
+    expect(pickShareToken({}, session(timing('reload')))).toBe(OTHER)
+    expect(pickShareToken({}, session(timing('navigate')))).toBe(undefined)
+  })
+})
+
+describe('shareLinkGone', () => {
+  it('is gone on a 401 only', async () => {
+    await expect(
+      shareLinkGone(() => Promise.reject(new HttpStatusError(401, 'x'))),
+    ).resolves.toBe(true)
+    await expect(
+      shareLinkGone(() => Promise.reject(new HttpStatusError(403, 'x'))),
+    ).resolves.toBe(false)
+  })
+
+  it('is not gone when the server answers or cannot be reached', async () => {
+    await expect(shareLinkGone(() => Promise.resolve({}))).resolves.toBe(false)
+    await expect(
+      shareLinkGone(() => Promise.reject(new TypeError('Failed to fetch'))),
+    ).resolves.toBe(false)
   })
 })
 
