@@ -294,6 +294,11 @@ A folder outside every library folder is offered as a new library folder.
 - **"Inside"** means the path equals a library folder, or starts with one
   plus `/`. A pure TS helper decides this, with a vitest test. It checks
   against `SettingsContext`'s `folders`.
+- **Never a folder that holds the library.** If a library folder is strictly
+  inside the folder (e.g. the home folder, or a file's parent when the file
+  sits right in it), nothing is offered. A warning reads `"<folder>" holds
+  your library folder "<name>". Pick a folder outside it.` Adding such a
+  folder would import everything around the library too (added 2026-10-16).
 - **The question** (Tauri `ask`): `Add "<folder name>" to your library
   folders? Its tracks are imported, and moved files are followed.` The
   buttons are `Add` and `Cancel`.

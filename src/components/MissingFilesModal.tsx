@@ -15,6 +15,7 @@ import { fixSummaryMessage } from '../lib/missingFiles/messages'
 import {
   baseName,
   isInsideFolders,
+  libraryFolderInside,
   parentFolder,
 } from '../lib/missingFiles/paths'
 import {
@@ -148,6 +149,16 @@ export function MissingFilesModal({
   /** Offers a folder outside the library as a library folder, then reloads. */
   async function offerFolder(folder: string): Promise<boolean> {
     const name = baseName(folder)
+    // Never offer a folder that holds the library (e.g. the home folder):
+    // adding it would import everything around the library too.
+    const holds = libraryFolderInside(folder, folders)
+    if (holds) {
+      notifyRef.current(
+        `"${name}" holds your library folder "${baseName(holds)}". Pick a folder outside it.`,
+        'warning',
+      )
+      return false
+    }
     const yes = await ask(
       `Add "${name}" to your library folders? Its tracks are imported, and moved files are followed.`,
       {

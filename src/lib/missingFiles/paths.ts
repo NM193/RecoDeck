@@ -14,6 +14,20 @@ export function isInsideFolders(path: string, folders: string[]): boolean {
   })
 }
 
+/** A library folder strictly inside `path` (adding `path` would take in the
+ *  whole library and everything around it, e.g. the home folder), if any. */
+export function libraryFolderInside(
+  path: string,
+  folders: string[],
+): string | undefined {
+  const p = trimSlash(path)
+  const prefix = p === '/' ? '/' : `${p}/`
+  return folders.find((f) => {
+    const folder = trimSlash(f)
+    return folder !== p && folder.startsWith(prefix)
+  })
+}
+
 /** The folder a file is in. */
 export function parentFolder(path: string): string {
   const i = path.lastIndexOf('/')
