@@ -28,3 +28,21 @@ pub fn write_wav(path: &Path, millis: u32, seed: u8) {
     }
     std::fs::write(path, bytes).unwrap();
 }
+
+/// Like `write_wav`, plus a RIFF INFO tag whose item claims more bytes than
+/// it has: lofty's normal read fails with "invalid item size", as on real
+/// files with damaged tags. The audio itself is fine.
+pub fn write_wav_with_broken_tag(path: &Path, millis: u32, seed: u8) {
+    write_wav(path, millis, seed);
+    let mut bytes = std::fs::read(path).unwrap();
+    let mut info = b"INFO".to_vec();
+    info.extend_from_slice(b"INAM");
+    info.extend_from_slice(&500u32.to_le_bytes());
+    info.extend_from_slice(b"Title\0");
+    bytes.extend_from_slice(b"LIST");
+    bytes.extend_from_slice(&(info.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&info);
+    let riff_len = (bytes.len() - 8) as u32;
+    bytes[4..8].copy_from_slice(&riff_len.to_le_bytes());
+    std::fs::write(path, bytes).unwrap();
+}

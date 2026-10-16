@@ -89,7 +89,7 @@ pub fn name_index(folders: &[String]) -> HashMap<String, Vec<String>> {
 
 /// Length (lofty, no hash) and size of one file.
 pub fn probe(path: &str) -> FoundFile {
-    let duration_ms = lofty::read_from_path(path)
+    let duration_ms = crate::scanner::read_audio_file(Path::new(path))
         .ok()
         .map(|file| file.properties().duration().as_millis() as i64);
     let file_size = std::fs::metadata(path).ok().map(|m| m.len() as i64);
@@ -335,6 +335,15 @@ mod tests {
         std::fs::write(&here, b"x").unwrap();
         let paths = vec![here.to_string_lossy().to_string(), "/gone/a.wav".into(), "/gone/b.wav".into()];
         assert_eq!(count_missing(&paths), 2);
+    }
+
+    #[test]
+    fn a_file_with_a_damaged_tag_still_has_a_length() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("song.wav");
+        crate::test_support::write_wav_with_broken_tag(&file, 3000, 1);
+
+        assert_eq!(probe(&norm(&file)).duration_ms, Some(3000));
     }
 
     #[test]

@@ -2,8 +2,10 @@
 
 use crate::db::missing::{FileFacts, HashMatch, RelinkOutcome};
 use crate::db::{Database, Track};
+use lofty::config::{ParseOptions, ParsingMode};
+use lofty::file::TaggedFile;
 use lofty::prelude::*;
-use lofty::read_from_path;
+use lofty::probe::Probe;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
@@ -84,8 +86,7 @@ impl Scanner {
     /// Extract metadata from an audio file.
     /// Returns the track, an optional BPM, and an optional Genre if present in file tags.
     pub fn extract_metadata(path: &Path) -> Result<(Track, Option<f64>, Option<String>), String> {
-        // Read file with lofty
-        let tagged_file = read_from_path(path)
+        let tagged_file = read_audio_file(path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
 
         // Get file properties (duration, sample rate, etc.)
@@ -264,6 +265,17 @@ impl Scanner {
             errors,
         }
     }
+}
+
+/// Reads a file's tags and audio properties with lofty. A damaged tag never
+/// keeps playable audio out: a normal read that fails is retried relaxed,
+/// then without tags (the title then comes from the file name). The error
+/// is the last read's, which is about the audio itself.
+pub(crate) fn read_audio_file(path: &Path) -> lofty::error::Result<TaggedFile> {
+    let read = |options: ParseOptions| Probe::open(path)?.options(options).read();
+    read(ParseOptions::new())
+        .or_else(|_| read(ParseOptions::new().parsing_mode(ParsingMode::Relaxed)))
+        .or_else(|_| read(ParseOptions::new().read_tags(false)))
 }
 
 // Normalize file path: MINIMAL normalization to preserve special characters.
@@ -553,5 +565,18 @@ mod tests {
         assert_eq!(result.relinked, 1);
         assert!(db.get_track(first).unwrap().file_path.ends_with("/song.wav"));
         assert_eq!(db.get_track(second).unwrap().file_path, "/gone/b.wav");
+    }
+
+    #[test]
+    fn a_file_with_a_damaged_tag_is_still_imported_with_its_name_as_title() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("Artist - Song.wav");
+        crate::test_support::write_wav_with_broken_tag(&file, 2000, 1);
+        assert!(lofty::read_from_path(&file).is_err(), "the fixture must break a normal read");
+
+        let (track, _, _) = Scanner::extract_metadata(&file).unwrap();
+
+        assert_eq!(track.title.as_deref(), Some("Artist - Song"));
+        assert_eq!(track.duration_ms, Some(2000));
     }
 }
