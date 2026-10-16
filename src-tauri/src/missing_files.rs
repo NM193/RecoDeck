@@ -27,6 +27,9 @@ pub struct Candidate {
     pub file_size: Option<i64>,
     /// Set when the file already is a library track: the review offers Merge into it.
     pub library_track_id: Option<i64>,
+    /// That library track's title and artist, so the row can name it.
+    pub library_title: Option<String>,
+    pub library_artist: Option<String>,
 }
 
 /// A track whose file is gone, with what the review shows about it.
@@ -128,11 +131,17 @@ pub fn look_on_disk(tracks: Vec<Track>, folders: &[String]) -> DiskView {
 /// One file for one missing track, with rule 5's answer (Locate…, Other file…).
 pub fn describe_file(db: &Database, track_id: i64, file: FoundFile) -> rusqlite::Result<Candidate> {
     let library_track_id = db.library_track_for(&file.path, track_id)?;
+    let (library_title, library_artist) = match library_track_id {
+        Some(id) => db.track_title_artist(id)?.unwrap_or_default(),
+        None => (None, None),
+    };
     Ok(Candidate {
         path: file.path,
         duration_ms: file.duration_ms,
         file_size: file.file_size,
         library_track_id,
+        library_title,
+        library_artist,
     })
 }
 
@@ -275,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn a_candidate_that_is_a_library_track_carries_its_id() {
+    fn a_candidate_that_is_a_library_track_carries_its_id_title_and_artist() {
         let dir = TempDir::new().unwrap();
         let lib = dir.path().join("lib");
         let file = lib.join("a/song.wav");
@@ -288,6 +297,8 @@ mod tests {
 
         assert_eq!(found.len(), 1, "the live track is not missing");
         assert_eq!(found[0].candidates[0].library_track_id, Some(live));
+        assert_eq!(found[0].candidates[0].library_title.as_deref(), Some("Song (new tags)"));
+        assert_eq!(found[0].candidates[0].library_artist.as_deref(), Some("Artist"));
     }
 
     #[test]

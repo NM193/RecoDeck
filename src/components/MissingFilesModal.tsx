@@ -444,6 +444,13 @@ function MissingRow({
       tone: 'warn',
     })
   }
+  if (c && view.merge) {
+    // Names the track a Merge goes into; amber when it may be another song.
+    facts.push({
+      text: `in library as ${c.library_title || 'Untitled'} — ${c.library_artist || 'Unknown artist'}`,
+      tone: view.namesDiffer ? 'warn' : undefined,
+    })
+  }
   if (track.drive_missing) {
     facts.push({ text: `on drive ${track.drive_missing}, not connected` })
   }

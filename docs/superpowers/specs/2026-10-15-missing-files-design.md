@@ -206,7 +206,9 @@ The commands go in `commands/library.rs`, registered in `lib.rs` next to
   (reuse `copy_facts`);
 - `drive_missing: Option<String>`;
 - `candidates: Vec<{ path, duration_ms: Option<i64>, file_size: Option<i64>,
-  library_track_id: Option<i64> }>`.
+  library_track_id: Option<i64>, library_title: Option<String>,
+  library_artist: Option<String> }>`. The title and artist are the library
+  track's, so a Merge row can name it.
 
 Sorted by artist, then title.
 
@@ -259,6 +261,8 @@ went missing.`
       the same-name file is the wrong one (generic names like
       `01 Track.mp3`).
   - **line 3**, facts:
+    - `in library as <title — artist>` on a Merge row, amber when the title
+      or artist differs from the row's;
     - `length differs: X in library, Y found` (amber), when it applies;
     - `on drive NAME, not connected`, when `drive_missing`;
     - `analyzed` / `not analyzed`, `N plays` / `no plays`, `in A, B` /
@@ -313,13 +317,20 @@ A folder outside every library folder is offered as a new library folder.
 
 ### Defaults
 
-- **Chosen candidate:** the first one whose length matches, else the first.
+- **Chosen candidate:** the first one the row can start on (length matches,
+  and not a Merge into a differently named track), else the first whose
+  length matches, else the first.
 - **Length matches:** both durations are known and within 2 seconds.
 - **The row starts on Relink/Merge** when its chosen candidate's length
-  matches and its drive is not the missing one. Otherwise it starts **on
-  Leave**: no candidate, length unknown, length differs, or drive not
-  connected. On an unplugged drive the file is probably still there, so a
+  matches and its drive is not the missing one, and, for a Merge, the library
+  track's title and artist match the row's (ignoring case and surrounding
+  spaces; a row without a title never matches). Otherwise it starts **on Leave**: no candidate, length unknown,
+  length differs, drive not connected, or a Merge into a differently named
+  track. On an unplugged drive the file is probably still there, so a
   same-name file elsewhere is not pre-selected, even when its length matches.
+  A Merge has no undo, and a same-name file of the same length can be another
+  song (the sandbox test, 2026-10-16: after Twin (A) relinked to
+  `New Folder/Twin.wav`, Twin (B) would have merged into it).
 
 ### Conflicts (always true, not only at start)
 

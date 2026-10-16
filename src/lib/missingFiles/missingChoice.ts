@@ -34,6 +34,8 @@ export interface RowView {
   candidate: MissingCandidate | undefined
   /** The chosen file already is a library track: Merge, not Relink. */
   merge: boolean
+  /** A Merge whose library track has another title or artist: maybe another song. */
+  namesDiffer: boolean
   lengthDiffers: boolean
   /** The lower-id row that relinks the same file. */
   blockedBy: MissingTrack | undefined
@@ -75,14 +77,44 @@ function chosenCandidate(
   const path = choice.chosen.get(track.id)
   const picked = candidates.find((c) => c.path === path)
   if (picked) return picked
-  return candidates.find((c) => lengthMatches(track, c)) ?? candidates[0]
+  return (
+    candidates.find((c) => lengthMatches(track, c) && !namesBlock(track, c)) ??
+    candidates.find((c) => lengthMatches(track, c)) ??
+    candidates[0]
+  )
+}
+
+// A Merge has no undo, and a same-name file of the same length can be
+// another song (Twin (B) next to Twin (A)), so a Merge starts selected only
+// when the library track's title and artist match too.
+function namesBlock(track: MissingTrack, c: MissingCandidate): boolean {
+  return c.library_track_id != null && !sameTitleArtist(track, c)
+}
+
+function sameText(a: string | null | undefined, b: string | null | undefined) {
+  return (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase()
+}
+
+/** The library track has the row's title and artist (case and spaces aside). */
+export function sameTitleArtist(
+  track: MissingTrack,
+  c: MissingCandidate,
+): boolean {
+  return (
+    (track.title ?? '').trim() !== '' &&
+    sameText(track.title, c.library_title) &&
+    sameText(track.artist, c.library_artist)
+  )
 }
 
 function defaultState(
   track: MissingTrack,
   candidate: MissingCandidate | undefined,
 ): FixState {
-  return candidate && lengthMatches(track, candidate) && !track.drive_missing
+  return candidate &&
+    lengthMatches(track, candidate) &&
+    !track.drive_missing &&
+    !namesBlock(track, candidate)
     ? 'fix'
     : 'leave'
 }
@@ -121,6 +153,7 @@ export function rowViews(
       candidates,
       candidate,
       merge,
+      namesDiffer: candidate !== undefined && namesBlock(track, candidate),
       lengthDiffers:
         candidate !== undefined &&
         lengthsKnown(track, candidate) &&

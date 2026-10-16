@@ -777,6 +777,9 @@ pub struct MissingCandidateDTO {
     pub file_size: Option<i64>,
     /// Set when the file already is a library track: the row offers Merge into it.
     pub library_track_id: Option<i64>,
+    /// That library track's title and artist, so the row can name it.
+    pub library_title: Option<String>,
+    pub library_artist: Option<String>,
 }
 
 impl From<Candidate> for MissingCandidateDTO {
@@ -786,6 +789,8 @@ impl From<Candidate> for MissingCandidateDTO {
             duration_ms: c.duration_ms,
             file_size: c.file_size,
             library_track_id: c.library_track_id,
+            library_title: c.library_title,
+            library_artist: c.library_artist,
         }
     }
 }

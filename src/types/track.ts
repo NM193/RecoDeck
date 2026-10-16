@@ -39,7 +39,11 @@ export interface LibraryFolder {
 }
 
 /** Why Move to folder left a track where it was. */
-export type MoveSkipReason = 'already_there' | 'name_taken' | 'missing' | 'failed'
+export type MoveSkipReason =
+  | 'already_there'
+  | 'name_taken'
+  | 'missing'
+  | 'failed'
 
 export interface MoveReport {
   moved: Array<{ id: number; newPath: string }>
@@ -199,6 +203,9 @@ export interface MissingCandidate {
   file_size: number | null
   /** Set when the file already is a library track: the row offers Merge into it. */
   library_track_id: number | null
+  /** That library track's title and artist, so the row can name it. */
+  library_title: string | null
+  library_artist: string | null
 }
 
 /** A track whose file is gone, with what the review shows about it. */

@@ -278,6 +278,15 @@ impl Database {
             .optional()?;
         Ok(kept_path.filter(|p| !crate::missing_files::is_missing(p)).map(|_| kept))
     }
+
+    /// A track's title and artist, or None when the track no longer exists.
+    pub fn track_title_artist(&self, id: i64) -> Result<Option<(Option<String>, Option<String>)>> {
+        self.conn
+            .query_row("SELECT title, artist FROM tracks WHERE id = ?1", [id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .optional()
+    }
     /// Applies the review in one transaction: relinks, then merges, then
     /// removes (spec section 4). A change that no longer fits is skipped, not
     /// rolled back. Any other error rolls everything back.

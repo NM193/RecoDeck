@@ -16,8 +16,17 @@ function file(
   path: string,
   duration_ms: number | null = 300_000,
   library_track_id: number | null = null,
+  library_title: string | null = null,
+  library_artist: string | null = null,
 ): MissingCandidate {
-  return { path, duration_ms, file_size: 1, library_track_id }
+  return {
+    path,
+    duration_ms,
+    file_size: 1,
+    library_track_id,
+    library_title,
+    library_artist,
+  }
 }
 
 function missing(
@@ -80,8 +89,48 @@ describe('defaults', () => {
 })
 
 describe('merge vs relink', () => {
+  it('starts on merge only when the library track has the same title and artist', () => {
+    const same = missing(1, [file('/m/a.mp3', 300_000, 7, ' song ', 'DJ')], {
+      title: 'Song',
+      artist: 'dj',
+    })
+    const other = missing(2, [file('/m/b.mp3', 300_000, 8, 'Twin (A)', 'DJ')], {
+      title: 'Twin (B)',
+      artist: 'DJ',
+    })
+    const views = rowViews([same, other], emptyChoice())
+    expect(views.get(1)?.state).toBe('fix')
+    expect(views.get(1)?.namesDiffer).toBe(false)
+    expect(views.get(2)?.state).toBe('leave')
+    expect(views.get(2)?.namesDiffer).toBe(true)
+  })
+
+  it('prefers a file it can start on over a differently named library track', () => {
+    const t = missing(
+      1,
+      [file('/m/a.mp3', 300_000, 8, 'Twin (A)'), file('/m/b.mp3', 300_000)],
+      { title: 'Twin (B)' },
+    )
+    const view = rowViews([t], emptyChoice()).get(1)
+    expect(view?.candidate?.path).toBe('/m/b.mp3')
+    expect(view?.state).toBe('fix')
+  })
+
+  it('still merges a differently named track when the user picks it', () => {
+    const other = missing(2, [file('/m/b.mp3', 300_000, 8, 'Twin (A)')], {
+      title: 'Twin (B)',
+    })
+    const choice = setState(emptyChoice(), 2, 'fix')
+    expect(buildFixes([other], choice).merges).toEqual([
+      { keep_id: 8, remove_id: 2 },
+    ])
+  })
+
   it('comes from the chosen file', () => {
-    const t = missing(1, [file('/m/a.mp3', 300_000, 77), file('/m/b.mp3')])
+    const t = missing(1, [
+      file('/m/a.mp3', 300_000, 77, 'Song 1'),
+      file('/m/b.mp3'),
+    ])
     const views = rowViews([t], emptyChoice())
     expect(views.get(1)?.merge).toBe(true)
     const other = rowViews([t], chooseFile(emptyChoice(), 1, '/m/b.mp3'))
@@ -114,7 +163,7 @@ describe('conflicts', () => {
     const lib = file('/m/lib.mp3', 300_000, 9)
     const fixes = buildFixes(
       [missing(1, [lib]), missing(2, [lib])],
-      emptyChoice(),
+      setState(setState(emptyChoice(), 1, 'fix'), 2, 'fix'),
     )
     expect(fixes.merges).toEqual([
       { keep_id: 9, remove_id: 1 },
@@ -210,7 +259,7 @@ describe('buildFixes and actionLabel', () => {
   it('builds relinks, merges and removes, and labels the button', () => {
     const tracks = [
       missing(1, [file('/m/a.mp3')]),
-      missing(2, [file('/m/lib.mp3', 300_000, 9)]),
+      missing(2, [file('/m/lib.mp3', 300_000, 9, 'Song 2')]),
       missing(3),
       missing(4),
     ]
