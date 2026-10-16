@@ -52,4 +52,6 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3.14"
+# Router-level tests of the companion server (already in the tree through axum).
+tower = { version = "0.5", features = ["util"] }
 

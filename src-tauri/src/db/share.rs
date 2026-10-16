@@ -1,8 +1,9 @@
 // src-tauri/src/db/share.rs
 //! Playlist share links (spec docs/superpowers/specs/2026-10-16-share-links-design.md):
 //! the database side. A share link opens one playlist on the companion server
-//! until it expires or is stopped. Expired rows are deleted whenever links are
-//! listed or looked up.
+//! until it expires or is stopped. Expired rows are deleted when links are
+//! listed, created or changed; lookups (the companion server's request path)
+//! only read.
 
 use super::Database;
 use rusqlite::{params, OptionalExtension, Result, Row};
@@ -26,12 +27,36 @@ pub struct ShareLink {
     pub expires_at: i64,
 }
 
-/// Now, in unix seconds.
-pub fn unix_now() -> i64 {
+#[cfg(test)]
+thread_local! {
+    /// Set by tests to see what a system clock before 1970 does.
+    static CLOCK_BROKEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Makes `unix_now` fail for the rest of the calling test's thread.
+#[cfg(test)]
+pub(crate) fn break_clock_in_this_thread() {
+    CLOCK_BROKEN.with(|broken| broken.set(true));
+}
+
+/// Now, in unix seconds. None when the system clock is before 1970: then no
+/// link counts as live.
+pub fn unix_now() -> Option<i64> {
+    #[cfg(test)]
+    if CLOCK_BROKEN.with(|broken| broken.get()) {
+        return None;
+    }
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
+        .ok()
         .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+}
+
+/// Now, for writes: a link cannot be dated on a broken clock.
+fn clock() -> Result<i64> {
+    unix_now().ok_or_else(|| {
+        rusqlite::Error::ToSqlConversionFailure("the system clock is set before 1970".into())
+    })
 }
 
 fn expiry(now: i64, days: i64) -> i64 {
@@ -72,13 +97,15 @@ impl Database {
             .optional()
     }
 
-    /// The live link of a playlist, if it has one.
+    /// The live link of a playlist, if it has one. Read-only.
     pub fn share_link_for(&self, playlist_id: i64) -> Result<Option<ShareLink>> {
-        self.purge_expired_share_links(unix_now())?;
+        let Some(now) = unix_now() else {
+            return Ok(None);
+        };
         self.conn
             .query_row(
-                &format!("{SELECT_LINK} WHERE s.playlist_id = ?1"),
-                [playlist_id],
+                &format!("{SELECT_LINK} WHERE s.playlist_id = ?1 AND s.expires_at > ?2"),
+                [playlist_id, now],
                 link_from_row,
             )
             .optional()
@@ -87,7 +114,7 @@ impl Database {
     /// A new link for a playlist, live for `days` from now. An expired link of
     /// the playlist is replaced; a live one makes this fail (one per playlist).
     pub fn create_share_link(&self, playlist_id: i64, days: i64) -> Result<ShareLink> {
-        let now = unix_now();
+        let now = clock()?;
         self.purge_expired_share_links(now)?;
         let token = crate::server::generate_token();
         self.conn.execute(
@@ -102,7 +129,7 @@ impl Database {
     /// Restarts a live link's time: it now expires `days` from now. None when
     /// the link is gone (stopped or expired).
     pub fn set_share_link_days(&self, token: &str, days: i64) -> Result<Option<ShareLink>> {
-        let now = unix_now();
+        let now = clock()?;
         self.purge_expired_share_links(now)?;
         let changed = self.conn.execute(
             "UPDATE share_links SET days = ?1, expires_at = ?2 WHERE token = ?3",
@@ -116,11 +143,14 @@ impl Database {
 
     /// The live links, with their playlist's name, newest first.
     pub fn list_share_links(&self) -> Result<Vec<ShareLink>> {
-        self.purge_expired_share_links(unix_now())?;
+        let Some(now) = unix_now() else {
+            return Ok(Vec::new());
+        };
+        self.purge_expired_share_links(now)?;
         let mut stmt = self.conn.prepare(&format!(
-            "{SELECT_LINK} ORDER BY s.created_at DESC, s.rowid DESC"
+            "{SELECT_LINK} WHERE s.expires_at > ?1 ORDER BY s.created_at DESC, s.rowid DESC"
         ))?;
-        let links = stmt.query_map([], link_from_row)?;
+        let links = stmt.query_map([now], link_from_row)?;
         links.collect()
     }
 
@@ -134,30 +164,22 @@ impl Database {
 
     /// Stops every live link; answers how many there were.
     pub fn delete_all_share_links(&self) -> Result<usize> {
-        self.purge_expired_share_links(unix_now())?;
+        if let Some(now) = unix_now() {
+            self.purge_expired_share_links(now)?;
+        }
         self.conn.execute("DELETE FROM share_links", [])
     }
 
-    /// The playlist a live share token opens at `now` (unix seconds). An
-    /// expired link is deleted when it is looked up.
+    /// The playlist a live share token opens at `now` (unix seconds).
+    /// Read-only: it runs on every companion request.
     pub fn shared_playlist(&self, token: &str, now: i64) -> Result<Option<i64>> {
-        let row: Option<(i64, i64)> = self
-            .conn
+        self.conn
             .query_row(
-                "SELECT playlist_id, expires_at FROM share_links WHERE token = ?1",
-                [token],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                "SELECT playlist_id FROM share_links WHERE token = ?1 AND expires_at > ?2",
+                params![token, now],
+                |row| row.get(0),
             )
-            .optional()?;
-        match row {
-            Some((playlist_id, expires_at)) if now < expires_at => Ok(Some(playlist_id)),
-            Some(_) => {
-                self.conn
-                    .execute("DELETE FROM share_links WHERE token = ?1", [token])?;
-                Ok(None)
-            }
-            None => Ok(None),
-        }
+            .optional()
     }
 
     /// Whether the playlist holds the track.
@@ -176,6 +198,10 @@ mod tests {
     use rusqlite::params;
 
     const DAY: i64 = 86_400;
+
+    fn now() -> i64 {
+        unix_now().unwrap()
+    }
 
     fn db() -> Database {
         let db = Database::new_in_memory().expect("in-memory db");
@@ -214,7 +240,7 @@ mod tests {
         db.conn
             .execute(
                 "UPDATE share_links SET expires_at = ?1 WHERE token = ?2",
-                params![unix_now() - 1, token],
+                params![now() - 1, token],
             )
             .unwrap();
     }
@@ -229,7 +255,7 @@ mod tests {
     fn a_new_link_lasts_its_days_and_has_a_fresh_token() {
         let db = db();
         let p = playlist(&db, "Warm-up");
-        let before = unix_now();
+        let before = now();
 
         let link = db.create_share_link(p, 7).unwrap();
 
@@ -238,7 +264,7 @@ mod tests {
         assert_eq!(link.days, 7);
         assert_eq!(link.token.len(), 64);
         assert!(link.token.chars().all(|c| c.is_ascii_hexdigit()));
-        assert!(link.created_at >= before && link.created_at <= unix_now());
+        assert!(link.created_at >= before && link.created_at <= now());
         assert_eq!(link.expires_at, link.created_at + 7 * DAY);
 
         let other = db.create_share_link(playlist(&db, "Peak"), 7).unwrap();
@@ -256,7 +282,9 @@ mod tests {
 
         expire(&db, &link.token);
         assert_eq!(db.share_link_for(p).unwrap(), None);
-        assert_eq!(rows(&db), 0, "the expired row is purged on lookup");
+        assert_eq!(rows(&db), 1, "a lookup never writes");
+        db.list_share_links().unwrap();
+        assert_eq!(rows(&db), 0, "listing purges the expired row");
     }
 
     #[test]
@@ -281,7 +309,7 @@ mod tests {
         assert_ne!(new.token, old.token);
         assert_eq!(new.days, 30);
         assert_eq!(rows(&db), 1);
-        assert_eq!(db.shared_playlist(&old.token, unix_now()).unwrap(), None);
+        assert_eq!(db.shared_playlist(&old.token, now()).unwrap(), None);
     }
 
     #[test]
@@ -296,12 +324,12 @@ mod tests {
             )
             .unwrap();
 
-        let before = unix_now();
+        let before = now();
         let changed = db.set_share_link_days(&link.token, 1).unwrap().unwrap();
 
         assert_eq!(changed.token, link.token);
         assert_eq!(changed.days, 1);
-        assert!(changed.expires_at >= before + DAY && changed.expires_at <= unix_now() + DAY);
+        assert!(changed.expires_at >= before + DAY && changed.expires_at <= now() + DAY);
         assert_eq!(
             changed.created_at,
             link.created_at - 5 * DAY,
@@ -361,9 +389,9 @@ mod tests {
         assert!(db.delete_share_link(&a.token).unwrap());
         assert!(!db.delete_share_link(&a.token).unwrap());
 
-        assert_eq!(db.shared_playlist(&a.token, unix_now()).unwrap(), None);
+        assert_eq!(db.shared_playlist(&a.token, now()).unwrap(), None);
         assert_eq!(
-            db.shared_playlist(&b.token, unix_now()).unwrap(),
+            db.shared_playlist(&b.token, now()).unwrap(),
             Some(b.playlist_id)
         );
     }
@@ -385,18 +413,30 @@ mod tests {
         let p = playlist(&db, "P");
         let link = db.create_share_link(p, 7).unwrap();
 
-        assert_eq!(
-            db.shared_playlist(&link.token, unix_now()).unwrap(),
-            Some(p)
-        );
-        assert_eq!(db.shared_playlist("unknown", unix_now()).unwrap(), None);
-        assert_eq!(db.shared_playlist("", unix_now()).unwrap(), None);
+        assert_eq!(db.shared_playlist(&link.token, now()).unwrap(), Some(p));
+        assert_eq!(db.shared_playlist("unknown", now()).unwrap(), None);
+        assert_eq!(db.shared_playlist("", now()).unwrap(), None);
         // At the expiry second the link is already gone.
         assert_eq!(
             db.shared_playlist(&link.token, link.expires_at).unwrap(),
             None
         );
-        assert_eq!(rows(&db), 0, "the expired row is purged on lookup");
+        assert_eq!(rows(&db), 1, "the request path never writes");
+    }
+
+    #[test]
+    fn with_a_broken_clock_no_link_is_live() {
+        let db = db();
+        let p = playlist(&db, "P");
+        let link = db.create_share_link(p, 7).unwrap();
+
+        break_clock_in_this_thread();
+
+        assert_eq!(db.share_link_for(p).unwrap(), None);
+        assert!(db.list_share_links().unwrap().is_empty());
+        assert!(db.create_share_link(playlist(&db, "Q"), 7).is_err());
+        assert!(db.set_share_link_days(&link.token, 30).is_err());
+        assert_eq!(rows(&db), 1, "nothing is purged on a clock it cannot trust");
     }
 
     #[test]
@@ -410,7 +450,7 @@ mod tests {
         db.delete_playlist(p).unwrap();
 
         assert_eq!(rows(&db), 0);
-        assert_eq!(db.shared_playlist(&link.token, unix_now()).unwrap(), None);
+        assert_eq!(db.shared_playlist(&link.token, now()).unwrap(), None);
     }
 
     #[test]

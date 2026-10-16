@@ -546,9 +546,29 @@ pub fn list_share_links(state: State<AppState>) -> Result<Vec<ShareLinkDTO>, App
     Ok(links.into_iter().map(ShareLinkDTO::from).collect())
 }
 
-/// Stops one share link. Stopping a link that is already gone is not an error.
+/// Drops the stream tickets that stopped share links handed out: one link's
+/// with `Some(token)`, every link's with None. No running server, no tickets.
+fn revoke_share_tickets(companion_state: &CompanionState, token: Option<&str>) {
+    let lock = companion_state
+        .running_server
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(server) = lock.as_ref() {
+        match token {
+            Some(token) => server.server_state.revoke_share_tickets(token),
+            None => server.server_state.revoke_all_share_tickets(),
+        }
+    }
+}
+
+/// Stops one share link, and the stream tickets it handed out. Stopping a
+/// link that is already gone is not an error.
 #[tauri::command]
-pub fn stop_share_link(state: State<AppState>, token: String) -> Result<(), AppError> {
+pub fn stop_share_link(
+    state: State<AppState>,
+    companion_state: State<'_, CompanionState>,
+    token: String,
+) -> Result<(), AppError> {
     let db_lock = state
         .db
         .lock()
@@ -558,12 +578,17 @@ pub fn stop_share_link(state: State<AppState>, token: String) -> Result<(), AppE
         .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
     db.delete_share_link(&token).map_err(share_db_error)?;
+    drop(db_lock);
+    revoke_share_tickets(&companion_state, Some(&token));
     Ok(())
 }
 
-/// Stops every share link; answers how many were live.
+/// Stops every share link, and their stream tickets; answers how many were live.
 #[tauri::command]
-pub fn stop_all_share_links(state: State<AppState>) -> Result<usize, AppError> {
+pub fn stop_all_share_links(
+    state: State<AppState>,
+    companion_state: State<'_, CompanionState>,
+) -> Result<usize, AppError> {
     let db_lock = state
         .db
         .lock()
@@ -572,7 +597,10 @@ pub fn stop_all_share_links(state: State<AppState>) -> Result<usize, AppError> {
         .as_ref()
         .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
-    db.delete_all_share_links().map_err(share_db_error)
+    let stopped = db.delete_all_share_links().map_err(share_db_error)?;
+    drop(db_lock);
+    revoke_share_tickets(&companion_state, None);
+    Ok(stopped)
 }
 
 #[cfg(test)]
@@ -590,6 +618,35 @@ mod tests {
                 "{days}"
             );
         }
+    }
+
+    #[test]
+    fn stopping_links_revokes_their_tickets_on_the_running_server() {
+        let companion = CompanionState::new();
+        // No server running: no tickets, nothing to do.
+        revoke_share_tickets(&companion, Some("link-a"));
+
+        let state = Arc::new(server::CompanionServerState::for_tests(
+            Database::new_in_memory().unwrap(),
+            "companion",
+        ));
+        let a = state.create_share_ticket(1, "link-a", server::TICKET_LIFETIME);
+        let b = state.create_share_ticket(2, "link-b", server::TICKET_LIFETIME);
+        let full = state.create_ticket(3);
+        *companion.running_server.lock().unwrap() = Some(RunningServer {
+            shutdown_tx: tokio::sync::oneshot::channel::<()>().0,
+            addr: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            token: "companion".into(),
+            server_state: state.clone(),
+        });
+
+        revoke_share_tickets(&companion, Some("link-a"));
+        assert_eq!(state.validate_ticket(&a), None);
+        assert_eq!(state.validate_ticket(&b), Some(2));
+
+        revoke_share_tickets(&companion, None);
+        assert_eq!(state.validate_ticket(&b), None);
+        assert_eq!(state.validate_ticket(&full), Some(3));
     }
 
     #[test]

@@ -20,6 +20,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -39,14 +40,29 @@ use crate::db::Database;
 pub struct StreamTicket {
     pub track_id: i64,
     pub created_at: std::time::Instant,
+    /// TICKET_LIFETIME, or less when the share link it came through expires sooner.
+    pub lifetime: Duration,
+    /// The share link it was issued through, so stopping the link drops it;
+    /// None for the companion token.
+    pub share_token: Option<String>,
 }
 
+/// How long a ticket lasts: long enough for full track playback with seeking.
+pub const TICKET_LIFETIME: Duration = Duration::from_secs(600);
+
 impl StreamTicket {
-    /// Ticket expires after 10 minutes — long enough for full track playback with seeking.
+    /// Ticket expires after its lifetime (10 minutes at most).
     /// Expired tickets are cleaned on each create_ticket() and validate_ticket() call.
     pub fn is_expired(&self) -> bool {
-        self.created_at.elapsed().as_secs() > 600
+        self.created_at.elapsed() > self.lifetime
     }
+}
+
+/// How long a ticket issued through a share link lasts: TICKET_LIFETIME at
+/// most, and never past the link's expiry (unix seconds).
+pub fn share_ticket_lifetime(expires_at: i64, now: i64) -> Duration {
+    let left = expires_at.saturating_sub(now).max(0) as u64;
+    Duration::from_secs(left).min(TICKET_LIFETIME)
 }
 
 /// Shared state for the companion server
@@ -68,6 +84,30 @@ pub struct CompanionServerState {
 impl CompanionServerState {
     /// Generate a new random stream ticket for a track
     pub fn create_ticket(&self, track_id: i64) -> String {
+        self.issue_ticket(track_id, TICKET_LIFETIME, None)
+    }
+
+    /// A ticket issued through a share link: it lasts `lifetime` (10 minutes
+    /// at most) and goes when the link is stopped.
+    pub fn create_share_ticket(
+        &self,
+        track_id: i64,
+        share_token: &str,
+        lifetime: Duration,
+    ) -> String {
+        self.issue_ticket(
+            track_id,
+            lifetime.min(TICKET_LIFETIME),
+            Some(share_token.to_string()),
+        )
+    }
+
+    fn issue_ticket(
+        &self,
+        track_id: i64,
+        lifetime: Duration,
+        share_token: Option<String>,
+    ) -> String {
         let ticket: String = {
             let mut rng = thread_rng();
             (0..32)
@@ -83,6 +123,8 @@ impl CompanionServerState {
             StreamTicket {
                 track_id,
                 created_at: std::time::Instant::now(),
+                lifetime,
+                share_token,
             },
         );
         ticket
@@ -102,6 +144,18 @@ impl CompanionServerState {
         tickets.clear();
     }
 
+    /// Drops the tickets issued through a share link (it was stopped).
+    pub fn revoke_share_tickets(&self, share_token: &str) {
+        let mut tickets = self.tickets.lock().unwrap();
+        tickets.retain(|_, t| t.share_token.as_deref() != Some(share_token));
+    }
+
+    /// Drops every ticket issued through a share link (all were stopped).
+    pub fn revoke_all_share_tickets(&self) {
+        let mut tickets = self.tickets.lock().unwrap();
+        tickets.retain(|_, t| t.share_token.is_none());
+    }
+
     /// Get current active stream count
     pub fn active_stream_count(&self) -> usize {
         self.active_streams.load(Ordering::Relaxed)
@@ -116,36 +170,64 @@ impl CompanionServerState {
         if tokens_match(provided, &self.token) {
             return Ok(Bearer::Companion);
         }
+        // Anything not shaped like a share token is turned away before it can
+        // take the database lock, and a clock that cannot be trusted makes
+        // no link live.
+        if !is_token_shaped(provided) {
+            return Ok(Bearer::Unknown);
+        }
+        let Some(now) = crate::db::share::unix_now() else {
+            return Ok(Bearer::Unknown);
+        };
         let db_lock = self
             .db
             .lock()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
         let playlist = db
-            .shared_playlist(provided, crate::db::share::unix_now())
+            .shared_playlist(provided, now)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        Ok(playlist.map_or(Bearer::Unknown, Bearer::Share))
+        Ok(match playlist {
+            Some(playlist_id) => Bearer::Share {
+                playlist_id,
+                token: provided.to_string(),
+            },
+            None => Bearer::Unknown,
+        })
     }
 }
 
 /// What a request may reach. `auth_middleware` puts it in the request
 /// extensions; handlers that serve share links read it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Access {
     /// The companion token: the whole library.
     Full,
-    /// A live share link: one playlist only.
-    Share { playlist_id: i64 },
+    /// A live share link: one playlist only. Its token goes on the stream
+    /// tickets it gets, so stopping the link drops them.
+    Share { playlist_id: i64, token: String },
 }
 
 /// Who a Bearer token belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Bearer {
     Companion,
     /// A live share link of this playlist.
-    Share(i64),
+    Share {
+        playlist_id: i64,
+        token: String,
+    },
     /// No token, an unknown one, or an expired or stopped share link.
     Unknown,
+}
+
+/// Whether a token is shaped like one from `generate_token`: 64 lowercase
+/// hex characters.
+fn is_token_shaped(token: &str) -> bool {
+    token.len() == 64
+        && token
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Compares a provided token with the expected one in constant time: a
@@ -163,33 +245,26 @@ fn tokens_match(provided: &str, expected: &str) -> bool {
 /// The middleware's decision for a Bearer route: the companion token reaches
 /// everything; a share link reaches its status, its own playlist and stream
 /// tickets (the handler checks the track is in the playlist), and nothing
-/// else (403); anyone else gets 401.
+/// else (403); anyone else gets 401. Paths must be exact: its playlist only
+/// as `/api/playlists/<id>/tracks`, never `+5`, `05`, `%35` or a trailing `/`.
 fn access_for(bearer: Bearer, path: &str, method: &Method) -> Result<Access, StatusCode> {
-    let playlist_id = match bearer {
+    let (playlist_id, token) = match bearer {
         Bearer::Unknown => return Err(StatusCode::UNAUTHORIZED),
         Bearer::Companion => return Ok(Access::Full),
-        Bearer::Share(playlist_id) => playlist_id,
+        Bearer::Share { playlist_id, token } => (playlist_id, token),
     };
     let allowed = if method == Method::GET {
-        path == "/api/status" || playlist_in_path(path) == Some(playlist_id)
+        path == "/api/status" || path == format!("/api/playlists/{playlist_id}/tracks")
     } else if method == Method::POST {
         path == "/api/stream-ticket"
     } else {
         false
     };
     if allowed {
-        Ok(Access::Share { playlist_id })
+        Ok(Access::Share { playlist_id, token })
     } else {
         Err(StatusCode::FORBIDDEN)
     }
-}
-
-/// The playlist id of a `/api/playlists/{id}/tracks` path.
-fn playlist_in_path(path: &str) -> Option<i64> {
-    path.strip_prefix("/api/playlists/")?
-        .strip_suffix("/tracks")?
-        .parse()
-        .ok()
 }
 
 /// Holds the running server's shutdown mechanism
@@ -389,6 +464,18 @@ async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
+/// The API and streaming routes, behind the auth middleware.
+pub(crate) fn api_router(state: Arc<CompanionServerState>) -> Router {
+    Router::new()
+        .merge(routes::api_routes())
+        .merge(streaming::stream_routes())
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
+        .with_state(state)
+}
+
 /// Start the companion HTTP server on the given port.
 /// Returns the running server handle (for shutdown) or an error.
 pub async fn start_server(
@@ -419,14 +506,7 @@ pub async fn start_server(
         .allow_origin("*".parse::<HeaderValue>().unwrap());
 
     // API + streaming routes (auth-protected)
-    let api_routes = Router::new()
-        .merge(routes::api_routes())
-        .merge(streaming::stream_routes())
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware,
-        ))
-        .with_state(state.clone());
+    let api_routes = api_router(state.clone());
 
     // Serve mobile PWA static files (no auth needed — the app itself is public,
     // only API endpoints require authentication)
@@ -588,7 +668,10 @@ mod tests {
     const SHARED: i64 = 5;
 
     fn share() -> Bearer {
-        Bearer::Share(SHARED)
+        Bearer::Share {
+            playlist_id: SHARED,
+            token: "t".into(),
+        }
     }
 
     #[test]
@@ -630,6 +713,7 @@ mod tests {
     fn a_share_token_gets_status_its_playlist_and_tickets() {
         let ok = Ok(Access::Share {
             playlist_id: SHARED,
+            token: "t".into(),
         });
         assert_eq!(access_for(share(), "/api/status", &Method::GET), ok);
         assert_eq!(
@@ -663,6 +747,53 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_share_token_gets_only_the_canonical_path_of_its_playlist() {
+        for path in [
+            "/api/playlists/+5/tracks",
+            "/api/playlists/05/tracks",
+            "/api/playlists/%35/tracks",
+            "/api/playlists/-5/tracks",
+            "/api/playlists/5%20/tracks",
+            "/api/playlists/5/tracks/",
+            "/api/playlists//tracks",
+            "/api/playlists/5//tracks",
+            "//api/playlists/5/tracks",
+            "/api//playlists/5/tracks",
+            "/api/status/",
+            "//api/status",
+        ] {
+            assert_eq!(
+                access_for(share(), path, &Method::GET),
+                Err(StatusCode::FORBIDDEN),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_share_token_is_forbidden_every_other_method_head_included() {
+        for method in [
+            Method::HEAD,
+            Method::PUT,
+            Method::DELETE,
+            Method::PATCH,
+            Method::OPTIONS,
+        ] {
+            for path in [
+                "/api/status",
+                "/api/playlists/5/tracks",
+                "/api/stream-ticket",
+            ] {
+                assert_eq!(
+                    access_for(share(), path, &method),
+                    Err(StatusCode::FORBIDDEN),
+                    "{method} {path}"
+                );
+            }
+        }
+    }
+
     // ---- who a Bearer token belongs to ----
 
     fn db_with_playlist() -> (Database, i64) {
@@ -672,6 +803,13 @@ mod tests {
         (db, playlist)
     }
 
+    /// A server whose database is not open: any lookup answers 503.
+    fn state_without_db() -> CompanionServerState {
+        let state = CompanionServerState::for_tests(Database::new_in_memory().unwrap(), COMPANION);
+        *state.db.lock().unwrap() = None;
+        state
+    }
+
     #[test]
     fn bearer_for_tells_the_companion_token_from_a_share_link() {
         let (db, playlist) = db_with_playlist();
@@ -679,9 +817,41 @@ mod tests {
         let state = CompanionServerState::for_tests(db, COMPANION);
 
         assert_eq!(state.bearer_for(COMPANION), Ok(Bearer::Companion));
-        assert_eq!(state.bearer_for(&link.token), Ok(Bearer::Share(playlist)));
+        assert_eq!(
+            state.bearer_for(&link.token),
+            Ok(Bearer::Share {
+                playlist_id: playlist,
+                token: link.token.clone()
+            })
+        );
+        assert_eq!(state.bearer_for(&generate_token()), Ok(Bearer::Unknown));
         assert_eq!(state.bearer_for("not-a-token"), Ok(Bearer::Unknown));
         assert_eq!(state.bearer_for(""), Ok(Bearer::Unknown));
+    }
+
+    #[test]
+    fn a_malformed_bearer_is_unknown_without_touching_the_database() {
+        let state = state_without_db();
+        let token = generate_token();
+        let malformed = vec![
+            String::new(),
+            "short".to_string(),
+            token[..63].to_string(),
+            format!("{token}0"),
+            token.to_uppercase(),
+            format!("{}g", &token[..63]),
+            format!(" {}", &token[1..]),
+        ];
+        for bad in &malformed {
+            assert_eq!(state.bearer_for(bad), Ok(Bearer::Unknown), "{bad:?}");
+        }
+        // A well-formed one does reach the database (none here).
+        assert_eq!(
+            state.bearer_for(&token),
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        );
+        // The companion token never needs it.
+        assert_eq!(state.bearer_for(COMPANION), Ok(Bearer::Companion));
     }
 
     #[test]
@@ -692,6 +862,60 @@ mod tests {
         let state = CompanionServerState::for_tests(db, COMPANION);
 
         assert_eq!(state.bearer_for(&link.token), Ok(Bearer::Unknown));
+    }
+
+    #[test]
+    fn on_a_broken_clock_a_share_link_is_unknown() {
+        let (db, playlist) = db_with_playlist();
+        let link = db.create_share_link(playlist, 7).unwrap();
+        let state = CompanionServerState::for_tests(db, COMPANION);
+
+        crate::db::share::break_clock_in_this_thread();
+
+        assert_eq!(state.bearer_for(&link.token), Ok(Bearer::Unknown));
+        assert_eq!(state.bearer_for(COMPANION), Ok(Bearer::Companion));
+    }
+
+    // ---- stream tickets issued through a share link ----
+
+    #[test]
+    fn stopping_a_link_revokes_its_tickets_only() {
+        let state = state_without_db();
+        let full = state.create_ticket(1);
+        let a = state.create_share_ticket(2, "link-a", TICKET_LIFETIME);
+        let b = state.create_share_ticket(3, "link-b", TICKET_LIFETIME);
+
+        state.revoke_share_tickets("link-a");
+
+        assert_eq!(state.validate_ticket(&a), None);
+        assert_eq!(state.validate_ticket(&b), Some(3));
+        assert_eq!(state.validate_ticket(&full), Some(1));
+
+        state.revoke_all_share_tickets();
+
+        assert_eq!(state.validate_ticket(&b), None);
+        assert_eq!(state.validate_ticket(&full), Some(1));
+    }
+
+    #[test]
+    fn a_share_ticket_ends_with_its_lifetime() {
+        let state = state_without_db();
+        let ticket = state.create_share_ticket(2, "link", Duration::ZERO);
+        std::thread::sleep(Duration::from_millis(2));
+
+        assert_eq!(state.validate_ticket(&ticket), None);
+    }
+
+    #[test]
+    fn a_share_ticket_never_outlives_its_link() {
+        let now = 1_000_000;
+        assert_eq!(share_ticket_lifetime(now + 86_400, now), TICKET_LIFETIME);
+        assert_eq!(
+            share_ticket_lifetime(now + 30, now),
+            Duration::from_secs(30)
+        );
+        assert_eq!(share_ticket_lifetime(now, now), Duration::ZERO);
+        assert_eq!(share_ticket_lifetime(now - 5, now), Duration::ZERO);
     }
 
     // ---- the share page's injection ----
