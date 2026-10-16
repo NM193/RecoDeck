@@ -1285,8 +1285,8 @@ impl Database {
     /// Three passes — by file_hash, then by (lowercase filename, file_size),
     /// finally by (lowercase title, lowercase artist). A track can only appear
     /// in one group total (first-seen pass wins); a track left over for the
-    /// third pass joins the group of an earlier-grouped track with its title
-    /// and artist. Each group's tracks are
+    /// third pass joins the earliest group of a track with its title and
+    /// artist, and that group becomes `same_title_artist`. Each group's tracks are
     /// sorted by id ASC, so `tracks[0]` is the earliest import (recommended keep).
     pub fn get_duplicate_groups(&self) -> Result<Vec<(String, Vec<Track>)>> {
         let mut groups: Vec<(String, Vec<Track>)> = Vec::new();
@@ -1442,15 +1442,21 @@ impl Database {
             }
 
             for (_, tracks) in by_title_artist {
-                let grouped = tracks.iter().find_map(|t| t.id.and_then(|id| group_of.get(&id)).copied());
+                // The earliest group, so the choice never depends on row order.
+                let grouped = tracks.iter().filter_map(|t| t.id.and_then(|id| group_of.get(&id)).copied()).min();
                 let mut unseen: Vec<Track> = tracks
                     .into_iter()
                     .filter(|t| t.id.map(|id| !seen_ids.contains(&id)).unwrap_or(false))
                     .collect();
                 if let Some(index) = grouped {
-                    let members = &mut groups[index].1;
-                    members.append(&mut unseen);
-                    members.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    if !unseen.is_empty() {
+                        // A copy that matches only by title and artist makes the whole
+                        // group a probable one: the label must not claim "identical".
+                        let (reason, members) = &mut groups[index];
+                        *reason = "same_title_artist".to_string();
+                        members.append(&mut unseen);
+                        members.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
+                    }
                 } else if unseen.len() > 1 {
                     unseen.sort_by_key(|t| t.id.unwrap_or(i64::MAX));
                     groups.push(("same_title_artist".to_string(), unseen));
@@ -3259,7 +3265,8 @@ mod tests {
         let groups = db.get_duplicate_groups().unwrap();
 
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].0, "identical_filename_size");
+        // The group is only as sure as its weakest match.
+        assert_eq!(groups[0].0, "same_title_artist");
         let ids: Vec<i64> = groups[0].1.iter().filter_map(|t| t.id).collect();
         assert_eq!(ids, vec![one, two, three]);
     }
