@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { tauriApi } from '../lib/tauri-api'
+import { followInQueue, mergeChanges } from '../lib/libraryChanges'
 import { useOverlay } from '../lib/overlays'
 import { getErrorMessage } from '../types/ai'
 import { copyFacts, copyPlace } from '../lib/duplicates/copyFacts'
@@ -177,6 +178,7 @@ export function DuplicatesModal({
         summaryMessage(result),
         result.trash_failed.length > 0 ? 'warning' : 'success',
       )
+      void followInQueue(mergeChanges(merges))
       onTracksChanged()
       await loadGroups()
     } catch (err) {

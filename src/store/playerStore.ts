@@ -50,6 +50,22 @@ interface PlayerState {
   applyQueueAction: (tracks: Track[], mode: string) => void
   /** New paths for tracks whose files moved (Move to folder); nothing reloads. */
   patchTrackPaths: (paths: ReadonlyMap<number, string>) => void
+  /**
+   * Tracks that left the library: a merged copy becomes the track it merged
+   * into, a removed one (null) leaves the queue. The playing track keeps
+   * playing; nothing reloads.
+   */
+  replaceTracks: (replacements: ReadonlyMap<number, Track | null>) => void
+}
+
+/** The tracks with each replaced one swapped or (null) dropped; the same array when none is. */
+export function withReplacements(tracks: Track[], replacements: ReadonlyMap<number, Track | null>): Track[] {
+  if (!tracks.some((t) => replacements.has(t.id))) return tracks
+  return tracks.flatMap((t) => {
+    if (!replacements.has(t.id)) return [t]
+    const next = replacements.get(t.id)
+    return next ? [next] : []
+  })
 }
 
 /** The tracks with their moved files' new paths; the same array when none moved. */
@@ -230,6 +246,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         currentTrack && paths.has(currentTrack.id)
           ? { ...currentTrack, file_path: paths.get(currentTrack.id)! }
           : currentTrack,
+    })
+  },
+
+  replaceTracks: (replacements) => {
+    const { queue, originalQueue, currentTrack, currentTrackIndex } = get()
+    // The playing entry's new index: the entries kept before it, minus one
+    // when it is dropped itself, so next plays the entry after it.
+    const before = queue
+      .slice(0, Math.max(currentTrackIndex, 0))
+      .filter((t) => replacements.get(t.id) !== null).length
+    const current = queue[currentTrackIndex]
+    const dropped = current !== undefined && replacements.get(current.id) === null
+    const replacement = currentTrack ? replacements.get(currentTrack.id) : undefined
+    set({
+      queue: withReplacements(queue, replacements),
+      originalQueue: withReplacements(originalQueue, replacements),
+      currentTrackIndex: currentTrackIndex < 0 ? currentTrackIndex : dropped ? before - 1 : before,
+      currentTrack: replacement ?? currentTrack,
     })
   },
 }))

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ask, open } from '@tauri-apps/plugin-dialog'
 import { tauriApi } from '../lib/tauri-api'
+import { followInQueue, missingFixChanges } from '../lib/libraryChanges'
 import { useOverlay } from '../lib/overlays'
 import { getErrorMessage } from '../types/ai'
 import { copyPlace } from '../lib/duplicates/copyFacts'
@@ -234,6 +235,7 @@ export function MissingFilesModal({
         fixSummaryMessage(summary),
         summary.skipped.length > 0 ? 'warning' : 'success',
       )
+      void followInQueue(missingFixChanges(fixes, summary))
       onTracksChanged()
       await load()
     } catch (err) {
