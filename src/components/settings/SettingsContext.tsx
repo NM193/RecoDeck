@@ -7,6 +7,8 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { tauriApi } from '../../lib/tauri-api'
 import { useAIStore } from '../../store/aiStore'
 import type { YouTubeQuotaStatus } from '../../types/youtube'
+import { followedMessage } from '../../lib/missingFiles/messages'
+import type { ScanResult } from '../../types/track'
 import { getErrorMessage } from '../../types/ai'
 
 // --- Types ---
@@ -38,6 +40,8 @@ export interface SettingsContextValue {
   handleRemoveFolder: (path: string) => Promise<void>
   handleRescanFolder: (path: string) => Promise<void>
   handleRescanAll: () => Promise<void>
+  /** Adds a library folder and scans it. Settings → Library and the Missing Files review share it. */
+  addFolderAndScan: (path: string) => Promise<ScanResult>
 
   // Appearance
   currentTheme: string
@@ -49,9 +53,6 @@ export interface SettingsContextValue {
   handleCrossfadeEnabledChange: (enabled: boolean) => Promise<void>
   handleCrossfadeDurationChange: (duration: number) => Promise<void>
 
-  // Database
-  cleaningDuplicates: boolean
-  handleCleanupDuplicates: () => Promise<void>
   // Callbacks surfaced for sub-components that need them (e.g. DuplicatesModal)
   onFoldersChanged: () => void
   onNotification?: (
@@ -140,7 +141,6 @@ export function SettingsProvider({
   const [scanningFolder, setScanningFolder] = useState<string | null>(null)
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [scanStartTime, setScanStartTime] = useState<number | null>(null)
-  const [cleaningDuplicates, setCleaningDuplicates] = useState(false)
   const [updateChecking, setUpdateChecking] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null)
@@ -285,26 +285,38 @@ export function SettingsProvider({
 
   // --- Library handlers ---
 
+  function notifyFollowed(relinked: number) {
+    const message = followedMessage(relinked)
+    if (message) onNotification?.(message, 'success')
+  }
+
+  async function addFolderAndScan(path: string): Promise<ScanResult> {
+    const updatedFolders = await tauriApi.addLibraryFolder(path)
+    setFolders(updatedFolders)
+    setScanningFolder(path)
+    setScanStartTime(Date.now())
+    try {
+      const result = await tauriApi.scanDirectory(path)
+      notifyFollowed(result.relinked)
+      return result
+    } finally {
+      setScanningFolder(null)
+      setScanProgress(null)
+      setScanStartTime(null)
+      // The folder is in the library even when its scan failed.
+      onFoldersChanged()
+    }
+  }
+
   async function handleAddFolder() {
     try {
       setError(null)
       const selectedPath = await open({ directory: true, multiple: false, title: 'Add Library Folder' })
       if (!selectedPath) return
       setLoading(true)
-      const updatedFolders = await tauriApi.addLibraryFolder(selectedPath as string)
-      setFolders(updatedFolders)
-      setScanningFolder(selectedPath as string)
-      setScanStartTime(Date.now())
-      await tauriApi.scanDirectory(selectedPath as string)
-      setScanningFolder(null)
-      setScanProgress(null)
-      setScanStartTime(null)
-      onFoldersChanged()
+      await addFolderAndScan(selectedPath as string)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      setScanningFolder(null)
-      setScanProgress(null)
-      setScanStartTime(null)
     } finally {
       setLoading(false)
     }
@@ -342,10 +354,11 @@ export function SettingsProvider({
       setError(null)
       setScanningFolder(path)
       setScanStartTime(Date.now())
-      await tauriApi.scanDirectory(path)
+      const result = await tauriApi.scanDirectory(path)
       setScanningFolder(null)
       setScanProgress(null)
       setScanStartTime(null)
+      notifyFollowed(result.relinked)
       onFoldersChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -359,15 +372,18 @@ export function SettingsProvider({
     try {
       setError(null)
       setLoading(true)
+      let relinked = 0
       for (const folder of folders) {
         setScanningFolder(folder)
         setScanStartTime(Date.now())
         setScanProgress(null)
-        await tauriApi.scanDirectory(folder)
+        const result = await tauriApi.scanDirectory(folder)
+        relinked += result.relinked
       }
       setScanningFolder(null)
       setScanProgress(null)
       setScanStartTime(null)
+      notifyFollowed(relinked)
       onFoldersChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -412,28 +428,6 @@ export function SettingsProvider({
       setCrossfadeDuration(clamped)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  // --- Database handlers ---
-
-  async function handleCleanupDuplicates() {
-    try {
-      setError(null)
-      setCleaningDuplicates(true)
-      const duplicatesRemoved = await tauriApi.cleanupDuplicateTracks()
-      if (duplicatesRemoved > 0) {
-        onNotification?.(`Successfully removed ${duplicatesRemoved} duplicate track${duplicatesRemoved > 1 ? 's' : ''}`, 'success')
-        onFoldersChanged()
-      } else {
-        onNotification?.('No duplicates found', 'info')
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      setError(errorMsg)
-      onNotification?.(errorMsg, 'error')
-    } finally {
-      setCleaningDuplicates(false)
     }
   }
 
@@ -693,12 +687,10 @@ export function SettingsProvider({
 
   const value: SettingsContextValue = {
     folders, loading, error, setError, scanningFolder, scanProgress, scanStartTime,
-    handleAddFolder, handleRemoveFolder, handleRescanFolder, handleRescanAll,
+    handleAddFolder, handleRemoveFolder, handleRescanFolder, handleRescanAll, addFolderAndScan,
     currentTheme, handleThemeChange,
     crossfadeEnabled, crossfadeDuration,
     handleCrossfadeEnabledChange, handleCrossfadeDurationChange,
-    cleaningDuplicates,
-    handleCleanupDuplicates,
     onFoldersChanged, onNotification,
     isApiKeyConfigured, apiKeyInput, setApiKeyInput, showApiKey, setShowApiKey, aiSaving,
     handleSaveApiKey, handleDeleteApiKey,

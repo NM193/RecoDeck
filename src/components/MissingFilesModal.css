@@ -1,0 +1,221 @@
+/* Missing Files review. The shell, tabs, cards, rows, segmented control and
+   footer come from DuplicatesModal.css; this file adds only what is new. */
+
+.mf-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mf-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mf-card__title::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.mf-card--found .mf-card__title::before {
+  background: var(--color-success);
+}
+
+.mf-card--missing .mf-card__title::before {
+  background: var(--text-secondary);
+}
+
+.mf-card__count {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mf-card__hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mf-row--fix {
+  background: rgba(var(--color-success-rgb), 0.06);
+}
+
+.mf-row--remove {
+  background: rgba(var(--color-danger-rgb), 0.07);
+}
+
+.mf-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.mf-title__text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mf-title__text strong {
+  font-weight: 600;
+}
+
+.mf-artist {
+  color: var(--text-secondary);
+}
+
+.mf-pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mf-pill--lib {
+  background: rgba(var(--color-info-rgb), 0.14);
+  color: var(--color-info);
+}
+
+.mf-pill--warn {
+  background: rgba(var(--color-warning-rgb), 0.14);
+  color: var(--color-warning);
+}
+
+.mf-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.mf-old,
+.mf-new {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mf-old,
+.mf-folder {
+  color: var(--text-secondary);
+}
+
+.mf-new {
+  color: var(--text-primary);
+}
+
+.mf-arrow {
+  flex: none;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.mf-select {
+  min-width: 0;
+  max-width: 320px;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.mf-link {
+  flex: none;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.mf-link:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.dup-fact--warn {
+  color: var(--color-warning);
+}
+
+.dup-fact--danger {
+  color: var(--color-danger);
+}
+
+.mf-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mf-locate {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mf-locate:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.dup-seg__btn.mf-seg--fix {
+  background: rgba(var(--color-success-rgb), 0.18);
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.dup-seg__btn.mf-seg--leave {
+  background: var(--bg-elevated, var(--bg-tertiary));
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.dup-seg__btn.mf-seg--remove {
+  background: rgba(var(--color-danger-rgb), 0.2);
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.mf-footer__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Settings → Database: the count on Review Missing Files */
+.mf-count {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

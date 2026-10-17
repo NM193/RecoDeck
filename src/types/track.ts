@@ -39,7 +39,11 @@ export interface LibraryFolder {
 }
 
 /** Why Move to folder left a track where it was. */
-export type MoveSkipReason = 'already_there' | 'name_taken' | 'missing' | 'failed'
+export type MoveSkipReason =
+  | 'already_there'
+  | 'name_taken'
+  | 'missing'
+  | 'failed'
 
 export interface MoveReport {
   moved: Array<{ id: number; newPath: string }>
@@ -57,6 +61,8 @@ export interface ScanResult {
   total_files: number
   imported: number
   skipped: number
+  /** Tracks whose file was gone, now pointing at the moved file. */
+  relinked: number
   errors: ScanError[]
 }
 
@@ -186,4 +192,58 @@ export interface MergeSummary {
   trashed: number
   /** Paths that could not go to the Trash. */
   trash_failed: string[]
+}
+
+// Missing files (spec 2026-10-15)
+
+/** A file that might be a missing track's file. */
+export interface MissingCandidate {
+  path: string
+  duration_ms: number | null
+  file_size: number | null
+  /** Set when the file already is a library track: the row offers Merge into it. */
+  library_track_id: number | null
+  /** That library track's title and artist, so the row can name it. */
+  library_title: string | null
+  library_artist: string | null
+}
+
+/** A track whose file is gone, with what the review shows about it. */
+export interface MissingTrack extends Track {
+  playlists: PlaylistRef[]
+  /** Has BPM or key. */
+  analyzed: boolean
+  /** Rows in the play history. */
+  plays: number
+  /** The unplugged drive its file was on. */
+  drive_missing: string | null
+  /** Same-name files in the library folders, ordered by path. */
+  candidates: MissingCandidate[]
+}
+
+export interface MissingFixes {
+  relinks: { track_id: number; path: string }[]
+  merges: { keep_id: number; remove_id: number }[]
+  removes: number[]
+}
+
+export interface MissingFixSummary {
+  relinked: number
+  merged: number
+  removed: number
+  skipped: { track_id: number; reason: string }[]
+}
+
+// Playlist share links (spec 2026-10-16)
+
+/** A live share link: opens one playlist until expires_at. Times are unix seconds. */
+export interface ShareLink {
+  /** 64 hex characters; the share URL is `<companion url>/?share=<token>`. */
+  token: string
+  playlist_id: number
+  playlist_name: string
+  /** The duration last picked. */
+  days: 1 | 7 | 30
+  created_at: number
+  expires_at: number
 }

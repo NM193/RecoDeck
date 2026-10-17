@@ -1,6 +1,6 @@
 [package]
 name = "recodeck"
-version = "0.9.0"
+version = "0.10.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -52,4 +52,6 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3.14"
+# Router-level tests of the companion server (already in the tree through axum).
+tower = { version = "0.5", features = ["util"] }
 

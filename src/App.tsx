@@ -63,6 +63,7 @@ import { usePlayerStore } from './store/playerStore'
 import { useAIStore } from './store/aiStore'
 import { tauriApi } from './lib/tauri-api'
 import { dismissToast, toast } from './lib/toast'
+import { followedMessage } from './lib/missingFiles/messages'
 import { useShortcuts } from './lib/shortcuts/useShortcuts'
 import { focusPageSearch } from './lib/shortcuts/shortcuts'
 import { audioPlayer } from './lib/audioPlayer'
@@ -249,7 +250,6 @@ function AppContent() {
     playlistId: number
     playlistName: string
     companionUrl: string
-    companionToken: string
   } | null>(null)
 
   // Export playlist modal
@@ -727,13 +727,17 @@ function AppContent() {
     listen('library-changed', async () => {
       console.log('Library changed detected, re-scanning...')
       // Re-scan all library folders to pick up new files
+      let relinked = 0
       for (const folder of libraryFoldersRef.current) {
         try {
-          await tauriApi.scanDirectory(folder)
+          const result = await tauriApi.scanDirectory(folder)
+          relinked += result.relinked
         } catch (err) {
           console.warn(`Failed to re-scan folder ${folder}:`, err)
         }
       }
+      const followed = followedMessage(relinked)
+      if (followed) toast(followed, { kind: 'success' })
       // Reload tracks
       await loadTracksRef.current()
       setDataVersion((version) => version + 1)
@@ -830,6 +834,10 @@ function AppContent() {
       console.warn('Failed to restart file watcher')
     }
     loadTracks()
+    // A removed folder, a merge or a Missing Files apply also changes the
+    // playlists' counts and what Home shows.
+    void loadPlaylists()
+    setDataVersion((version) => version + 1)
   }
 
   function handleThemeChanged(theme: string) {
@@ -1208,11 +1216,12 @@ function AppContent() {
     }
   }
 
-  // Share playlist — open modal with QR code if Companion is running
+  // Share playlist — open modal with QR code if Companion is running. The
+  // modal gets only the URL: the link carries its own share token.
   async function handleSharePlaylist(playlistId: number, playlistName: string) {
     try {
       const status = await tauriApi.getCompanionStatus()
-      if (!status.running || !status.url || !status.token) {
+      if (!status.running || !status.url) {
         toast('Enable Companion in Settings first', { kind: 'warning' })
         return
       }
@@ -1221,7 +1230,6 @@ function AppContent() {
         playlistId,
         playlistName,
         companionUrl: status.url,
-        companionToken: status.token,
       })
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Failed to get Companion status', {
@@ -2286,7 +2294,6 @@ function AppContent() {
           playlistId={sharePlaylistModal.playlistId}
           playlistName={sharePlaylistModal.playlistName}
           companionUrl={sharePlaylistModal.companionUrl}
-          companionToken={sharePlaylistModal.companionToken}
           onClose={() => setSharePlaylistModal(null)}
         />
       )}

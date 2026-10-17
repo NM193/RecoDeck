@@ -27,10 +27,31 @@ export interface MobileTrack {
   musical_key?: string
 }
 
+/** The shared playlist a share link opens (only present under a share token) */
+export interface ShareStatus {
+  playlist_id: number
+  playlist_name: string
+  /** Unix seconds */
+  expires_at: number
+}
+
 interface ServerStatus {
   name: string
   version: string
+  /** The library's count, or the shared playlist's under a share token */
   track_count: number
+  share?: ShareStatus
+}
+
+/** A response that was not OK, with its HTTP status (401: a bad or expired token) */
+export class HttpStatusError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'HttpStatusError'
+    this.status = status
+  }
 }
 
 interface StreamTicketResponse {
@@ -82,10 +103,13 @@ async function authFetch(
   })
 
   if (res.status === 401) {
-    throw new Error('Unauthorized — invalid or expired token')
+    throw new HttpStatusError(401, 'Unauthorized — invalid or expired token')
   }
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    throw new HttpStatusError(
+      res.status,
+      `HTTP ${res.status}: ${res.statusText}`,
+    )
   }
   return res
 }

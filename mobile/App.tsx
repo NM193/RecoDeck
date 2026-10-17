@@ -88,13 +88,50 @@ function getInitialUrl() {
     playlistId:
       playlistId != null && !isNaN(playlistId) ? playlistId : undefined,
     playlistName: playlistName ?? undefined,
+    // Share link (?share=…): one playlist only; the server injects it as __RECODECK_SHARE__
+    share: shareFromLink({
+      search: window.location.search,
+      hash: window.location.hash,
+      injected: (window as unknown as { __RECODECK_SHARE__?: unknown })
+        .__RECODECK_SHARE__,
+    }),
   }
 }
 const INITIAL_URL = getInitialUrl()
-import { httpApi } from '../src/lib/http-api'
+import { httpApi, type ShareStatus } from '../src/lib/http-api'
 import type { Track } from '../src/types/track'
 import { MobileTrackList } from './components/MobileTrackList'
 import { MobilePlayer } from './components/MobilePlayer'
+import {
+  MobileShareNotice,
+  MobileSharedPlaylist,
+} from './components/MobileShare'
+import {
+  clearSessionShare,
+  isReloadNavigation,
+  isShareTokenShaped,
+  isUnauthorized,
+  linkPairingToken,
+  pickShareToken,
+  readSessionShare,
+  saveSessionShare,
+  shareFromLink,
+  shareLinkGone,
+} from './share'
+
+// Share mode: a share link, or a reload of one in this tab. The share token is kept
+// in sessionStorage only — never in localStorage, never the saved pairing. Any other
+// navigation in the tab (e.g. the plain companion URL) leaves share mode.
+const SHARE_TOKEN = INITIAL_URL
+  ? pickShareToken(
+      INITIAL_URL,
+      isReloadNavigation(
+        typeof performance !== 'undefined' ? performance : undefined,
+      )
+        ? readSessionShare()
+        : null,
+    )
+  : undefined
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -104,8 +141,12 @@ export function MobileApp() {
   const [serverUrl, setServerUrl] = useState(
     () => INITIAL_URL?.origin || localStorage.getItem('companion_url') || '',
   )
+  // In share mode a companion token in the link never reaches state
   const [token, setToken] = useState(
-    () => INITIAL_URL?.token || localStorage.getItem('companion_token') || '',
+    () =>
+      (INITIAL_URL && linkPairingToken(INITIAL_URL, SHARE_TOKEN)) ||
+      localStorage.getItem('companion_token') ||
+      '',
   )
   const [errorMessage, setErrorMessage] = useState('')
   const [pasteLinkValue, setPasteLinkValue] = useState('')
@@ -117,6 +158,9 @@ export function MobileApp() {
   const [playlistName, setPlaylistName] = useState<string | undefined>(
     () => INITIAL_URL?.playlistName,
   )
+  // Share mode: the playlist and expiry come from the server's status
+  const [share, setShare] = useState<ShareStatus | null>(null)
+  const [shareExpired, setShareExpired] = useState(false)
 
   // Player state
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null)
@@ -155,6 +199,53 @@ export function MobileApp() {
     }
   }, [])
 
+  // A 401 in share mode (at connect or later): the link expired or was stopped
+  const handleShareExpired = useCallback(() => {
+    clearSessionShare()
+    audio.pause()
+    audio.src = ''
+    setIsPlaying(false)
+    setCurrentTrack(null)
+    setQueue([])
+    setQueueIndex(-1)
+    setShareExpired(true)
+  }, [audio])
+
+  // Share link: the Bearer is the share token and the server names the playlist.
+  // Nothing goes to localStorage, so the saved pairing stays as it is.
+  const connectShare = useCallback(
+    async (url: string, shareToken: string) => {
+      if (!isShareTokenShaped(shareToken)) {
+        handleShareExpired()
+        return
+      }
+      setConnectionState('connecting')
+      setErrorMessage('')
+      try {
+        httpApi.configure(url.trim().replace(/\/+$/, ''), shareToken)
+        const status = await httpApi.getStatus()
+        if (!status.share) {
+          // Not a share token (e.g. the companion token): this page opens shared playlists only
+          handleShareExpired()
+          return
+        }
+        setShare(status.share)
+        setTrackCount(status.track_count)
+        setConnectionState('connected')
+      } catch (err) {
+        if (isUnauthorized(err)) {
+          handleShareExpired()
+          return
+        }
+        setConnectionState('error')
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Failed to connect',
+        )
+      }
+    },
+    [handleShareExpired],
+  )
+
   const handleConnect = useCallback(() => {
     connect(serverUrl, token)
   }, [serverUrl, token, connect])
@@ -187,7 +278,7 @@ export function MobileApp() {
         new URLSearchParams(u.hash.replace(/^#/, '').replace(/^\?/, '')).get(
           'token',
         )
-      if (tokenFromUrl && !token) setToken(tokenFromUrl)
+      if (tokenFromUrl && !token && !SHARE_TOKEN) setToken(tokenFromUrl)
       if (!serverUrl && u.origin && u.origin !== 'null') setServerUrl(u.origin)
     } catch {
       /* ignore */
@@ -197,10 +288,17 @@ export function MobileApp() {
   // QR scan: token from URL immediately, server URL after fetch — then auto-connect
   useEffect(() => {
     let cancelled = false
-    const authToken = INITIAL_URL?.token || token
+    // Share mode connects with the share token only, never the saved pairing
+    const authToken = SHARE_TOKEN || INITIAL_URL?.token || token
+    const run = SHARE_TOKEN ? connectShare : connect
 
-    if (INITIAL_URL?.token) {
-      setToken(INITIAL_URL.token)
+    // This tab keeps the share for a reload (the URL is stripped below); a pairing or
+    // old-style link ends share mode in this tab
+    if (SHARE_TOKEN) saveSessionShare(SHARE_TOKEN)
+    else clearSessionShare()
+
+    if (INITIAL_URL?.token && !SHARE_TOKEN) setToken(INITIAL_URL.token)
+    if (INITIAL_URL?.token || INITIAL_URL?.share) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
@@ -235,19 +333,19 @@ export function MobileApp() {
         const url = data?.url || fallback
         if (url) {
           setServerUrl(url)
-          if (authToken) connect(url, authToken)
+          if (authToken) run(url, authToken)
         } else if (fallback && authToken) {
-          connect(fallback, authToken)
+          run(fallback, authToken)
         }
       })
       .catch(() => {
-        if (!cancelled && fallback && authToken) connect(fallback, authToken)
+        if (!cancelled && fallback && authToken) run(fallback, authToken)
       })
 
     return () => {
       cancelled = true
     }
-  }, [connect])
+  }, [connect, connectShare])
 
   // When user pastes a full URL (e.g. from QR scan) into server URL field, extract base URL + token and auto-connect
   const handlePasteFullLink = useCallback(
@@ -337,10 +435,11 @@ export function MobileApp() {
         setQueueIndex(index)
         setIsPlaying(true)
       } catch (err) {
-        console.error('Failed to play track:', err)
+        if (SHARE_TOKEN && isUnauthorized(err)) handleShareExpired()
+        else console.error('Failed to play track:', err)
       }
     },
-    [audio],
+    [audio, handleShareExpired],
   )
 
   const handleNext = useCallback(async () => {
@@ -355,10 +454,11 @@ export function MobileApp() {
         setQueueIndex(nextIndex)
         setIsPlaying(true)
       } catch (err) {
-        console.error('Failed to play next:', err)
+        if (SHARE_TOKEN && isUnauthorized(err)) handleShareExpired()
+        else console.error('Failed to play next:', err)
       }
     }
-  }, [audio, queue, queueIndex])
+  }, [audio, queue, queueIndex, handleShareExpired])
 
   const handlePrevious = useCallback(async () => {
     if (queueIndex > 0) {
@@ -372,10 +472,11 @@ export function MobileApp() {
         setQueueIndex(prevIndex)
         setIsPlaying(true)
       } catch (err) {
-        console.error('Failed to play previous:', err)
+        if (SHARE_TOKEN && isUnauthorized(err)) handleShareExpired()
+        else console.error('Failed to play previous:', err)
       }
     }
-  }, [audio, queue, queueIndex])
+  }, [audio, queue, queueIndex, handleShareExpired])
 
   const handlePlayPause = useCallback(() => {
     if (audio.paused) {
@@ -394,6 +495,14 @@ export function MobileApp() {
     }
     const handleError = () => {
       setIsPlaying(false)
+      // Share mode: stopping or expiring the link revokes its stream tickets, so the
+      // stream fails mid-track. Ask the server; a 401 means the link is gone. (An
+      // emptied src is not a stream failure: handleShareExpired sets one.)
+      if (SHARE_TOKEN && audio.getAttribute('src')) {
+        shareLinkGone(() => httpApi.getStatus()).then((gone) => {
+          if (gone) handleShareExpired()
+        })
+      }
     }
 
     audio.addEventListener('ended', handleEnded)
@@ -403,7 +512,7 @@ export function MobileApp() {
       audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('error', handleError)
     }
-  }, [audio, handleNext])
+  }, [audio, handleNext, handleShareExpired])
 
   // Media Session API for lock screen controls
   useEffect(() => {
@@ -420,6 +529,47 @@ export function MobileApp() {
       navigator.mediaSession.setActionHandler('previoustrack', handlePrevious)
     }
   }, [currentTrack, handlePlayPause, handleNext, handlePrevious])
+
+  const player = currentTrack && (
+    <MobilePlayer
+      track={currentTrack}
+      isPlaying={isPlaying}
+      audio={audio}
+      onPlayPause={handlePlayPause}
+      onNext={handleNext}
+      onPrevious={handlePrevious}
+      hasNext={queueIndex < queue.length - 1}
+      hasPrevious={queueIndex > 0}
+    />
+  )
+
+  // Share link: one playlist only — no library, search, settings or disconnect
+  if (SHARE_TOKEN) {
+    if (shareExpired) return <MobileShareNotice kind="expired" />
+    if (connectionState === 'error') {
+      return (
+        <MobileShareNotice
+          kind="unreachable"
+          onRetry={() => connectShare(serverUrl, SHARE_TOKEN)}
+        />
+      )
+    }
+    if (connectionState !== 'connected' || !share) {
+      return <MobileShareNotice kind="loading" />
+    }
+    return (
+      <MobileSharedPlaylist
+        playlistId={share.playlist_id}
+        playlistName={share.playlist_name}
+        trackCount={trackCount}
+        expiresAt={share.expires_at}
+        currentTrackId={currentTrack?.id}
+        onPlayTrack={handlePlayTrack}
+        onExpired={handleShareExpired}
+        player={player}
+      />
+    )
+  }
 
   // Connect screen
   if (connectionState !== 'connected') {
@@ -556,18 +706,7 @@ export function MobileApp() {
         />
       </main>
 
-      {currentTrack && (
-        <MobilePlayer
-          track={currentTrack}
-          isPlaying={isPlaying}
-          audio={audio}
-          onPlayPause={handlePlayPause}
-          onNext={handleNext}
-          onPrevious={handlePrevious}
-          hasNext={queueIndex < queue.length - 1}
-          hasPrevious={queueIndex > 0}
-        />
-      )}
+      {player}
     </div>
   )
 }

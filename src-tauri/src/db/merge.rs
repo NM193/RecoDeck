@@ -55,33 +55,7 @@ impl Database {
     /// so is a removed id that no longer exists.
     pub fn merge_tracks(&self, requests: &[MergeRequest]) -> Result<MergeOutcome> {
         let tx = self.conn.unchecked_transaction()?;
-        let mut outcome = MergeOutcome::default();
-        for request in requests {
-            let Some(kept) = removed_file(&tx, request.keep_id)? else {
-                continue;
-            };
-            let kept_path = crate::scanner::normalize_scanned_path(&kept.path);
-            for &remove_id in &request.remove_ids {
-                // Merging a track into itself would delete it.
-                if remove_id == request.keep_id {
-                    continue;
-                }
-                let Some(file) = removed_file(&tx, remove_id)? else {
-                    continue;
-                };
-                outcome.playlist_slots_moved += merge_one(&tx, request.keep_id, remove_id)?;
-                // A double-slash copy can be K's own file: never skip that one.
-                let skip_path = crate::scanner::normalize_scanned_path(&file.path);
-                if skip_path != kept_path {
-                    tx.execute(
-                        "INSERT OR REPLACE INTO skipped_files (file_path, kept_track_id) VALUES (?1, ?2)",
-                        params![skip_path, request.keep_id],
-                    )?;
-                }
-                outcome.merged += 1;
-                outcome.removed_files.push(RemovedFile { kept_path: kept.path.clone(), ..file });
-            }
-        }
+        let outcome = merge_on(&tx, requests)?;
         tx.commit()?;
         Ok(outcome)
     }
@@ -105,6 +79,39 @@ impl Database {
         let rows = stmt.query_map(params![size, pattern], |row| row.get(0))?;
         rows.collect()
     }
+}
+
+/// The merge itself, on `conn`. The caller owns the transaction (Missing
+/// Files runs it inside its own apply).
+pub(crate) fn merge_on(conn: &Connection, requests: &[MergeRequest]) -> Result<MergeOutcome> {
+    let mut outcome = MergeOutcome::default();
+    for request in requests {
+        let Some(kept) = removed_file(conn, request.keep_id)? else {
+            continue;
+        };
+        let kept_path = crate::scanner::normalize_scanned_path(&kept.path);
+        for &remove_id in &request.remove_ids {
+            // Merging a track into itself would delete it.
+            if remove_id == request.keep_id {
+                continue;
+            }
+            let Some(file) = removed_file(conn, remove_id)? else {
+                continue;
+            };
+            outcome.playlist_slots_moved += merge_one(conn, request.keep_id, remove_id)?;
+            // A double-slash copy can be K's own file: never skip that one.
+            let skip_path = crate::scanner::normalize_scanned_path(&file.path);
+            if skip_path != kept_path {
+                conn.execute(
+                    "INSERT OR REPLACE INTO skipped_files (file_path, kept_track_id) VALUES (?1, ?2)",
+                    params![skip_path, request.keep_id],
+                )?;
+            }
+            outcome.merged += 1;
+            outcome.removed_files.push(RemovedFile { kept_path: kept.path.clone(), ..file });
+        }
+    }
+    Ok(outcome)
 }
 
 /// A track's file path and size, or None when the track no longer exists.
@@ -274,6 +281,8 @@ fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
     merge_track_columns(conn, k, r)?;
     // Before R's row goes: play_history cascades on delete.
     conn.execute("UPDATE play_history SET track_id = ?1 WHERE track_id = ?2", params![k, r])?;
+    // Files merged into R earlier now stand for K.
+    conn.execute("UPDATE skipped_files SET kept_track_id = ?1 WHERE kept_track_id = ?2", params![k, r])?;
     conn.execute("DELETE FROM tracks WHERE id = ?1", [r])?;
     Ok(slots)
 }
@@ -403,6 +412,27 @@ mod tests {
                 kept_path: "/m/K.mp3".into(),
             }]
         );
+    }
+
+    #[test]
+    fn files_skipped_for_a_copy_follow_it_when_it_merges_away_later() {
+        let db = db();
+        let a = track(&db, "A");
+        let b = track(&db, "B");
+        let c = track(&db, "C");
+        merge(&db, b, &[a]);
+
+        merge(&db, c, &[b]);
+
+        let kept: Vec<(String, i64)> = db
+            .conn
+            .prepare("SELECT file_path, kept_track_id FROM skipped_files ORDER BY file_path")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|row| row.unwrap())
+            .collect();
+        assert_eq!(kept, vec![("/m/A.mp3".to_string(), c), ("/m/B.mp3".to_string(), c)]);
     }
 
     #[test]
@@ -784,6 +814,20 @@ mod tests {
         assert_eq!(bpm, 120.0);
         assert_eq!(deep, (0.5, 0.7));
         assert_eq!(count(&db, "SELECT COUNT(*) FROM track_deep_analysis WHERE track_id = ?1", r), 0);
+    }
+
+    #[test]
+    fn merge_on_runs_inside_the_callers_transaction() {
+        let db = db();
+        let k = track(&db, "k");
+        let r = track(&db, "r");
+        {
+            let tx = db.conn.unchecked_transaction().unwrap();
+            let out = merge_on(&tx, &[MergeRequest { keep_id: k, remove_ids: vec![r] }]).unwrap();
+            assert_eq!(out.merged, 1);
+            // Dropped without commit: the merge rolls back with it.
+        }
+        assert_eq!(count(&db, "SELECT COUNT(*) FROM tracks WHERE id = ?1", r), 1);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -12,7 +12,7 @@ use axum::extract::Request;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use super::CompanionServerState;
+use super::{share_ticket_lifetime, Access, CompanionServerState, TICKET_LIFETIME};
 use crate::db::Track;
 
 // ---- Sanitized DTOs (never expose file_path) ----
@@ -101,7 +101,20 @@ pub struct SearchParams {
 pub struct StatusResponse {
     pub name: String,
     pub version: String,
+    /// The library's count; under share access, the shared playlist's.
     pub track_count: i64,
+    /// Only under share access: the playlist the link opens.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share: Option<ShareStatus>,
+}
+
+/// The playlist a share link opens, and until when.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ShareStatus {
+    pub playlist_id: i64,
+    pub playlist_name: String,
+    /// Unix seconds.
+    pub expires_at: i64,
 }
 
 #[derive(Deserialize)]
@@ -503,16 +516,41 @@ async fn get_self_url(request: Request) -> Json<SelfUrlResponse> {
 
 async fn get_status(
     State(state): State<Arc<CompanionServerState>>,
+    Extension(access): Extension<Access>,
 ) -> Result<Json<StatusResponse>, StatusCode> {
     let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let track_count = db.count_tracks().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let (track_count, share) = match access {
+        Access::Full => (
+            db.count_tracks()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            None,
+        ),
+        // A share link sees its playlist only, never the library's count.
+        Access::Share { playlist_id, token } => {
+            let link = db
+                .share_link_for(playlist_id)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .filter(|link| link.token == token)
+                .ok_or(StatusCode::UNAUTHORIZED)?;
+            let count = db
+                .count_playlist_tracks(playlist_id)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let share = ShareStatus {
+                playlist_id,
+                playlist_name: link.playlist_name,
+                expires_at: link.expires_at,
+            };
+            (count, Some(share))
+        }
+    };
 
     Ok(Json(StatusResponse {
         name: "RecoDeck".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         track_count,
+        share,
     }))
 }
 
@@ -568,8 +606,20 @@ async fn search_tracks(
 
 async fn get_playlist_tracks(
     State(state): State<Arc<CompanionServerState>>,
+    Extension(access): Extension<Access>,
     Path(playlist_id): Path<i64>,
 ) -> Result<Json<Vec<MobileTrackDTO>>, StatusCode> {
+    // The middleware already allows a share link its own playlist only; this
+    // holds even if that check ever changes.
+    if let Access::Share {
+        playlist_id: shared,
+        ..
+    } = access
+    {
+        if shared != playlist_id {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
     let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
@@ -589,20 +639,427 @@ async fn get_playlist_tracks(
 
 async fn create_stream_ticket(
     State(state): State<Arc<CompanionServerState>>,
+    Extension(access): Extension<Access>,
     Json(body): Json<StreamTicketRequest>,
 ) -> Result<Json<StreamTicketResponse>, StatusCode> {
     // Verify the track exists
     let db_lock = state.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let db = db_lock.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    // A share link streams the tracks of its own playlist only, and its
+    // tickets end with it: at its expiry, or when it is stopped.
+    let share = match access {
+        Access::Full => None,
+        Access::Share { playlist_id, token } => {
+            let in_playlist = db
+                .playlist_has_track(playlist_id, body.track_id)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            if !in_playlist {
+                return Err(StatusCode::FORBIDDEN);
+            }
+            let link = db
+                .share_link_for(playlist_id)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .filter(|link| link.token == token)
+                .ok_or(StatusCode::UNAUTHORIZED)?;
+            let now = crate::db::share::unix_now().ok_or(StatusCode::UNAUTHORIZED)?;
+            Some((token, share_ticket_lifetime(link.expires_at, now)))
+        }
+    };
     let _track = db.get_track(body.track_id).map_err(|_| StatusCode::NOT_FOUND)?;
     drop(db_lock);
 
-    let ticket = state.create_ticket(body.track_id);
+    let (ticket, lifetime) = match share {
+        None => (state.create_ticket(body.track_id), TICKET_LIFETIME),
+        Some((token, lifetime)) => (
+            state.create_share_ticket(body.track_id, &token, lifetime),
+            lifetime,
+        ),
+    };
     let stream_url = format!("/stream/{}", body.track_id);
 
     Ok(Json(StreamTicketResponse {
         ticket,
-        expires_in: 600,
+        expires_in: lifetime.as_secs(),
         stream_url,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    fn track(db: &Database, name: &str) -> i64 {
+        db.create_track(&Track {
+            id: None,
+            file_path: format!("/m/{name}.mp3"),
+            file_hash: name.to_string(),
+            title: Some(name.to_string()),
+            artist: None,
+            album: None,
+            album_artist: None,
+            track_number: None,
+            year: None,
+            label: None,
+            duration_ms: None,
+            file_format: None,
+            bitrate: None,
+            sample_rate: None,
+            file_size: None,
+            date_added: None,
+            date_modified: None,
+            play_count: 0,
+            rating: 0,
+            comment: None,
+            artwork_path: None,
+            genre: None,
+            genre_source: None,
+        })
+        .unwrap()
+    }
+
+    const COMPANION: &str = "companion";
+
+    struct Fixture {
+        state: Arc<CompanionServerState>,
+        playlist: i64,
+        tracks: [i64; 3],
+        /// The playlist's share token.
+        token: String,
+    }
+
+    impl Fixture {
+        fn share_access(&self) -> Access {
+            Access::Share {
+                playlist_id: self.playlist,
+                token: self.token.clone(),
+            }
+        }
+
+        fn db<T>(&self, f: impl FnOnce(&Database) -> T) -> T {
+            f(self.state.db.lock().unwrap().as_ref().unwrap())
+        }
+    }
+
+    /// A library of three tracks; the shared playlist holds the first one.
+    fn setup() -> Fixture {
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let tracks = [track(&db, "a"), track(&db, "b"), track(&db, "c")];
+        let playlist = db.create_playlist("Warm-up", "manual", None).unwrap();
+        db.add_track_to_playlist(playlist, tracks[0]).unwrap();
+        let token = db.create_share_link(playlist, 7).unwrap().token;
+        Fixture {
+            state: Arc::new(CompanionServerState::for_tests(db, COMPANION)),
+            playlist,
+            tracks,
+            token,
+        }
+    }
+
+    // ---- handlers ----
+
+    #[tokio::test]
+    async fn status_under_full_access_counts_the_library() {
+        let f = setup();
+
+        let Json(status) = get_status(State(f.state.clone()), Extension(Access::Full))
+            .await
+            .unwrap();
+
+        assert_eq!(status.track_count, 3);
+        let json = serde_json::to_value(&status).unwrap();
+        assert!(json.get("share").is_none(), "{json}");
+        assert_eq!(json["name"], "RecoDeck");
+    }
+
+    #[tokio::test]
+    async fn status_under_share_access_names_the_playlist_and_counts_it() {
+        let f = setup();
+        let expires_at = f.db(|db| db.share_link_for(f.playlist).unwrap().unwrap().expires_at);
+
+        let Json(status) = get_status(State(f.state.clone()), Extension(f.share_access()))
+            .await
+            .unwrap();
+
+        assert_eq!(status.track_count, 1);
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(
+            json["share"],
+            serde_json::json!({ "playlist_id": f.playlist, "playlist_name": "Warm-up", "expires_at": expires_at })
+        );
+    }
+
+    #[tokio::test]
+    async fn status_after_the_link_stopped_is_unauthorized() {
+        let f = setup();
+        f.db(|db| db.delete_all_share_links().unwrap());
+
+        let result = get_status(State(f.state.clone()), Extension(f.share_access())).await;
+
+        assert_eq!(result.err(), Some(StatusCode::UNAUTHORIZED));
+    }
+
+    #[tokio::test]
+    async fn a_share_link_reads_its_own_playlist_only() {
+        let f = setup();
+
+        let own = get_playlist_tracks(
+            State(f.state.clone()),
+            Extension(f.share_access()),
+            Path(f.playlist),
+        )
+        .await;
+        assert_eq!(own.unwrap().len(), 1);
+
+        let other = get_playlist_tracks(
+            State(f.state.clone()),
+            Extension(f.share_access()),
+            Path(f.playlist + 1),
+        )
+        .await;
+        assert_eq!(other.err(), Some(StatusCode::FORBIDDEN));
+    }
+
+    #[tokio::test]
+    async fn a_share_link_gets_tickets_for_its_own_tracks_only() {
+        let f = setup();
+
+        let ok = create_stream_ticket(
+            State(f.state.clone()),
+            Extension(f.share_access()),
+            Json(StreamTicketRequest {
+                track_id: f.tracks[0],
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(f.state.validate_ticket(&ok.ticket), Some(f.tracks[0]));
+        assert!(ok.expires_in <= 600);
+
+        let refused = create_stream_ticket(
+            State(f.state.clone()),
+            Extension(f.share_access()),
+            Json(StreamTicketRequest {
+                track_id: f.tracks[1],
+            }),
+        )
+        .await;
+        assert_eq!(refused.err(), Some(StatusCode::FORBIDDEN));
+    }
+
+    #[tokio::test]
+    async fn a_ticket_from_a_stopped_link_is_rejected() {
+        let f = setup();
+        let ticket = create_stream_ticket(
+            State(f.state.clone()),
+            Extension(f.share_access()),
+            Json(StreamTicketRequest {
+                track_id: f.tracks[0],
+            }),
+        )
+        .await
+        .unwrap();
+        let full = create_stream_ticket(
+            State(f.state.clone()),
+            Extension(Access::Full),
+            Json(StreamTicketRequest {
+                track_id: f.tracks[0],
+            }),
+        )
+        .await
+        .unwrap();
+
+        f.state.revoke_share_tickets(&f.token);
+
+        assert_eq!(f.state.validate_ticket(&ticket.ticket), None);
+        assert_eq!(f.state.validate_ticket(&full.ticket), Some(f.tracks[0]));
+    }
+
+    #[tokio::test]
+    async fn a_stopped_link_gets_no_ticket() {
+        let f = setup();
+        f.db(|db| db.delete_share_link(&f.token).unwrap());
+
+        let refused = create_stream_ticket(
+            State(f.state.clone()),
+            Extension(f.share_access()),
+            Json(StreamTicketRequest {
+                track_id: f.tracks[0],
+            }),
+        )
+        .await;
+
+        assert_eq!(refused.err(), Some(StatusCode::UNAUTHORIZED));
+    }
+
+    #[tokio::test]
+    async fn full_access_gets_a_ticket_for_any_track() {
+        let f = setup();
+
+        let ticket = create_stream_ticket(
+            State(f.state.clone()),
+            Extension(Access::Full),
+            Json(StreamTicketRequest {
+                track_id: f.tracks[2],
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(f.state.validate_ticket(&ticket.ticket), Some(f.tracks[2]));
+        assert_eq!(ticket.expires_in, 600);
+    }
+
+    // ---- through the router: the auth middleware and the routes together ----
+
+    /// Sends a request through `api_router`; answers the status and the JSON
+    /// body (Null when there is none).
+    async fn send(
+        state: &Arc<CompanionServerState>,
+        method: axum::http::Method,
+        uri: &str,
+        bearer: Option<&str>,
+        json: Option<serde_json::Value>,
+    ) -> (StatusCode, serde_json::Value) {
+        use tower::ServiceExt;
+
+        let mut request = axum::http::Request::builder().method(method).uri(uri);
+        if let Some(token) = bearer {
+            request = request.header("authorization", format!("Bearer {token}"));
+        }
+        let body = match json {
+            Some(value) => {
+                request = request.header("content-type", "application/json");
+                axum::body::Body::from(value.to_string())
+            }
+            None => axum::body::Body::empty(),
+        };
+        let response = crate::server::api_router(state.clone())
+            .oneshot(request.body(body).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn routed_share_token_reaches_its_own_playlist_only() {
+        use axum::http::Method;
+        let f = setup();
+        let own = format!("/api/playlists/{}/tracks", f.playlist);
+        let token = Some(f.token.as_str());
+
+        let (status, body) = send(&f.state, Method::GET, &own, token, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.as_array().map(Vec::len), Some(1));
+
+        for (method, uri) in [
+            (
+                Method::GET,
+                format!("/api/playlists/{}/tracks", f.playlist + 1),
+            ),
+            (
+                Method::GET,
+                format!("/api/playlists/0{}/tracks", f.playlist),
+            ),
+            (Method::GET, "/api/tracks".to_string()),
+            (Method::GET, "/api/tracks/search?q=a".to_string()),
+            (Method::HEAD, own.clone()),
+        ] {
+            let (status, _) = send(&f.state, method.clone(), &uri, token, None).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn routed_share_token_gets_its_status_and_its_tracks_tickets() {
+        use axum::http::Method;
+        let f = setup();
+        let token = Some(f.token.as_str());
+
+        let (status, body) = send(&f.state, Method::GET, "/api/status", token, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["track_count"], 1);
+        assert_eq!(body["share"]["playlist_id"], f.playlist);
+
+        let ticket = |track_id: i64| Some(serde_json::json!({ "track_id": track_id }));
+        let (status, body) = send(
+            &f.state,
+            Method::POST,
+            "/api/stream-ticket",
+            token,
+            ticket(f.tracks[0]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let issued = body["ticket"].as_str().unwrap();
+        assert_eq!(f.state.validate_ticket(issued), Some(f.tracks[0]));
+
+        let (status, _) = send(
+            &f.state,
+            Method::POST,
+            "/api/stream-ticket",
+            token,
+            ticket(f.tracks[1]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn routed_stopped_link_is_unauthorized() {
+        use axum::http::Method;
+        let f = setup();
+        f.db(|db| db.delete_share_link(&f.token).unwrap());
+        let own = format!("/api/playlists/{}/tracks", f.playlist);
+
+        for uri in [own.as_str(), "/api/status"] {
+            let (status, _) = send(&f.state, Method::GET, uri, Some(&f.token), None).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn routed_bogus_token_is_unauthorized_without_the_database() {
+        use axum::http::Method;
+        let f = setup();
+        // With no database, any lookup would answer 503 instead.
+        *f.state.db.lock().unwrap() = None;
+        let upper = f.token.to_uppercase();
+
+        for bearer in [
+            None,
+            Some(""),
+            Some("bogus"),
+            Some(&f.token[..10]),
+            Some(upper.as_str()),
+        ] {
+            let (status, _) = send(&f.state, Method::GET, "/api/status", bearer, None).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{bearer:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn routed_companion_token_reaches_the_library() {
+        use axum::http::Method;
+        let f = setup();
+
+        let (status, body) =
+            send(&f.state, Method::GET, "/api/tracks", Some(COMPANION), None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.as_array().map(Vec::len), Some(3));
+
+        let (status, body) =
+            send(&f.state, Method::GET, "/api/status", Some(COMPANION), None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["track_count"], 3);
+        assert!(body.get("share").is_none());
+    }
 }

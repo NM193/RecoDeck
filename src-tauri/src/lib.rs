@@ -7,8 +7,11 @@ pub mod error;
 pub mod external;
 pub mod file_trash;
 pub mod formats;
+pub mod missing_files;
 pub mod scanner;
 pub mod server;
+#[cfg(test)]
+mod test_support;
 
 use commands::{library::AppState, playback::PlaybackState, server::CompanionState, watcher::WatcherState};
 use std::sync::atomic::AtomicBool;
@@ -508,10 +511,12 @@ pub fn run() {
             commands::library::get_tracks_in_folder_shallow,
             commands::library::count_tracks_in_folder_shallow,
             commands::library::cleanup_stray_tracks,
-            commands::library::cleanup_duplicate_tracks,
             commands::library::get_duplicate_groups,
-            commands::library::delete_tracks_bulk,
             commands::library::merge_duplicate_tracks,
+            commands::library::get_missing_tracks,
+            commands::library::count_missing_tracks,
+            commands::library::describe_file,
+            commands::library::apply_missing_fixes,
             commands::library::normalize_file_paths,
             commands::library::get_debug_tracks,
             commands::library::get_track_artwork,
@@ -603,6 +608,11 @@ pub fn run() {
             commands::server::stop_companion_server,
             commands::server::get_companion_status,
             commands::server::regenerate_companion_token,
+            commands::server::get_or_create_share_link,
+            commands::server::set_share_link_days,
+            commands::server::list_share_links,
+            commands::server::stop_share_link,
+            commands::server::stop_all_share_links,
             // Dashboard commands
             commands::dashboard::record_play_event,
             commands::dashboard::get_played_track_ids,

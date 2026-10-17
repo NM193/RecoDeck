@@ -190,3 +190,64 @@ describe('playerStore - moved files', () => {
     expect(usePlayerStore.getState().queue).toBe(before)
   })
 })
+
+describe('playerStore - merged and removed tracks', () => {
+  it('puts the kept track in place of a merged copy and drops a removed one, loading nothing', () => {
+    const kept = makeTrack(9, 'Kept')
+    usePlayerStore
+      .getState()
+      .setQueue([makeTrack(1), makeTrack(2), makeTrack(3), makeTrack(4)], 3)
+    usePlayerStore.getState().setCurrentTrack(makeTrack(4))
+    usePlayerStore.getState().replaceTracks(
+      new Map([
+        [1, null],
+        [3, kept],
+      ]),
+    )
+    const state = usePlayerStore.getState()
+    expect(state.queue.map((t) => t.id)).toEqual([2, 9, 4])
+    expect(state.originalQueue.map((t) => t.id)).toEqual([2, 9, 4])
+    expect(state.currentTrackIndex).toBe(2)
+    expect(state.currentTrack?.id).toBe(4)
+    expect(state.playRequest).toBe(1)
+  })
+
+  it('leaves the playing entry where it is, so the song goes on; the player shows the kept track', () => {
+    const kept = makeTrack(9, 'Kept')
+    usePlayerStore
+      .getState()
+      .setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 1)
+    usePlayerStore.getState().setCurrentTrack(makeTrack(2))
+    usePlayerStore.getState().replaceTracks(
+      new Map([
+        [1, null],
+        [2, kept],
+      ]),
+    )
+    const state = usePlayerStore.getState()
+    expect(state.queue.map((t) => t.id)).toEqual([2, 3])
+    expect(state.queue[state.currentTrackIndex].id).toBe(2)
+    expect(state.currentTrack?.id).toBe(9)
+    expect(state.playRequest).toBe(1)
+  })
+
+  it('keeps a removed entry that is playing, and next plays the entry after it', () => {
+    usePlayerStore
+      .getState()
+      .setQueue([makeTrack(1), makeTrack(2), makeTrack(3)], 1)
+    usePlayerStore.getState().setCurrentTrack(makeTrack(2))
+    usePlayerStore.getState().replaceTracks(new Map([[2, null]]))
+    expect(usePlayerStore.getState().currentTrack?.id).toBe(2)
+    expect(usePlayerStore.getState().currentTrackIndex).toBe(1)
+    usePlayerStore.getState().playNext()
+    const state = usePlayerStore.getState()
+    expect(state.queue[state.currentTrackIndex].id).toBe(3)
+  })
+
+  it('keeps the same queue when none of its tracks changed', () => {
+    usePlayerStore.getState().setQueue([makeTrack(1)], 0)
+    const before = usePlayerStore.getState().queue
+    usePlayerStore.getState().replaceTracks(new Map([[7, null]]))
+    expect(usePlayerStore.getState().queue).toBe(before)
+  })
+})

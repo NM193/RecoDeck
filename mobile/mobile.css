@@ -568,3 +568,188 @@ body {
   padding: 0.25rem 0.625rem;
   border-radius: 4px;
 }
+
+/* Shared playlist (share link): one playlist, no library */
+.mobile-share-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1.25rem 1.25rem 1rem;
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mobile-share-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mobile-share-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.mobile-share-chip {
+  font-size: 0.6875rem;
+  color: #c7d2fe;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.18);
+}
+
+.mobile-share-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.mobile-share-name {
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.mobile-share-meta {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-share-play {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mobile-share-play:disabled {
+  opacity: 0.5;
+}
+
+.mobile-share-list {
+  list-style: none;
+  padding: 0.5rem 0;
+}
+
+.mobile-share-list .mobile-track-item {
+  gap: 0.875rem;
+  min-height: 60px;
+  padding: 0.5rem 1.25rem;
+  border-bottom: none;
+  font-family: inherit;
+}
+
+.mobile-share-list .mobile-track-info {
+  margin-right: 0;
+}
+
+.mobile-share-list .is-current .mobile-track-title {
+  color: #a5b4fc;
+}
+
+.mobile-share-track-n {
+  width: 1.25rem;
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: #8a8a8a;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobile-share-retry {
+  min-height: 44px;
+  margin-top: 0.5rem;
+  padding: 0 1rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+/* The footer carries the safe-area inset under the player */
+.mobile-share .mobile-player-bar {
+  padding-bottom: 0;
+}
+
+.mobile-share .mobile-player-btn {
+  width: 44px;
+  height: 44px;
+}
+
+.mobile-share-footer {
+  flex-shrink: 0;
+  padding: 0.625rem 1.25rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #8a8a8a;
+  text-align: center;
+}
+
+/* Share link notices: opening, expired, can't reach */
+.mobile-share-notice {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding: 1.25rem 2rem 2.5rem;
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+  padding-bottom: max(2.5rem, env(safe-area-inset-bottom));
+}
+
+.mobile-share-notice-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  text-align: center;
+}
+
+.mobile-share-notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.mobile-share-notice-title {
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.mobile-share-notice-text {
+  max-width: 280px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.mobile-share-notice .mobile-share-play {
+  align-self: center;
+  margin-top: 0.5rem;
+}

@@ -3,9 +3,11 @@
 use crate::db::{Database, Track};
 use crate::db::duplicates::recommend;
 use crate::db::merge::{validate_requests, MergeRequest};
+use crate::db::missing::{validate_fixes, FileFacts, HashMatch, MissingFixes, RelinkOutcome};
+use crate::missing_files::{self, Candidate, MissingTrack};
 use crate::file_trash;
 use crate::error::AppError;
-use crate::scanner::{ScanResult, Scanner};
+use crate::scanner::{normalize_scanned_path, ScanResult, Scanner};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -140,6 +142,7 @@ pub struct ScanResultDTO {
     pub total_files: usize,
     pub imported: usize,
     pub skipped: usize,
+    pub relinked: usize,
     pub errors: Vec<ScanErrorDTO>,
 }
 
@@ -155,6 +158,7 @@ impl From<ScanResult> for ScanResultDTO {
             total_files: result.total_files,
             imported: result.imported,
             skipped: result.skipped,
+            relinked: result.relinked,
             errors: result
                 .errors
                 .into_iter()
@@ -192,10 +196,9 @@ pub fn init_database(
         .map_err(|e| AppError::Database(format!("Failed to run migrations: {}", e)))?;
 
     // PERFORMANCE: Skip expensive maintenance operations on startup
-    // Users can run these manually via settings if needed:
-    // - remove_duplicate_tracks() - loads all tracks into memory
+    // Users can run this manually if needed:
     // - normalize_all_file_paths() - loads all tracks into memory
-    // Both are now exposed as manual commands: cleanup_duplicate_tracks, normalize_file_paths
+    // It is exposed as a manual command: normalize_file_paths
 
     // Panic on init is acceptable -- app cannot start without DB
     *state.db_path.lock().unwrap() = Some(db_path);
@@ -291,6 +294,7 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
         let total_files = files.len();
         let mut imported = 0;
         let mut skipped = 0;
+        let mut relinked = 0;
         let mut errors = Vec::new();
         let mut last_emit = Instant::now();
         let emit_interval = std::time::Duration::from_millis(150);
@@ -329,12 +333,27 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
                 let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
                 let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
-                // Check for duplicate hash
-                if track.file_hash != "unknown"
-                    && db.track_exists_with_hash(&track.file_hash).unwrap_or(false) {
+                // Same content already in the library: skip it, unless every
+                // track with that content lost its file, then the lowest one
+                // follows this file (Missing Files spec, section 1).
+                match db.match_scanned_hash(&track.file_hash) {
+                    Ok(HashMatch::Duplicate) => {
                         skipped += 1;
                         continue;
                     }
+                    Ok(HashMatch::Moved(id)) => {
+                        match db.relink_track(id, &FileFacts::from_track(&track)) {
+                            Ok(RelinkOutcome::Relinked) | Ok(RelinkOutcome::AlreadyThere) => relinked += 1,
+                            Ok(RelinkOutcome::Taken) | Ok(RelinkOutcome::TrackGone) => skipped += 1,
+                            Err(e) => errors.push(crate::scanner::ScanError {
+                                file_path: file_path.clone(),
+                                error: format!("Failed to relink: {}", e),
+                            }),
+                        }
+                        continue;
+                    }
+                    Ok(HashMatch::New) | Err(_) => {}
+                }
 
                 match db.create_track(&track) {
                     Ok(id) => {
@@ -383,6 +402,7 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
             total_files,
             imported,
             skipped,
+            relinked,
             errors,
         }))
     }).await.map_err(|e| AppError::Internal(format!("Scan task failed: {}", e)))?
@@ -563,7 +583,9 @@ pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, AppError> {
         .map_err(|e| AppError::Database(format!("Failed to get library folders: {}", e)))?;
 
     let library_folders: Vec<String> = match folders_json {
-        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        Some(json) => serde_json::from_str(&json).map_err(|e| {
+            AppError::Internal(format!("Library folders setting is unreadable: {e}"))
+        })?,
         None => Vec::new(),
     };
 
@@ -571,18 +593,6 @@ pub fn cleanup_stray_tracks(state: State<AppState>) -> Result<usize, AppError> {
     // Otherwise, remove tracks not in configured folders
     db.remove_tracks_not_in_folders(&library_folders)
         .map_err(|e| AppError::Database(format!("Failed to cleanup tracks: {}", e)))
-}
-
-/// Remove duplicate tracks that share the same file content (same hash) or same filename.
-/// Keeps the track with the lowest ID (earliest import) for each duplicate group.
-/// Returns the number of deleted duplicates.
-#[tauri::command]
-pub fn cleanup_duplicate_tracks(state: State<AppState>) -> Result<usize, AppError> {
-    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-
-    db.remove_duplicate_tracks()
-        .map_err(|e| AppError::Database(format!("Failed to cleanup duplicates: {}", e)))
 }
 
 /// A playlist a duplicate copy is in.
@@ -746,23 +756,188 @@ pub fn merge_duplicate_tracks(
     })
 }
 
-/// Delete a list of tracks in bulk. Cleans up `track_analysis` and
-/// `playlist_tracks` rows for each id. Returns the number of rows removed.
-#[tauri::command]
-pub fn delete_tracks_bulk(
-    state: State<AppState>,
-    track_ids: Vec<i64>,
-) -> Result<usize, AppError> {
-    let db_lock = state
-        .db
-        .lock()
-        .map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+/// A file that might be a missing track's file (Missing Files spec).
+#[derive(Debug, Clone, Serialize)]
+pub struct MissingCandidateDTO {
+    pub path: String,
+    pub duration_ms: Option<i64>,
+    pub file_size: Option<i64>,
+    /// Set when the file already is a library track: the row offers Merge into it.
+    pub library_track_id: Option<i64>,
+    /// That library track's title and artist, so the row can name it.
+    pub library_title: Option<String>,
+    pub library_artist: Option<String>,
+}
+
+impl From<Candidate> for MissingCandidateDTO {
+    fn from(c: Candidate) -> Self {
+        MissingCandidateDTO {
+            path: c.path,
+            duration_ms: c.duration_ms,
+            file_size: c.file_size,
+            library_track_id: c.library_track_id,
+            library_title: c.library_title,
+            library_artist: c.library_artist,
+        }
+    }
+}
+
+/// A track whose file is gone, with what the review shows about it.
+#[derive(Debug, Clone, Serialize)]
+pub struct MissingTrackDTO {
+    #[serde(flatten)]
+    pub track: TrackDTO,
+    pub playlists: Vec<PlaylistRefDTO>,
+    pub analyzed: bool,
+    pub plays: i64,
+    pub drive_missing: Option<String>,
+    pub candidates: Vec<MissingCandidateDTO>,
+}
+
+impl From<MissingTrack> for MissingTrackDTO {
+    fn from(m: MissingTrack) -> Self {
+        MissingTrackDTO {
+            track: TrackDTO::from(m.track),
+            playlists: m
+                .facts
+                .playlists
+                .into_iter()
+                .map(|(id, name)| PlaylistRefDTO { id, name })
+                .collect(),
+            analyzed: m.facts.analyzed,
+            plays: m.facts.plays,
+            drive_missing: m.drive_missing,
+            candidates: m.candidates.into_iter().map(MissingCandidateDTO::from).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RelinkFixDTO {
+    pub track_id: i64,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MergeFixDTO {
+    pub keep_id: i64,
+    pub remove_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SkippedFixDTO {
+    pub track_id: i64,
+    pub reason: String,
+}
+
+/// What an apply did, for the review's toast.
+#[derive(Debug, Clone, Serialize)]
+pub struct MissingFixSummaryDTO {
+    pub relinked: usize,
+    pub merged: usize,
+    pub removed: usize,
+    pub skipped: Vec<SkippedFixDTO>,
+}
+
+/// Runs `f` with the database, holding the lock only for that call.
+fn with_db<T>(
+    state: &AppState,
+    what: &str,
+    f: impl FnOnce(&Database) -> rusqlite::Result<T>,
+) -> Result<T, AppError> {
+    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
     let db = db_lock
         .as_ref()
         .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    f(db).map_err(|e| AppError::Database(format!("{what}: {e}")))
+}
 
-    db.bulk_delete_tracks(&track_ids)
-        .map_err(|e| AppError::Database(format!("Failed to bulk-delete tracks: {}", e)))
+/// Tracks whose file is gone, with same-name files in the library folders
+/// (Missing Files spec, section 3). The heavy disk work (walking the folders,
+/// reading lengths) runs without the DB lock.
+#[tauri::command]
+pub async fn get_missing_tracks(app: AppHandle) -> Result<Vec<MissingTrackDTO>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (tracks, folders) = with_db(&state, "Failed to read the library", |db| {
+            Ok((db.get_all_tracks()?, db.library_folders()?))
+        })?;
+        let view = missing_files::look_on_disk(tracks, &folders);
+        let found = with_db(&state, "Failed to read missing tracks", |db| missing_files::describe(db, view))?;
+        Ok(found.into_iter().map(MissingTrackDTO::from).collect())
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Missing files task failed: {}", e)))?
+}
+
+/// How many tracks point at a file that is not on disk.
+#[tauri::command]
+pub async fn count_missing_tracks(app: AppHandle) -> Result<usize, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let paths = with_db(&state, "Failed to read the library", |db| db.all_track_paths())?;
+        Ok(missing_files::count_missing(&paths))
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Missing files task failed: {}", e)))?
+}
+
+/// One picked file for a missing track (Locate…, Other file…).
+#[tauri::command]
+pub async fn describe_file(app: AppHandle, track_id: i64, path: String) -> Result<MissingCandidateDTO, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let path = normalize_scanned_path(&path);
+        if missing_files::is_missing(&path) {
+            return Err(AppError::Validation(format!("File is gone: {path}")));
+        }
+        if !Path::new(&path).is_file() {
+            return Err(AppError::Validation(format!("Not a file: {path}")));
+        }
+        let file = missing_files::probe(&path);
+        let candidate = with_db(&state, "Failed to describe the file", |db| {
+            missing_files::describe_file(db, track_id, file)
+        })?;
+        Ok(MissingCandidateDTO::from(candidate))
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Missing files task failed: {}", e)))?
+}
+
+/// Applies the review (Missing Files spec, section 4). Files are read and
+/// hashed without the lock; the changes run in one transaction.
+#[tauri::command]
+pub async fn apply_missing_fixes(
+    app: AppHandle,
+    relinks: Vec<RelinkFixDTO>,
+    merges: Vec<MergeFixDTO>,
+    removes: Vec<i64>,
+) -> Result<MissingFixSummaryDTO, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let relinks: Vec<(i64, String)> = relinks
+            .into_iter()
+            .map(|r| (r.track_id, normalize_scanned_path(&r.path)))
+            .collect();
+        let merges: Vec<(i64, i64)> = merges.into_iter().map(|m| (m.keep_id, m.remove_id)).collect();
+        validate_fixes(&relinks, &merges, &removes).map_err(AppError::Validation)?;
+
+        let (ready, mut skipped) = missing_files::read_relinks(&relinks);
+        let fixes = MissingFixes { relinks: ready, merges, removes };
+        let outcome = with_db(&state, "Failed to apply the fixes", |db| db.apply_missing_fixes(&fixes))?;
+        skipped.extend(outcome.skipped);
+        Ok(MissingFixSummaryDTO {
+            relinked: outcome.relinked,
+            merged: outcome.merged,
+            removed: outcome.removed,
+            skipped: skipped
+                .into_iter()
+                .map(|s| SkippedFixDTO { track_id: s.track_id, reason: s.reason })
+                .collect(),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Missing files task failed: {}", e)))?
 }
 
 /// Normalize all file paths in the database (remove double slashes, trailing slashes).

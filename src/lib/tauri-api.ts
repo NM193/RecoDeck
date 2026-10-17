@@ -32,9 +32,14 @@ import type {
   DuplicateGroup,
   MergeRequest,
   MergeSummary,
+  MissingCandidate,
+  MissingFixes,
+  MissingFixSummary,
+  MissingTrack,
   TrackGenre,
   LibraryFolder,
   MoveReport,
+  ShareLink,
 } from '../types/track'
 import type {
   ChatMessage,
@@ -281,18 +286,9 @@ export const tauriApi = {
     return await invoke('cleanup_stray_tracks')
   },
 
-  // Cleanup command - removes duplicate tracks (same file hash or filename)
-  async cleanupDuplicateTracks(): Promise<number> {
-    return await invoke('cleanup_duplicate_tracks')
-  },
-
   // Review-based duplicate management
   async getDuplicateGroups(): Promise<DuplicateGroup[]> {
     return await invoke('get_duplicate_groups')
-  },
-
-  async deleteTracksBulk(trackIds: number[]): Promise<number> {
-    return await invoke('delete_tracks_bulk', { trackIds })
   },
 
   async mergeDuplicateTracks(
@@ -300,6 +296,23 @@ export const tauriApi = {
     moveToTrash: boolean,
   ): Promise<MergeSummary> {
     return await invoke('merge_duplicate_tracks', { merges, moveToTrash })
+  },
+
+  // Missing files (spec 2026-10-15)
+  async getMissingTracks(): Promise<MissingTrack[]> {
+    return await invoke('get_missing_tracks')
+  },
+
+  async countMissingTracks(): Promise<number> {
+    return await invoke('count_missing_tracks')
+  },
+
+  async describeFile(trackId: number, path: string): Promise<MissingCandidate> {
+    return await invoke('describe_file', { trackId, path })
+  },
+
+  async applyMissingFixes(fixes: MissingFixes): Promise<MissingFixSummary> {
+    return await invoke('apply_missing_fixes', { ...fixes })
   },
 
   // Debug: get all tracks with their hashes (for troubleshooting)
@@ -1098,6 +1111,32 @@ export const tauriApi = {
     active_streams: number
   }> {
     return await invoke('regenerate_companion_token')
+  },
+
+  // Playlist share links (spec 2026-10-16): one playlist, for 1, 7 or 30 days.
+
+  /** The playlist's live share link, else a new one for 7 days. */
+  async getOrCreateShareLink(playlistId: number): Promise<ShareLink> {
+    return await invoke('get_or_create_share_link', { playlistId })
+  },
+
+  /** Restarts the link's time from now. Errors when the link is gone. */
+  async setShareLinkDays(token: string, days: ShareLink['days']): Promise<ShareLink> {
+    return await invoke('set_share_link_days', { token, days })
+  },
+
+  /** The live share links, newest first. */
+  async listShareLinks(): Promise<ShareLink[]> {
+    return await invoke('list_share_links')
+  },
+
+  async stopShareLink(token: string): Promise<void> {
+    return await invoke('stop_share_link', { token })
+  },
+
+  /** Stops every share link; answers how many were stopped. */
+  async stopAllShareLinks(): Promise<number> {
+    return await invoke('stop_all_share_links')
   },
 
   // Dashboard
