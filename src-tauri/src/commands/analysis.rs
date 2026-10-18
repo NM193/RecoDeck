@@ -261,8 +261,9 @@ pub async fn analyze_tracks_batch(
                 }
 
                 // Decode once
-                let audio = match decoder::decode_to_mono_typed(Path::new(file_path)) {
+                let audio = match decoder::decode_to_mono_cancellable(Path::new(file_path), Some(cancelled.as_ref())) {
                     Ok(a) => a,
+                    Err(_) if cancelled.load(Ordering::SeqCst) => return,
                     Err(e) => {
                         eprintln!("[batch_analysis] Decode failed for track {}: {}", track_id, e);
                         // Read but not decodable: it waits for the next version or a
@@ -283,6 +284,11 @@ pub async fn analyze_tracks_batch(
 
                 // Analyze BPM and Key from the same decoded audio
                 let bpm_result = bpm::detect_bpm_from_samples(&audio).ok().flatten();
+                // Cancelled between BPM and key: save nothing, or the BPM alone would
+                // write the version and mark the key as analysed.
+                if cancelled.load(Ordering::SeqCst) {
+                    return;
+                }
                 let key_result = key::detect_key_from_samples(&audio).ok();
                 save(bpm_result.as_ref(), key_result.as_ref());
 

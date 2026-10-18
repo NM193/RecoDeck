@@ -306,6 +306,8 @@ function AppContent() {
   })
 
   // Analysis progress state
+  // The batch (by its start time) Cancel was pressed for; a new batch starts clean.
+  const [cancellingBatch, setCancellingBatch] = useState<number | null>(null)
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgressData | null>(null)
   const analysisStartTimeRef = useRef<number>(0)
@@ -349,6 +351,8 @@ function AppContent() {
 
   // Cancel analysis — tells backend to stop Rayon workers
   function handleCancelAnalysis() {
+    // Shows "Cancelling…" at once: the workers finish the track they are on.
+    setCancellingBatch(analysisProgress?.startTime ?? null)
     tauriApi.cancelAnalysis().catch(() => {})
   }
 
@@ -1991,6 +1995,9 @@ function AppContent() {
       <AnalysisProgress
         progress={analysisProgress}
         onCancel={handleCancelAnalysis}
+        cancelling={
+          cancellingBatch !== null && analysisProgress?.startTime === cancellingBatch
+        }
       />
 
       {/* Scan progress bar (global — visible from any view) */}

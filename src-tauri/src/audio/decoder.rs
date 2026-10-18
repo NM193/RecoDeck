@@ -461,6 +461,15 @@ impl std::fmt::Display for DecodeError {
 
 /// `decode_to_mono` with the kind of failure kept, for the batch.
 pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
+    decode_to_mono_cancellable(path, None)
+}
+
+/// `decode_to_mono_typed` that stops between packets once `cancelled` is set,
+/// with a transient error so nothing is saved for the file. For the batch.
+pub fn decode_to_mono_cancellable(
+    path: &Path,
+    cancelled: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<MonoAudio, DecodeError> {
     // Open and probe the audio file
     let file = std::fs::File::open(path)
         .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
@@ -523,6 +532,9 @@ pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
     let _ = all_samples.try_reserve_exact(reserve);
     
     loop {
+        if cancelled.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
+            return Err(DecodeError::Unreadable("Decoding cancelled".to_string()));
+        }
         let packet = match format_reader.next_packet() {
             Ok(packet) => packet,
             Err(symphonia::core::errors::Error::IoError(e))
@@ -758,6 +770,20 @@ mod tests {
         assert_eq!(reservation_frames(Some(1000), 44100, 1_000_000), 1000);
         let audio = decode_to_mono_typed(&file).expect("decodes what is there");
         assert_eq!(audio.samples.len(), 2000);
+    }
+
+    #[test]
+    fn a_cancelled_decode_stops_early_and_is_transient() {
+        use std::sync::atomic::AtomicBool;
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("a.wav");
+        wav_claiming(&file, 1);
+        let cancelled = AtomicBool::new(true);
+        let e = decode_to_mono_cancellable(&file, Some(&cancelled)).unwrap_err();
+        assert!(e.is_transient(), "{e}");
+        // Not cancelled: decodes as usual.
+        let go = AtomicBool::new(false);
+        assert!(decode_to_mono_cancellable(&file, Some(&go)).is_ok());
     }
 
     #[test]
