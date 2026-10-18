@@ -411,7 +411,9 @@ mod tests {
         assert!(pass.beats.iter().all(|&t| t > 7.9), "a beat at {:?}", pass.beats.first());
     }
 
-    /// Generate a synthetic click track at a known BPM for testing.
+    /// Generate a synthetic click track at a known BPM for testing, with a
+    /// quiet noise floor (about -60 dB) from the first click on, as real music
+    /// never goes digitally silent between hits.
     fn generate_click_track(bpm: f64, sample_rate: u32, duration_seconds: f64) -> MonoAudio {
         let total_samples = (sample_rate as f64 * duration_seconds) as usize;
         let mut samples = vec![0.0f32; total_samples];
@@ -430,6 +432,13 @@ mod tests {
                 }
             }
             position += samples_per_beat;
+        }
+
+        // Deterministic noise (a constant-seeded LCG), uniform in +-0.002; the first click is at 0.
+        let mut state: u32 = 0x1234_5678;
+        for sample in &mut samples {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *sample += ((state >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0) * 0.002;
         }
 
         MonoAudio {
