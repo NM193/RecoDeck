@@ -141,8 +141,10 @@ impl OnsetEnvelope {
     /// Whether a kick lies within `tolerance_s` of t: the low band's level
     /// jumps there at least KICK_OVER_SIXTEENTHS times as much as it does at
     /// the beat's other quarters (a quarter beat before, a quarter and half a
-    /// beat after), the beat's other 16ths, and the low band's strongest flux
-    /// within KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`.
+    /// beat after), the beat's other 16ths, and the envelope's strongest flux
+    /// (low plus full band, as the grid search sees it) within
+    /// KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`. The
+    /// low band alone peaks later: it has two bins.
     /// The flux alone can't tell the kick: on real bass lines the bass rises as
     /// often as the kick, so the kick stands only 1.5–2× above the flux around
     /// it. The jump alone can't place it: it reaches a kick up to 60 ms later.
@@ -152,7 +154,7 @@ impl OnsetEnvelope {
         }
         let reach = period_s * KICK_ONSET_REACH_BEATS;
         let onset = (self.frame_at(t - reach)..=self.frame_at(t + reach))
-            .max_by(|&a, &b| self.low[a].total_cmp(&self.low[b]))
+            .max_by(|&a, &b| self.envelope_flux(a).total_cmp(&self.envelope_flux(b)))
             .map(|frame| self.start_s + frame as f64 * self.frame_s);
         if !onset.is_some_and(|onset| (onset - t).abs() <= tolerance_s) {
             return false;
@@ -203,6 +205,11 @@ impl OnsetEnvelope {
         v[a.min(b)..=a.max(b)].iter().copied().fold(f32::INFINITY, f32::min)
     }
 
+    /// The envelope's flux at a frame: low plus full band.
+    fn envelope_flux(&self, frame: usize) -> f32 {
+        self.low[frame] + self.full[frame]
+    }
+
     /// Low plus full-band flux at time t, interpolated between frames.
     fn flux_at(&self, t: f64) -> f64 {
         let x = (t - self.start_s) / self.frame_s;
@@ -214,7 +221,7 @@ impl OnsetEnvelope {
             return 0.0;
         }
         let w = x - i as f64;
-        let at = |j: usize| (self.low[j] + self.full[j]) as f64;
+        let at = |j: usize| self.envelope_flux(j) as f64;
         at(i) * (1.0 - w) + at(i + 1) * w
     }
 
