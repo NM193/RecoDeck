@@ -428,6 +428,7 @@ fn used_bins(sample_rate: u32) -> usize {
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
 /// - Harmonic weighting (reinforces fundamentals over harmonics)
 /// - Frequency weighting (reduces sub-bass kick drum influence)
+/// - Scaled to sum 1 (`normalized`), so loud frames weigh no more than quiet ones
 fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) -> Vec<[f64; 12]> {
     // Tuning-corrected reference frequency for A
     let ref_a = 440.0 * 2.0f64.powf(tuning_offset_cents / 1200.0);
@@ -472,7 +473,7 @@ fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) ->
     let mut chromas = Vec::with_capacity(frames);
     harmonic_part_in_blocks(frames, HPSS_BLOCK_FRAMES, magnitudes, |harmonic| {
         let harmonic: Vec<f64> = harmonic.iter().map(|&v| v as f64).collect();
-        chromas.push(chroma_of(&harmonic, &bin_info, sample_rate));
+        chromas.push(normalized(chroma_of(&harmonic, &bin_info, sample_rate)));
     });
     chromas
 }
@@ -631,6 +632,18 @@ fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>], sample_rate:
             }
         }
         chroma[*pc] += energy;
+    }
+    chroma
+}
+
+/// A frame's chroma scaled to sum 1, so loud frames (drums) weigh no more
+/// than quiet ones (spec §3, step 2.2).
+fn normalized(mut chroma: [f64; 12]) -> [f64; 12] {
+    let total: f64 = chroma.iter().sum();
+    if total > 1e-12 {
+        for value in chroma.iter_mut() {
+            *value /= total;
+        }
     }
     chroma
 }
@@ -1144,6 +1157,13 @@ mod tests {
         let (key, is_minor, best, second) = best_key_of(&chroma, &EDMA_MAJOR, &EDMA_MINOR);
         assert_eq!((key, is_minor), (9, true));
         assert!((best - 1.0).abs() < 1e-12 && second < best);
+    }
+
+    #[test]
+    fn a_frame_sums_to_one() {
+        let frame = normalized([2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!((frame.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert_eq!(normalized([0.0; 12]), [0.0; 12]);
     }
 
     #[test]
