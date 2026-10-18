@@ -1,12 +1,12 @@
-// Musical key detection using Chromagram + multi-profile matching with segment voting.
+// Musical key detection using Chromagram + EDMA profile matching with segment voting.
 //
 // Improvements over basic chromagram approach:
 // 1. Tuning estimation: detects if A≠440Hz and adjusts pitch-class mapping
 // 2. Harmonic weighting: each spectral peak also adds weighted energy for its
 //    harmonics' pitch classes, giving a cleaner pitch-class distribution
-// 3. 3-way independent voting: Shaath + EDMA + Krumhansl profiles vote independently,
-//    majority rule (2+ agree) determines winner, with minor key bias and dominant
-//    confusion correction for ambiguous detections
+// 3. EDMA key profiles (measured best of Shaath, EDMA, Krumhansl, Temperley and
+//    their vote), with minor key bias and dominant confusion correction for
+//    ambiguous detections
 // 4. Spectral whitening to remove bass-heavy bias
 // 5. Frequency weighting to reduce sub-bass influence (kick drums in EDM)
 // 6. Segment-based voting: divides track into overlapping segments, detects key
@@ -26,8 +26,6 @@
 // 6. Return the best matching key in Camelot/Open Key/musical notation
 //
 // References:
-// - Krumhansl, C.L. (1990). Cognitive Foundations of Musical Pitch.
-// - Shaath, I. (2011). Estimation of key in digital music recordings (MSc thesis).
 // - Mauch, M. & Dixon, S. (2010). Approximate Note Transcription (harmonic analysis).
 // - Essentia Key algorithm: EDMA profiles from MTG, UPF Barcelona.
 
@@ -106,36 +104,15 @@ const HPSS_FREQ_BINS: usize = 17;
 /// whole spectrogram (about 50 KB per second at 44.1 kHz).
 const HPSS_BLOCK_FRAMES: usize = 512;
 
-/// Shaath's custom key profiles (from libKeyFinder MSc thesis, 2011)
-/// Empirically derived — better for popular/electronic music than Krumhansl-Schmuckler.
-const SHAATH_MAJOR: [f64; 12] = [
-    6.6, 2.0, 3.5, 2.3, 4.6, 4.0, 2.5, 5.2, 2.4, 3.7, 2.3, 3.2,
-];
-
-const SHAATH_MINOR: [f64; 12] = [
-    6.5, 2.7, 3.5, 5.4, 2.6, 3.5, 2.5, 4.7, 4.0, 2.7, 3.4, 3.2,
-];
-
 /// EDMA key profiles (auto-extracted from Electronic Dance Music corpus)
 /// From Essentia library (Music Technology Group, UPF Barcelona).
-/// Optimized for EDM/electronic genres — typically outperforms Shaath on electronic music.
+/// Optimized for EDM/electronic genres.
 const EDMA_MAJOR: [f64; 12] = [
     1.00, 0.29, 0.50, 0.40, 0.60, 0.56, 0.32, 0.80, 0.31, 0.45, 0.42, 0.39,
 ];
 
 const EDMA_MINOR: [f64; 12] = [
     1.00, 0.31, 0.44, 0.58, 0.33, 0.49, 0.29, 0.78, 0.43, 0.29, 0.53, 0.32,
-];
-
-/// Krumhansl-Schmuckler key profiles (from Cognitive Foundations of Musical Pitch, 1990)
-/// Derived from listener ratings — have a stronger tonic bias than Shaath/EDMA, which
-/// helps counteract dominant confusion in key detection.
-const KRUMHANSL_MAJOR: [f64; 12] = [
-    6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
-];
-
-const KRUMHANSL_MINOR: [f64; 12] = [
-    6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
 ];
 
 /// Musical key names for major keys (indexed by pitch class: 0=C, 1=C#/Db, ..., 11=B)
@@ -691,130 +668,26 @@ fn sum_chromas(frames: &[[f64; 12]]) -> [f64; 12] {
     chroma
 }
 
-/// Match the computed chromagram against all 24 key profiles using 3-way independent voting.
+/// Match the computed chromagram against the 24 EDMA key profiles.
 ///
-/// Three profile sets (Shaath, EDMA, Krumhansl) each independently select their top-1 key.
-/// Majority vote (2+ agree) determines the winner. If all three disagree, the profile with
-/// the highest absolute correlation wins. Post-processing applies:
+/// Post-processing applies:
 /// 1. Minor key bias for ambiguous major/minor detections (electronic music is ~70% minor)
 /// 2. Dominant confusion penalty — if the detected key might be the dominant (V) of the
 ///    true tonic, prefer the tonic when correlations are close
 ///
 /// Returns (pitch_class_index, is_minor, best_correlation, second_best_correlation)
 fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
-    let profile_sets: [(&[f64; 12], &[f64; 12]); 3] = [
-        (&SHAATH_MAJOR, &SHAATH_MINOR),
-        (&EDMA_MAJOR, &EDMA_MINOR),
-        (&KRUMHANSL_MAJOR, &KRUMHANSL_MINOR),
-    ];
-
-    // Each profile set independently selects its best key
-    // Stores: (key, is_minor, best_corr, second_corr)
-    let mut profile_winners: [(usize, bool, f64, f64); 3] =
-        [(0, false, f64::NEG_INFINITY, f64::NEG_INFINITY); 3];
-
-    for (p_idx, (major_p, minor_p)) in profile_sets.iter().enumerate() {
-        let mut best_corr = f64::NEG_INFINITY;
-        let mut second_corr = f64::NEG_INFINITY;
-        let mut best_key = 0;
-        let mut best_is_minor = false;
-
-        for root in 0..12 {
-            for is_minor in [false, true] {
-                let profile = if is_minor { minor_p } else { major_p };
-                let corr = pearson_correlation(chromagram, profile, root);
-
-                if corr > best_corr {
-                    second_corr = best_corr;
-                    best_corr = corr;
-                    best_key = root;
-                    best_is_minor = is_minor;
-                } else if corr > second_corr {
-                    second_corr = corr;
-                }
-            }
-        }
-
-        profile_winners[p_idx] = (best_key, best_is_minor, best_corr, second_corr);
-    }
-
-    // 3-way majority vote: check if any key got 2+ votes
-    let (mut best_key, mut best_is_minor, mut best_corr, second_best_corr) = {
-        let mut found_majority = None;
-
-        // Check each pair for agreement
-        for i in 0..3 {
-            for j in (i + 1)..3 {
-                if profile_winners[i].0 == profile_winners[j].0
-                    && profile_winners[i].1 == profile_winners[j].1
-                {
-                    // Found at least 2 agreeing — use this key
-                    let key = profile_winners[i].0;
-                    let is_minor = profile_winners[i].1;
-
-                    // Average correlations from all agreeing profiles
-                    let mut corr_sum = 0.0;
-                    let mut second_sum = 0.0;
-                    let mut count = 0.0;
-                    for w in &profile_winners {
-                        if w.0 == key && w.1 == is_minor {
-                            corr_sum += w.2;
-                            second_sum += w.3;
-                            count += 1.0;
-                        }
-                    }
-
-                    let avg_corr = corr_sum / count;
-                    let avg_second = second_sum / count;
-
-                    // Prefer majority with more voters (3 > 2)
-                    if let Some((_, _, _, _, prev_count)) = found_majority {
-                        if count > prev_count {
-                            found_majority = Some((key, is_minor, avg_corr, avg_second, count));
-                        }
-                    } else {
-                        found_majority = Some((key, is_minor, avg_corr, avg_second, count));
-                    }
-                }
-            }
-        }
-
-        if let Some((key, is_minor, corr, second, _)) = found_majority {
-            (key, is_minor, corr, second)
-        } else {
-            // All three disagree → use whichever profile had the highest absolute correlation
-            let winner = profile_winners
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1 .2.abs().partial_cmp(&b.1 .2.abs()).unwrap())
-                .map(|(idx, _)| idx)
-                .unwrap_or(0);
-            (
-                profile_winners[winner].0,
-                profile_winners[winner].1,
-                profile_winners[winner].2,
-                profile_winners[winner].3,
-            )
-        }
-    };
+    let (mut best_key, mut best_is_minor, mut best_corr, second_best_corr) =
+        best_key_of(chromagram, &EDMA_MAJOR, &EDMA_MINOR);
 
     // Minor key bias: electronic music is ~70% minor keys. When the correlation
     // difference between major and minor variants of the same root is very small,
     // bias toward minor.
     if !best_is_minor {
-        let num_profiles = profile_sets.len() as f64;
-        let major_avg: f64 = profile_sets
-            .iter()
-            .map(|(major_p, _)| pearson_correlation(chromagram, major_p, best_key))
-            .sum::<f64>()
-            / num_profiles;
-        let minor_avg: f64 = profile_sets
-            .iter()
-            .map(|(_, minor_p)| pearson_correlation(chromagram, minor_p, best_key))
-            .sum::<f64>()
-            / num_profiles;
+        let major = pearson_correlation(chromagram, &EDMA_MAJOR, best_key);
+        let minor = pearson_correlation(chromagram, &EDMA_MINOR, best_key);
 
-        if major_avg - minor_avg < 0.02 {
+        if major - minor < 0.02 {
             best_is_minor = true;
         }
     }
@@ -824,17 +697,10 @@ fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
     // In semitone math: 5 semitones up from the detected key = a 4th up = a 5th down,
     // i.e., the detected key is the dominant of the candidate tonic.
     let tonic_candidate = (best_key + 5) % 12;
-    let num_profiles = profile_sets.len() as f64;
+    let profile = |is_minor: bool| if is_minor { &EDMA_MINOR } else { &EDMA_MAJOR };
 
     // Check same quality (major→major, minor→minor)
-    let tonic_corr: f64 = profile_sets
-        .iter()
-        .map(|(major_p, minor_p)| {
-            let profile = if best_is_minor { minor_p } else { major_p };
-            pearson_correlation(chromagram, profile, tonic_candidate)
-        })
-        .sum::<f64>()
-        / num_profiles;
+    let tonic_corr = pearson_correlation(chromagram, profile(best_is_minor), tonic_candidate);
 
     if best_corr - tonic_corr < 0.05 {
         best_key = tonic_candidate;
@@ -843,14 +709,7 @@ fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
 
     // Also check cross quality: if we detected major, the tonic might be minor
     // (e.g., detected E major but actual key is A minor)
-    let tonic_cross_corr: f64 = profile_sets
-        .iter()
-        .map(|(major_p, minor_p)| {
-            let profile = if best_is_minor { major_p } else { minor_p };
-            pearson_correlation(chromagram, profile, tonic_candidate)
-        })
-        .sum::<f64>()
-        / num_profiles;
+    let tonic_cross_corr = pearson_correlation(chromagram, profile(!best_is_minor), tonic_candidate);
 
     if best_corr - tonic_cross_corr < 0.05 {
         best_key = tonic_candidate;
@@ -859,6 +718,33 @@ fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
     }
 
     (best_key, best_is_minor, best_corr, second_best_corr)
+}
+
+/// One profile set's best key for the chromagram: (pitch class, is_minor,
+/// best correlation, second-best correlation).
+fn best_key_of(chromagram: &[f64; 12], major_p: &[f64; 12], minor_p: &[f64; 12]) -> (usize, bool, f64, f64) {
+    let mut best_corr = f64::NEG_INFINITY;
+    let mut second_corr = f64::NEG_INFINITY;
+    let mut best_key = 0;
+    let mut best_is_minor = false;
+
+    for root in 0..12 {
+        for is_minor in [false, true] {
+            let profile = if is_minor { minor_p } else { major_p };
+            let corr = pearson_correlation(chromagram, profile, root);
+
+            if corr > best_corr {
+                second_corr = best_corr;
+                best_corr = corr;
+                best_key = root;
+                best_is_minor = is_minor;
+            } else if corr > second_corr {
+                second_corr = corr;
+            }
+        }
+    }
+
+    (best_key, best_is_minor, best_corr, second_corr)
 }
 
 /// Compute Pearson correlation between the chromagram and a key profile,
@@ -1239,6 +1125,15 @@ mod tests {
     fn a_minor_under_a_loud_kick_is_8a() {
         let result = detect_key_from_samples(&a_minor_progression(44100, 40.0, 1.5)).unwrap();
         assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
+    }
+
+    #[test]
+    fn a_profile_picks_the_key_it_was_rotated_to() {
+        // The A minor profile itself, as a chroma: A minor with correlation 1.
+        let chroma: [f64; 12] = std::array::from_fn(|pc| EDMA_MINOR[(pc + 12 - 9) % 12]);
+        let (key, is_minor, best, second) = best_key_of(&chroma, &EDMA_MAJOR, &EDMA_MINOR);
+        assert_eq!((key, is_minor), (9, true));
+        assert!((best - 1.0).abs() < 1e-12 && second < best);
     }
 
     #[test]
