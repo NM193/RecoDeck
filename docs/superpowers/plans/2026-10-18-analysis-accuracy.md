@@ -3925,6 +3925,18 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | Run | Commit | BPM ±0.05 | BPM ±0.5 | Grid ≤20 ms MP3 | Grid ≤20 ms lossless | Key exact (consensus) | MIREX (consensus) | s/track/core | Kept? |
 |---|---|---|---|---|---|---|---|---|---|
 | spec baseline (DB vs Traktor, 1326 tracks) | — | — | 87 % (all) | — | — | 28 % (vs Traktor) | — | — | — |
-| p1-baseline | | | | — | — | | | | — |
+| p1-baseline (1591 measured) | ec524f0 | 20.3 % | 20.9 % | — | — | 34.8 % | 0.501 | 2.99 | — |
 
-Reference ceiling (Traktor against Rekordbox): _to fill in Task 6_.
+Baseline notes (p1-baseline):
+- **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
+- **Key.**
+  - Exact against Traktor is 28.3 % (MIREX 0.437), against Rekordbox 31.2 % (MIREX 0.440), and on consensus 34.8 % (MIREX 0.501, 821 tracks).
+  - The predicted keys are skewed: 6A is 23.4 %, 1A 15.1 %.
+- **Confidence.** BPM: right 1.000, wrong 0.998, so it carries no signal. Key: right 0.539, wrong 0.436.
+- **Reference ceiling, Traktor against Rekordbox.**
+  - BPM: ±0.5 98.7 % (1200 tracks).
+  - Key: the same on 68.4 % (1201 tracks).
+  - Grid on MP3: Rekordbox sits 27.3 ms earlier than Traktor (signed median), and ≤20 ms is 38.2 %. That is likely encoder delay handled differently. On WAV/AIFF/FLAC only 1 track can be compared.
+- **Formats.** Only 4 measured WAV/AIFF/FLAC tracks have a Traktor marker; the reference set is almost all MP3.
+- **The spec's "87 % BPM" figure measured Traktor's own tags, not RecoDeck's detection.** In the library, 7165 of 8073 tracks hold a tag BPM (confidence 0.99), and only 839 hold a detected one.
+- **Time.** 2.99 s per measured track, so the budget is ≤ 4.5 s.
