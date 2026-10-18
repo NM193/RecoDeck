@@ -126,8 +126,11 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<Option<BpmResult>, S
     }
     let envelope = OnsetEnvelope::compute(audio);
     let Some(grid) = beat_grid(audio, &envelope) else { return Ok(None) };
-    // Step 4 (first beat) and step 5 (confidence) come in Task 12.
-    Ok(Some(BpmResult { bpm: grid.bpm(), confidence: 0.0, first_beat_ms: None }))
+    Ok(Some(BpmResult {
+        bpm: grid.bpm(),
+        confidence: grid_confidence(grid, &envelope),
+        first_beat_ms: first_beat_ms(grid, &envelope),
+    }))
 }
 
 /// Steps 1–3: the candidate tempo from aubio's passes, a grid fitted to the
@@ -442,10 +445,41 @@ fn snap(grid: Grid, envelope: &OnsetEnvelope) -> Grid {
     envelope_search(Grid { period_s: 60.0 / whole, phase_s: anchor }, envelope, false)
 }
 
+/// How close a grid beat must be to a kick to count (spec §2, step 5).
+const HIT_TOLERANCE_S: f64 = 0.020;
+
+/// Step 4: the grid beat nearest the first strong low-band onset, in ms:
+/// where the music starts, and the first bar's downbeat.
+fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
+    let mut beat = grid.nearest(envelope.first_strong_low_onset()?);
+    if beat < 0.0 {
+        beat += grid.period_s;
+    }
+    Some(beat * 1000.0)
+}
+
+/// Step 5: the share of grid beats inside music sections that have a kick
+/// within 20 ms. A steady track scores near 1; a tempo change or a live
+/// recording scores low, because the grid drifts off beats that are still there.
+fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
+    let music = envelope.music_windows();
+    let (mut beats, mut hits) = (0usize, 0usize);
+    for t in envelope.beats(grid.phase_s, grid.period_s) {
+        if !envelope.in_music(&music, t) {
+            continue;
+        }
+        beats += 1;
+        if envelope.kick_near(t, HIT_TOLERANCE_S, grid.period_s) {
+            hits += 1;
+        }
+    }
+    if beats == 0 { 0.0 } else { hits as f64 / beats as f64 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::kick_track;
+    use crate::audio::test_signals::{kick_track, tempo_change};
     use std::f32::consts::PI;
 
     fn low_passed(audio: &MonoAudio) -> MonoAudio {
@@ -547,6 +581,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_first_beat_is_the_first_kick() {
+        for (rate, first) in [(44100, 0.137), (48000, 0.137), (44100, 8.137)] {
+            let audio = kick_track(123.5, rate, 60.0, first);
+            let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
+            assert!((result.bpm - 123.5).abs() <= 0.05, "{rate} Hz, first kick at {first} s: {:.3} BPM", result.bpm);
+            let first_ms = result.first_beat_ms.expect("a first beat");
+            assert!((first_ms - first * 1000.0).abs() <= 5.0, "{rate} Hz, first kick at {first} s: {first_ms:.1} ms");
+        }
+    }
+
+    #[test]
+    fn a_tempo_change_lowers_the_confidence() {
+        let steady = detect_bpm_from_samples(&kick_track(123.0, 44100, 60.0, 0.137)).unwrap().expect("a tempo");
+        let changing = detect_bpm_from_samples(&tempo_change(120.0, 126.0, 44100, 30.0)).unwrap().expect("a tempo");
+        assert!(steady.confidence >= 0.9, "steady {:.2}", steady.confidence);
+        assert!(changing.confidence < steady.confidence, "changing {:.2}, steady {:.2}", changing.confidence, steady.confidence);
+    }
+
     /// Generate a synthetic click track at a known BPM for testing, with a
     /// quiet noise floor (about -60 dB) from the first click on, as real music
     /// never goes digitally silent between hits.
@@ -594,6 +647,7 @@ mod tests {
             "Expected BPM ~120, got {:.1}",
             result.bpm
         );
+        assert!(result.confidence > 0.0, "Confidence should be positive");
     }
 
     #[test]
