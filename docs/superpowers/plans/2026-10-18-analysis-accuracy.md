@@ -4553,6 +4553,8 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | p3-edma | 00f519c, EDMA alone | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 44.9 % | 0.584 | 3.98 | yes |
 | p3-krumhansl | 00f519c, Krumhansl alone | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 33.3 % | 0.495 | 3.88 | no |
 | p3-temperley | 00f519c, Temperley alone | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 24.7 % | 0.423 | 3.95 | no |
+| p3-edma-binary | 938d1e9 | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 47.3 % | 0.608 | 3.99 | yes |
+| p3-edma-floor100 | 8e3a714, floor 100 Hz | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 43.8 % | 0.577 | 3.98 | no |
 
 Baseline notes (p1-baseline):
 - **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
@@ -4589,6 +4591,7 @@ Phase 2 notes (p2-final, 2026-10-18):
   1. Replace that test with chords compared at 44.1 and 48 kHz, which checks the sample rate and not a key, then keep EDMA.
   2. Re-measure the binary mask and the 100 Hz floor on top of EDMA.
   3. Then debug the fifth-up error before Phase 4. The 75 % target is out of reach for now.
+- **On EDMA** (after the test swap, 580f0c7): the binary mask is kept (938d1e9), MIREX 0.608, exact 47.3 %, fifth up 17.4 %. The 100 Hz floor gave 0.577 and was dropped. The kick test reads 9A (Em), a fifth up.
 - **Run-to-run noise.** Two runs of the same code differ on about 30 of 1958 first beats by < 1 ms, and on one wrong-tempo track by 204 ms. BPM and key do not move. The source is not found yet (likely state inside aubio).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.
