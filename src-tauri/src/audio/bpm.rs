@@ -408,10 +408,16 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     let middle = envelope.duration_s() / 2.0;
     let mut best = Grid { phase_s: grid.nearest(middle), ..grid };
     let mut best_score = envelope.onset_strength(best.phase_s, best.period_s);
+    // Stage 2 reaches back ±15 ms from the phase stage 1 leaves. Off by half
+    // its tempo step, stage 1's grid drifts duration × step / (4 × bpm) by the
+    // ends, which smears its phase about as much; this step keeps that drift
+    // at a quarter of the reach, so long tracks get a finer step.
+    let reach_s = 0.015;
+    let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s()).min(0.05);
     // Per stage: BPM step and span either side, phase step and span either side (s).
     let stages = [
-        (0.05, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 2.0),
-        (0.01, 0.05, 0.001, 0.005),
+        (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 2.0),
+        (0.01, 0.05, 0.001, reach_s),
         (0.002, 0.01, 0.001, 0.003),
     ];
     for (bpm_step, bpm_span, phase_step, phase_span) in stages {
@@ -566,6 +572,21 @@ mod tests {
         assert!(worst_ms <= 5.0, "a beat {worst_ms:.1} ms off the kicks");
         let far = Grid { period_s: 60.0 / 124.2, phase_s: 0.137 };
         assert_eq!(snap(far, &envelope), far);
+    }
+
+    #[test]
+    fn the_envelope_search_reaches_back_on_long_tracks() {
+        // Five minutes, the short end of real tracks: a start 0.02 BPM off
+        // drifts 24 ms by the ends.
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 300.0, 0.137));
+        let truth = Grid { period_s: 60.0 / 124.0, phase_s: 0.137 };
+        let start = Grid { period_s: 60.0 / 124.02, phase_s: truth.nearest(150.0) };
+        let grid = envelope_search(start, &envelope, true);
+        assert!((grid.bpm() - 124.0).abs() <= 0.005, "{:.4} BPM", grid.bpm());
+        for kick in [0.137, truth.nearest(150.0), truth.nearest(299.5)] {
+            let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+            assert!(error_ms.abs() <= 5.0, "kick at {kick:.3} s: beat {error_ms:+.1} ms off");
+        }
     }
 
     #[test]
