@@ -37,6 +37,34 @@ pub fn kick_track(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64) -> Mon
     MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
 }
 
+/// `kick_track` with an open hi-hat on every off-beat, as in most house and
+/// techno: white noise, high-passed by a first difference, fading over 40 ms,
+/// at `hat_gain`.
+pub fn offbeat_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, hat_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let total = track.samples.len();
+    let length = (0.08 * rate) as usize;
+    let mut state: u32 = 99;
+    let mut beat = 0;
+    loop {
+        let start = ((first_s + (beat as f64 + 0.5) * 60.0 / bpm) * rate).round() as usize;
+        if start >= total {
+            break;
+        }
+        let mut previous = 0.0;
+        for j in 0..length.min(total - start) {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = (state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0;
+            let t = j as f64 / rate;
+            track.samples[start + j] += (hat_gain * (noise - previous) * (-t / 0.04).exp()) as f32;
+            previous = noise;
+        }
+        beat += 1;
+    }
+    track
+}
+
 /// `seconds` of kicks at `bpm_a`, then `seconds` at `bpm_b`.
 pub fn tempo_change(bpm_a: f64, bpm_b: f64, sample_rate: u32, seconds: f64) -> MonoAudio {
     let mut track = kick_track(bpm_a, sample_rate, seconds, 0.137);

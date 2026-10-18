@@ -415,8 +415,11 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     let reach_s = 0.015;
     let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s()).min(0.05);
     // Per stage: BPM step and span either side, phase step and span either side (s).
+    // Stage 1's phase stays within an eighth of a beat of the start, which is
+    // already on the kicks (aubio's beats sit 7–24 ms early): further out, the
+    // full band's off-beat hats outscore the kicks.
     let stages = [
-        (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 2.0),
+        (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
         (0.002, 0.01, 0.001, 0.003),
     ];
@@ -485,7 +488,7 @@ fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::{kick_track, tempo_change};
+    use crate::audio::test_signals::{kick_track, offbeat_hats, tempo_change};
     use std::f32::consts::PI;
 
     fn low_passed(audio: &MonoAudio) -> MonoAudio {
@@ -610,6 +613,25 @@ mod tests {
             assert!((result.bpm - 123.5).abs() <= 0.05, "{rate} Hz, first kick at {first} s: {:.3} BPM", result.bpm);
             let first_ms = result.first_beat_ms.expect("a first beat");
             assert!((first_ms - first * 1000.0).abs() <= 5.0, "{rate} Hz, first kick at {first} s: {first_ms:.1} ms");
+        }
+    }
+
+    #[test]
+    fn off_beat_hats_leave_the_grid_on_the_kicks() {
+        // The hats outscore the kicks in the onset envelope's full band.
+        for (bpm, rate, gain) in [(124.0, 44100, 0.1), (124.0, 44100, 0.3), (128.0, 48000, 0.2)] {
+            let case = format!("{bpm} BPM at {rate} Hz, hats at {gain}");
+            let result = detect_bpm_from_samples(&offbeat_hats(bpm, rate, 60.0, 0.137, gain)).unwrap().expect("a tempo");
+            assert!((result.bpm - bpm).abs() <= 0.05, "{case}: {:.3} BPM", result.bpm);
+            let first_ms = result.first_beat_ms.expect("a first beat");
+            assert!((first_ms - 137.0).abs() <= 5.0, "{case}: first beat at {first_ms:.1} ms");
+            let grid = Grid { period_s: 60.0 / result.bpm, phase_s: first_ms / 1000.0 };
+            let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{case}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+            assert!(result.confidence >= 0.9, "{case}: confidence {:.2}", result.confidence);
         }
     }
 
