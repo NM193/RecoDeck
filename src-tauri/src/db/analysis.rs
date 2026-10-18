@@ -306,11 +306,16 @@ mod tests {
     fn failed_bpms_from_an_older_release_are_cleared_on_every_start() {
         let db = db();
         let id = track(&db, "/m/a.mp3");
+        db.save_analysis(id, Some(&found_bpm(124.0, Some(137.0))), None, 1).unwrap();
+        // The older release overwrites the BPM with a failed 0.
         db.save_bpm_analysis(id, 0.0, 0.0).unwrap();
         db.run_migrations().unwrap();
-        let bpm: Option<f64> =
-            db.conn.query_row("SELECT bpm FROM track_analysis WHERE track_id = ?1", [id], |r| r.get(0)).unwrap();
-        assert_eq!(bpm, None);
+        let (bpm, confidence, grid, version) = {
+            let r = row(&db, id);
+            (r.0, r.1, r.2, r.5)
+        };
+        assert_eq!((bpm, confidence, grid, version), (None, None, None, None));
+        assert!(!is_current(version, 1));
     }
 
     #[test]
@@ -329,8 +334,10 @@ mod tests {
         let db = db();
         let id = track(&db, "/m/a.mp3");
         db.save_analysis(id, Some(&found_bpm(124.0, Some(137.0))), Some(&found_key("8A")), 1).unwrap();
-        db.save_analysis(id, Some(&found_bpm(126.0, Some(10.0))), None, 1).unwrap();
-        assert_eq!(row(&db, id), (Some(126.0), Some(0.9), Some(10.0), Some("8A".into()), Some(0.7), Some(1)));
+        let mut second = found_bpm(126.0, Some(10.0));
+        second.confidence = 0.5;
+        db.save_analysis(id, Some(&second), None, 1).unwrap();
+        assert_eq!(row(&db, id), (Some(126.0), Some(0.5), Some(10.0), Some("8A".into()), Some(0.7), Some(1)));
     }
 
     #[test]

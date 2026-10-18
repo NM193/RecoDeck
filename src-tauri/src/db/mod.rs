@@ -464,9 +464,10 @@ impl Database {
         }
 
         // An older release sharing this database still writes bpm = 0 when its
-        // detection fails; cleared on every start so the track is retried.
+        // detection fails; cleared on every start, with the grid and version it
+        // may sit on, so the track is retried.
         self.conn.execute(
-            "UPDATE track_analysis SET bpm = NULL, bpm_confidence = NULL WHERE bpm = 0",
+            "UPDATE track_analysis SET bpm = NULL, bpm_confidence = NULL, first_beat_ms = NULL, analysis_version = NULL WHERE bpm = 0",
             [],
         )?;
 
