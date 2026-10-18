@@ -3,9 +3,12 @@ import { useSettingsContext } from './SettingsContext'
 import { DuplicatesModal } from '../DuplicatesModal'
 import { MissingFilesModal } from '../MissingFilesModal'
 import { tauriApi } from '../../lib/tauri-api'
+import { listen } from '@tauri-apps/api/event'
+import { reanalyzeHint } from '../../lib/reanalysis'
+import type { AnalysisStatus } from '../../types/track'
 
 export function DatabaseSection() {
-  const { onFoldersChanged, onNotification } = useSettingsContext()
+  const { onFoldersChanged, onNotification, onReanalyzeLibrary } = useSettingsContext()
 
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
   const [showMissingModal, setShowMissingModal] = useState(false)
@@ -23,10 +26,28 @@ export function DatabaseSection() {
     countMissing()
   }, [countMissing])
 
+  // Which tracks need analysis; read again when an analysis ends.
+  const [analysis, setAnalysis] = useState<AnalysisStatus | null>(null)
+
+  const loadAnalysisStatus = useCallback(() => {
+    tauriApi
+      .analysisStatus()
+      .then(setAnalysis)
+      .catch(() => setAnalysis(null))
+  }, [])
+
+  useEffect(() => {
+    loadAnalysisStatus()
+    const unlisten = listen('analysis-complete', () => loadAnalysisStatus())
+    return () => {
+      void unlisten.then((fn) => fn())
+    }
+  }, [loadAnalysisStatus])
+
   return (
     <>
       <p className="settings-description">
-        Clean up duplicate tracks and files that went missing.
+        Clean up duplicate tracks and missing files, and re-analyze the library.
       </p>
 
       <div
@@ -61,6 +82,21 @@ export function DatabaseSection() {
           <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
             Tracks whose file was moved, renamed or deleted. A rescan follows
             moved files on its own; review the rest here.
+          </p>
+        </div>
+        <div>
+          <button
+            onClick={() => onReanalyzeLibrary?.()}
+            className="btn btn--primary btn--sm"
+            style={{ width: '100%' }}
+            disabled={!analysis || analysis.needing === 0 || !onReanalyzeLibrary}
+          >
+            Re-analyze
+          </button>
+          <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
+            {analysis
+              ? reanalyzeHint(analysis)
+              : 'Checking which tracks need analysis…'}
           </p>
         </div>
       </div>

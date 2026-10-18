@@ -24,6 +24,8 @@ import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { ExportPlaylistModal } from './components/ExportPlaylistModal'
 import { DjExportModal } from './components/DjExportModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
+import { ReanalyzePrompt } from './components/ReanalyzePrompt'
+import { PROMPTED_VERSION_KEY, shouldPromptReanalysis } from './lib/reanalysis'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
 import type { ChannelNews } from './types/youtube'
@@ -91,6 +93,7 @@ import type {
   LibraryFolder,
   MoveReport,
   AnalysisProgressEvent,
+  AnalysisStatus,
   AnalysisCompleteEvent,
 } from './types/track'
 import { EASE, MOTION } from './lib/motion'
@@ -281,6 +284,9 @@ function AppContent() {
 
   // Pending update from auto-check on launch
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
+
+  // Re-analysis prompt (spec 2026-10-17, §5): shown once What's New is closed
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<AnalysisStatus | null>(null)
 
   // What's New dialog state
   const [whatsNew, setWhatsNew] = useState<{
@@ -508,6 +514,17 @@ function AppContent() {
         }
       } catch {
         console.warn("Failed to check version for What's New dialog")
+      }
+
+      // Once per analysis version: offer to re-analyze with better detection
+      try {
+        const [status, prompted] = await Promise.all([
+          tauriApi.analysisStatus(),
+          tauriApi.getSetting(PROMPTED_VERSION_KEY),
+        ])
+        if (shouldPromptReanalysis(status, prompted)) setReanalyzeStatus(status)
+      } catch {
+        console.warn('Failed to check whether analysis is current')
       }
 
       // PERFORMANCE: Don't load all tracks on startup - load only total count
@@ -1521,8 +1538,9 @@ function AppContent() {
     void analyzeTrackIds(trackIds)
   }
 
-  // BPM and key for these tracks, skipping those that have both (the
-  // sidebar's Analyze All Tracks and Home's Analyze all).
+  // BPM and key for these tracks, skipping those already analyzed with the
+  // current version (the needs-analysis rule, spec 2026-10-17, §4): Home's list,
+  // the re-analysis prompt and Settings → Database.
   async function analyzeTrackIds(trackIds: number[]) {
     try {
       // Show progress bar immediately with "preparing" state
@@ -1549,6 +1567,34 @@ function AppContent() {
       setError(err instanceof Error ? err.message : String(err))
       toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
+  }
+
+  // Every track that needs analysis: the re-analysis prompt and Settings → Database.
+  async function reanalyzeLibrary() {
+    if (analyzing) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
+    try {
+      const ids = await tauriApi.trackIdsNeedingAnalysis()
+      if (ids.length === 0) {
+        toast('All tracks use the current analysis', { kind: 'info' })
+        return
+      }
+      void analyzeTrackIds(ids)
+    } catch (err) {
+      toast(`Couldn't start the analysis: ${getErrorMessage(err)}`, { kind: 'error' })
+    }
+  }
+
+  // Both answers save the version, so the prompt shows once per version.
+  function closeReanalyzePrompt(reanalyze: boolean) {
+    const status = reanalyzeStatus
+    setReanalyzeStatus(null)
+    if (status) {
+      tauriApi.setSetting(PROMPTED_VERSION_KEY, String(status.version)).catch(() => {})
+    }
+    if (reanalyze) void reanalyzeLibrary()
   }
 
   // Handler for when user clicks on track metadata in player
@@ -2046,6 +2092,7 @@ function AppContent() {
                   onFoldersChanged={handleFoldersChanged}
                   onThemeChanged={handleThemeChanged}
                   onNotification={(message, type) => toast(message, { kind: type })}
+                  onReanalyzeLibrary={() => void reanalyzeLibrary()}
                 />
               ) : showSearch ? (
                 <SearchView
@@ -2353,6 +2400,14 @@ function AppContent() {
           version={whatsNew.version}
           changes={whatsNew.changes}
           onClose={() => setWhatsNew(null)}
+        />
+      )}
+
+      {reanalyzeStatus && !whatsNew && (
+        <ReanalyzePrompt
+          status={reanalyzeStatus}
+          onLater={() => closeReanalyzePrompt(false)}
+          onReanalyze={() => closeReanalyzePrompt(true)}
         />
       )}
 
