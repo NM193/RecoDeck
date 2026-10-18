@@ -1,0 +1,25 @@
+/* The once-per-version re-analysis prompt (spec 2026-10-17, §5). */
+.reanalyze-prompt {
+  width: min(460px, calc(100vw - 48px));
+}
+
+.reanalyze-prompt h3 {
+  margin: 0 0 8px;
+}
+
+.reanalyze-prompt__text {
+  margin: 0;
+}
+
+.reanalyze-prompt__note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.reanalyze-prompt__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
