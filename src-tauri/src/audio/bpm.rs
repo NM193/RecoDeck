@@ -10,13 +10,15 @@
 //    then a least-squares line through the beats within a quarter beat. That
 //    grid is refined on the onset envelope: aubio spaces its beats by its own,
 //    slightly fast period, so their phase drifts by a varying amount, while
-//    the envelope sits at a steady offset from the kicks. Without such beats,
-//    the envelope search starts from the candidate's period alone.
+//    the envelope sits at a steady offset from the kicks. The search also
+//    starts half a beat on, in case aubio followed the off-beats, and keeps
+//    the result on the kicks. Without such beats, it starts from the
+//    candidate's period alone.
 // 3. Snap: a tempo within SNAP_BPM of a whole number becomes it, and the phase
 //    is refitted on the envelope.
 // 4. First beat: the grid beat nearest the first strong low-band onset.
 // 5. Confidence: the share of grid beats inside music sections with a kick
-//    within 20 ms.
+//    that stands out within 20 ms.
 //
 // No tempo found gives None, never a BPM of 0.
 
@@ -449,8 +451,8 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     // Per stage: BPM step and span either side, phase step and span either side (s).
     // Stage 1's phase stays within an eighth of a beat of the start, as further
     // out the full band's off-beat hats outscore the kicks. A start fitted to
-    // aubio's beats is 7–24 ms off the kicks; without one, searched_grid
-    // covers the beat with four starts.
+    // aubio's beats is 7–24 ms off the kicks (searched_grid also tries it half
+    // a beat on); without one, searched_grid covers the beat with four starts.
     let stages = [
         (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
@@ -501,8 +503,9 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms. A steady track scores near 1; a tempo change or a live
-/// recording scores low, because the grid drifts off beats that are still there.
+/// within 20 ms (one that stands out, see `kick_near`). A steady track scores
+/// near 1; a tempo change or a live recording scores low, because the grid
+/// drifts off beats that are still there; noise scores near 0.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
     let music = envelope.music_windows();
     let (mut beats, mut hits) = (0usize, 0usize);
