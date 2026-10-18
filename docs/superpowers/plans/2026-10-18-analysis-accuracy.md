@@ -4555,6 +4555,7 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | p3-temperley | 00f519c, Temperley alone | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 24.7 % | 0.423 | 3.95 | no |
 | p3-edma-binary | 938d1e9 | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 47.3 % | 0.608 | 3.99 | yes |
 | p3-edma-floor100 | 8e3a714, floor 100 Hz | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 43.8 % | 0.577 | 3.98 | no |
+| p3-nowhiten | c8bd645 | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 74.3 % | 0.803 | 3.90 | yes |
 
 Baseline notes (p1-baseline):
 - **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
@@ -4592,6 +4593,13 @@ Phase 2 notes (p2-final, 2026-10-18):
   2. Re-measure the binary mask and the 100 Hz floor on top of EDMA.
   3. Then debug the fifth-up error before Phase 4. The 75 % target is out of reach for now.
 - **On EDMA** (after the test swap, 580f0c7): the binary mask is kept (938d1e9), MIREX 0.608, exact 47.3 %, fifth up 17.4 %. The 100 Hz floor gave 0.577 and was dropped. The kick test reads 9A (Em), a fifth up.
+- **The fifth-up error was whitening** (debugger, 2026-10-18; c8bd645). `chroma_of` divided each bin by the mean of its ±20 neighbours (about ±108 Hz). That flattened a note's partials, so its 3rd and 6th (a fifth up) counted almost like the note.
+  - Synthetic kick test, 8A − 9A margin with one stage off: none off −0.091; HPSS off −0.079; whitening off +0.161; harmonic summation off −0.114.
+  - A single A3 with 1/h partials: E/A chroma is 0.28 on the raw FFT and 0.55 with the full pipeline.
+  - On 20 real fifth-up tracks, turning only whitening off fixes 11, and 9 of 10 correct tracks stay correct.
+  - Full library, consensus: exact 47.3 → 74.3 %, MIREX 0.608 → 0.803; fifth up 17.4 → 7.1 %, parallel 22.0 → 10.0 %; key confidence right/wrong 0.614/0.450. Against Traktor alone 61.1 %, against Rekordbox 61.6 %.
+  - The kick test now passes (8A). New test: an A minor triad on a sawtooth reads 8A.
+  - Decisions measured with whitening on (soft or binary mask, heuristics, normalisation, the floor) are re-measured on top of this.
 - **Run-to-run noise.** Two runs of the same code differ on about 30 of 1958 first beats by < 1 ms, and on one wrong-tempo track by 204 ms. BPM and key do not move. The source is not found yet (likely state inside aubio).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.
