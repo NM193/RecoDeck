@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
 pub mod dj;
+pub mod analysis;
 pub mod duplicates;
 pub mod home;
 pub mod merge;
@@ -446,6 +447,18 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/021_share_links.sql"))?;
+
+        // Migration 022: the beat grid and the analysis version (spec
+        // 2026-10-17, §4). ALTER TABLE is not idempotent, so the column is
+        // checked for first.
+        let has_analysis_version: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('track_analysis') WHERE name = 'analysis_version'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_analysis_version {
+            self.conn.execute_batch(include_str!("migrations/022_analysis_grid.sql"))?;
+        }
 
         Ok(())
     }

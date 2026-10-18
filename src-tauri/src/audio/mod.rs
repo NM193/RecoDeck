@@ -11,6 +11,11 @@ pub mod waveform;
 #[cfg(test)]
 pub(crate) mod test_signals;
 
+/// The version of BPM, key and grid detection. A track analysed with an
+/// older one, never analysed, or only tagged needs analysis (spec 2026-10-17,
+/// §4). Raise it when detection changes enough to be worth a re-analysis.
+pub const ANALYSIS_VERSION: i64 = 1;
+
 /// Get MIME type for an audio file based on its extension.
 /// Shared across stream:// protocol handler (lib.rs) and companion server streaming (streaming.rs).
 pub fn audio_mime_type(path: &str) -> &'static str {
