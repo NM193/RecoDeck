@@ -3,8 +3,8 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
-pub mod dj;
 pub mod analysis;
+pub mod dj;
 pub mod duplicates;
 pub mod home;
 pub mod merge;
@@ -457,8 +457,18 @@ impl Database {
             |row| row.get(0),
         )?;
         if !has_analysis_version {
-            self.conn.execute_batch(include_str!("migrations/022_analysis_grid.sql"))?;
+            // One transaction: a failure midway leaves no half-added columns.
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/022_analysis_grid.sql"))?;
+            tx.commit()?;
         }
+
+        // An older release sharing this database still writes bpm = 0 when its
+        // detection fails; cleared on every start so the track is retried.
+        self.conn.execute(
+            "UPDATE track_analysis SET bpm = NULL, bpm_confidence = NULL WHERE bpm = 0",
+            [],
+        )?;
 
         Ok(())
     }
