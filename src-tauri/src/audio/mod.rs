@@ -4,8 +4,12 @@
 pub mod decoder;
 pub mod bpm;
 pub mod key;
+pub mod onset;
 pub mod scoring;
 pub mod waveform;
+
+#[cfg(test)]
+pub(crate) mod test_signals;
 
 /// Get MIME type for an audio file based on its extension.
 /// Shared across stream:// protocol handler (lib.rs) and companion server streaming (streaming.rs).
