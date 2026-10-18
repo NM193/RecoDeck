@@ -2119,7 +2119,7 @@ git commit -m "feat(bpm): first beat from the first kick, confidence from grid h
   - Otherwise set it back to `false`.
 - [ ] **Step 4: Check the targets** on the best run:
   - BPM within ±0.5 ≥ 98 % on the target set;
-  - grid ≤20 ms ≥ 90 % for MP3 and for WAV/AIFF/FLAC;
+  - grid ≤20 ms ≥ 90 % for MP3. The user decided 2026-10-18 that only 4 WAV/AIFF/FLAC tracks have a Traktor marker, so lossless is reported, not targeted; the synthetic ±5 ms tests cover it;
   - seconds per track ≤ 1.5 × the baseline.
 
   Also note the signed medians. If WAV/AIFF/FLAC sit more than 5 ms from Traktor in one direction, report it at the checkpoint and do not tune toward Traktor.
