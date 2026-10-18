@@ -95,6 +95,26 @@ pub fn sixteenth_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, ha
     track
 }
 
+/// `kick_track` with a sidechained bass, as in most house: a `bass_hz` sine
+/// at `bass_gain` from each off-beat until the next kick, silent under the
+/// kick. The bass rises from near silence, the kick on top of the bass.
+pub fn offbeat_bass(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, bass_hz: f64, bass_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let period = 60.0 / bpm;
+    for (i, sample) in track.samples.iter_mut().enumerate() {
+        let t = i as f64 / rate - first_s;
+        if t < 0.0 {
+            continue;
+        }
+        let in_beat = t / period - (t / period).floor();
+        if in_beat >= 0.5 {
+            *sample += (bass_gain * (2.0 * PI * bass_hz * t).sin()) as f32;
+        }
+    }
+    track
+}
+
 /// White noise, uniform in ±`amplitude` (a constant-seeded LCG): no beat at all.
 pub fn white_noise(sample_rate: u32, seconds: f64, amplitude: f64) -> MonoAudio {
     let mut state: u32 = 0x0BAD_5EED;

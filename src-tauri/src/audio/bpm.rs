@@ -201,7 +201,8 @@ fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Opt
         .filter(|grid| envelope.kick_strength(grid.phase_s, grid.period_s) > 0.0)
 }
 
-/// Of several grids, the one whose beats carry the most low-band onset strength.
+/// Of several grids, the one whose beats the low band jumps at most: the one
+/// on the kicks (see `kick_strength`).
 fn on_the_kicks(grids: impl Iterator<Item = Grid>, envelope: &OnsetEnvelope) -> Option<Grid> {
     grids.max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
 }
@@ -526,7 +527,7 @@ fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::{kick_track, offbeat_hats, sixteenth_hats, tempo_change, white_noise};
+    use crate::audio::test_signals::{kick_track, offbeat_bass, offbeat_hats, sixteenth_hats, tempo_change, white_noise};
     use std::f32::consts::PI;
 
     fn low_passed(audio: &MonoAudio) -> MonoAudio {
@@ -744,6 +745,24 @@ mod tests {
                 assert!(error_ms.abs() <= 5.0, "{case}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
             }
             assert!(result.confidence >= 0.9, "{case}: confidence {:.2}", result.confidence);
+        }
+    }
+
+    #[test]
+    fn an_off_beat_bass_leaves_the_grid_on_the_kicks() {
+        // The bass rises out of near silence on every off-beat, the kick
+        // lands on the held bass.
+        for (bpm, rate) in [(124.0, 44100), (128.0, 48000)] {
+            let case = format!("{bpm} BPM at {rate} Hz");
+            let result = detect_bpm_from_samples(&offbeat_bass(bpm, rate, 60.0, 0.137, 110.0, 0.3)).unwrap().expect("a tempo");
+            assert!((result.bpm - bpm).abs() <= 0.05, "{case}: {:.3} BPM", result.bpm);
+            let first_ms = result.first_beat_ms.expect("a first beat");
+            let grid = Grid { period_s: 60.0 / result.bpm, phase_s: first_ms / 1000.0 };
+            let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{case}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
         }
     }
 

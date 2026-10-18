@@ -20,6 +20,9 @@ const STRONG_ONSET_SHARE: f32 = 0.3;
 /// A kick near a grid beat stands this many times above the 90th percentile
 /// of the low-band flux around it (see `kick_near`).
 const KICK_OVER_P90: f32 = 3.0;
+/// How far either side of a grid beat `kick_strength` looks for the low band's
+/// jump: past a kick's attack, and short of the next 16th up to 160 BPM.
+const KICK_JUMP_S: f64 = 0.060;
 /// Where the flux peaks sit from an onset, in ms (negative: before it):
 /// measured on the synthetic kick tests and taken off the frame times, so a
 /// grid found on the envelope sits on the kicks.
@@ -156,10 +159,37 @@ impl OnsetEnvelope {
         near > 0.0 && near >= KICK_OVER_P90 * p90
     }
 
-    /// The low-band onset strength at a grid's beats (±10 ms): which of
-    /// several phases sits on the kicks.
+    /// How far the low band's level jumps at a grid's beats: which of several
+    /// phases sits on the kicks. Per beat, the loudest the low band gets within
+    /// KICK_JUMP_S after it, less the quietest within KICK_JUMP_S before. The
+    /// kick is the loudest thing there; the low-band flux can't tell, as it is
+    /// log-compressed, so a sidechained bass rising out of near silence on the
+    /// off-beat rises as much as a kick landing on the held bass.
     pub fn kick_strength(&self, phase_s: f64, period_s: f64) -> f64 {
-        self.beats(phase_s, period_s).map(|t| self.max_low(t - 0.010, t + 0.010) as f64).sum()
+        self.beats(phase_s, period_s)
+            .map(|t| {
+                let after = self.max_of(&self.low_energy, t, t + KICK_JUMP_S);
+                let before = self.min_of(&self.low_energy, t - KICK_JUMP_S, t);
+                (after.sqrt() - before.sqrt()).max(0.0) as f64
+            })
+            .sum()
+    }
+
+    /// The largest and smallest value of a per-frame series between two times.
+    fn max_of(&self, v: &[f32], from: f64, to: f64) -> f32 {
+        if v.is_empty() {
+            return 0.0;
+        }
+        let (a, b) = (self.frame_at(from), self.frame_at(to));
+        v[a.min(b)..=a.max(b)].iter().copied().fold(0.0, f32::max)
+    }
+
+    fn min_of(&self, v: &[f32], from: f64, to: f64) -> f32 {
+        if v.is_empty() {
+            return 0.0;
+        }
+        let (a, b) = (self.frame_at(from), self.frame_at(to));
+        v[a.min(b)..=a.max(b)].iter().copied().fold(f32::INFINITY, f32::min)
     }
 
     /// Low plus full-band flux at time t, interpolated between frames.
@@ -196,7 +226,7 @@ impl OnsetEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::kick_track;
+    use crate::audio::test_signals::{kick_track, offbeat_bass};
 
     #[test]
     fn the_first_strong_onset_is_the_first_kick() {
@@ -238,6 +268,15 @@ mod tests {
         let period = 60.0 / 124.0;
         let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 30.0, 0.137));
         assert!(envelope.kick_strength(0.137, period) > 2.0 * envelope.kick_strength(0.137 + period / 2.0, period));
+    }
+
+    #[test]
+    fn the_kick_phase_is_stronger_than_an_off_beat_bass() {
+        // The bass rises out of silence, the kick on top of the held bass.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&offbeat_bass(124.0, 44100, 30.0, 0.137, 110.0, 0.3));
+        let (kick, bass) = (envelope.kick_strength(0.137, period), envelope.kick_strength(0.137 + period / 2.0, period));
+        assert!(kick > 1.2 * bass, "kick {kick:.1}, bass {bass:.1}");
     }
 
     #[test]
