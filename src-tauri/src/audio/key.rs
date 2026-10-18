@@ -473,7 +473,7 @@ fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) ->
     let mut chromas = Vec::with_capacity(frames);
     harmonic_part_in_blocks(frames, HPSS_BLOCK_FRAMES, magnitudes, |harmonic| {
         let harmonic: Vec<f64> = harmonic.iter().map(|&v| v as f64).collect();
-        chromas.push(normalized(chroma_of(&harmonic, &bin_info, sample_rate)));
+        chromas.push(normalized(chroma_of(&harmonic, &bin_info)));
     });
     chromas
 }
@@ -619,15 +619,14 @@ impl<const N: usize> SortedWindow<N> {
 /// the note itself. Dividing each bin by its neighbourhood's mean evened the
 /// partials out, and keys read a fifth up on 17 % of tracks (7 % without)
 /// and as the parallel mode on 22 % (10 % without), measured.
-fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>], sample_rate: u32) -> [f64; 12] {
+fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>]) -> [f64; 12] {
     let mut chroma = [0.0f64; 12];
     for (bin, info) in bin_info.iter().enumerate() {
         let Some((pc, weight)) = info else { continue };
         let mut energy = magnitudes[bin] * HARMONIC_WEIGHTS[0] * weight;
         for h in 1..NUM_HARMONICS {
             let harmonic_bin = bin * (h + 1);
-            let h_freq = harmonic_bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
-            if harmonic_bin < magnitudes.len() && h_freq <= MAX_FREQ * NUM_HARMONICS as f64 {
+            if harmonic_bin < magnitudes.len() {
                 energy += magnitudes[harmonic_bin] * HARMONIC_WEIGHTS[h] * weight;
             }
         }
