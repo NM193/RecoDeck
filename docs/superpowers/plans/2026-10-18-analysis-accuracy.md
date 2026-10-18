@@ -1595,14 +1595,19 @@ git commit -m "feat(audio): onset envelope with low and full band flux"
 
     #[test]
     fn beats_are_precise_within_the_hop() {
-        // Rounded down to 512-sample hops, beats at 122 BPM are 42 or 43 hops
-        // apart: 123.05 or 120.19 BPM, never 122.
-        let audio = kick_track(122.0, 44100, 60.0, 0.137);
+        // Rounded down to 512-sample hops, every beat time would be a multiple
+        // of the hop. aubio spaces beats by its own period estimate, which the
+        // grid fit (step 2) corrects; here it only has to be within that
+        // fit's ±2 % search.
+        let rate = 44100;
+        let audio = kick_track(122.0, rate, 60.0, 0.137);
         let pass = run_tempo_pass(&low_passed(&audio), OnsetMode::SpecFlux).unwrap();
+        let inside = pass.beats.iter().filter(|&&t| ((t * rate as f64).round() as usize) % HOP_SIZE != 0).count();
+        assert!(inside * 10 >= pass.beats.len() * 8, "{inside} of {} beats fall inside a hop", pass.beats.len());
         let mut intervals: Vec<f64> = pass.beats.windows(2).map(|w| w[1] - w[0]).collect();
         intervals.sort_by(f64::total_cmp);
         let bpm = 60.0 / intervals[intervals.len() / 2];
-        assert!((bpm - 122.0).abs() < 0.5, "median interval gives {bpm:.2} BPM");
+        assert!((bpm / 122.0 - 1.0).abs() < 0.02, "median interval gives {bpm:.2} BPM");
     }
 
     #[test]
@@ -1612,6 +1617,8 @@ git commit -m "feat(audio): onset envelope with low and full band flux"
         assert!(pass.beats.iter().all(|&t| t > 7.9), "a beat at {:?}", pass.beats.first());
     }
 ```
+
+aubio spaces beats by its own period estimate (123.6 BPM for a 122 BPM kick track); the grid fit in Task 11 recovers the tempo.
 
 - [ ] **Step 2: Run to see them fail**
 

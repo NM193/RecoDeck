@@ -117,29 +117,25 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<BpmResult, String> {
     // Run all onset modes on filtered audio (hi-hat removed)
     let modes_filtered = [OnsetMode::SpecFlux, OnsetMode::Hfc, OnsetMode::Complex];
     for &mode in &modes_filtered {
-        if let Ok((ibi_bpm, ibi_conf, aubio_bpm, aubio_conf)) =
-            run_tempo_analysis(&filtered_audio, mode)
-        {
-            // IBI-based result (primary — more robust)
+        if let Ok(pass) = run_tempo_pass(&filtered_audio, mode) {
+            // IBI-based result (primary - more robust)
+            let (ibi_bpm, ibi_conf) = compute_bpm_from_ibis(&pass.beats);
             if ibi_bpm > 0.0 {
-                let folded = fold_to_dj_range(ibi_bpm);
-                candidates.push((folded, ibi_conf));
+                candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf));
             }
-
-            // aubio's own get_bpm() (secondary signal)
-            if aubio_bpm > 0.0 {
-                let folded = fold_to_dj_range(aubio_bpm);
-                candidates.push((folded, aubio_conf * 0.8)); // slight penalty vs IBI
+            // aubio's own get_bpm() (secondary signal), slight penalty vs IBI
+            if pass.aubio_bpm > 0.0 {
+                candidates.push((fold_to_dj_range(pass.aubio_bpm), pass.aubio_confidence * 0.8));
             }
         }
     }
 
     // Cross-check: run SpecFlux on original unfiltered audio
     // SpecFlux is least affected by hi-hats; the unfiltered result acts as a reference
-    if let Ok((ibi_bpm, ibi_conf, _, _)) = run_tempo_analysis(audio, OnsetMode::SpecFlux) {
+    if let Ok(pass) = run_tempo_pass(audio, OnsetMode::SpecFlux) {
+        let (ibi_bpm, ibi_conf) = compute_bpm_from_ibis(&pass.beats);
         if ibi_bpm > 0.0 {
-            let folded = fold_to_dj_range(ibi_bpm);
-            candidates.push((folded, ibi_conf * 0.6)); // lower weight for unfiltered
+            candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf * 0.6)); // lower weight for unfiltered
         }
     }
 
@@ -155,48 +151,49 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<BpmResult, String> {
     pick_consensus(&candidates)
 }
 
-/// Run aubio Tempo with a specific onset mode.
-/// Returns (ibi_bpm, ibi_confidence, aubio_bpm, aubio_confidence).
-fn run_tempo_analysis(
-    audio: &MonoAudio,
-    mode: OnsetMode,
-) -> Result<(f64, f64, f64, f64), String> {
+/// aubio's silence threshold (`aubio_silence_detection`, default -90 dB).
+const SILENCE_DB: f64 = -90.0;
+
+/// One aubio Tempo pass over the audio.
+struct TempoPass {
+    /// Beat times in seconds from aubio's last-beat time: precise within the
+    /// hop, and kept when a beat falls exactly on a hop boundary.
+    beats: Vec<f64>,
+    /// aubio's own tempo and confidence, read after the last hop.
+    aubio_bpm: f64,
+    aubio_confidence: f64,
+}
+
+/// Whether aubio would call this hop silent: its mean square, in dB, below -90.
+fn is_silent(hop: &[f32]) -> bool {
+    let mean_square = hop.iter().map(|&s| s as f64 * s as f64).sum::<f64>() / hop.len().max(1) as f64;
+    10.0 * mean_square.log10() < SILENCE_DB
+}
+
+/// Runs aubio Tempo with one onset mode. A beat is a change of `get_last()`.
+/// aubio still moves it in hops its silence check rejects, so those are dropped
+/// with the same check.
+fn run_tempo_pass(audio: &MonoAudio, mode: OnsetMode) -> Result<TempoPass, String> {
     let mut tempo = Tempo::new(mode, BUF_SIZE, HOP_SIZE, audio.sample_rate)
         .map_err(|e| format!("Failed to create aubio Tempo detector: {:?}", e))?;
-
-    let samples = &audio.samples;
-    let total_hops = samples.len() / HOP_SIZE;
-
-    // Collect beat positions (in seconds) from do_result()
-    let mut beat_positions: Vec<f64> = Vec::new();
-
-    for i in 0..total_hops {
-        let start = i * HOP_SIZE;
-        let end = start + HOP_SIZE;
-        if end > samples.len() {
-            break;
-        }
-
-        let frame = &samples[start..end];
-        let beat = tempo
-            .do_result(frame)
-            .map_err(|e| format!("Tempo detection error at frame {}: {:?}", i, e))?;
-
-        // beat > 0.0 means a beat was detected at this position
-        if beat > 0.0 {
-            let position_seconds = i as f64 * HOP_SIZE as f64 / audio.sample_rate as f64;
-            beat_positions.push(position_seconds);
+    let rate = audio.sample_rate as f64;
+    let mut beats = Vec::new();
+    let mut last = tempo.get_last();
+    for (i, hop) in audio.samples.chunks_exact(HOP_SIZE).enumerate() {
+        tempo.do_result(hop).map_err(|e| format!("Tempo detection error at frame {}: {:?}", i, e))?;
+        let now = tempo.get_last();
+        if now != last {
+            last = now;
+            if !is_silent(hop) {
+                beats.push(now as f64 / rate);
+            }
         }
     }
-
-    // IBI-based BPM from collected beat positions
-    let (ibi_bpm, ibi_confidence) = compute_bpm_from_ibis(&beat_positions);
-
-    // aubio's own autocorrelation-based BPM
-    let aubio_bpm = tempo.get_bpm() as f64;
-    let aubio_confidence = (tempo.get_confidence() as f64).clamp(0.0, 1.0);
-
-    Ok((ibi_bpm, ibi_confidence, aubio_bpm, aubio_confidence))
+    Ok(TempoPass {
+        beats,
+        aubio_bpm: tempo.get_bpm() as f64,
+        aubio_confidence: (tempo.get_confidence() as f64).clamp(0.0, 1.0),
+    })
 }
 
 /// Compute BPM from inter-beat intervals (IBIs).
@@ -376,7 +373,43 @@ fn pick_consensus(candidates: &[(f64, f64)]) -> Result<BpmResult, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::test_signals::kick_track;
     use std::f32::consts::PI;
+
+    fn low_passed(audio: &MonoAudio) -> MonoAudio {
+        MonoAudio { samples: low_pass_filter(&audio.samples, audio.sample_rate, 500.0), ..audio.clone() }
+    }
+
+    #[test]
+    fn silence_is_below_minus_90_db() {
+        assert!(is_silent(&[0.0; 512]));
+        assert!(is_silent(&[1e-5; 512])); // -100 dB
+        assert!(!is_silent(&[1e-4; 512])); // -80 dB
+    }
+
+    #[test]
+    fn beats_are_precise_within_the_hop() {
+        // Rounded down to 512-sample hops, every beat time would be a multiple
+        // of the hop. aubio spaces beats by its own period estimate, which the
+        // grid fit (step 2) corrects; here it only has to be within that
+        // fit's ±2 % search.
+        let rate = 44100;
+        let audio = kick_track(122.0, rate, 60.0, 0.137);
+        let pass = run_tempo_pass(&low_passed(&audio), OnsetMode::SpecFlux).unwrap();
+        let inside = pass.beats.iter().filter(|&&t| ((t * rate as f64).round() as usize) % HOP_SIZE != 0).count();
+        assert!(inside * 10 >= pass.beats.len() * 8, "{inside} of {} beats fall inside a hop", pass.beats.len());
+        let mut intervals: Vec<f64> = pass.beats.windows(2).map(|w| w[1] - w[0]).collect();
+        intervals.sort_by(f64::total_cmp);
+        let bpm = 60.0 / intervals[intervals.len() / 2];
+        assert!((bpm / 122.0 - 1.0).abs() < 0.02, "median interval gives {bpm:.2} BPM");
+    }
+
+    #[test]
+    fn no_beats_in_silence() {
+        let audio = kick_track(124.0, 44100, 40.0, 8.0);
+        let pass = run_tempo_pass(&low_passed(&audio), OnsetMode::SpecFlux).unwrap();
+        assert!(pass.beats.iter().all(|&t| t > 7.9), "a beat at {:?}", pass.beats.first());
+    }
 
     /// Generate a synthetic click track at a known BPM for testing.
     fn generate_click_track(bpm: f64, sample_rate: u32, duration_seconds: f64) -> MonoAudio {
