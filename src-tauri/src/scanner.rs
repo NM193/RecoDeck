@@ -84,8 +84,9 @@ impl Scanner {
     }
 
     /// Extract metadata from an audio file.
-    /// Returns the track, an optional BPM, and an optional Genre if present in file tags.
-    pub fn extract_metadata(path: &Path) -> Result<(Track, Option<f64>, Option<String>), String> {
+    /// Returns the track, an optional BPM, an optional Genre, and an optional
+    /// key (as Camelot) if present in file tags.
+    pub fn extract_metadata(path: &Path) -> Result<(Track, Option<f64>, Option<String>, Option<String>), String> {
         let tagged_file = read_audio_file(path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
 
@@ -114,7 +115,7 @@ impl Scanner {
         let tag = tagged_file.primary_tag()
             .or_else(|| tagged_file.first_tag());
 
-        let (title, artist, album, album_artist, track_number, year, label, comment, tag_bpm, tag_genre) = if let Some(tag) = tag {
+        let (title, artist, album, album_artist, track_number, year, label, comment, tag_bpm, tag_genre, tag_key) = if let Some(tag) = tag {
             // BPM from file tags (ID3 TBPM, etc.) so we match Traktor/Rekordbox when they wrote it
             let bpm_str = tag.get_string(&ItemKey::Bpm)
                 .or_else(|| tag.get_string(&ItemKey::IntegerBpm));
@@ -123,6 +124,9 @@ impl Scanner {
 
             // Genre from file tags (ID3 TCON, Vorbis GENRE, etc.)
             let genre = tag.genre().as_deref().map(|s| s.to_string());
+
+            // Key from the tags (ID3 TKEY, MP4 initialkey, Vorbis INITIALKEY/KEY), as Camelot.
+            let key = tag.get_string(&ItemKey::InitialKey).and_then(crate::formats::keys::camelot_from_tag);
 
             (
                 tag.title().as_deref().map(|s| s.to_string()),
@@ -135,9 +139,10 @@ impl Scanner {
                 tag.comment().as_deref().map(|s| s.to_string()),
                 bpm,
                 genre,
+                key,
             )
         } else {
-            (None, None, None, None, None, None, None, None, None, None)
+            (None, None, None, None, None, None, None, None, None, None, None)
         };
 
         // Fallback: use filename (without extension) as title if tags are missing
@@ -174,17 +179,17 @@ impl Scanner {
             artwork_path: None,
             genre: None, // Genre will be set after track creation based on tag_genre and source priority
             genre_source: None,
-        }, tag_bpm, tag_genre))
+        }, tag_bpm, tag_genre, tag_key))
     }
 
     /// Import a single file into the database.
-    /// If the file has BPM in its tags (e.g. from Traktor), it is saved to track_analysis so RecoDeck matches.
+    /// If the file has BPM or a key in its tags (e.g. from Traktor), they are saved to track_analysis so RecoDeck matches.
     /// If the file has Genre in its tags, it is saved with source='tag'.
     /// A file whose content is already in the library is skipped, unless every
     /// track with that content lost its file: then the lowest one follows this
     /// file (Missing Files spec, section 1).
     pub fn import_file(db: &Database, path: &Path) -> Result<ImportOutcome, String> {
-        let (track, tag_bpm, tag_genre) = Self::extract_metadata(path)?;
+        let (track, tag_bpm, tag_genre, tag_key) = Self::extract_metadata(path)?;
 
         match db
             .match_scanned_hash(&track.file_hash)
@@ -206,18 +211,20 @@ impl Scanner {
         let id = db.create_track(&track)
             .map_err(|e| format!("Database error: {}", e))?;
 
-        // If file has BPM in tags (e.g. Traktor wrote TBPM), store it so we match when user checks in Traktor
-        if let Some(bpm) = tag_bpm {
-            let _ = db.save_bpm_analysis(id, bpm, 0.99);
-        }
-
-        // If file has Genre in tags (ID3 TCON, Vorbis GENRE, etc.), save it with source='tag'
-        // This will NOT overwrite any user-assigned genre (priority: user > tag > ai)
-        if let Some(genre) = tag_genre {
-            let _ = db.save_track_genre(id, &genre, "tag");
-        }
+        Self::save_tag_values(db, id, tag_bpm, tag_genre, tag_key);
 
         Ok(ImportOutcome::Imported(id))
+    }
+
+    /// What a new track's tags give the library (spec 2026-10-17, §4). BPM
+    /// and key fill in until analysis replaces them (no confidence, no
+    /// version). A genre is saved with source 'tag', below anything the
+    /// user set. Both import paths call this.
+    pub fn save_tag_values(db: &Database, id: i64, bpm: Option<f64>, genre: Option<String>, key: Option<String>) {
+        let _ = db.save_tag_analysis(id, bpm, key.as_deref());
+        if let Some(genre) = genre {
+            let _ = db.save_track_genre(id, &genre, "tag");
+        }
     }
 
     /// Import all files from a directory
@@ -574,9 +581,31 @@ mod tests {
         crate::test_support::write_wav_with_broken_tag(&file, 2000, 1);
         assert!(lofty::read_from_path(&file).is_err(), "the fixture must break a normal read");
 
-        let (track, _, _) = Scanner::extract_metadata(&file).unwrap();
+        let (track, _, _, _) = Scanner::extract_metadata(&file).unwrap();
 
         assert_eq!(track.title.as_deref(), Some("Artist - Song"));
         assert_eq!(track.duration_ms, Some(2000));
+    }
+
+    #[test]
+    fn a_key_tag_is_imported_as_camelot_without_confidence() {
+        use lofty::config::WriteOptions;
+        use lofty::tag::{ItemKey, Tag, TagExt, TagType};
+        let db = Database::new_in_memory().unwrap();
+        db.run_migrations().unwrap();
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("keyed.wav");
+        crate::test_support::write_wav(&file, 1000, 3);
+        let mut tag = Tag::new(TagType::Id3v2);
+        assert!(tag.insert_text(ItemKey::InitialKey, "1m".to_string()));
+        tag.save_to_path(&file, WriteOptions::default()).unwrap();
+
+        let (_, _, _, tag_key) = Scanner::extract_metadata(&file).unwrap();
+        assert_eq!(tag_key.as_deref(), Some("8A"));
+
+        let ImportOutcome::Imported(id) = Scanner::import_file(&db, &file).unwrap() else { panic!("not imported") };
+        let analysis = db.get_track_analysis(id).unwrap().expect("a row");
+        assert_eq!(analysis.musical_key.as_deref(), Some("8A"));
+        assert_eq!(analysis.key_confidence, None);
     }
 }

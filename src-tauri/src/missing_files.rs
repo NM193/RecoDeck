@@ -189,7 +189,7 @@ pub fn read_relinks(relinks: &[(i64, String)]) -> (Vec<RelinkFix>, Vec<SkippedFi
             "file is gone"
         } else {
             match Scanner::extract_metadata(Path::new(path)) {
-                Ok((track, _, _)) if track.file_hash != "unknown" => {
+                Ok((track, _, _, _)) if track.file_hash != "unknown" => {
                     ready.push(RelinkFix { track_id: *track_id, facts: FileFacts::from_track(&track) });
                     continue;
                 }
