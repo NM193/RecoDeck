@@ -116,6 +116,16 @@ pub fn location(path: &str) -> String {
     out
 }
 
+/// The file a Rekordbox `Location` names, the inverse of `location`:
+/// `file://localhost` dropped and percent escapes decoded. A Windows path
+/// keeps its drive ("file://localhost/C:/a.mp3" → "C:/a.mp3"). None for
+/// anything else, or escapes that are not UTF-8.
+pub fn path_from_location(url: &str) -> Option<String> {
+    let path = urlencoding::decode(url.strip_prefix("file://localhost")?).ok()?.into_owned();
+    let windows = matches!(path.as_bytes(), [b'/', l, b':', ..] if l.is_ascii_alphabetic());
+    Some(if windows { path[1..].to_string() } else { path })
+}
+
 /// Rekordbox's file kind, from the stored format or else the file's extension.
 fn kind(format: Option<&str>, path: &str) -> String {
     let ext = format
@@ -274,5 +284,23 @@ mod tests {
         let ours = track_attribute_names(&write(&sample(), "t"));
         assert_eq!(real.len(), 25, "{real:?}");
         assert_eq!(ours, real);
+    }
+
+    #[test]
+    fn a_location_leads_back_to_its_file() {
+        for path in ["/Users/dj/Music/a.mp3", "/Users/dj/Mü sic/[x] (1), y%.mp3", "C:/Music/a.mp3"] {
+            assert_eq!(path_from_location(&location(path)).as_deref(), Some(path));
+        }
+    }
+
+    #[test]
+    fn rekordbox_urls_decode() {
+        assert_eq!(
+            path_from_location("file://localhost/Users/dj/Deep%20House/a%c4%8d.mp3").as_deref(),
+            Some("/Users/dj/Deep House/ač.mp3")
+        );
+        assert_eq!(path_from_location("file://localhost/Users/dj/a%20b%2Bc+d.mp3").as_deref(), Some("/Users/dj/a b+c+d.mp3"));
+        assert_eq!(path_from_location("http://example.com/a.mp3"), None);
+        assert_eq!(path_from_location("file://localhost/bad%ff.mp3"), None);
     }
 }
