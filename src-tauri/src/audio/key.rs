@@ -978,13 +978,28 @@ mod tests {
     #[test]
     fn the_same_chords_give_the_same_key_at_44_1_and_48_khz() {
         // Sample-rate handling, not accuracy: the same music must read the
-        // same at either rate, whichever key that is.
-        let at_44_1 = detect_key_from_samples(&a_minor_progression(44100, 20.0, 0.0)).unwrap();
-        let at_48 = detect_key_from_samples(&a_minor_progression(48000, 20.0, 0.0)).unwrap();
-        assert_eq!(
-            (&at_44_1.camelot, &at_44_1.musical_key),
-            (&at_48.camelot, &at_48.musical_key)
-        );
+        // same at either rate, whichever key that is. 20 s gives one chroma
+        // for the whole region; 120 s (84 s analysed, four 30 s segments)
+        // takes the segment vote.
+        for seconds in [20.0, 120.0] {
+            let at_44_1 = detect_key_from_samples(&a_minor_progression(44100, seconds, 0.0)).unwrap();
+            let at_48 = detect_key_from_samples(&a_minor_progression(48000, seconds, 0.0)).unwrap();
+            assert_eq!(
+                (&at_44_1.camelot, &at_44_1.musical_key),
+                (&at_48.camelot, &at_48.musical_key),
+                "{seconds} s"
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_chords_give_the_same_chroma_at_44_1_and_48_khz() {
+        let chroma = |rate| sum_chromas(&frame_chromas(&a_minor_progression(rate, 20.0, 0.0).samples, rate, 0.0));
+        let (a, b) = (chroma(44100), chroma(48000));
+        let dot: f64 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
+        let norm = |c: &[f64; 12]| c.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let cosine = dot / (norm(&a) * norm(&b));
+        assert!(cosine >= 0.99, "cosine {cosine}: {a:?} against {b:?}");
     }
 
     #[test]
@@ -1242,6 +1257,35 @@ mod tests {
             let mut blocked = Vec::new();
             harmonic_part_in_blocks(spectrogram.len(), block, |f| spectrogram[f].clone(), |h| blocked.push(h.to_vec()));
             assert_eq!(blocked, whole, "block {block}");
+        }
+    }
+
+    #[test]
+    fn a_sorted_window_has_the_sorted_median() {
+        // Fill, slide (replace), then empty a window of 9 over random values
+        // with repeats; after each step its median is that of the values in it.
+        let values: Vec<f32> = random_spectrogram(1, 200, 11).remove(0);
+        let mut window = SortedWindow::<9>::default();
+        let mut held: Vec<f32> = Vec::new();
+        let check = |window: &SortedWindow<9>, held: &[f32]| {
+            let mut sorted = held.to_vec();
+            sorted.sort_by(f32::total_cmp);
+            assert_eq!(window.median(), sorted[sorted.len() / 2], "{sorted:?}");
+        };
+        for &v in &values[..9] {
+            window.insert(v);
+            held.push(v);
+            check(&window, &held);
+        }
+        for (i, &v) in values[9..].iter().enumerate() {
+            window.replace(values[i], v);
+            held.remove(0);
+            held.push(v);
+            check(&window, &held);
+        }
+        while held.len() > 1 {
+            window.remove(held.remove(0));
+            check(&window, &held);
         }
     }
 
