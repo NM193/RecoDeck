@@ -1372,6 +1372,10 @@ const STRONG_ONSET_SHARE: f32 = 0.3;
 /// score a median 0.78 (the flux rule before gave 0.21), wrong ones 0.14, and
 /// right-tempo grids half a beat off 0.36.
 const KICK_OVER_SIXTEENTHS: f32 = 1.25;
+/// How far either side of a grid beat `kick_near` looks for the kick's onset,
+/// in beats: past the 60 ms the level jump reaches at 124 BPM, short of the
+/// neighbouring 16ths a quarter beat away.
+const KICK_ONSET_REACH_BEATS: f64 = 0.125;
 /// How far either side of a grid beat `kick_strength` looks for the low band's
 /// jump: past a kick's attack, and short of the next 16th up to 160 BPM.
 const KICK_JUMP_S: f64 = 0.060;
@@ -1541,10 +1545,22 @@ impl OnsetEnvelope {
     /// Whether a kick lies within `tolerance_s` of t: the low band's level
     /// jumps there at least KICK_OVER_SIXTEENTHS times as much as it does at
     /// the beat's other quarters (a quarter beat before, a quarter and half a
-    /// beat after), the beat's other 16ths. Its own flux can't tell: on real
-    /// bass lines the bass rises as often as the kick, so the kick stands only
-    /// 1.5–2× above the flux around it.
+    /// beat after), the beat's other 16ths, and the low band's strongest flux
+    /// within KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`.
+    /// The flux alone can't tell the kick: on real bass lines the bass rises as
+    /// often as the kick, so the kick stands only 1.5–2× above the flux around
+    /// it. The jump alone can't place it: it reaches a kick up to 60 ms later.
     pub fn kick_near(&self, t: f64, tolerance_s: f64, period_s: f64) -> bool {
+        if self.low.is_empty() {
+            return false;
+        }
+        let reach = period_s * KICK_ONSET_REACH_BEATS;
+        let onset = (self.frame_at(t - reach)..=self.frame_at(t + reach))
+            .max_by(|&a, &b| self.low[a].total_cmp(&self.low[b]))
+            .map(|frame| self.start_s + frame as f64 * self.frame_s);
+        if !onset.is_some_and(|onset| (onset - t).abs() <= tolerance_s) {
+            return false;
+        }
         let largest_jump = |at: f64| {
             (self.frame_at(at - tolerance_s)..=self.frame_at(at + tolerance_s))
                 .map(|frame| self.jump(self.start_s + frame as f64 * self.frame_s))
@@ -2485,7 +2501,16 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
   - The report's means: right 0.237 → 0.734, wrong 0.154 → 0.356.
   - BPM is unchanged, and grids are unchanged within the eval's run-to-run noise: two runs of the same code differ on about 30 first beats, by under 1 ms.
 - **Synthetic.** Noise 0.06–0.09, the tempo change 0.63, steady kicks 1.0. The rolling bass's true grid goes from 0.44 to 1.0, and its grid half a beat off scores 0.0.
-- **Limit.** The jump's 60 ms after-window reaches kicks that come later, so grids from 60 ms before the kicks to 40 ms after them all score 1.0. Confidence says whether the grid is on the beat's kicks rather than on another 16th, not that it is within 20 ms.
+- **Onset within 20 ms (review fix).** The jump's 60 ms after-window reached kicks that come later, so on the kick test grids from 60 ms before the kicks to 40 ms after them all scored 1.0: a flam looked perfectly confident.
+  - A hit now also needs the low band's strongest flux within `KICK_ONSET_REACH_BEATS` (⅛ beat) of the beat to lie within 20 ms of it.
+  - Kick test, grid offset → confidence: ±15 ms 1.0; −20 ms 0.78 and +20 ms 0.22; ±25 ms and beyond 0.0.
+  - Synthetic: noise 0.02–0.04, the tempo change 0.55. Steady kicks, hats, the off-beat bass and the rolling bass stay at 1.0, and the rolling bass half a beat off at 0.0.
+- **Whole library, target set, run p2-conf20, level jumps alone → with the onset check.**
+  - Right tempos: median 0.777 → 0.583, ≥ 0.9 22.2 → 1.3 %, ≥ 0.5 86.2 → 67.4 %.
+  - Wrong tempos: median 0.138 → 0.061.
+  - Right-tempo grids within ⅛ beat of half a beat off: median 0.356 → 0.280 (9 tracks).
+  - The report's means: right 0.734 → 0.567, wrong 0.356 → 0.261.
+  - BPM is unchanged on 1957 of 1958 rows. The other sits at 128.980, exactly 0.02 from 129, and snapped this run: run-to-run noise at the snap's edge, as `kick_near` does not touch the tempo.
 
 - [ ] **Step 1: Write the failing tests** (add `tempo_change` to the `test_signals` import)
 
@@ -2539,6 +2564,22 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
         let envelope = OnsetEnvelope::compute(&rolling_bass(124.0, 44100, 60.0, 0.137, 55.0, 0.3));
         let confidence = grid_confidence(Grid { period_s: period, phase_s: 0.137 }, &envelope);
         assert!(confidence >= 0.9, "confidence {confidence:.2}");
+    }
+
+    #[test]
+    fn a_grid_a_flam_off_the_kicks_scores_low() {
+        // 35 ms off, kick and beat sound as two hits; 10 ms off, as one.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.137));
+        for offset_ms in [-35.0, 35.0, -10.0, 10.0] {
+            let grid = Grid { period_s: period, phase_s: 0.137 + offset_ms / 1000.0 };
+            let confidence = grid_confidence(grid, &envelope);
+            if f64::abs(offset_ms) > 20.0 {
+                assert!(confidence < 0.5, "{offset_ms:+} ms off: confidence {confidence:.2}");
+            } else {
+                assert!(confidence >= 0.9, "{offset_ms:+} ms off: confidence {confidence:.2}");
+            }
+        }
     }
 
     #[test]
@@ -2607,8 +2648,8 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms: the low band jumps there more than at the beat's other 16ths
-/// (see `kick_near`). A steady track scores near 1; a tempo change or a live
+/// within 20 ms: the low band's strongest onset nearby is that close, and the
+/// low band jumps there more than at the beat's other 16ths (see `kick_near`). A steady track scores near 1; a tempo change or a live
 /// recording scores lower, because the grid drifts off beats that are still
 /// there; noise scores low.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
