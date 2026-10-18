@@ -391,6 +391,8 @@ function AppContent() {
             toast(
               `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
             )
+          } else if (e.total_failed > 0) {
+            toast('No tracks could be analyzed', { kind: 'warning' })
           } else {
             toast('All tracks already have BPM and Key analysis', { kind: 'info' })
           }
@@ -521,10 +523,14 @@ function AppContent() {
       // Not awaited: it checks every file on disk and must not hold start-up back.
       void (async () => {
         try {
-          const [status, prompted] = await Promise.all([
-            tauriApi.analysisStatus(),
+          // Answered for this version already: skip the status, which checks
+          // every file on disk. Settings reads it when it opens.
+          const [prompted, version] = await Promise.all([
             tauriApi.getSetting(PROMPTED_VERSION_KEY),
+            tauriApi.analysisVersion(),
           ])
+          if (Number(prompted ?? 0) >= version) return
+          const status = await tauriApi.analysisStatus()
           if (shouldPromptReanalysis(status, prompted)) setReanalyzeStatus(status)
         } catch {
           console.warn('Failed to check whether analysis is current')

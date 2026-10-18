@@ -25,9 +25,8 @@
 
 use bliss_audio_aubio_rs::{OnsetMode, Tempo};
 use std::f64::consts::PI;
-use std::path::Path;
 
-use super::decoder::{decode_to_mono, MonoAudio};
+use super::decoder::MonoAudio;
 use super::onset::OnsetEnvelope;
 
 /// Result of BPM detection for a single track
@@ -100,12 +99,6 @@ impl Grid {
     fn nearest(&self, t: f64) -> f64 {
         self.phase_s + ((t - self.phase_s) / self.period_s).round() * self.period_s
     }
-}
-
-/// Detect the BPM (tempo) of an audio file.
-pub fn detect_bpm(path: &Path) -> Result<Option<BpmResult>, String> {
-    let audio = decode_to_mono(path)?;
-    detect_bpm_from_samples(&audio)
 }
 
 /// A filtered copy of the samples, the reference `LowPass` is tested against

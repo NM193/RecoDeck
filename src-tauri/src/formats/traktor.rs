@@ -44,6 +44,7 @@ pub fn location(path: &str, boot_volume: &str) -> TraktorLocation {
     TraktorLocation { volume, dir, file: file.to_string() }
 }
 
+#[cfg(any(feature = "eval", test))]
 /// The file a Traktor LOCATION names, the inverse of `location`: DIR's `/:`
 /// become `/`, a Windows drive stays in front, and a volume other than the
 /// boot volume is a drive under /Volumes. NFC, as Traktor writes names.

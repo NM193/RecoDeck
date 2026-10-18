@@ -1118,6 +1118,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Get BPM analysis result for a track. Returns (bpm, confidence) or None if not analyzed.
     pub fn get_bpm_analysis(&self, track_id: i64) -> Result<Option<(f64, f64)>> {
         let mut stmt = self.conn.prepare(
@@ -1168,6 +1169,7 @@ impl Database {
         }
     }
 
+    #[cfg(test)]
     /// Check if a track has BPM analysis data
     pub fn has_bpm_analysis(&self, track_id: i64) -> Result<bool> {
         let count: i64 = self.conn.query_row(
@@ -1180,6 +1182,7 @@ impl Database {
 
     // --- Key Analysis operations ---
 
+    #[cfg(test)]
     /// Save key analysis result for a track.
     /// Uses upsert: inserts a new row or updates existing key fields.
     /// Does NOT overwrite BPM fields if they already exist — only touches key columns.
@@ -1196,6 +1199,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Get key analysis result for a track. Returns (key, confidence) or None if not analyzed.
     pub fn get_key_analysis(&self, track_id: i64) -> Result<Option<(String, f64)>> {
         let mut stmt = self.conn.prepare(
@@ -1216,6 +1220,7 @@ impl Database {
         }
     }
 
+    #[cfg(test)]
     /// Check if a track has key analysis data
     pub fn has_key_analysis(&self, track_id: i64) -> Result<bool> {
         let count: i64 = self.conn.query_row(

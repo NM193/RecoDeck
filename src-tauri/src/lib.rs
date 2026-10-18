@@ -538,6 +538,7 @@ pub fn run() {
             commands::analysis::analyze_tracks_batch,
             commands::analysis::cancel_analysis,
             commands::analysis::analysis_status,
+            commands::analysis::analysis_version,
             commands::analysis::track_ids_needing_analysis,
             // Playlist commands
             commands::playlists::create_playlist,

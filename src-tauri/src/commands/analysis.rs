@@ -359,6 +359,13 @@ pub async fn analysis_status(app: AppHandle) -> Result<AnalysisStatus, AppError>
     .map_err(|e| AppError::Internal(format!("Analysis status task failed: {}", e)))?
 }
 
+/// The current analysis version, without looking at any file: the start-up
+/// check compares it with the version the prompt was last answered for.
+#[tauri::command]
+pub fn analysis_version() -> i64 {
+    ANALYSIS_VERSION
+}
+
 /// The tracks `analysis_status` counts as needing analysis.
 #[tauri::command]
 pub async fn track_ids_needing_analysis(app: AppHandle) -> Result<Vec<i64>, AppError> {

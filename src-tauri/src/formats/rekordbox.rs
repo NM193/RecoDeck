@@ -116,6 +116,7 @@ pub fn location(path: &str) -> String {
     out
 }
 
+#[cfg(any(feature = "eval", test))]
 /// The file a Rekordbox `Location` names, the inverse of `location`:
 /// `file://localhost` dropped and percent escapes decoded. A Windows path
 /// keeps its drive ("file://localhost/C:/a.mp3" → "C:/a.mp3"). None for

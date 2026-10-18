@@ -428,6 +428,10 @@ export const tauriApi = {
     return await invoke('cancel_analysis')
   },
 
+  async analysisVersion(): Promise<number> {
+    return await invoke('analysis_version')
+  },
+
   async analysisStatus(): Promise<AnalysisStatus> {
     return await invoke('analysis_status')
   },

@@ -5,6 +5,8 @@ pub mod decoder;
 pub mod bpm;
 pub mod key;
 pub mod onset;
+// Only the eval tool measures with these.
+#[cfg(any(feature = "eval", test))]
 pub mod scoring;
 pub mod waveform;
 

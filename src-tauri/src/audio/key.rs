@@ -1,14 +1,17 @@
 // Musical key detection using Chromagram + EDMA profile matching with segment voting.
 //
-// Improvements over basic chromagram approach:
+// How it works (each step was kept because it measured better, spec 2026-10-17):
 // 1. Tuning estimation: detects if A≠440Hz and adjusts pitch-class mapping
-// 2. Harmonic/percussive separation: median filters along time and frequency
-//    keep held notes and drop drum hits before the chroma is taken
-// 3. Harmonic weighting: each spectral peak also adds weighted energy for its
-//    harmonics' pitch classes, giving a cleaner pitch-class distribution
-// 4. Frequency weighting to reduce sub-bass influence (kick drums in EDM)
-// 5. Each frame's chroma is scaled to sum 1, so loud frames weigh no more than
-//    quiet ones
+// 2. The chroma of every frame is computed once (`frame_chromas`) and the
+//    segments are sums of those frames, so overlapping segments do not repeat
+//    the FFT work
+// 3. A harmonic mask (median filters along time and frequency) keeps held
+//    notes and drops drum hits before a frame's chroma is taken
+// 4. Harmonic weighting: each spectral peak also adds weighted energy for its
+//    harmonics' pitch classes; low frequencies are weighted down so kick
+//    drums count for less
+// 5. Normalisation: each frame's chroma is scaled to sum 1, so loud frames
+//    weigh no more than quiet ones
 // 6. EDMA key profiles, measured best against Shaath, Krumhansl and Temperley
 //    alone and against the vote of Shaath, EDMA and Krumhansl. A minor key
 //    bias, a dominant confusion correction and a cross-mode check settle
@@ -16,17 +19,17 @@
 // 7. Segment-based voting: divides track into overlapping segments, detects key
 //    per segment, and takes the majority vote — eliminates tritone errors caused
 //    by individual sections with ambiguous harmonic content
-//
-// The magnitudes are not whitened: whitening evens out a note's partials and
-// reads keys a fifth up (see `chroma_of`).
+// 8. No whitening: whitening evens out a note's partials and reads keys a
+//    fifth up (see `chroma_of`). Digital silence gives no key at all.
 //
 // Algorithm overview:
-// 1. Decode audio file to mono f32 PCM (reuses existing decoder)
+// 1. Decode audio file to mono f32 PCM (reuses existing decoder), or take
+//    the samples the caller has already decoded
 // 2. Estimate tuning offset from A=440Hz (±50 cents)
 // 3. Skip 15% intro + 15% outro
 // 4. If track is long enough (>= 3 segments): segment-based voting
 //    a. Divide into 30-second overlapping segments (50% overlap)
-//    b. Compute a chromagram for each segment
+//    b. Sum the per-frame chromas that fall in each segment
 //    c. Match key profiles per segment
 //    d. Take majority vote across all segments
 // 5. Otherwise: single chromagram for the whole analysis region
@@ -38,9 +41,8 @@
 
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::f64::consts::PI;
-use std::path::Path;
 
-use super::decoder::{decode_to_mono, MonoAudio};
+use super::decoder::MonoAudio;
 
 /// Result of key detection for a single track
 #[derive(Debug, Clone)]
@@ -139,12 +141,6 @@ const CAMELOT_MINOR: [&str; 12] = [
     "5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A",
 ];
 
-/// Detect the musical key of an audio file.
-pub fn detect_key(path: &Path) -> Result<KeyResult, String> {
-    let audio = decode_to_mono(path)?;
-    detect_key_from_samples(&audio)
-}
-
 /// Detect key from pre-decoded mono audio samples.
 ///
 /// For tracks longer than ~90 seconds of usable audio, uses segment-based voting:
@@ -196,6 +192,11 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
             let (k, m, c1, c2) = match_key_profiles(&sum_chromas(&frames));
             (k, m, c1, c2, 1.0) // single pass = 100% "agreement"
         };
+
+    // Nothing correlates with any key (digital silence): no key, not a guess.
+    if !(best_corr > 0.0) {
+        return Err("No pitched content to find a key in".to_string());
+    }
 
     // Step 4: Convert to Camelot, Open Key, and musical notation
     let camelot = if best_is_minor {
@@ -946,12 +947,8 @@ mod tests {
             sample_rate: 44100,
             duration_ms: 10000,
         };
-        let result = detect_key_from_samples(&audio).expect("Should handle silence");
-        assert!(
-            result.confidence < 0.5,
-            "Silence should produce low confidence, got {:.2}",
-            result.confidence
-        );
+        // Silence has no key: no result, so a key from the tags is kept.
+        assert!(detect_key_from_samples(&audio).is_err());
     }
 
     #[test]
