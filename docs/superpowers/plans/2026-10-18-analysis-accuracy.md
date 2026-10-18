@@ -1545,8 +1545,10 @@ impl OnsetEnvelope {
     /// Whether a kick lies within `tolerance_s` of t: the low band's level
     /// jumps there at least KICK_OVER_SIXTEENTHS times as much as it does at
     /// the beat's other quarters (a quarter beat before, a quarter and half a
-    /// beat after), the beat's other 16ths, and the low band's strongest flux
-    /// within KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`.
+    /// beat after), the beat's other 16ths, and the envelope's strongest flux
+    /// (low plus full band, as the grid search sees it) within
+    /// KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`. The
+    /// low band alone peaks later: it has two bins.
     /// The flux alone can't tell the kick: on real bass lines the bass rises as
     /// often as the kick, so the kick stands only 1.5–2× above the flux around
     /// it. The jump alone can't place it: it reaches a kick up to 60 ms later.
@@ -1556,7 +1558,7 @@ impl OnsetEnvelope {
         }
         let reach = period_s * KICK_ONSET_REACH_BEATS;
         let onset = (self.frame_at(t - reach)..=self.frame_at(t + reach))
-            .max_by(|&a, &b| self.low[a].total_cmp(&self.low[b]))
+            .max_by(|&a, &b| self.envelope_flux(a).total_cmp(&self.envelope_flux(b)))
             .map(|frame| self.start_s + frame as f64 * self.frame_s);
         if !onset.is_some_and(|onset| (onset - t).abs() <= tolerance_s) {
             return false;
@@ -2425,6 +2427,11 @@ In `onset.rs`:
 /// grid found on the envelope sits on the kicks.
 const ENVELOPE_LATENCY_MS: f64 = 0.0;
 
+    /// The envelope's flux at a frame: low plus full band.
+    fn envelope_flux(&self, frame: usize) -> f32 {
+        self.low[frame] + self.full[frame]
+    }
+
     /// Low plus full-band flux at time t, interpolated between frames.
     fn flux_at(&self, t: f64) -> f64 {
         let x = (t - self.start_s) / self.frame_s;
@@ -2436,7 +2443,7 @@ const ENVELOPE_LATENCY_MS: f64 = 0.0;
             return 0.0;
         }
         let w = x - i as f64;
-        let at = |j: usize| (self.low[j] + self.full[j]) as f64;
+        let at = |j: usize| self.envelope_flux(j) as f64;
         at(i) * (1.0 - w) + at(i + 1) * w
     }
 
@@ -2511,6 +2518,19 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
   - Right-tempo grids within ⅛ beat of half a beat off: median 0.356 → 0.280 (9 tracks).
   - The report's means: right 0.734 → 0.567, wrong 0.356 → 0.261.
   - BPM is unchanged on 1957 of 1958 rows. The other sits at 128.980, exactly 0.02 from 129, and snapped this run: run-to-run noise at the snap's edge, as `kick_near` does not touch the tempo.
+- **The onset from the envelope (variant C).** Spec §2 step 5 says "within 20 ms of an envelope peak", and the grid search maximises the envelope (low plus full band). The onset check now takes the envelope's strongest flux within ⅛ beat, not the low band's.
+  - Diagnostic, right-tempo tracks: each track's median offset of the peak from our grid beats.
+    - Low band: library median +3.1 ms (p10 −0.7, p90 +7.4).
+    - Envelope: library median −0.1 ms (p10 −1.1, p90 +0.5).
+    - Both medians are well inside ±20 ms, so the low band's drop comes from its peak scattering from beat to beat, not from a shift.
+  - Kick test, grid offset → confidence: ±15 ms 1.0; −20 ms 0.59 and +20 ms 0.41; ±25 ms and beyond 0.0.
+  - Synthetic: noise 0.03, the tempo change 0.56. Steady kicks, hats, 16th hats, the off-beat bass and the rolling bass stay at 1.0, and the rolling bass half a beat off at 0.0.
+  - Whole library, target set, run p2-confenv:
+    - Right tempos: median 0.754 (p2-conf 0.777, p2-conf20 0.583), ≥ 0.9 19.1 %, ≥ 0.5 84.0 %.
+    - Wrong tempos: median 0.063.
+    - Half-beat-off grids: median 0.335 (10 tracks).
+    - The report's means: right 0.715, wrong 0.321.
+    - BPM is identical to p2-conf on every row.
 
 - [ ] **Step 1: Write the failing tests** (add `tempo_change` to the `test_signals` import)
 
@@ -2648,7 +2668,7 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms: the low band's strongest onset nearby is that close, and the
+/// within 20 ms: the envelope's strongest onset nearby is that close, and the
 /// low band jumps there more than at the beat's other 16ths (see `kick_near`). A steady track scores near 1; a tempo change or a live
 /// recording scores lower, because the grid drifts off beats that are still
 /// there; noise scores low.
