@@ -66,6 +66,9 @@ const WHITENING_WINDOW: usize = 40;
 /// Minimum frequency to consider for chromagram (Hz). ~C2 = 65Hz.
 const MIN_FREQ: f64 = 65.0;
 
+/// The lowest frequency the chroma reads (Hz); tuning keeps MIN_FREQ.
+const CHROMA_MIN_FREQ: f64 = 65.0;
+
 /// Maximum frequency to consider for chromagram (Hz).
 /// Above ~2000Hz, harmonics dominate over fundamentals.
 const MAX_FREQ: f64 = 2000.0;
@@ -471,7 +474,7 @@ fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) ->
     let bin_info: Vec<Option<(usize, f64)>> = (0..bins)
         .map(|bin| {
             let freq = bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
-            if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
+            if !(CHROMA_MIN_FREQ..=MAX_FREQ).contains(&freq) {
                 None
             } else {
                 // Use tuning-corrected reference instead of fixed 440Hz
