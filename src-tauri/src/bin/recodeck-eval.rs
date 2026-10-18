@@ -15,7 +15,7 @@ use recodeck_lib::audio::decoder::decode_to_mono;
 use recodeck_lib::audio::key::{detect_key_from_samples, KeyResult};
 use recodeck_lib::audio::scoring::{self, BpmMatch, KeyMatch};
 use recodeck_lib::formats::{keys, rekordbox, traktor, volumes};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use unicode_normalization::UnicodeNormalization;
@@ -72,6 +72,8 @@ struct Outcome {
     format: Format,
     reference: Reference,
     duration_s: f64,
+    /// Wall time of the whole analyze call (decode plus detection) on its worker.
+    seconds: f64,
     short: bool,
     bpm: Option<BpmResult>,
     key: Option<KeyResult>,
@@ -87,7 +89,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let args = parse_args()?;
-    let mut references = read_traktor(&args.traktor, &volumes::boot_volume_name())?;
+    let (mut references, duplicates) = read_traktor(&args.traktor, &volumes::boot_volume_name())?;
     let in_traktor = references.len();
     let in_rekordbox = match &args.rekordbox {
         Some(path) => add_rekordbox(path, &mut references)?,
@@ -111,6 +113,9 @@ fn run() -> Result<(), String> {
 
     println!("recodeck-eval");
     println!("  Traktor tracks with a BPM: {in_traktor}");
+    if duplicates > 0 {
+        println!("  duplicate paths in Traktor: {duplicates}");
+    }
     if args.rekordbox.is_some() {
         println!("  of them in Rekordbox: {in_rekordbox}");
     }
@@ -131,8 +136,7 @@ fn run() -> Result<(), String> {
     println!("\nTime");
     println!("  wall: {wall_s:.1} s on {threads} threads");
     if !measured.is_empty() {
-        // Per measured track: short files' decoding is in the wall time too, so this errs high.
-        println!("  seconds per track on one core: {:.2}", wall_s * threads as f64 / measured.len() as f64);
+        println!("  mean seconds per measured track (decode plus detection): {:.2}", mean(measured.iter().map(|o| o.seconds)).unwrap_or(0.0));
     }
     if let Some(path) = &args.csv {
         write_csv(path, &outcomes)?;
@@ -145,14 +149,18 @@ fn parse_args() -> Result<Args, String> {
     let mut args = Args { traktor: PathBuf::new(), rekordbox: None, sample: None, seed: 1, min_seconds: 60.0, csv: None };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
+        if flag == "--help" || flag == "-h" {
+            println!("{USAGE}");
+            std::process::exit(0);
+        }
         let value = it.next().ok_or_else(|| format!("{flag} needs a value\n{USAGE}"))?;
-        let number = |v: &str| v.parse::<f64>().map_err(|_| format!("{flag} needs a number\n{USAGE}"));
+        let float = |v: &str| v.parse::<f64>().map_err(|_| format!("{flag} needs a number\n{USAGE}"));
         match flag.as_str() {
             "--traktor" => args.traktor = PathBuf::from(value),
             "--rekordbox" => args.rekordbox = Some(PathBuf::from(value)),
-            "--sample" => args.sample = Some(number(&value)? as usize),
-            "--seed" => args.seed = number(&value)? as u64,
-            "--min-seconds" => args.min_seconds = number(&value)?,
+            "--sample" => args.sample = Some(value.parse::<usize>().map_err(|_| format!("{flag} needs a whole number\n{USAGE}"))?),
+            "--seed" => args.seed = value.parse::<u64>().map_err(|_| format!("{flag} needs a whole number\n{USAGE}"))?,
+            "--min-seconds" => args.min_seconds = float(&value)?,
             "--csv" => args.csv = Some(PathBuf::from(value)),
             _ => return Err(format!("unknown argument {flag}\n{USAGE}")),
         }
@@ -180,16 +188,17 @@ fn number(node: Option<roxmltree::Node>, attribute: &str) -> Option<f64> {
 }
 
 /// Traktor's collection: each analysed track's file, BPM, key and AutoGrid marker.
-fn read_traktor(path: &Path, boot_volume: &str) -> Result<HashMap<String, Reference>, String> {
+fn read_traktor(path: &Path, boot_volume: &str) -> Result<(HashMap<String, Reference>, usize), String> {
     let text = read_text(path)?;
     let doc = roxmltree::Document::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut references = HashMap::new();
+    let mut duplicates = 0;
     let Some(collection) = doc.descendants().find(|n| n.has_tag_name("COLLECTION")) else {
-        return Ok(references);
+        return Ok((references, duplicates));
     };
     for entry in collection.children().filter(|n| n.has_tag_name("ENTRY")) {
         let Some(location) = child(entry, "LOCATION") else { continue };
-        let Some(bpm) = number(child(entry, "TEMPO"), "BPM").filter(|&b| b > 0.0) else { continue };
+        let Some(bpm) = number(child(entry, "TEMPO"), "BPM").filter(|&b| b > 0.0 && b.is_finite()) else { continue };
         let file = traktor::path_from_location(
             location.attribute("VOLUME").unwrap_or(""),
             location.attribute("DIR").unwrap_or(""),
@@ -204,13 +213,16 @@ fn read_traktor(path: &Path, boot_volume: &str) -> Result<HashMap<String, Refere
             .children()
             .find(|c| c.has_tag_name("CUE_V2") && c.attribute("TYPE") == Some("4"))
             .and_then(|c| c.attribute("START"))
-            .and_then(|s| s.trim().parse::<f64>().ok());
-        references.insert(
-            nfc(&file),
-            Reference { traktor_bpm: bpm, traktor_key: key, traktor_marker_ms: marker, ..Default::default() },
-        );
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .filter(|m| m.is_finite());
+        match references.entry(nfc(&file)) {
+            std::collections::hash_map::Entry::Occupied(_) => duplicates += 1,
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(Reference { traktor_bpm: bpm, traktor_key: key, traktor_marker_ms: marker, ..Default::default() });
+            }
+        }
     }
-    Ok(references)
+    Ok((references, duplicates))
 }
 
 /// Rekordbox's values for the tracks Traktor also has; returns how many matched.
@@ -218,16 +230,21 @@ fn add_rekordbox(path: &Path, references: &mut HashMap<String, Reference>) -> Re
     let text = read_text(path)?;
     let doc = roxmltree::Document::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let Some(collection) = doc.descendants().find(|n| n.has_tag_name("COLLECTION")) else { return Ok(0) };
+    let mut seen: HashSet<String> = HashSet::new();
     let mut matched = 0;
     for track in collection.children().filter(|n| n.has_tag_name("TRACK")) {
         let Some(file) = track.attribute("Location").and_then(rekordbox::path_from_location) else { continue };
-        let Some(reference) = references.get_mut(&nfc(&file)) else { continue };
+        let key = nfc(&file);
+        let Some(reference) = references.get_mut(&key) else { continue };
+        if !seen.insert(key) {
+            continue;
+        }
         matched += 1;
-        reference.rb_bpm = number(Some(track), "AverageBpm").filter(|&b| b > 0.0);
+        reference.rb_bpm = number(Some(track), "AverageBpm").filter(|&b| b > 0.0 && b.is_finite());
         reference.rb_key = track.attribute("Tonality").and_then(keys::camelot_from_tag);
         let tempo = child(track, "TEMPO");
         if let (Some(start_s), Some(tempo_bpm), Some(beat)) =
-            (number(tempo, "Inizio"), number(tempo, "Bpm").filter(|&b| b > 0.0), number(tempo, "Battito"))
+            (number(tempo, "Inizio").filter(|s| s.is_finite()), number(tempo, "Bpm").filter(|&b| b > 0.0 && b.is_finite()), number(tempo, "Battito").filter(|b| b.is_finite()))
         {
             reference.rb_marker_ms = Some(start_s * 1000.0);
             reference.rb_marker_bpm = Some(tempo_bpm);
@@ -237,31 +254,61 @@ fn add_rekordbox(path: &Path, references: &mut HashMap<String, Reference>) -> Re
     Ok(matched)
 }
 
-/// Decodes the file and runs the app's own detection on it.
+/// Decodes the file and runs the app's own detection on it. A panic in a
+/// decoder or detector becomes this track's error, so the run goes on.
 fn analyze(path: String, reference: Reference, min_seconds: f64) -> Outcome {
+    let started = Instant::now();
     let mut outcome = Outcome {
         format: Format::of(&path),
         path,
         reference,
         duration_s: 0.0,
+        seconds: 0.0,
         short: false,
         bpm: None,
         key: None,
         error: None,
     };
-    match decode_to_mono(Path::new(&outcome.path)) {
-        Err(e) => outcome.error = Some(e),
-        Ok(audio) => {
-            outcome.duration_s = audio.samples.len() as f64 / audio.sample_rate.max(1) as f64;
-            if outcome.duration_s < min_seconds {
-                outcome.short = true;
-            } else {
-                // Today's detection reports a failure as BPM 0.
-                outcome.bpm = detect_bpm_from_samples(&audio).ok().filter(|r| r.bpm > 0.0);
-                outcome.key = detect_key_from_samples(&audio).ok();
+    let file = outcome.path.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut duration_s = 0.0;
+        let mut short = false;
+        let mut bpm = None;
+        let mut key = None;
+        let mut error = None;
+        match decode_to_mono(Path::new(&file)) {
+            Err(e) => error = Some(e),
+            Ok(audio) => {
+                duration_s = audio.samples.len() as f64 / audio.sample_rate.max(1) as f64;
+                if duration_s < min_seconds {
+                    short = true;
+                } else {
+                    // Today's detection reports a failure as BPM 0.
+                    bpm = detect_bpm_from_samples(&audio).ok().filter(|r| r.bpm > 0.0);
+                    key = detect_key_from_samples(&audio).ok();
+                }
             }
         }
+        (duration_s, short, bpm, key, error)
+    }));
+    match result {
+        Ok((duration_s, short, bpm, key, error)) => {
+            outcome.duration_s = duration_s;
+            outcome.short = short;
+            outcome.bpm = bpm;
+            outcome.key = key;
+            outcome.error = error;
+        }
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .map(|m| m.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown".to_string());
+            outcome.error = Some(format!("panic: {msg}"));
+        }
     }
+    outcome.seconds = started.elapsed().as_secs_f64();
     outcome
 }
 
@@ -313,7 +360,7 @@ fn report_bpm(measured: &[&Outcome]) {
     for o in &with_bpm {
         buckets[scoring::signed_bucket(o.bpm.as_ref().map_or(0.0, |b| b.bpm) - o.reference.traktor_bpm)] += 1;
     }
-    println!("  signed error (ours − Traktor):");
+    println!("  signed error (ours − Traktor), {} tracks with a BPM:", with_bpm.len());
     for (label, n) in scoring::SIGNED_BUCKETS.iter().zip(buckets) {
         println!("    {label:>14}  {}", pct(n, with_bpm.len()));
     }
@@ -350,8 +397,11 @@ fn report_key(measured: &[&Outcome]) {
 fn key_lines(label: &str, pairs: &[(Option<String>, String)]) {
     let n = pairs.len();
     let mut counts: HashMap<Option<KeyMatch>, usize> = HashMap::new();
-    let mut mirex = 0.0;
+    let (mut mirex, mut no_key) = (0.0, 0usize);
     for (ours, reference) in pairs {
+        if ours.is_none() {
+            no_key += 1;
+        }
         *counts.entry(ours.as_deref().and_then(|o| scoring::key_match(o, reference))).or_default() += 1;
         mirex += ours.as_deref().and_then(|o| scoring::mirex_score(o, reference)).unwrap_or(0.0);
     }
@@ -362,45 +412,61 @@ fn key_lines(label: &str, pairs: &[(Option<String>, String)]) {
     println!("    relative         {}", pct(c(Some(KeyMatch::Relative)), n));
     println!("    parallel         {}", pct(c(Some(KeyMatch::Parallel)), n));
     println!("    other            {}", pct(c(Some(KeyMatch::Other)), n));
-    println!("    no key           {}", pct(c(None), n));
+    println!("    no key           {}", pct(no_key, n));
+    if c(None) > no_key {
+        println!("    unreadable       {}", pct(c(None) - no_key, n));
+    }
     println!("    MIREX score      {}", if n == 0 { "-".to_string() } else { format!("{:.3}", mirex / n as f64) });
 }
 
-fn offset_lines(label: &str, offsets: &[f64]) {
+/// `denominator` is every track that could have been measured; `offsets` the ones that were.
+fn offset_lines(label: &str, offsets: &[f64], denominator: usize) {
     let n = offsets.len();
     if n == 0 {
-        println!("  {label}: no grid");
+        println!("  {label}: {denominator} with a marker, no grid");
         return;
     }
     let mut absolute: Vec<f64> = offsets.iter().map(|o| o.abs()).collect();
     let mut signed = offsets.to_vec();
     let within = |ms: f64| offsets.iter().filter(|o| o.abs() <= ms).count();
     println!(
-        "  {label}: {n}  median |error| {:.1} ms  signed median {:+.1} ms  ≤10 {}  ≤20 {}  ≤40 {}",
+        "  {label}: {denominator} with a marker, {n} with the right tempo and a grid  median |error| {:.1} ms  signed median {:+.1} ms  ≤10 {}  ≤20 {}  ≤40 {}",
         scoring::median(&mut absolute).unwrap_or(0.0),
         scoring::median(&mut signed).unwrap_or(0.0),
-        pct(within(10.0), n),
-        pct(within(20.0), n),
-        pct(within(40.0), n),
+        pct(within(10.0), denominator),
+        pct(within(20.0), denominator),
+        pct(within(40.0), denominator),
     );
 }
 
+/// Our BPM is within ±0.5 of Traktor's.
+fn tempo_right(o: &Outcome) -> bool {
+    o.bpm.as_ref().map_or(false, |b| {
+        matches!(scoring::bpm_match(b.bpm, o.reference.traktor_bpm), BpmMatch::Exact | BpmMatch::Close)
+    })
+}
+
 fn report_grid(measured: &[&Outcome]) {
-    println!("\nBeat grid against Traktor's marker (+ means our beat is later)");
+    println!("\nBeat grid against Traktor's marker (+ means our beat is later; wrong tempo counts as a miss)");
     for (label, format) in [("MP3", Format::Mp3), ("WAV/AIFF/FLAC", Format::Lossless)] {
-        let offsets: Vec<f64> = measured
+        let with_marker: Vec<&Outcome> =
+            measured.iter().copied().filter(|o| o.format == format && o.reference.traktor_marker_ms.is_some()).collect();
+        let offsets: Vec<f64> = with_marker
             .iter()
-            .filter(|o| o.format == format)
+            .filter(|o| tempo_right(o))
             .filter_map(|o| {
                 let bpm = o.bpm.as_ref()?;
                 Some(scoring::grid_offset_ms(bpm.bpm, bpm.first_beat_ms?, o.reference.traktor_marker_ms?))
             })
             .collect();
-        offset_lines(label, &offsets);
+        offset_lines(label, &offsets, with_marker.len());
     }
     let bars = |pick: &dyn Fn(&Reference) -> Option<f64>| -> (usize, usize) {
         let (mut agree, mut n) = (0, 0);
         for o in measured {
+            if !tempo_right(o) {
+                continue;
+            }
             let (Some(bpm), Some(downbeat)) = (o.bpm.as_ref(), pick(&o.reference)) else { continue };
             let Some(first) = bpm.first_beat_ms else { continue };
             n += 1;
@@ -411,9 +477,9 @@ fn report_grid(measured: &[&Outcome]) {
         (agree, n)
     };
     let (agree, n) = bars(&|r| r.traktor_marker_ms);
-    println!("  bar start agrees with Traktor's marker: {} of {n}", pct(agree, n));
+    println!("  bar start agrees with Traktor's marker (right tempo only): {} of {n}", pct(agree, n));
     let (agree, n) = bars(&|r| r.rb_downbeat_ms);
-    println!("  bar start agrees with Rekordbox's downbeat: {} of {n}", pct(agree, n));
+    println!("  bar start agrees with Rekordbox's downbeat (right tempo only): {} of {n}", pct(agree, n));
 }
 
 fn report_references(measured: &[&Outcome]) {
@@ -442,7 +508,7 @@ fn report_references(measured: &[&Outcome]) {
                 Some(scoring::grid_offset_ms(r.rb_marker_bpm?, r.rb_marker_ms?, r.traktor_marker_ms?))
             })
             .collect();
-        offset_lines(&format!("grid, Rekordbox against Traktor, {label}"), &offsets);
+        offset_lines(&format!("grid, Rekordbox against Traktor, {label}"), &offsets, offsets.len());
     }
 }
 
@@ -463,7 +529,7 @@ fn report_confidence(measured: &[&Outcome]) {
 }
 
 fn csv_field(value: &str) -> String {
-    if value.contains([',', '"', '\n']) {
+    if value.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
         value.to_string()
@@ -476,7 +542,7 @@ fn opt(value: Option<f64>) -> String {
 
 fn write_csv(path: &Path, outcomes: &[Outcome]) -> Result<(), String> {
     let mut text = String::from(
-        "path,seconds,traktor_bpm,rekordbox_bpm,bpm,bpm_confidence,traktor_key,rekordbox_key,key,key_confidence,traktor_marker_ms,first_beat_ms,grid_offset_ms,note\n",
+        "path,seconds,traktor_bpm,rekordbox_bpm,bpm,bpm_confidence,traktor_key,rekordbox_key,key,key_confidence,traktor_marker_ms,first_beat_ms,grid_offset_ms,cpu_seconds,note\n",
     );
     for o in outcomes {
         let r = &o.reference;
@@ -496,6 +562,7 @@ fn write_csv(path: &Path, outcomes: &[Outcome]) -> Result<(), String> {
             opt(r.traktor_marker_ms),
             opt(o.bpm.as_ref().and_then(|b| b.first_beat_ms)),
             opt(grid),
+        format!("{:.2}", o.seconds),
             csv_field(&note),
         ];
         text.push_str(&row.join(","));
