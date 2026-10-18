@@ -576,6 +576,29 @@ mod tests {
     }
 
     #[test]
+    fn the_low_pass_is_the_one_pole_filter_of_the_formula() {
+        // y[0] = x[0]; y[i] = y[i-1] + alpha (x[i] - y[i-1]), alpha = dt / (rc + dt).
+        let rate = 44100u32;
+        let x: Vec<f32> = (0..5000).map(|i| ((i * 37 % 211) as f32 / 105.0) - 1.0).collect();
+        let rc = 1.0 / (2.0 * std::f64::consts::PI * 500.0);
+        let dt = 1.0 / rate as f64;
+        let alpha = dt / (rc + dt);
+        let mut expected = vec![x[0] as f64];
+        for i in 1..x.len() {
+            let prev = expected[i - 1];
+            expected.push(prev + alpha * (x[i] as f64 - prev));
+        }
+        let mut filter = LowPass::new(&x, rate, 500.0);
+        for hop in x.chunks(512) {
+            let start = hop.as_ptr() as usize - x.as_ptr() as usize;
+            let start = start / std::mem::size_of::<f32>();
+            for (k, &s) in hop.iter().enumerate() {
+                assert_eq!(filter.next(s), expected[start + k] as f32, "sample {}", start + k);
+            }
+        }
+    }
+
+    #[test]
     fn filtering_hop_by_hop_gives_the_beats_of_a_filtered_copy() {
         let audio = kick_track(124.0, 44100, 30.0, 0.0);
         let copy = run_tempo_pass(&low_passed(&audio), OnsetMode::SpecFlux).unwrap();

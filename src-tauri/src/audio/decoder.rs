@@ -306,6 +306,18 @@ fn gap_frames(duration: u64, time_base: Option<TimeBase>, sample_rate: u32) -> u
     frames.min((MAX_GAP_S * sample_rate as f64) as usize)
 }
 
+/// Frames of audio per file byte no format comes close to (a 32 kbps MP3 holds
+/// about 11): a frame count beyond it is a corrupt header.
+const MAX_FRAMES_PER_BYTE: u64 = 64;
+
+/// How many samples to reserve: the container's frame count, but never more
+/// than MAX_RESERVE_S of audio nor more than the file's size can hold.
+fn reservation_frames(n_frames: Option<u64>, sample_rate: u32, file_bytes: u64) -> usize {
+    let by_time = (MAX_RESERVE_S * sample_rate as f64) as u64;
+    let by_size = file_bytes.saturating_mul(MAX_FRAMES_PER_BYTE);
+    n_frames.map_or(0, |n| n.min(by_time).min(by_size)) as usize
+}
+
 /// Longest stretch of audio the sample buffer is reserved for up front.
 const MAX_RESERVE_S: f64 = 4.0 * 3600.0;
 
@@ -504,12 +516,11 @@ pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
     // container gives one, so a long mix is not grown by doubling (which leaves
     // up to half again as much unused); a corrupt count cannot ask for more than
     // MAX_RESERVE_S seconds.
-    let reserve = track
-        .codec_params
-        .n_frames
-        .map(|n| n.min((MAX_RESERVE_S * sample_rate as f64) as u64) as usize)
-        .unwrap_or(0);
-    let mut all_samples: Vec<f32> = Vec::with_capacity(reserve);
+    let file_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let reserve = reservation_frames(track.codec_params.n_frames, sample_rate, file_bytes);
+    let mut all_samples: Vec<f32> = Vec::new();
+    // A refused reservation is no failure: the buffer then just grows as it fills.
+    let _ = all_samples.try_reserve_exact(reserve);
     
     loop {
         let packet = match format_reader.next_packet() {
@@ -734,6 +745,19 @@ mod tests {
         bytes.extend_from_slice(&claimed.to_le_bytes());
         bytes.extend_from_slice(&vec![0u8; 4000]);
         std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn a_corrupt_frame_count_reserves_little_and_the_file_still_decodes() {
+        // 4 GB of audio claimed by a header, 4000 bytes of it present.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("liar.wav");
+        wav_claiming(&file, 250_000);
+        assert!(reservation_frames(Some(2_000_000_000), 8000, 4044) <= 4044 * MAX_FRAMES_PER_BYTE as usize);
+        assert_eq!(reservation_frames(None, 44100, 1_000_000), 0);
+        assert_eq!(reservation_frames(Some(1000), 44100, 1_000_000), 1000);
+        let audio = decode_to_mono_typed(&file).expect("decodes what is there");
+        assert_eq!(audio.samples.len(), 2000);
     }
 
     #[test]
