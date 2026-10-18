@@ -296,14 +296,18 @@ pub struct MonoAudio {
 /// the samples after it keep their time (spec 2026-10-17, §2): the packet's
 /// duration in the track's time base, at the sample rate.
 fn gap_frames(duration: u64, time_base: Option<TimeBase>, sample_rate: u32) -> usize {
-    match time_base {
-        Some(tb) => {
+    let frames = match time_base {
+        Some(tb) if tb.numer != 0 && tb.denom != 0 => {
             let t = tb.calc_time(duration);
             ((t.seconds as f64 + t.frac) * sample_rate as f64).round() as usize
         }
-        None => duration as usize,
-    }
+        _ => duration as usize,
+    };
+    frames.min((MAX_GAP_S * sample_rate as f64) as usize)
 }
+
+/// Longest silence one failed packet stands for: real packets last milliseconds, so more is a corrupt header.
+const MAX_GAP_S: f64 = 10.0;
 
 /// Whether MP3/AAC encoder delay and padding are trimmed for analysis. Set by
 /// measurement (spec §2, decoder timeline): the setting that lines MP3 grids
@@ -387,6 +391,7 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
                 eprintln!("[decode_to_mono] Corrupted packet replaced by silence: {}", msg);
                 let gap = gap_frames(packet.dur(), time_base, sample_rate);
                 all_samples.resize(all_samples.len() + gap, 0.0);
+                decoder.reset();
                 continue;
             }
             Err(e) => return Err(format!("Decode error: {}", e)),
@@ -496,6 +501,8 @@ mod tests {
         assert_eq!(gap_frames(2048, Some(TimeBase::new(1, 96000)), 48000), 1024);
         // No time base: one frame per tick.
         assert_eq!(gap_frames(576, None, 44100), 576);
+        // A corrupt header cannot ask for an endless gap.
+        assert_eq!(gap_frames(u32::MAX as u64, Some(TimeBase::new(1, 1)), 44100), 441_000);
     }
 
     #[test]
