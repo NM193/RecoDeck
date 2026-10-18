@@ -101,7 +101,7 @@ impl Database {
              ORDER BY t.id",
         )?;
         let rows = stmt.query_map([version], |r| {
-            Ok(NotCurrent { id: r.get(0)?, path: r.get(1)?, has_old_values: r.get::<_, Option<bool>>(2)?.unwrap_or(false) })
+            Ok(NotCurrent { id: r.get(0)?, path: r.get(1)?, has_old_values: r.get(2)? })
         })?;
         rows.collect()
     }
@@ -146,6 +146,11 @@ mod tests {
             db.conn.query_row("SELECT bpm FROM track_analysis WHERE track_id = ?1", [id], |r| r.get(0)).unwrap()
         };
         assert_eq!(bpm(failed), None);
+        let confidence: Option<f64> = db
+            .conn
+            .query_row("SELECT bpm_confidence FROM track_analysis WHERE track_id = ?1", [failed], |r| r.get(0))
+            .unwrap();
+        assert_eq!(confidence, None);
         assert_eq!(bpm(found), Some(124.0));
         let version: Option<i64> = db
             .conn
@@ -266,5 +271,78 @@ mod tests {
         assert_eq!(needing, vec![(old, true), (tagged, false), (never, false)]);
         assert_eq!(db.analysis_version(current).unwrap(), Some(1));
         assert_eq!(db.analysis_version(never).unwrap(), None);
+    }
+
+    #[test]
+    fn migration_022_is_all_or_nothing() {
+        let db = db();
+        let id = track(&db, "/m/a.mp3");
+        db.save_bpm_analysis(id, 0.0, 0.0).unwrap(); // gives the blocked UPDATE a row
+        db.conn
+            .execute_batch(
+                "ALTER TABLE track_analysis DROP COLUMN first_beat_ms;
+                 ALTER TABLE track_analysis DROP COLUMN analysis_version;
+                 CREATE TRIGGER block_update BEFORE UPDATE ON track_analysis
+                 BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+            )
+            .unwrap();
+        assert!(db.run_migrations().is_err());
+        let columns = |db: &Database| -> i64 {
+            db.conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('track_analysis') WHERE name IN ('first_beat_ms', 'analysis_version')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(columns(&db), 0);
+        db.conn.execute_batch("DROP TRIGGER block_update;").unwrap();
+        db.run_migrations().unwrap();
+        assert_eq!(columns(&db), 2);
+    }
+
+    #[test]
+    fn failed_bpms_from_an_older_release_are_cleared_on_every_start() {
+        let db = db();
+        let id = track(&db, "/m/a.mp3");
+        db.save_bpm_analysis(id, 0.0, 0.0).unwrap();
+        db.run_migrations().unwrap();
+        let bpm: Option<f64> =
+            db.conn.query_row("SELECT bpm FROM track_analysis WHERE track_id = ?1", [id], |r| r.get(0)).unwrap();
+        assert_eq!(bpm, None);
+    }
+
+    #[test]
+    fn a_key_alone_replaces_only_the_key() {
+        let db = db();
+        let id = track(&db, "/m/a.mp3");
+        db.save_analysis(id, Some(&found_bpm(124.0, Some(137.0))), Some(&found_key("8A")), 1).unwrap();
+        let mut key = found_key("5B");
+        key.confidence = 0.4;
+        db.save_analysis(id, None, Some(&key), 1).unwrap();
+        assert_eq!(row(&db, id), (Some(124.0), Some(0.9), Some(137.0), Some("5B".into()), Some(0.4), Some(1)));
+    }
+
+    #[test]
+    fn a_bpm_alone_replaces_only_the_bpm() {
+        let db = db();
+        let id = track(&db, "/m/a.mp3");
+        db.save_analysis(id, Some(&found_bpm(124.0, Some(137.0))), Some(&found_key("8A")), 1).unwrap();
+        db.save_analysis(id, Some(&found_bpm(126.0, Some(10.0))), None, 1).unwrap();
+        assert_eq!(row(&db, id), (Some(126.0), Some(0.9), Some(10.0), Some("8A".into()), Some(0.7), Some(1)));
+    }
+
+    #[test]
+    fn old_values_count_when_only_the_key_has_a_confidence() {
+        let dir = TempDir::new().unwrap();
+        let p = dir.path().join("k.wav");
+        std::fs::write(&p, b"x").unwrap();
+        let db = db();
+        let id = track(&db, &p.to_string_lossy());
+        db.save_analysis(id, None, Some(&found_key("8A")), 0).unwrap();
+        let t = db.tracks_not_current(1).unwrap();
+        assert_eq!(t.len(), 1);
+        assert!(t[0].has_old_values);
     }
 }
