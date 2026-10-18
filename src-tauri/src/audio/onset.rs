@@ -53,10 +53,12 @@ impl OnsetEnvelope {
             fft.process(&mut buffer);
             let (mut l, mut a, mut e) = (0f32, 0f32, 0f32);
             for b in 1..bins {
-                let magnitude = buffer[b].norm();
+                let norm = buffer[b].norm();
+                let magnitude = if norm.is_finite() { norm } else { 0.0 };
                 // Log compression, then only rises count: an onset, not a held note.
                 let level = (1.0 + 100.0 * magnitude).ln();
-                let rise = (level - previous[b]).max(0.0);
+                // Frame 0 has no earlier frame to rise from: it only sets `previous`.
+                let rise = if f == 0 { 0.0 } else { (level - previous[b]).max(0.0) };
                 previous[b] = level;
                 a += rise;
                 if b < low_bins {
@@ -87,7 +89,8 @@ impl OnsetEnvelope {
         if self.low.is_empty() {
             return 0.0;
         }
-        self.low[self.frame_at(from)..=self.frame_at(to)].iter().copied().fold(0.0, f32::max)
+        let (a, b) = (self.frame_at(from), self.frame_at(to));
+        self.low[a.min(b)..=a.max(b)].iter().copied().fold(0.0, f32::max)
     }
 
     /// When the music starts: the first frame whose low-band flux reaches 30 %
@@ -111,8 +114,12 @@ impl OnsetEnvelope {
     /// Per 2-second window from the start, whether it is music: low-band
     /// energy above 10 % of the median window's. Breakdowns without a kick drop out.
     pub fn music_windows(&self) -> Vec<bool> {
-        let energy: Vec<f64> =
-            self.low_energy.chunks(self.window_frames()).map(|c| c.iter().map(|&e| e as f64).sum()).collect();
+        // Mean per frame, so a partial last window is not mistaken for a quiet one.
+        let energy: Vec<f64> = self
+            .low_energy
+            .chunks(self.window_frames())
+            .map(|c| c.iter().map(|&e| e as f64).sum::<f64>() / c.len() as f64)
+            .collect();
         let mut sorted = energy.clone();
         sorted.sort_by(f64::total_cmp);
         let median = sorted.get(sorted.len() / 2).copied().unwrap_or(0.0);
@@ -140,10 +147,13 @@ impl OnsetEnvelope {
     }
 
     /// A grid's beats from 0 s to the end of the envelope.
-    pub fn beats(&self, phase_s: f64, period_s: f64) -> impl Iterator<Item = f64> + '_ {
+    pub fn beats(&self, phase_s: f64, period_s: f64) -> Box<dyn Iterator<Item = f64> + '_> {
+        if !(phase_s.is_finite() && period_s.is_finite() && period_s > 0.0) {
+            return Box::new(std::iter::empty());
+        }
         let first = (-phase_s / period_s).ceil() as i64;
         let end = self.duration_s();
-        (first..).map(move |k| phase_s + k as f64 * period_s).take_while(move |&t| t <= end)
+        Box::new((first..).map(move |k| phase_s + k as f64 * period_s).take_while(move |&t| t <= end))
     }
 }
 
@@ -201,5 +211,24 @@ mod tests {
         assert!(beats.first().copied().unwrap() >= 0.0 && beats.first().copied().unwrap() < 0.5);
         assert!(beats.last().copied().unwrap() <= envelope.duration_s());
         assert!((beats.len() as i64 - 20).abs() <= 1);
+    }
+
+    #[test]
+    fn a_track_that_starts_with_a_hum_has_no_onset_at_frame_0() {
+        let mut audio = kick_track(124.0, 44100, 30.0, 2.0);
+        for (i, s) in audio.samples.iter_mut().enumerate() {
+            *s += 0.05 * (2.0 * PI * 60.0 * i as f64 / 44100.0).sin() as f32;
+        }
+        let onset = OnsetEnvelope::compute(&audio).first_strong_low_onset().expect("an onset");
+        assert!((onset - 2.0).abs() < 0.010, "first kick at 2.0, onset at {onset:.4}");
+    }
+
+    #[test]
+    fn a_grid_without_a_positive_finite_period_has_no_beats() {
+        let envelope = OnsetEnvelope::compute(&kick_track(120.0, 44100, 10.0, 0.137));
+        assert_eq!(envelope.beats(0.0, 0.0).count(), 0);
+        assert_eq!(envelope.beats(0.0, -0.5).count(), 0);
+        assert_eq!(envelope.beats(f64::NAN, 0.5).count(), 0);
+        assert_eq!(envelope.beats(0.0, f64::INFINITY).count(), 0);
     }
 }
