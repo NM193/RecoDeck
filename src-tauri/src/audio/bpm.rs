@@ -33,6 +33,9 @@ pub struct BpmResult {
     pub bpm: f64,
     /// Confidence score (0.0 to 1.0) — higher means more reliable detection
     pub confidence: f64,
+    /// A grid beat that starts a bar, in ms from the file's start (spec
+    /// 2026-10-17, §2). None until the grid is detected.
+    pub first_beat_ms: Option<f64>,
 }
 
 /// Standard buffer size for onset/tempo detection.
@@ -144,6 +147,7 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<BpmResult, String> {
         return Ok(BpmResult {
             bpm: 0.0,
             confidence: 0.0,
+            first_beat_ms: None,
         });
     }
 
@@ -291,6 +295,7 @@ fn pick_consensus(candidates: &[(f64, f64)]) -> Result<BpmResult, String> {
         return Ok(BpmResult {
             bpm: 0.0,
             confidence: 0.0,
+            first_beat_ms: None,
         });
     }
 
@@ -298,6 +303,7 @@ fn pick_consensus(candidates: &[(f64, f64)]) -> Result<BpmResult, String> {
         return Ok(BpmResult {
             bpm: candidates[0].0,
             confidence: candidates[0].1,
+            first_beat_ms: None,
         });
     }
 
@@ -364,7 +370,7 @@ fn pick_consensus(candidates: &[(f64, f64)]) -> Result<BpmResult, String> {
         (bpm * 100.0).round() / 100.0
     };
 
-    Ok(BpmResult { bpm, confidence })
+    Ok(BpmResult { bpm, confidence, first_beat_ms: None })
 }
 
 #[cfg(test)]
