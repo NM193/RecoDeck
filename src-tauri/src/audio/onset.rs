@@ -17,9 +17,12 @@ const MUSIC_WINDOW_S: f64 = 2.0;
 const MUSIC_SHARE: f64 = 0.1;
 /// The first strong onset reaches 30 % of the 99.5th percentile of the track's low-band flux.
 const STRONG_ONSET_SHARE: f32 = 0.3;
-/// A kick near a grid beat stands this many times above the 90th percentile
-/// of the low-band flux around it (see `kick_near`).
-const KICK_OVER_P90: f32 = 3.0;
+/// A kick near a grid beat makes the low band jump this many times more than
+/// the beat's other quarters do (see `kick_near`): it has to lead the 16ths,
+/// not tie them. Chosen on the whole library (2026-10-18): right tempos then
+/// score a median 0.78 (the flux rule before gave 0.21), wrong ones 0.14, and
+/// right-tempo grids half a beat off 0.36.
+const KICK_OVER_SIXTEENTHS: f32 = 1.25;
 /// How far either side of a grid beat `kick_strength` looks for the low band's
 /// jump: past a kick's attack, and short of the next 16th up to 160 BPM.
 const KICK_JUMP_S: f64 = 0.060;
@@ -131,23 +134,21 @@ impl OnsetEnvelope {
         t >= self.start_s && windows.get(((t - self.start_s) / window_s) as usize) == Some(&true)
     }
 
-    /// Whether a low-band onset that stands out lies within `tolerance_s` of t:
-    /// the strongest low-band flux that close is at least KICK_OVER_P90 times
-    /// the 90th percentile of the flux within half a beat either side.
+    /// Whether a kick lies within `tolerance_s` of t: the low band's level
+    /// jumps there at least KICK_OVER_SIXTEENTHS times as much as it does at
+    /// the beat's other quarters (a quarter beat before, a quarter and half a
+    /// beat after), the beat's other 16ths. Its own flux can't tell: on real
+    /// bass lines the bass rises as often as the kick, so the kick stands only
+    /// 1.5–2× above the flux around it.
     pub fn kick_near(&self, t: f64, tolerance_s: f64, period_s: f64) -> bool {
-        if self.low.is_empty() {
-            return false;
-        }
-        // Why the 90th percentile: the flux is mostly near zero, so on noise a
-        // short stretch's peak is many times the median, and at least half the
-        // half beat's peak most of the time. Noise seldom clears its 90th
-        // percentile three times over; a kick, a few frames long, does easily.
-        let (from, to) = (self.frame_at(t - period_s / 2.0), self.frame_at(t + period_s / 2.0));
-        let mut around = self.low[from..=to].to_vec();
-        let index = (around.len() - 1) * 9 / 10;
-        let p90 = *around.select_nth_unstable_by(index, f32::total_cmp).1;
-        let near = self.max_of(&self.low, t - tolerance_s, t + tolerance_s);
-        near > 0.0 && near >= KICK_OVER_P90 * p90
+        let largest_jump = |at: f64| {
+            (self.frame_at(at - tolerance_s)..=self.frame_at(at + tolerance_s))
+                .map(|frame| self.jump(self.start_s + frame as f64 * self.frame_s))
+                .fold(0.0, f32::max)
+        };
+        let here = largest_jump(t);
+        let elsewhere = [-0.25, 0.25, 0.5].iter().map(|q| largest_jump(t + q * period_s)).fold(0.0, f32::max);
+        here > 0.0 && here >= KICK_OVER_SIXTEENTHS * elsewhere
     }
 
     /// How far the low band's level jumps at a grid's beats: which of several
@@ -157,13 +158,16 @@ impl OnsetEnvelope {
     /// log-compressed, so a sidechained bass rising out of near silence on the
     /// off-beat rises as much as a kick landing on the held bass.
     pub fn kick_strength(&self, phase_s: f64, period_s: f64) -> f64 {
-        self.beats(phase_s, period_s)
-            .map(|t| {
-                let after = self.max_of(&self.low_energy, t, t + KICK_JUMP_S);
-                let before = self.min_of(&self.low_energy, t - KICK_JUMP_S, t);
-                (after.sqrt() - before.sqrt()).max(0.0) as f64
-            })
-            .sum()
+        self.beats(phase_s, period_s).map(|t| self.jump(t) as f64).sum()
+    }
+
+    /// How far the low band's level jumps at t: its loudest within KICK_JUMP_S
+    /// after, less its quietest within KICK_JUMP_S before (square roots of the
+    /// energy, so levels).
+    fn jump(&self, t: f64) -> f32 {
+        let after = self.max_of(&self.low_energy, t, t + KICK_JUMP_S);
+        let before = self.min_of(&self.low_energy, t - KICK_JUMP_S, t);
+        (after.sqrt() - before.sqrt()).max(0.0)
     }
 
     /// The largest and smallest value of a per-frame series between two times.

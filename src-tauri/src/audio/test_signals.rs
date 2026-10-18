@@ -115,6 +115,35 @@ pub fn offbeat_bass(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, bass
     track
 }
 
+/// `kick_track` with a rolling bass, as in psytrance and much techno: a note
+/// on each 16th between the kicks, rising in 2 ms and fading over 60 ms, at
+/// `bass_gain`. It has a second and third harmonic, so like a real bass line
+/// it fills the whole low band, and its flux rises as often as the kick's.
+pub fn rolling_bass(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, bass_hz: f64, bass_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let total = track.samples.len();
+    let length = (15.0 / bpm * rate) as usize;
+    let mut sixteenth = 0;
+    loop {
+        let start = ((first_s + sixteenth as f64 * 15.0 / bpm) * rate).round() as usize;
+        if start >= total {
+            break;
+        }
+        if sixteenth % 4 != 0 {
+            for j in 0..length.min(total - start) {
+                let t = j as f64 / rate;
+                let envelope = (t / 0.002).min(1.0) * (-t / 0.06).exp();
+                let w = 2.0 * PI * bass_hz * t;
+                let note = w.sin() + 0.7 * (2.0 * w).sin() + 0.5 * (3.0 * w).sin();
+                track.samples[start + j] += (bass_gain * envelope * note) as f32;
+            }
+        }
+        sixteenth += 1;
+    }
+    track
+}
+
 /// White noise, uniform in ±`amplitude` (a constant-seeded LCG): no beat at all.
 pub fn white_noise(sample_rate: u32, seconds: f64, amplitude: f64) -> MonoAudio {
     let mut state: u32 = 0x0BAD_5EED;

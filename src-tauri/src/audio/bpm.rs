@@ -18,7 +18,7 @@
 //    is refitted on the envelope.
 // 4. First beat: the grid beat nearest the first strong low-band onset.
 // 5. Confidence: the share of grid beats inside music sections with a kick
-//    that stands out within 20 ms.
+//    within 20 ms, where the low band jumps more than at the beat's other 16ths.
 //
 // No tempo found gives None, never a BPM of 0.
 
@@ -503,9 +503,10 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms (one that stands out, see `kick_near`). A steady track scores
-/// near 1; a tempo change or a live recording scores low, because the grid
-/// drifts off beats that are still there; noise scores near 0.
+/// within 20 ms: the low band jumps there more than at the beat's other 16ths
+/// (see `kick_near`). A steady track scores near 1; a tempo change or a live
+/// recording scores lower, because the grid drifts off beats that are still
+/// there; noise scores low.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
     let music = envelope.music_windows();
     let (mut beats, mut hits) = (0usize, 0usize);
@@ -524,7 +525,7 @@ fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::{kick_track, offbeat_bass, offbeat_hats, sixteenth_hats, tempo_change, white_noise};
+    use crate::audio::test_signals::{kick_track, offbeat_bass, offbeat_hats, rolling_bass, sixteenth_hats, tempo_change, white_noise};
     use std::f32::consts::PI;
 
     fn low_passed(audio: &MonoAudio) -> MonoAudio {
@@ -786,6 +787,24 @@ mod tests {
         let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
         assert!((result.bpm - 124.0).abs() <= 0.05, "{:.3} BPM", result.bpm);
         assert!(result.confidence >= 0.9, "confidence {:.2}", result.confidence);
+    }
+
+    #[test]
+    fn a_rolling_bass_leaves_the_kicks_confident() {
+        // The bass rises on every 16th between the kicks, as often as the
+        // kick, and over the whole low band, as on real bass lines.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&rolling_bass(124.0, 44100, 60.0, 0.137, 55.0, 0.3));
+        let confidence = grid_confidence(Grid { period_s: period, phase_s: 0.137 }, &envelope);
+        assert!(confidence >= 0.9, "confidence {confidence:.2}");
+    }
+
+    #[test]
+    fn a_grid_half_a_beat_off_a_rolling_bass_scores_low() {
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&rolling_bass(124.0, 44100, 60.0, 0.137, 55.0, 0.3));
+        let confidence = grid_confidence(Grid { period_s: period, phase_s: 0.137 + period / 2.0 }, &envelope);
+        assert!(confidence < 0.5, "confidence {confidence:.2}");
     }
 
     #[test]
