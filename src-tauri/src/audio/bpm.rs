@@ -505,9 +505,10 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 
 /// Step 5: the share of grid beats inside music sections that have a kick
 /// within 20 ms: the envelope's strongest onset nearby is that close, and the
-/// low band jumps there more than at the beat's other 16ths (see `kick_near`). A steady track scores near 1; a tempo change or a live
-/// recording scores lower, because the grid drifts off beats that are still
-/// there; noise scores low.
+/// low band jumps there more than at the beat's other 16ths (see `kick_near`).
+/// A steady track scores near 1; a tempo change or a live recording scores
+/// lower, because the grid drifts off beats that are still there; noise scores
+/// low.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
     let music = envelope.music_windows();
     let (mut beats, mut hits) = (0usize, 0usize);

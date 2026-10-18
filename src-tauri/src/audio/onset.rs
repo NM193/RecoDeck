@@ -143,8 +143,9 @@ impl OnsetEnvelope {
     /// the beat's other quarters (a quarter beat before, a quarter and half a
     /// beat after), the beat's other 16ths, and the envelope's strongest flux
     /// (low plus full band, as the grid search sees it) within
-    /// KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`. The
-    /// low band alone peaks later: it has two bins.
+    /// KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`. Not
+    /// the low band's own peak: on the library it sits +3.1 ms from our beats
+    /// and scatters (p10 to p90: −0.7 to +7.4 ms), the envelope's at −0.1 ms.
     /// The flux alone can't tell the kick: on real bass lines the bass rises as
     /// often as the kick, so the kick stands only 1.5–2× above the flux around
     /// it. The jump alone can't place it: it reaches a kick up to 60 ms later.
