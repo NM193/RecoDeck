@@ -509,10 +509,10 @@ fn harmonic_part_in_blocks(
     }
 }
 
-/// The harmonic part of a magnitude spectrogram (frames × bins): each bin
-/// scaled by the soft mask H² / (H² + P²), where H is the median along time
-/// (held notes) and P the median along frequency (drum hits); 0 where both
-/// are 0. Near the edges the windows are cut short.
+/// The harmonic part of a magnitude spectrogram (frames × bins): a bin keeps
+/// its magnitude where H, the median along time (held notes), is at least P,
+/// the median along frequency (drum hits), else it becomes 0. Near the edges
+/// the windows are cut short.
 fn harmonic_part(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
     let frames = spectrogram.len();
     let Some(bins) = spectrogram.first().map(Vec::len) else { return Vec::new() };
@@ -549,12 +549,8 @@ fn harmonic_part(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
                 (true, false) => along_frequency.remove(row[b - half_f - 1]),
                 (false, false) => {}
             }
-            let h = along_time[b].median();
-            let p = along_frequency.median();
-            // In f64: squares of faint magnitudes underflow in f32.
-            let (h2, p2) = ((h as f64).powi(2), (p as f64).powi(2));
-            if h2 + p2 > 0.0 {
-                harmonic[b] = (row[b] as f64 * (h2 / (h2 + p2))) as f32;
+            if along_time[b].median() >= along_frequency.median() {
+                harmonic[b] = row[b];
             }
         }
         out.push(harmonic);
@@ -1147,15 +1143,15 @@ mod tests {
             spectrogram[6][bin] = 1.0;
         }
         let harmonic = harmonic_part(&spectrogram);
-        assert!(harmonic[3][10] >= 0.9, "the note stays: {}", harmonic[3][10]);
-        assert!(harmonic[6][25] <= 0.1, "the hit goes: {}", harmonic[6][25]);
+        assert_eq!(harmonic[3][10], 1.0); // the note stays
+        assert_eq!(harmonic[6][25], 0.0); // the hit goes
     }
 
     #[test]
-    fn a_faint_steady_bin_keeps_half() {
-        // 1e-23² underflows to 0 in f32; the mask must not.
+    fn a_steady_bin_is_kept() {
+        // Equal medians count as harmonic, however faint the bin.
         let harmonic = harmonic_part(&vec![vec![1e-23f32; 20]; 10]);
-        assert_eq!(harmonic[5][10], 0.5e-23);
+        assert_eq!(harmonic[5][10], 1e-23);
     }
 
     /// The plain definition: medians by sorting each window.
@@ -1174,8 +1170,7 @@ mod tests {
                         let t = f.saturating_sub(half_t)..(f + half_t + 1).min(frames);
                         let h = median(t.map(|g| spectrogram[g][b]).collect());
                         let p = median(spectrogram[f][b.saturating_sub(half_f)..(b + half_f + 1).min(bins)].to_vec());
-                        let (h2, p2) = ((h as f64).powi(2), (p as f64).powi(2));
-                        if h2 + p2 > 0.0 { (spectrogram[f][b] as f64 * (h2 / (h2 + p2))) as f32 } else { 0.0 }
+                        if h >= p { spectrogram[f][b] } else { 0.0 }
                     })
                     .collect()
             })
