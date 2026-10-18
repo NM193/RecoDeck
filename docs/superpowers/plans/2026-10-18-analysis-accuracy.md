@@ -4541,6 +4541,7 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | p2-conf20 | fc7c3e9 | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 35.0 % | 0.500 | 1.58 | no |
 | p2-confenv | 1c1fbfb | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 35.0 % | 0.500 | 3.69* | yes |
 | p3-frames | 2ccab73 | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 35.0 % | 0.500 | 1.55 | — (refactor) |
+| p3-noheur | 35a94d9 + Task 18 | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 30.2 % | 0.471 | 3.76* | no |
 
 Baseline notes (p1-baseline):
 - **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
@@ -4569,6 +4570,7 @@ Phase 2 notes (p2-final, 2026-10-18):
 - **Confidence.** The median is 0.207 for right tempos and 0.057 for wrong ones, so there is a gap; 0.1 % of right tempos are ≥ 0.9. At Checkpoint 2 the user chose the level-jump rule with c = 1.25 (prototype: right 0.780, wrong 0.308, noise 0.07). Built in 52b419d and measured as p2-conf: right-tempo median 0.777 (22.2 % ≥ 0.9, 86.2 % ≥ 0.5), wrong 0.138; report means right 0.734, wrong 0.356. BPM is identical on every row.
 - **Confidence window** (after review). p2-conf's level jump counted grids from −60 to +40 ms off the kicks as hits. p2-conf20 also required the low band's peak within 20 ms: right-tempo median 0.583, dropped. p2-confenv requires the envelope's peak (low plus full band, spec §2 step 5) within 20 ms: right 0.754 (19.1 % ≥ 0.9, 84.0 % ≥ 0.5), wrong 0.063, kept. *Its time was measured while another job ran.
 - **Phase 3 compares against p3-frames** (MIREX 0.500, exact 35.0 %): the refactor is the current code.
+- **Key errors are mostly a fifth up** (p3-frames, consensus): exact 35.0 %, same mode a fifth up 21.9 %, a fifth down 2.1 %, parallel 18.4 %. That is where the 6A/1A skew comes from (true 5A read as 6A, 12A as 1A). The synthetic A minor under a kick reads 12B (E), the same error. p3-noheur (Task 18) raised the fifth-up share to 25.3 % and MIREX fell to 0.471, so it was dropped; the dominant fix was holding some of this back.
 - **Run-to-run noise.** Two runs of the same code differ on about 30 of 1958 first beats by < 1 ms, and on one wrong-tempo track by 204 ms. BPM and key do not move. The source is not found yet (likely state inside aubio).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.
