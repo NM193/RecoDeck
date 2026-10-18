@@ -65,6 +65,36 @@ pub fn offbeat_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, hat_
     track
 }
 
+/// `kick_track` with a closed hi-hat on each 16th note between the kicks, as
+/// in most house and techno: white noise, high-passed by a first difference,
+/// fading over 15 ms, at `hat_gain`.
+pub fn sixteenth_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, hat_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let total = track.samples.len();
+    let length = (0.05 * rate) as usize;
+    let mut state: u32 = 7;
+    let mut sixteenth = 0;
+    loop {
+        let start = ((first_s + sixteenth as f64 * 15.0 / bpm) * rate).round() as usize;
+        if start >= total {
+            break;
+        }
+        if sixteenth % 4 != 0 {
+            let mut previous = 0.0;
+            for j in 0..length.min(total - start) {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = (state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0;
+                let t = j as f64 / rate;
+                track.samples[start + j] += (hat_gain * (noise - previous) * (-t / 0.015).exp()) as f32;
+                previous = noise;
+            }
+        }
+        sixteenth += 1;
+    }
+    track
+}
+
 /// White noise, uniform in ±`amplitude` (a constant-seeded LCG): no beat at all.
 pub fn white_noise(sample_rate: u32, seconds: f64, amplitude: f64) -> MonoAudio {
     let mut state: u32 = 0x0BAD_5EED;

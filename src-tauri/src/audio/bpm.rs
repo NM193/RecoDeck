@@ -10,10 +10,10 @@
 //    then a least-squares line through the beats within a quarter beat. That
 //    grid is refined on the onset envelope: aubio spaces its beats by its own,
 //    slightly fast period, so their phase drifts by a varying amount, while
-//    the envelope sits at a steady offset from the kicks. The search also
-//    starts half a beat on, in case aubio followed the off-beats, and keeps
-//    the result on the kicks. Without such beats, it starts from the
-//    candidate's period alone.
+//    the envelope sits at a steady offset from the kicks. Their phase can be
+//    on any 16th of the beat, so the search also starts a quarter, a half and
+//    three quarters of a beat on, and keeps the result on the kicks. Without
+//    such beats, it starts from the candidate's period alone.
 // 3. Snap: a tempo within SNAP_BPM of a whole number becomes it, and the phase
 //    is refitted on the envelope.
 // 4. First beat: the grid beat nearest the first strong low-band onset.
@@ -180,18 +180,20 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     Some(snap(searched_grid(&beats, candidate, envelope)?, envelope))
 }
 
-/// Step 2: the envelope search from the grid fitted to the pass's beats, and
-/// from that grid half a beat on, in case the pass followed the off-beats; the
-/// result on the kicks wins. When the beats give no grid (no pass, or too few
-/// beats near the candidate), it starts at the candidate's period from four
-/// phases a quarter beat apart, which together cover the whole beat, and again
-/// the result on the kicks wins: by then each has its tempo, so its low-band
-/// strength over the track means something. None when that low-band strength
-/// is zero, in practice only in digital silence.
+/// Step 2: the envelope search from four phases a quarter beat apart, which
+/// together cover the whole beat, and the result on the kicks wins: by then
+/// each has its tempo, so its low-band strength over the track means
+/// something. The phases start from the grid fitted to the pass's beats: its
+/// tempo is close, but those beats can sit on any 16th of the beat (the pass
+/// spaces them by its own period), and each search only reaches an eighth of
+/// a beat, past which the hats on the other 16ths outscore the kicks. When
+/// the beats give no grid (no pass, or too few beats near the candidate), they
+/// start at the candidate's period. None when that low-band strength is zero,
+/// in practice only in digital silence.
 fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
     if let Some(fit) = fit_grid(beats, candidate, envelope) {
-        let starts = [fit, Grid { phase_s: fit.phase_s + fit.period_s / 2.0, ..fit }];
-        return on_the_kicks(starts.into_iter().map(|start| envelope_search(start, envelope, true)), envelope);
+        let starts = (0..4).map(|i| Grid { phase_s: fit.phase_s + i as f64 * fit.period_s / 4.0, ..fit });
+        return on_the_kicks(starts.map(|start| envelope_search(start, envelope, true)), envelope);
     }
     let period_s = 60.0 / candidate;
     let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
@@ -451,8 +453,8 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     // Per stage: BPM step and span either side, phase step and span either side (s).
     // Stage 1's phase stays within an eighth of a beat of the start, as further
     // out the full band's off-beat hats outscore the kicks. A start fitted to
-    // aubio's beats is 7–24 ms off the kicks (searched_grid also tries it half
-    // a beat on); without one, searched_grid covers the beat with four starts.
+    // aubio's beats can be on any 16th of the beat, so searched_grid covers
+    // the beat with four starts a quarter beat apart.
     let stages = [
         (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
@@ -524,7 +526,7 @@ fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::{kick_track, offbeat_hats, tempo_change, white_noise};
+    use crate::audio::test_signals::{kick_track, offbeat_hats, sixteenth_hats, tempo_change, white_noise};
     use std::f32::consts::PI;
 
     fn low_passed(audio: &MonoAudio) -> MonoAudio {
@@ -659,6 +661,25 @@ mod tests {
             for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
                 let error_ms = (grid.nearest(kick) - kick) * 1000.0;
                 assert!(error_ms.abs() <= 5.0, "hats at {hats}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+        }
+    }
+
+    #[test]
+    fn beats_a_sixteenth_off_still_give_a_grid_on_the_kicks() {
+        // The pass's beats sit a quarter beat before or after the kicks, with
+        // hats on every 16th: from there, and from half a beat on, the search
+        // only reaches the hats.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&sixteenth_hats(124.0, 44100, 60.0, 0.137, 0.3));
+        let kicks = Grid { period_s: period, phase_s: 0.137 };
+        for quarter in [0.25, 0.75] {
+            let beats = messy_beats(124.0, 0.137 + quarter * period, 60.0);
+            let grid = searched_grid(&beats, 124.0, &envelope).expect("a grid");
+            assert!((grid.bpm() - 124.0).abs() <= 0.05, "beats {quarter} beat on: {:.3} BPM", grid.bpm());
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "beats {quarter} beat on: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
             }
         }
     }
