@@ -23,6 +23,10 @@ const STRONG_ONSET_SHARE: f32 = 0.3;
 /// score a median 0.78 (the flux rule before gave 0.21), wrong ones 0.14, and
 /// right-tempo grids half a beat off 0.36.
 const KICK_OVER_SIXTEENTHS: f32 = 1.25;
+/// How far either side of a grid beat `kick_near` looks for the kick's onset,
+/// in beats: past the 60 ms the level jump reaches at 124 BPM, short of the
+/// neighbouring 16ths a quarter beat away.
+const KICK_ONSET_REACH_BEATS: f64 = 0.125;
 /// How far either side of a grid beat `kick_strength` looks for the low band's
 /// jump: past a kick's attack, and short of the next 16th up to 160 BPM.
 const KICK_JUMP_S: f64 = 0.060;
@@ -137,10 +141,22 @@ impl OnsetEnvelope {
     /// Whether a kick lies within `tolerance_s` of t: the low band's level
     /// jumps there at least KICK_OVER_SIXTEENTHS times as much as it does at
     /// the beat's other quarters (a quarter beat before, a quarter and half a
-    /// beat after), the beat's other 16ths. Its own flux can't tell: on real
-    /// bass lines the bass rises as often as the kick, so the kick stands only
-    /// 1.5–2× above the flux around it.
+    /// beat after), the beat's other 16ths, and the low band's strongest flux
+    /// within KICK_ONSET_REACH_BEATS, the kick's onset, is within `tolerance_s`.
+    /// The flux alone can't tell the kick: on real bass lines the bass rises as
+    /// often as the kick, so the kick stands only 1.5–2× above the flux around
+    /// it. The jump alone can't place it: it reaches a kick up to 60 ms later.
     pub fn kick_near(&self, t: f64, tolerance_s: f64, period_s: f64) -> bool {
+        if self.low.is_empty() {
+            return false;
+        }
+        let reach = period_s * KICK_ONSET_REACH_BEATS;
+        let onset = (self.frame_at(t - reach)..=self.frame_at(t + reach))
+            .max_by(|&a, &b| self.low[a].total_cmp(&self.low[b]))
+            .map(|frame| self.start_s + frame as f64 * self.frame_s);
+        if !onset.is_some_and(|onset| (onset - t).abs() <= tolerance_s) {
+            return false;
+        }
         let largest_jump = |at: f64| {
             (self.frame_at(at - tolerance_s)..=self.frame_at(at + tolerance_s))
                 .map(|frame| self.jump(self.start_s + frame as f64 * self.frame_s))

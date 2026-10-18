@@ -18,7 +18,8 @@
 //    is refitted on the envelope.
 // 4. First beat: the grid beat nearest the first strong low-band onset.
 // 5. Confidence: the share of grid beats inside music sections with a kick
-//    within 20 ms, where the low band jumps more than at the beat's other 16ths.
+//    within 20 ms: the low band's strongest onset nearby is that close, and
+//    the low band jumps there more than at the beat's other 16ths.
 //
 // No tempo found gives None, never a BPM of 0.
 
@@ -503,8 +504,8 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms: the low band jumps there more than at the beat's other 16ths
-/// (see `kick_near`). A steady track scores near 1; a tempo change or a live
+/// within 20 ms: the low band's strongest onset nearby is that close, and the
+/// low band jumps there more than at the beat's other 16ths (see `kick_near`). A steady track scores near 1; a tempo change or a live
 /// recording scores lower, because the grid drifts off beats that are still
 /// there; noise scores low.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
@@ -797,6 +798,22 @@ mod tests {
         let envelope = OnsetEnvelope::compute(&rolling_bass(124.0, 44100, 60.0, 0.137, 55.0, 0.3));
         let confidence = grid_confidence(Grid { period_s: period, phase_s: 0.137 }, &envelope);
         assert!(confidence >= 0.9, "confidence {confidence:.2}");
+    }
+
+    #[test]
+    fn a_grid_a_flam_off_the_kicks_scores_low() {
+        // 35 ms off, kick and beat sound as two hits; 10 ms off, as one.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.137));
+        for offset_ms in [-35.0, 35.0, -10.0, 10.0] {
+            let grid = Grid { period_s: period, phase_s: 0.137 + offset_ms / 1000.0 };
+            let confidence = grid_confidence(grid, &envelope);
+            if f64::abs(offset_ms) > 20.0 {
+                assert!(confidence < 0.5, "{offset_ms:+} ms off: confidence {confidence:.2}");
+            } else {
+                assert!(confidence >= 0.9, "{offset_ms:+} ms off: confidence {confidence:.2}");
+            }
+        }
     }
 
     #[test]
