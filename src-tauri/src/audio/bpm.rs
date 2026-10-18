@@ -10,7 +10,8 @@
 //    then a least-squares line through the beats within a quarter beat. That
 //    grid is refined on the onset envelope: aubio spaces its beats by its own,
 //    slightly fast period, so their phase drifts by a varying amount, while
-//    the envelope sits at a steady offset from the kicks.
+//    the envelope sits at a steady offset from the kicks. Without such beats,
+//    the envelope search starts from the candidate's period alone.
 // 3. Snap: a tempo within SNAP_BPM of a whole number becomes it, and the phase
 //    is refitted on the envelope.
 // 4. First beat: the grid beat nearest the first strong low-band onset.
@@ -140,8 +141,8 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<Option<BpmResult>, S
 }
 
 /// Steps 1–3: the candidate tempo from aubio's passes, a grid fitted to the
-/// low-passed SpecFlux pass's beats and refined on the envelope, then snapped.
-/// None when no tempo is found.
+/// low-passed SpecFlux pass's beats (or from the candidate alone) and refined
+/// on the envelope, then snapped. None when no tempo is found.
 fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     let filtered = MonoAudio {
         samples: low_pass_filter(&audio.samples, audio.sample_rate, 500.0),
@@ -171,8 +172,29 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
         }
     }
     let candidate = pick_consensus(&candidates)?;
-    let start = fit_grid(&grid_pass?.beats, candidate, envelope)?;
-    Some(snap(envelope_search(start, envelope, true), envelope))
+    let beats = grid_pass.map(|pass| pass.beats).unwrap_or_default();
+    Some(snap(searched_grid(&beats, candidate, envelope)?, envelope))
+}
+
+/// Step 2: the envelope search from the grid fitted to the pass's beats. When
+/// they give none (no pass, or too few beats near the candidate), it starts at
+/// the candidate's period from four phases a quarter beat apart, which
+/// together cover the whole beat, and the result on the kicks wins: by then
+/// each has its tempo, so its low-band strength over the track means something.
+/// None when none of its beats lands on a low-band onset, as in silence.
+fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
+    if let Some(start) = fit_grid(beats, candidate, envelope) {
+        return Some(envelope_search(start, envelope, true));
+    }
+    let period_s = 60.0 / candidate;
+    let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
+    on_the_kicks(starts.map(|start| envelope_search(start, envelope, true)), envelope)
+        .filter(|grid| envelope.kick_strength(grid.phase_s, grid.period_s) > 0.0)
+}
+
+/// Of several grids, the one whose beats carry the most low-band onset strength.
+fn on_the_kicks(grids: impl Iterator<Item = Grid>, envelope: &OnsetEnvelope) -> Option<Grid> {
+    grids.max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
 }
 
 /// aubio's silence threshold (`aubio_silence_detection`, default -90 dB).
@@ -337,9 +359,7 @@ fn fit_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<G
     if factor <= 1.0 {
         return Some(Grid { period_s, phase_s: fast.phase_s });
     }
-    (0..factor as usize)
-        .map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s })
-        .max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
+    on_the_kicks((0..factor as usize).map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s }), envelope)
 }
 
 /// The tempo within ±2 % of `bpm` that the beats line up with best, with its
@@ -597,6 +617,26 @@ mod tests {
             let error_ms = (grid.nearest(kick) - kick) * 1000.0;
             assert!(error_ms.abs() <= 5.0, "kick at {kick:.3} s: beat {error_ms:+.1} ms off");
         }
+    }
+
+    #[test]
+    fn a_tempo_without_a_beat_fit_still_gets_its_grid() {
+        // Too few beats to fit (or no pass): the search starts from the
+        // candidate alone, 1.5 % fast as the consensus often is.
+        for (bpm, hats) in [(124.0, 0.0), (124.0, 0.2), (127.33, 0.0)] {
+            let envelope = OnsetEnvelope::compute(&offbeat_hats(bpm, 44100, 60.0, 0.137, hats));
+            let (beats, candidate) = ([0.5, 1.0, 1.5], bpm * 1.015);
+            assert!(fit_grid(&beats, candidate, &envelope).is_none());
+            let grid = searched_grid(&beats, candidate, &envelope).expect("a grid");
+            assert!((grid.bpm() - bpm).abs() <= 0.05, "{bpm} BPM, hats at {hats}: {:.3}", grid.bpm());
+            let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{bpm} BPM, hats at {hats}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+        }
+        let silence = MonoAudio { samples: vec![0.0; 44100 * 10], sample_rate: 44100, duration_ms: 10_000 };
+        assert_eq!(searched_grid(&[], 124.0, &OnsetEnvelope::compute(&silence)), None);
     }
 
     #[test]
