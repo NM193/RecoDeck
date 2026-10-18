@@ -471,6 +471,16 @@ impl Database {
             [],
         )?;
 
+        // Older releases stored a BPM read from the tags with confidence 0.99.
+        // Tag values carry none (spec 2026-10-17, §4), so such a row must not
+        // count as an older analysis. Only BPM: those releases never stored a
+        // tag key; and only 0.99, as an analysed BPM's confidence can be 1.0.
+        self.conn.execute(
+            "UPDATE track_analysis SET bpm_confidence = NULL
+             WHERE analysis_version IS NULL AND bpm IS NOT NULL AND ABS(bpm_confidence - 0.99) < 1e-9",
+            [],
+        )?;
+
         Ok(())
     }
 

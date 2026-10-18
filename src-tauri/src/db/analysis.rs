@@ -352,4 +352,34 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert!(t[0].has_old_values);
     }
+
+    #[test]
+    fn tag_bpms_older_releases_stored_with_0_99_lose_that_confidence_on_every_start() {
+        let dir = TempDir::new().unwrap();
+        let path = |name: &str| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, b"x").unwrap();
+            p.to_string_lossy().to_string()
+        };
+        let db = db();
+        let tag = track(&db, &path("tag.wav"));
+        let low = track(&db, &path("low.wav"));
+        let one = track(&db, &path("one.wav"));
+        let versioned = track(&db, &path("versioned.wav"));
+        db.save_bpm_analysis(tag, 124.0, 0.99).unwrap();
+        db.save_bpm_analysis(low, 124.0, 0.98).unwrap();
+        db.save_bpm_analysis(one, 124.0, 1.0).unwrap();
+        db.save_bpm_analysis(versioned, 124.0, 0.99).unwrap();
+        db.conn.execute("UPDATE track_analysis SET analysis_version = 1 WHERE track_id = ?1", [versioned]).unwrap();
+
+        db.run_migrations().unwrap();
+
+        assert_eq!(row(&db, tag).1, None);
+        assert_eq!(row(&db, low).1, Some(0.98));
+        assert_eq!(row(&db, one).1, Some(1.0));
+        assert_eq!(row(&db, versioned).1, Some(0.99));
+        let old: Vec<(i64, bool)> =
+            db.tracks_not_current(1).unwrap().into_iter().map(|t| (t.id, t.has_old_values)).collect();
+        assert_eq!(old, vec![(tag, false), (low, true), (one, true)]);
+    }
 }
