@@ -42,7 +42,7 @@ use super::decoder::{decode_to_mono, MonoAudio};
 pub struct KeyResult {
     /// Detected key in Camelot notation (e.g., "8A", "11B")
     pub camelot: String,
-    /// Detected key in Open Key notation (e.g., "8m", "11d")
+    /// Detected key in Open Key notation (e.g., "1m", "11d")
     pub open_key: String,
     /// Detected key in standard musical notation (e.g., "Am", "C")
     pub musical_key: String,
@@ -146,16 +146,6 @@ const CAMELOT_MINOR: [&str; 12] = [
     "5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A",
 ];
 
-/// Open Key notation for major keys (indexed by pitch class: 0=C, ..., 11=B)
-const OPENKEY_MAJOR: [&str; 12] = [
-    "8d", "3d", "10d", "5d", "12d", "7d", "2d", "9d", "4d", "11d", "6d", "1d",
-];
-
-/// Open Key notation for minor keys (indexed by pitch class)
-const OPENKEY_MINOR: [&str; 12] = [
-    "5m", "12m", "7m", "2m", "9m", "4m", "11m", "6m", "1m", "8m", "3m", "10m",
-];
-
 /// Detect the musical key of an audio file.
 pub fn detect_key(path: &Path) -> Result<KeyResult, String> {
     let audio = decode_to_mono(path)?;
@@ -226,11 +216,7 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
         CAMELOT_MAJOR[best_key_index].to_string()
     };
 
-    let open_key = if best_is_minor {
-        OPENKEY_MINOR[best_key_index].to_string()
-    } else {
-        OPENKEY_MAJOR[best_key_index].to_string()
-    };
+    let open_key = crate::formats::keys::open_key(&camelot).unwrap_or_default();
 
     let musical_key = if best_is_minor {
         MINOR_NAMES[best_key_index].to_string()

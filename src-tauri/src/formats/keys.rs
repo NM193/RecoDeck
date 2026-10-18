@@ -17,6 +17,12 @@ pub fn rekordbox_tonality(camelot: &str) -> Option<&'static str> {
     Some(if minor { MINOR[number - 1] } else { MAJOR[number - 1] })
 }
 
+/// Camelot to Open Key as Traktor shows it ("8B" → "1d", "8A" → "1m").
+pub fn open_key(camelot: &str) -> Option<String> {
+    let (number, minor) = parse_camelot(camelot)?;
+    Some(format!("{}{}", (number + 4) % 12 + 1, if minor { 'm' } else { 'd' }))
+}
+
 /// Camelot to Traktor's MUSICAL_KEY value ("8A" → 21, A minor); None for
 /// anything that is not one of the 24 codes.
 pub fn traktor_key(camelot: &str) -> Option<u8> {
@@ -105,6 +111,21 @@ pub(crate) fn parse_camelot(code: &str) -> Option<(usize, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_key_is_standard() {
+        assert_eq!(open_key("8B").as_deref(), Some("1d")); // C
+        assert_eq!(open_key("8A").as_deref(), Some("1m")); // A minor
+        assert_eq!(open_key("1A").as_deref(), Some("6m"));
+        assert_eq!(open_key("6B").as_deref(), Some("11d"));
+        for n in 1..=12 {
+            for letter in ["A", "B"] {
+                let code = format!("{n}{letter}");
+                assert_eq!(camelot_from_tag(&open_key(&code).unwrap()), Some(code.clone()));
+            }
+        }
+        assert_eq!(open_key("Am"), None);
+    }
 
     #[test]
     fn all_24_codes_map_to_rekordbox_keys() {
