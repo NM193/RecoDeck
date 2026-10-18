@@ -449,7 +449,9 @@ fn used_bins(sample_rate: u32) -> usize {
 /// before any summing.
 ///
 /// Per frame:
-/// - Harmonic part only (`harmonic_part`: drum hits are masked out)
+/// - Harmonic part only (`harmonic_part`). The whitening right after divides
+///   each bin by its masked neighbourhood, so what counts is the mask's
+///   contrast within the whitening window, not its level.
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
 /// - Spectral whitening (removes tonal bias from bass-heavy music)
 /// - Harmonic weighting (reinforces fundamentals over harmonics)
@@ -569,9 +571,10 @@ fn harmonic_part(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
             }
             let h = along_time[b].median();
             let p = along_frequency.median();
-            let (h2, p2) = (h * h, p * p);
+            // In f64: squares of faint magnitudes underflow in f32.
+            let (h2, p2) = ((h as f64).powi(2), (p as f64).powi(2));
             if h2 + p2 > 0.0 {
-                harmonic[b] = row[b] * (h2 / (h2 + p2));
+                harmonic[b] = (row[b] as f64 * (h2 / (h2 + p2))) as f32;
             }
         }
         out.push(harmonic);
@@ -600,6 +603,7 @@ impl<const N: usize> SortedWindow<N> {
     }
 
     fn insert(&mut self, value: f32) {
+        debug_assert!(self.len < N, "the window is full");
         let mut i = self.len;
         while i > 0 && self.values[i - 1].total_cmp(&value).is_gt() {
             self.values[i] = self.values[i - 1];
@@ -1253,6 +1257,13 @@ mod tests {
         assert!(harmonic[6][25] <= 0.1, "the hit goes: {}", harmonic[6][25]);
     }
 
+    #[test]
+    fn a_faint_steady_bin_keeps_half() {
+        // 1e-23² underflows to 0 in f32; the mask must not.
+        let harmonic = harmonic_part(&vec![vec![1e-23f32; 20]; 10]);
+        assert_eq!(harmonic[5][10], 0.5e-23);
+    }
+
     /// The plain definition: medians by sorting each window.
     fn harmonic_part_by_sorting(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
         let frames = spectrogram.len();
@@ -1269,8 +1280,8 @@ mod tests {
                         let t = f.saturating_sub(half_t)..(f + half_t + 1).min(frames);
                         let h = median(t.map(|g| spectrogram[g][b]).collect());
                         let p = median(spectrogram[f][b.saturating_sub(half_f)..(b + half_f + 1).min(bins)].to_vec());
-                        let (h2, p2) = (h * h, p * p);
-                        if h2 + p2 > 0.0 { spectrogram[f][b] * (h2 / (h2 + p2)) } else { 0.0 }
+                        let (h2, p2) = ((h as f64).powi(2), (p as f64).powi(2));
+                        if h2 + p2 > 0.0 { (spectrogram[f][b] as f64 * (h2 / (h2 + p2))) as f32 } else { 0.0 }
                     })
                     .collect()
             })
