@@ -35,7 +35,8 @@ pub struct BpmResult {
     /// Confidence score (0.0 to 1.0) — higher means more reliable detection
     pub confidence: f64,
     /// A grid beat that starts a bar, in ms from the file's start (spec
-    /// 2026-10-17, §2). None until the grid is detected.
+    /// 2026-10-17, §2): the one nearest the first strong low-band onset. None
+    /// when the low band never has a strong onset.
     pub first_beat_ms: Option<f64>,
 }
 
@@ -66,7 +67,8 @@ const CONSENSUS_TOLERANCE: f64 = 1.5;
 /// with recodeck-eval in Task 13.
 const SNAP_BPM: f64 = 0.05;
 
-/// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM.
+/// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM. Stage 1
+/// of the envelope search spans the same ±2 %, with its own step.
 const LOCK_RANGE: f64 = 0.02;
 const LOCK_STEP_BPM: f64 = 0.01;
 
@@ -429,7 +431,7 @@ fn fit_line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
 /// Step 2's second way (spec §2), needed because aubio's beats drift around
 /// its own period: the tempo (unless `search_tempo` is false) and phase whose
 /// grid carries the most onset strength, searched coarse to fine around the
-/// beat nearest the middle.
+/// start's beat nearest the middle, within an eighth of a beat of it.
 fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> Grid {
     let middle = envelope.duration_s() / 2.0;
     let mut best = Grid { phase_s: grid.nearest(middle), ..grid };
@@ -442,9 +444,10 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     let reach_s = 0.015;
     let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s().min(STAGE1_MAX_S)).min(0.05);
     // Per stage: BPM step and span either side, phase step and span either side (s).
-    // Stage 1's phase stays within an eighth of a beat of the start, which is
-    // already on the kicks (aubio's beats sit 7–24 ms early): further out, the
-    // full band's off-beat hats outscore the kicks.
+    // Stage 1's phase stays within an eighth of a beat of the start, as further
+    // out the full band's off-beat hats outscore the kicks. A start fitted to
+    // aubio's beats is 7–24 ms off the kicks; without one, searched_grid
+    // covers the beat with four starts.
     let stages = [
         (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
