@@ -7,9 +7,8 @@
 // 3. EDMA key profiles (measured best of Shaath, EDMA, Krumhansl, Temperley and
 //    their vote), with minor key bias and dominant confusion correction for
 //    ambiguous detections
-// 4. Spectral whitening to remove bass-heavy bias
-// 5. Frequency weighting to reduce sub-bass influence (kick drums in EDM)
-// 6. Segment-based voting: divides track into overlapping segments, detects key
+// 4. Frequency weighting to reduce sub-bass influence (kick drums in EDM)
+// 5. Segment-based voting: divides track into overlapping segments, detects key
 //    per segment, and takes the majority vote — eliminates tritone errors caused
 //    by individual sections with ambiguous harmonic content
 //
@@ -56,10 +55,6 @@ const FFT_SIZE: usize = 8192;
 /// Hop size between consecutive FFT frames.
 /// 4096 = 50% overlap for good temporal coverage without excessive computation.
 const HOP_SIZE: usize = 4096;
-
-/// Number of bins for spectral whitening moving average.
-/// 40 bins ≈ 215Hz at 44100/8192 — wide enough to flatten bass bias in EDM.
-const WHITENING_WINDOW: usize = 40;
 
 /// Minimum frequency to consider for chromagram (Hz). ~C2 = 65Hz.
 const MIN_FREQ: f64 = 65.0;
@@ -419,21 +414,18 @@ fn freq_weight(freq: f64) -> f64 {
     }
 }
 
-/// The bins the chroma reads: up to the highest harmonic plus the whitening window.
+/// The bins the chroma reads: up to the highest harmonic.
 fn used_bins(sample_rate: u32) -> usize {
     let top = (MAX_FREQ * NUM_HARMONICS as f64 * FFT_SIZE as f64 / sample_rate as f64).ceil() as usize;
-    (top + WHITENING_WINDOW + 2).min(FFT_SIZE / 2 + 1)
+    (top + 1).min(FFT_SIZE / 2 + 1)
 }
 
 /// The chroma of each frame of `samples` (FFT_SIZE samples every HOP_SIZE),
 /// before any summing.
 ///
 /// Per frame:
-/// - Harmonic part only (`harmonic_part`). The whitening right after divides
-///   each bin by its masked neighbourhood, so what counts is the mask's
-///   contrast within the whitening window, not its level.
+/// - Harmonic part only (`harmonic_part`)
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
-/// - Spectral whitening (removes tonal bias from bass-heavy music)
 /// - Harmonic weighting (reinforces fundamentals over harmonics)
 /// - Frequency weighting (reduces sub-bass kick drum influence)
 fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) -> Vec<[f64; 12]> {
@@ -617,29 +609,25 @@ impl<const N: usize> SortedWindow<N> {
     }
 }
 
-/// One frame's chroma from its magnitudes: each bin whitened by its
-/// neighbourhood, with its harmonics, weighted by frequency.
+/// One frame's chroma from its magnitudes: each bin with its harmonics,
+/// weighted by frequency.
+///
+/// The magnitudes are not whitened. Every bin counts towards its own pitch
+/// class, a note's partials included: its 3rd and 6th partials are a fifth
+/// above it, its 5th a major third. Their natural fall-off keeps them below
+/// the note itself. Dividing each bin by its neighbourhood's mean evened the
+/// partials out, and keys read a fifth up on 17 % of tracks (7 % without)
+/// and as the parallel mode on 22 % (10 % without), measured.
 fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>], sample_rate: u32) -> [f64; 12] {
-    let half_w = WHITENING_WINDOW / 2;
-    let whiten = |bin: usize| {
-        let lo = bin.saturating_sub(half_w);
-        let hi = (bin + half_w + 1).min(magnitudes.len());
-        let average = magnitudes[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
-        if average > 1e-12 {
-            magnitudes[bin] / average
-        } else {
-            0.0
-        }
-    };
     let mut chroma = [0.0f64; 12];
     for (bin, info) in bin_info.iter().enumerate() {
         let Some((pc, weight)) = info else { continue };
-        let mut energy = whiten(bin) * HARMONIC_WEIGHTS[0] * weight;
+        let mut energy = magnitudes[bin] * HARMONIC_WEIGHTS[0] * weight;
         for h in 1..NUM_HARMONICS {
             let harmonic_bin = bin * (h + 1);
             let h_freq = harmonic_bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
             if harmonic_bin < magnitudes.len() && h_freq <= MAX_FREQ * NUM_HARMONICS as f64 {
-                energy += whiten(harmonic_bin) * HARMONIC_WEIGHTS[h] * weight;
+                energy += magnitudes[harmonic_bin] * HARMONIC_WEIGHTS[h] * weight;
             }
         }
         chroma[*pc] += energy;
@@ -1117,9 +1105,35 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "phase 3: must pass by Task 23"]
     fn a_minor_under_a_loud_kick_is_8a() {
         let result = detect_key_from_samples(&a_minor_progression(44100, 40.0, 1.5)).unwrap();
+        assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
+    }
+
+    /// `chord` held for `seconds`, each note a sawtooth-like tone (partials
+    /// 1 to 10 at 1/h), the usual synth of electronic music.
+    fn sawtooth_chord(chord: &[f64], sample_rate: u32, seconds: f64) -> MonoAudio {
+        let rate = sample_rate as f64;
+        let samples = (0..(rate * seconds) as usize)
+            .map(|i| {
+                let t = i as f64 / rate;
+                let mut s = 0.0;
+                for &f in chord {
+                    for h in 1..=10 {
+                        s += (2.0 * PI * f * h as f64 * t).sin() / h as f64;
+                    }
+                }
+                (s / (chord.len() as f64 * 4.0)) as f32
+            })
+            .collect();
+        MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
+    }
+
+    #[test]
+    fn an_a_minor_chord_on_a_sawtooth_is_8a() {
+        // Each note's 3rd and 6th partials sit a fifth above it. They must
+        // not outweigh the notes themselves, or A minor reads E minor (9A).
+        let result = detect_key_from_samples(&sawtooth_chord(&[220.0, 261.63, 329.63], 44100, 10.0)).unwrap();
         assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
     }
 
