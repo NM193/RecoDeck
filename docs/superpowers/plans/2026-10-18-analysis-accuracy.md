@@ -1366,9 +1366,12 @@ const MUSIC_WINDOW_S: f64 = 2.0;
 const MUSIC_SHARE: f64 = 0.1;
 /// The first strong onset reaches 30 % of the 99.5th percentile of the track's low-band flux.
 const STRONG_ONSET_SHARE: f32 = 0.3;
-/// A kick near a grid beat stands this many times above the 90th percentile
-/// of the low-band flux around it (see `kick_near`).
-const KICK_OVER_P90: f32 = 3.0;
+/// A kick near a grid beat makes the low band jump this many times more than
+/// the beat's other quarters do (see `kick_near`): it has to lead the 16ths,
+/// not tie them. Chosen on the whole library (2026-10-18): right tempos then
+/// score a median 0.78 (the flux rule before gave 0.21), wrong ones 0.14, and
+/// right-tempo grids half a beat off 0.36.
+const KICK_OVER_SIXTEENTHS: f32 = 1.25;
 /// How far either side of a grid beat `kick_strength` looks for the low band's
 /// jump: past a kick's attack, and short of the next 16th up to 160 BPM.
 const KICK_JUMP_S: f64 = 0.060;
@@ -1535,23 +1538,21 @@ impl OnsetEnvelope {
         t >= self.start_s && windows.get(((t - self.start_s) / window_s) as usize) == Some(&true)
     }
 
-    /// Whether a low-band onset that stands out lies within `tolerance_s` of t:
-    /// the strongest low-band flux that close is at least KICK_OVER_P90 times
-    /// the 90th percentile of the flux within half a beat either side.
+    /// Whether a kick lies within `tolerance_s` of t: the low band's level
+    /// jumps there at least KICK_OVER_SIXTEENTHS times as much as it does at
+    /// the beat's other quarters (a quarter beat before, a quarter and half a
+    /// beat after), the beat's other 16ths. Its own flux can't tell: on real
+    /// bass lines the bass rises as often as the kick, so the kick stands only
+    /// 1.5–2× above the flux around it.
     pub fn kick_near(&self, t: f64, tolerance_s: f64, period_s: f64) -> bool {
-        if self.low.is_empty() {
-            return false;
-        }
-        // Why the 90th percentile: the flux is mostly near zero, so on noise a
-        // short stretch's peak is many times the median, and at least half the
-        // half beat's peak most of the time. Noise seldom clears its 90th
-        // percentile three times over; a kick, a few frames long, does easily.
-        let (from, to) = (self.frame_at(t - period_s / 2.0), self.frame_at(t + period_s / 2.0));
-        let mut around = self.low[from..=to].to_vec();
-        let index = (around.len() - 1) * 9 / 10;
-        let p90 = *around.select_nth_unstable_by(index, f32::total_cmp).1;
-        let near = self.max_of(&self.low, t - tolerance_s, t + tolerance_s);
-        near > 0.0 && near >= KICK_OVER_P90 * p90
+        let largest_jump = |at: f64| {
+            (self.frame_at(at - tolerance_s)..=self.frame_at(at + tolerance_s))
+                .map(|frame| self.jump(self.start_s + frame as f64 * self.frame_s))
+                .fold(0.0, f32::max)
+        };
+        let here = largest_jump(t);
+        let elsewhere = [-0.25, 0.25, 0.5].iter().map(|q| largest_jump(t + q * period_s)).fold(0.0, f32::max);
+        here > 0.0 && here >= KICK_OVER_SIXTEENTHS * elsewhere
     }
 
     /// How far the low band's level jumps at a grid's beats: which of several
@@ -1561,13 +1562,16 @@ impl OnsetEnvelope {
     /// log-compressed, so a sidechained bass rising out of near silence on the
     /// off-beat rises as much as a kick landing on the held bass.
     pub fn kick_strength(&self, phase_s: f64, period_s: f64) -> f64 {
-        self.beats(phase_s, period_s)
-            .map(|t| {
-                let after = self.max_of(&self.low_energy, t, t + KICK_JUMP_S);
-                let before = self.min_of(&self.low_energy, t - KICK_JUMP_S, t);
-                (after.sqrt() - before.sqrt()).max(0.0) as f64
-            })
-            .sum()
+        self.beats(phase_s, period_s).map(|t| self.jump(t) as f64).sum()
+    }
+
+    /// How far the low band's level jumps at t: its loudest within KICK_JUMP_S
+    /// after, less its quietest within KICK_JUMP_S before (square roots of the
+    /// energy, so levels).
+    fn jump(&self, t: f64) -> f32 {
+        let after = self.max_of(&self.low_energy, t, t + KICK_JUMP_S);
+        let before = self.min_of(&self.low_energy, t - KICK_JUMP_S, t);
+        (after.sqrt() - before.sqrt()).max(0.0)
     }
 
     /// The largest and smallest value of a per-frame series between two times.
@@ -2108,7 +2112,7 @@ pub fn white_noise(sample_rate: u32, seconds: f64, amplitude: f64) -> MonoAudio 
 }
 ```
 
-The test modules import them: `use crate::audio::test_signals::{kick_track, offbeat_bass, offbeat_hats, sixteenth_hats, tempo_change, white_noise};` in `bpm.rs`, `use crate::audio::test_signals::{kick_track, offbeat_bass};` in `onset.rs`.
+The test modules import them: `use crate::audio::test_signals::{kick_track, offbeat_bass, offbeat_hats, rolling_bass, sixteenth_hats, tempo_change, white_noise};` in `bpm.rs` (`rolling_bass` is for Task 12), `use crate::audio::test_signals::{kick_track, offbeat_bass};` in `onset.rs`.
 
 Update the old tests to the new result:
 - `.expect("BPM detection should succeed")` becomes `.unwrap().expect("a tempo")`;
@@ -2467,6 +2471,22 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
   - 3× the 90th percentile: white or brown noise 0–2 %; kicks, hats, off-beat bass and −40 dB kicks over a −60 dB floor 100 %; the tempo change 9 %.
 - Noise now scores 0.00–0.01, while steady kicks stay at 1.0 and the tempo change at 0.55.
 
+**Confidence from level jumps (2026-10-18, Checkpoint 2).** This replaces the 90th-percentile rule above.
+- **Cause.** On the real library the 90th percentile of the low band's log flux around a beat is set by the bass line's onsets.
+  - Kicks reach only 1.5–2.1× of it at the median, so only 5–33 % of beats cleared 3×.
+  - Right tempos scored a median 0.207 (0.1 % at ≥ 0.9), wrong ones 0.057. Even Traktor's own grid scored a median 0.18.
+  - `music_windows` was not the cause: 51–99 % of the windows count as music.
+- **Rule.** A beat is a hit when the low band's level jump within 20 ms of it is at least `KICK_OVER_SIXTEENTHS` (1.25) × the largest jump at the beat's other quarters (−¼, +¼, +½ beat).
+  - The jump is `kick_strength`'s: the loudest within 60 ms after, less the quietest within 60 ms before, as square roots of the energy.
+- **Whole library, target set (right = within 0.5 BPM of Traktor), old → new.**
+  - Right tempos: median 0.207 → 0.777, ≥ 0.9 0.1 → 22.2 %, ≥ 0.5 6.5 → 86.2 %.
+  - Wrong tempos: median 0.057 → 0.138.
+  - Right-tempo grids within ⅛ beat of half a beat off: median 0.182 → 0.356 (10 tracks).
+  - The report's means: right 0.237 → 0.734, wrong 0.154 → 0.356.
+  - BPM is unchanged, and grids are unchanged within the eval's run-to-run noise: two runs of the same code differ on about 30 first beats, by under 1 ms.
+- **Synthetic.** Noise 0.06–0.09, the tempo change 0.63, steady kicks 1.0. The rolling bass's true grid goes from 0.44 to 1.0, and its grid half a beat off scores 0.0.
+- **Limit.** The jump's 60 ms after-window reaches kicks that come later, so grids from 60 ms before the kicks to 40 ms after them all score 1.0. Confidence says whether the grid is on the beat's kicks rather than on another 16th, not that it is within 20 ms.
+
 - [ ] **Step 1: Write the failing tests** (add `tempo_change` to the `test_signals` import)
 
 ```rust
@@ -2510,6 +2530,57 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
         assert!((result.bpm - 124.0).abs() <= 0.05, "{:.3} BPM", result.bpm);
         assert!(result.confidence >= 0.9, "confidence {:.2}", result.confidence);
     }
+
+    #[test]
+    fn a_rolling_bass_leaves_the_kicks_confident() {
+        // The bass rises on every 16th between the kicks, as often as the
+        // kick, and over the whole low band, as on real bass lines.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&rolling_bass(124.0, 44100, 60.0, 0.137, 55.0, 0.3));
+        let confidence = grid_confidence(Grid { period_s: period, phase_s: 0.137 }, &envelope);
+        assert!(confidence >= 0.9, "confidence {confidence:.2}");
+    }
+
+    #[test]
+    fn a_grid_half_a_beat_off_a_rolling_bass_scores_low() {
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&rolling_bass(124.0, 44100, 60.0, 0.137, 55.0, 0.3));
+        let confidence = grid_confidence(Grid { period_s: period, phase_s: 0.137 + period / 2.0 }, &envelope);
+        assert!(confidence < 0.5, "confidence {confidence:.2}");
+    }
+```
+
+The rolling bass, in `test_signals.rs`:
+
+```rust
+/// `kick_track` with a rolling bass, as in psytrance and much techno: a note
+/// on each 16th between the kicks, rising in 2 ms and fading over 60 ms, at
+/// `bass_gain`. It has a second and third harmonic, so like a real bass line
+/// it fills the whole low band, and its flux rises as often as the kick's.
+pub fn rolling_bass(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, bass_hz: f64, bass_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let total = track.samples.len();
+    let length = (15.0 / bpm * rate) as usize;
+    let mut sixteenth = 0;
+    loop {
+        let start = ((first_s + sixteenth as f64 * 15.0 / bpm) * rate).round() as usize;
+        if start >= total {
+            break;
+        }
+        if sixteenth % 4 != 0 {
+            for j in 0..length.min(total - start) {
+                let t = j as f64 / rate;
+                let envelope = (t / 0.002).min(1.0) * (-t / 0.06).exp();
+                let w = 2.0 * PI * bass_hz * t;
+                let note = w.sin() + 0.7 * (2.0 * w).sin() + 0.5 * (3.0 * w).sin();
+                track.samples[start + j] += (bass_gain * envelope * note) as f32;
+            }
+        }
+        sixteenth += 1;
+    }
+    track
+}
 ```
 
 Put back the `result.confidence > 0.0` assertion in `test_bpm_detection_120bpm` that Task 11 removed.
@@ -2536,9 +2607,10 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms (one that stands out, see `kick_near`). A steady track scores
-/// near 1; a tempo change or a live recording scores low, because the grid
-/// drifts off beats that are still there; noise scores near 0.
+/// within 20 ms: the low band jumps there more than at the beat's other 16ths
+/// (see `kick_near`). A steady track scores near 1; a tempo change or a live
+/// recording scores lower, because the grid drifts off beats that are still
+/// there; noise scores low.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
     let music = envelope.music_windows();
     let (mut beats, mut hits) = (0usize, 0usize);
