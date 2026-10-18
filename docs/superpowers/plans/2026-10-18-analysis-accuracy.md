@@ -1366,6 +1366,9 @@ const MUSIC_WINDOW_S: f64 = 2.0;
 const MUSIC_SHARE: f64 = 0.1;
 /// The first strong onset reaches 30 % of the 99.5th percentile of the track's low-band flux.
 const STRONG_ONSET_SHARE: f32 = 0.3;
+/// A kick near a grid beat stands this many times above the 90th percentile
+/// of the low-band flux around it (see `kick_near`).
+const KICK_OVER_P90: f32 = 3.0;
 
 pub struct OnsetEnvelope {
     /// Seconds between frames, and the time of frame 0's centre.
@@ -1537,12 +1540,23 @@ impl OnsetEnvelope {
         t >= self.start_s && windows.get(((t - self.start_s) / window_s) as usize) == Some(&true)
     }
 
-    /// Whether a low-band onset lies within `tolerance_s` of t: the strongest
-    /// low-band flux that close is at least half the strongest within half a
-    /// beat either side.
+    /// Whether a low-band onset that stands out lies within `tolerance_s` of t:
+    /// the strongest low-band flux that close is at least KICK_OVER_P90 times
+    /// the 90th percentile of the flux within half a beat either side.
     pub fn kick_near(&self, t: f64, tolerance_s: f64, period_s: f64) -> bool {
-        let around = self.max_low(t - period_s / 2.0, t + period_s / 2.0);
-        around > 0.0 && self.max_low(t - tolerance_s, t + tolerance_s) >= 0.5 * around
+        if self.low.is_empty() {
+            return false;
+        }
+        // Why the 90th percentile: the flux is mostly near zero, so on noise a
+        // short stretch's peak is many times the median, and at least half the
+        // half beat's peak most of the time. Noise seldom clears its 90th
+        // percentile three times over; a kick, a few frames long, does easily.
+        let (from, to) = (self.frame_at(t - period_s / 2.0), self.frame_at(t + period_s / 2.0));
+        let mut around = self.low[from..=to].to_vec();
+        let index = (around.len() - 1) * 9 / 10;
+        let p90 = *around.select_nth_unstable_by(index, f32::total_cmp).1;
+        let near = self.max_low(t - tolerance_s, t + tolerance_s);
+        near > 0.0 && near >= KICK_OVER_P90 * p90
     }
 
     /// The low-band onset strength at a grid's beats (±10 ms): which of
@@ -1735,7 +1749,11 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
 - **Fallback start.** With no pass, or too few beats near the candidate, the candidate used to be dropped.
   - A start at the candidate's period, phased by the whole track's kick strength, failed. Consensus candidates run 1.3–1.5 % fast on the kick tests, so that phase was 65–358 ms off at the middle, and the grids ended ¼–½ beat off.
   - `searched_grid` starts the search from four phases ¼ beat apart and keeps the result with the most kick strength. Candidates from 1 % slow to 1.5 % fast land within 4.1 ms.
-  - Silence still gives None: the fallback needs a beat on a low-band onset.
+  - Silence still gives None: the fallback needs some low-band strength on its beats, which only digital silence lacks.
+- **Off-beat start (re-review).** When aubio's beats followed the off-beats, the main path stayed there: a probe ended +241.8 ms off.
+  - The search now also starts half a beat on, and the result with the most kick strength wins.
+  - Kicks under an off-beat 55 Hz bass up to 1.5× the kick's level stay within 0.6 ms. The kick strength at the off-beat rises towards the kicks' (1107 vs 1252), so a bass much louder than the kick could pull the grid over.
+  - Whole detection on 6 min: 0.89 s (was 0.85 s).
 
 - [ ] **Step 1: Write the failing tests** (in `mod tests`)
 
@@ -1932,15 +1950,18 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     Some(snap(searched_grid(&beats, candidate, envelope)?, envelope))
 }
 
-/// Step 2: the envelope search from the grid fitted to the pass's beats. When
-/// they give none (no pass, or too few beats near the candidate), it starts at
-/// the candidate's period from four phases a quarter beat apart, which
-/// together cover the whole beat, and the result on the kicks wins: by then
-/// each has its tempo, so its low-band strength over the track means something.
-/// None when none of its beats lands on a low-band onset, as in silence.
+/// Step 2: the envelope search from the grid fitted to the pass's beats, and
+/// from that grid half a beat on, in case the pass followed the off-beats; the
+/// result on the kicks wins. When the beats give no grid (no pass, or too few
+/// beats near the candidate), it starts at the candidate's period from four
+/// phases a quarter beat apart, which together cover the whole beat, and again
+/// the result on the kicks wins: by then each has its tempo, so its low-band
+/// strength over the track means something. None when that low-band strength
+/// is zero, in practice only in digital silence.
 fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
-    if let Some(start) = fit_grid(beats, candidate, envelope) {
-        return Some(envelope_search(start, envelope, true));
+    if let Some(fit) = fit_grid(beats, candidate, envelope) {
+        let starts = [fit, Grid { phase_s: fit.phase_s + fit.period_s / 2.0, ..fit }];
+        return on_the_kicks(starts.into_iter().map(|start| envelope_search(start, envelope, true)), envelope);
     }
     let period_s = 60.0 / candidate;
     let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
@@ -2049,8 +2070,8 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     // Per stage: BPM step and span either side, phase step and span either side (s).
     // Stage 1's phase stays within an eighth of a beat of the start, as further
     // out the full band's off-beat hats outscore the kicks. A start fitted to
-    // aubio's beats is 7–24 ms off the kicks; without one, searched_grid
-    // covers the beat with four starts.
+    // aubio's beats is 7–24 ms off the kicks (searched_grid also tries it half
+    // a beat on); without one, searched_grid covers the beat with four starts.
     let stages = [
         (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
@@ -2179,6 +2200,16 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
 **Files:**
 - Modify: `src-tauri/src/audio/bpm.rs`
 
+**Noise fix (2026-10-18, re-review).**
+- White noise got a confident tempo: 0.7–0.9 at amplitudes 0.002–0.3. A beat counted as a hit when the low band's peak within 20 ms reached half its peak within half a beat, and noise does that 77–90 % of the time.
+- `kick_near` (onset.rs) now asks for a peak that clears 3× the 90th percentile of the low-band flux within half a beat.
+- Measured share of hits per rule:
+  - 3× the median: noise 98–99 %.
+  - ½ of the track's 99.5th percentile: noise 81–92 %.
+  - The beat's strongest low onset: kicks under an off-beat bass drop to 68 %.
+  - 3× the 90th percentile: white or brown noise 0–2 %; kicks, hats, off-beat bass and −40 dB kicks over a −60 dB floor 100 %; the tempo change 9 %.
+- Noise now scores 0.00–0.01, while steady kicks stay at 1.0 and the tempo change at 0.55.
+
 - [ ] **Step 1: Write the failing tests** (add `tempo_change` to the `test_signals` import)
 
 ```rust
@@ -2226,8 +2257,9 @@ fn first_beat_ms(grid: Grid, envelope: &OnsetEnvelope) -> Option<f64> {
 }
 
 /// Step 5: the share of grid beats inside music sections that have a kick
-/// within 20 ms. A steady track scores near 1; a tempo change or a live
-/// recording scores low, because the grid drifts off beats that are still there.
+/// within 20 ms (one that stands out, see `kick_near`). A steady track scores
+/// near 1; a tempo change or a live recording scores low, because the grid
+/// drifts off beats that are still there; noise scores near 0.
 fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
     let music = envelope.music_windows();
     let (mut beats, mut hits) = (0usize, 0usize);
