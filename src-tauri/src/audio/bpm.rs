@@ -178,15 +178,18 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     Some(snap(searched_grid(&beats, candidate, envelope)?, envelope))
 }
 
-/// Step 2: the envelope search from the grid fitted to the pass's beats. When
-/// they give none (no pass, or too few beats near the candidate), it starts at
-/// the candidate's period from four phases a quarter beat apart, which
-/// together cover the whole beat, and the result on the kicks wins: by then
-/// each has its tempo, so its low-band strength over the track means something.
-/// None when none of its beats lands on a low-band onset, as in silence.
+/// Step 2: the envelope search from the grid fitted to the pass's beats, and
+/// from that grid half a beat on, in case the pass followed the off-beats; the
+/// result on the kicks wins. When the beats give no grid (no pass, or too few
+/// beats near the candidate), it starts at the candidate's period from four
+/// phases a quarter beat apart, which together cover the whole beat, and again
+/// the result on the kicks wins: by then each has its tempo, so its low-band
+/// strength over the track means something. None when that low-band strength
+/// is zero, in practice only in digital silence.
 fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
-    if let Some(start) = fit_grid(beats, candidate, envelope) {
-        return Some(envelope_search(start, envelope, true));
+    if let Some(fit) = fit_grid(beats, candidate, envelope) {
+        let starts = [fit, Grid { phase_s: fit.phase_s + fit.period_s / 2.0, ..fit }];
+        return on_the_kicks(starts.into_iter().map(|start| envelope_search(start, envelope, true)), envelope);
     }
     let period_s = 60.0 / candidate;
     let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
@@ -637,6 +640,23 @@ mod tests {
         for kick in [0.137, truth.nearest(150.0), truth.nearest(299.5)] {
             let error_ms = (grid.nearest(kick) - kick) * 1000.0;
             assert!(error_ms.abs() <= 5.0, "kick at {kick:.3} s: beat {error_ms:+.1} ms off");
+        }
+    }
+
+    #[test]
+    fn beats_on_the_off_beat_still_give_a_grid_on_the_kicks() {
+        // The pass's beats sit half a beat after the kicks.
+        let period = 60.0 / 124.0;
+        let beats = messy_beats(124.0, 0.137 + period / 2.0, 60.0);
+        for hats in [0.0, 0.2] {
+            let envelope = OnsetEnvelope::compute(&offbeat_hats(124.0, 44100, 60.0, 0.137, hats));
+            let grid = searched_grid(&beats, 124.0, &envelope).expect("a grid");
+            assert!((grid.bpm() - 124.0).abs() <= 0.05, "hats at {hats}: {:.3} BPM", grid.bpm());
+            let kicks = Grid { period_s: period, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "hats at {hats}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
         }
     }
 
