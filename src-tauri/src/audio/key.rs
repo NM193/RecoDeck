@@ -187,25 +187,20 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
     let segment_samples = (SEGMENT_DURATION * audio.sample_rate as f64) as usize;
     let segment_hop = (segment_samples as f64 * (1.0 - SEGMENT_OVERLAP)) as usize;
 
-    let num_segments = if analysis_samples.len() >= segment_samples {
-        (analysis_samples.len() - segment_samples) / segment_hop + 1
+    let frames = frame_chromas(analysis_samples, audio.sample_rate, tuning_offset_cents);
+    let segment_frames = segment_samples.saturating_sub(FFT_SIZE) / HOP_SIZE + 1;
+    let segment_hop_frames = (segment_hop / HOP_SIZE).max(1);
+    let num_segments = if frames.len() >= segment_frames {
+        (frames.len() - segment_frames) / segment_hop_frames + 1
     } else {
         0
     };
 
     let (best_key_index, best_is_minor, best_corr, second_best_corr, vote_fraction) =
         if num_segments >= MIN_SEGMENTS_FOR_VOTING {
-            segment_voted_key(
-                analysis_samples,
-                audio.sample_rate,
-                tuning_offset_cents,
-                segment_samples,
-                segment_hop,
-            )
+            segment_voted_key(&frames, segment_frames, segment_hop_frames)
         } else {
-            let chromagram =
-                compute_chromagram(analysis_samples, audio.sample_rate, tuning_offset_cents)?;
-            let (k, m, c1, c2) = match_key_profiles(&chromagram);
+            let (k, m, c1, c2) = match_key_profiles(&sum_chromas(&frames));
             (k, m, c1, c2, 1.0) // single pass = 100% "agreement"
         };
 
@@ -252,25 +247,21 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
 ///
 /// Returns (pitch_class, is_minor, avg_best_corr, avg_second_corr, vote_fraction)
 fn segment_voted_key(
-    samples: &[f32],
-    sample_rate: u32,
-    tuning_offset_cents: f64,
-    segment_size: usize,
-    segment_hop: usize,
+    frames: &[[f64; 12]],
+    segment_frames: usize,
+    hop_frames: usize,
 ) -> (usize, bool, f64, f64, f64) {
     // Each of 24 keys is encoded as root*2 + (1 if minor, 0 if major)
     let mut votes: [(usize, f64); 24] = [(0, 0.0); 24]; // (count, total_correlation)
 
     let mut offset = 0;
-    while offset + segment_size <= samples.len() {
-        let segment = &samples[offset..offset + segment_size];
-        if let Ok(chromagram) = compute_chromagram(segment, sample_rate, tuning_offset_cents) {
-            let (key, is_minor, corr, _) = match_key_profiles(&chromagram);
-            let index = key * 2 + if is_minor { 1 } else { 0 };
-            votes[index].0 += 1;
-            votes[index].1 += corr;
-        }
-        offset += segment_hop;
+    while offset + segment_frames <= frames.len() {
+        let chromagram = sum_chromas(&frames[offset..offset + segment_frames]);
+        let (key, is_minor, corr, _) = match_key_profiles(&chromagram);
+        let index = key * 2 + if is_minor { 1 } else { 0 };
+        votes[index].0 += 1;
+        votes[index].1 += corr;
+        offset += hop_frames;
     }
 
     // Find best key by vote count, tie-break by total correlation
@@ -439,27 +430,25 @@ fn freq_weight(freq: f64) -> f64 {
     }
 }
 
-/// Compute a chromagram (12-dimensional pitch class energy distribution) from audio samples.
+/// The bins the chroma reads: up to the highest harmonic plus the whitening window.
+fn used_bins(sample_rate: u32) -> usize {
+    let top = (MAX_FREQ * NUM_HARMONICS as f64 * FFT_SIZE as f64 / sample_rate as f64).ceil() as usize;
+    (top + WHITENING_WINDOW + 2).min(FFT_SIZE / 2 + 1)
+}
+
+/// The chroma of each frame of `samples` (FFT_SIZE samples every HOP_SIZE),
+/// before any summing.
 ///
-/// Analyzes the given sample buffer directly (no intro/outro skipping — caller handles that).
-///
-/// Enhanced with:
+/// Per frame:
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
-/// - Harmonic Product Spectrum weighting (reinforces fundamentals over harmonics)
 /// - Spectral whitening (removes tonal bias from bass-heavy music)
+/// - Harmonic weighting (reinforces fundamentals over harmonics)
 /// - Frequency weighting (reduces sub-bass kick drum influence)
-fn compute_chromagram(
-    samples: &[f32],
-    sample_rate: u32,
-    tuning_offset_cents: f64,
-) -> Result<[f64; 12], String> {
+fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) -> Vec<[f64; 12]> {
     // Tuning-corrected reference frequency for A
     let ref_a = 440.0 * 2.0f64.powf(tuning_offset_cents / 1200.0);
-
-    let mut chromagram = [0.0f64; 12];
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(FFT_SIZE);
-    let half_fft = FFT_SIZE / 2 + 1;
+    let fft = FftPlanner::new().plan_fft_forward(FFT_SIZE);
+    let bins = used_bins(sample_rate);
 
     // Precompute Hanning window coefficients
     let window: Vec<f64> = (0..FFT_SIZE)
@@ -467,7 +456,7 @@ fn compute_chromagram(
         .collect();
 
     // Precompute frequency-to-pitch-class mapping with tuning correction and frequency weight.
-    let bin_info: Vec<Option<(usize, f64)>> = (0..half_fft)
+    let bin_info: Vec<Option<(usize, f64)>> = (0..bins)
         .map(|bin| {
             let freq = bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
             if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
@@ -481,85 +470,71 @@ fn compute_chromagram(
         })
         .collect();
 
-    // Process audio in overlapping frames
-    let num_frames = (samples.len().saturating_sub(FFT_SIZE)) / HOP_SIZE + 1;
+    let frames = if samples.len() >= FFT_SIZE {
+        (samples.len() - FFT_SIZE) / HOP_SIZE + 1
+    } else {
+        0
+    };
+    (0..frames)
+        .map(|f| {
+            let start = f * HOP_SIZE;
+            let mut buffer: Vec<Complex<f64>> = samples[start..start + FFT_SIZE]
+                .iter()
+                .enumerate()
+                .map(|(i, &s)| Complex::new(s as f64 * window[i], 0.0))
+                .collect();
+            fft.process(&mut buffer);
+            let magnitudes: Vec<f64> = (0..bins).map(|b| buffer[b].norm()).collect();
+            chroma_of(&magnitudes, &bin_info, sample_rate)
+        })
+        .collect()
+}
 
-    for frame_idx in 0..num_frames {
-        let start = frame_idx * HOP_SIZE;
-        let end = start + FFT_SIZE;
-        if end > samples.len() {
-            break;
+/// One frame's chroma from its magnitudes: each bin whitened by its
+/// neighbourhood, with its harmonics, weighted by frequency.
+fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>], sample_rate: u32) -> [f64; 12] {
+    let half_w = WHITENING_WINDOW / 2;
+    let whiten = |bin: usize| {
+        let lo = bin.saturating_sub(half_w);
+        let hi = (bin + half_w + 1).min(magnitudes.len());
+        let average = magnitudes[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
+        if average > 1e-12 {
+            magnitudes[bin] / average
+        } else {
+            0.0
         }
-
-        // Apply Hanning window and convert to complex values for FFT
-        let mut buffer: Vec<Complex<f64>> = samples[start..end]
-            .iter()
-            .enumerate()
-            .map(|(i, &s)| Complex::new(s as f64 * window[i], 0.0))
-            .collect();
-
-        fft.process(&mut buffer);
-
-        // Extract magnitudes for the positive frequency half
-        let magnitudes: Vec<f64> = (0..half_fft).map(|bin| buffer[bin].norm()).collect();
-
-        // Spectral whitening: divide each bin by the local average magnitude
-        let half_w = WHITENING_WINDOW / 2;
-
-        // HPS-weighted chromagram accumulation
-        for (bin, info) in bin_info.iter().enumerate() {
-            if let Some((pc, weight)) = info {
-                // Spectral whitening for the fundamental
-                let lo = bin.saturating_sub(half_w);
-                let hi = (bin + half_w + 1).min(half_fft);
-                let local_avg: f64 = magnitudes[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
-                let whitened = if local_avg > 1e-12 {
-                    magnitudes[bin] / local_avg
-                } else {
-                    0.0
-                };
-
-                // Fundamental contribution with frequency weight
-                let mut weighted_energy = whitened * HARMONIC_WEIGHTS[0] * weight;
-
-                // Harmonic contributions: check if harmonics at 2x, 3x, etc.
-                // also map to the same pitch class (reinforces the fundamental)
-                for h in 1..NUM_HARMONICS {
-                    let harmonic_bin = bin * (h + 1);
-                    if harmonic_bin < half_fft {
-                        let h_freq =
-                            harmonic_bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
-                        if h_freq <= MAX_FREQ * (NUM_HARMONICS as f64) {
-                            // Whiten the harmonic bin too
-                            let h_lo = harmonic_bin.saturating_sub(half_w);
-                            let h_hi = (harmonic_bin + half_w + 1).min(half_fft);
-                            let h_avg: f64 = magnitudes[h_lo..h_hi].iter().sum::<f64>()
-                                / (h_hi - h_lo) as f64;
-                            let h_whitened = if h_avg > 1e-12 {
-                                magnitudes[harmonic_bin] / h_avg
-                            } else {
-                                0.0
-                            };
-                            // Harmonics also get frequency weight of the fundamental
-                            weighted_energy += h_whitened * HARMONIC_WEIGHTS[h] * weight;
-                        }
-                    }
-                }
-
-                chromagram[*pc] += weighted_energy;
+    };
+    let mut chroma = [0.0f64; 12];
+    for (bin, info) in bin_info.iter().enumerate() {
+        let Some((pc, weight)) = info else { continue };
+        let mut energy = whiten(bin) * HARMONIC_WEIGHTS[0] * weight;
+        for h in 1..NUM_HARMONICS {
+            let harmonic_bin = bin * (h + 1);
+            let h_freq = harmonic_bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
+            if harmonic_bin < magnitudes.len() && h_freq <= MAX_FREQ * NUM_HARMONICS as f64 {
+                energy += whiten(harmonic_bin) * HARMONIC_WEIGHTS[h] * weight;
             }
         }
+        chroma[*pc] += energy;
     }
+    chroma
+}
 
-    // Normalize chromagram to sum to 1.0
-    let total: f64 = chromagram.iter().sum();
-    if total > 0.0 {
-        for val in chromagram.iter_mut() {
-            *val /= total;
+/// Frame chromas summed and normalised to 1.
+fn sum_chromas(frames: &[[f64; 12]]) -> [f64; 12] {
+    let mut chroma = [0.0f64; 12];
+    for frame in frames {
+        for (total, value) in chroma.iter_mut().zip(frame) {
+            *total += value;
         }
     }
-
-    Ok(chromagram)
+    let total: f64 = chroma.iter().sum();
+    if total > 0.0 {
+        for value in chroma.iter_mut() {
+            *value /= total;
+        }
+    }
+    chroma
 }
 
 /// Match the computed chromagram against all 24 key profiles using 3-way independent voting.
@@ -1072,6 +1047,48 @@ mod tests {
             "Consistent signal across segments should produce decent confidence, got {:.2}",
             result.confidence
         );
+    }
+
+    /// A minor as four chords (Am, Dm, Am, E: i-iv-i-V), 2.5 s each, under a
+    /// loud kick (a 120 -> 50 Hz sweep, 0.15 s) on every beat at 125 BPM.
+    fn a_minor_under_a_kick(sample_rate: u32, seconds: f64) -> MonoAudio {
+        let chords: [&[f64]; 4] = [
+            &[220.0, 261.63, 329.63],
+            &[293.66, 349.23, 440.0],
+            &[220.0, 261.63, 329.63],
+            &[329.63, 415.30, 493.88],
+        ];
+        let rate = sample_rate as f64;
+        let beat = 60.0 / 125.0;
+        let sweep = (50.0f64 / 120.0).ln() / 0.15;
+        let samples = (0..(rate * seconds) as usize)
+            .map(|i| {
+                let t = i as f64 / rate;
+                let chord = chords[((t / 2.5) as usize) % 4];
+                let mut s = 0.0;
+                for &f in chord {
+                    for (h, w) in [(1.0, 1.0), (2.0, 0.5), (3.0, 0.25), (4.0, 0.125)] {
+                        s += w * (2.0 * PI * f * h * t).sin();
+                    }
+                }
+                s /= chord.len() as f64 * 1.875;
+                let tk = t % beat;
+                if tk < 0.15 {
+                    s += 1.5
+                        * (2.0 * PI * 120.0 * ((sweep * tk).exp() - 1.0) / sweep).sin()
+                        * (-tk / 0.08).exp();
+                }
+                (s * 0.5) as f32
+            })
+            .collect();
+        MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
+    }
+
+    #[test]
+    #[ignore = "phase 3: must pass by Task 23"]
+    fn a_minor_under_a_loud_kick_is_8a() {
+        let result = detect_key_from_samples(&a_minor_under_a_kick(44100, 40.0)).unwrap();
+        assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
     }
 
     #[test]
