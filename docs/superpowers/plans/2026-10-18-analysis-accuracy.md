@@ -4423,11 +4423,12 @@ Phase 2 notes (p2-final, 2026-10-18):
 - **Grid ≤20 ms MP3 column.** The first number is against Traktor's marker as is. The bracket removes one constant: the signed median of the right-tempo MP3 offsets within ±40 ms (−26.8 ms).
   - Traktor sits 26.8 ms after our MP3 timeline on every MP3. Rekordbox does so on some files and not others: 43.5 % of MP3s match our timeline in Rekordbox, 22.8 % match Traktor's.
   - Against Rekordbox's marker as is, MP3 ≤20 ms is 64.0 %.
+  - **Decision (user, Checkpoint 2, 2026-10-18):** the MP3 grid target is counted with this constant removed: 94.2 %, met. `first_beat_ms` stays in our decoder's timeline; the per-app MP3 offsets belong to export.
   - WAV/AIFF/FLAC (4 tracks) sit −1.0 ms from Traktor (signed median), so the lossless timeline agrees.
   - Per format, p2-final: MP3 ≤10 3.1 %, ≤20 4.8 %, ≤40 97.0 % as is; WAV/AIFF/FLAC ≤10 75 %, ≤20 100 %, ≤40 100 %.
 - **Bar phase** (right tempo): agrees with Traktor's marker on 92.7 % (p2-grid: 78.7 %) and with Rekordbox's downbeat on 93.2 % (78.9 %).
 - **Gapless.** `GAPLESS = true` moves every MP3 grid 25 ms earlier (about the MP3 encoder plus decoder delay, 576 + 529 samples at 44.1 kHz), away from both references, so it stays `false`.
-- **SNAP_BPM.** 0.0, 0.02 and 0.05 tie on ±0.05 (1557 of 1575) and ±0.5 (1558), so the rule as written picks 0.0. The rule was extended with two finer measures, which 0.02 wins: within ±0.005, 1543 against 1526 for 0.0; MP3 grid with the offset removed, 94.2 % against 93.8 %. 0.02 is the smaller of the two best (0.02, 0.05). To be confirmed at Checkpoint 2.
-- **Confidence.** The median is 0.207 for right tempos and 0.057 for wrong ones, so there is a gap; 0.1 % of right tempos are ≥ 0.9. A threshold choice for `kick_near` is open for Checkpoint 2.
+- **SNAP_BPM.** 0.0, 0.02 and 0.05 tie on ±0.05 (1557 of 1575) and ±0.5 (1558), so the rule as written picks 0.0. The rule was extended with two finer measures, which 0.02 wins: within ±0.005, 1543 against 1526 for 0.0; MP3 grid with the offset removed, 94.2 % against 93.8 %. 0.02 is the smaller of the two best (0.02, 0.05). The user confirmed 0.02 at Checkpoint 2 (2026-10-18).
+- **Confidence.** The median is 0.207 for right tempos and 0.057 for wrong ones, so there is a gap; 0.1 % of right tempos are ≥ 0.9. At Checkpoint 2 the user chose the level-jump rule with c = 1.25 (prototype: right 0.780, wrong 0.308, noise 0.07).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.
