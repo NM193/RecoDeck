@@ -2,8 +2,8 @@
 //
 // Improvements over basic chromagram approach:
 // 1. Tuning estimation: detects if A≠440Hz and adjusts pitch-class mapping
-// 2. Harmonic Product Spectrum (HPS) weighting: accounts for harmonics of each
-//    fundamental frequency, giving a cleaner pitch-class distribution
+// 2. Harmonic weighting: each spectral peak also adds weighted energy for its
+//    harmonics' pitch classes, giving a cleaner pitch-class distribution
 // 3. 3-way independent voting: Shaath + EDMA + Krumhansl profiles vote independently,
 //    majority rule (2+ agree) determines winner, with minor key bias and dominant
 //    confusion correction for ambiguous detections
@@ -19,7 +19,7 @@
 // 3. Skip 15% intro + 15% outro
 // 4. If track is long enough (>= 3 segments): segment-based voting
 //    a. Divide into 30-second overlapping segments (50% overlap)
-//    b. Compute chromagram per segment
+//    b. Compute a chromagram for each segment
 //    c. Match key profiles per segment
 //    d. Take majority vote across all segments
 // 5. Otherwise: single chromagram for the whole analysis region
@@ -70,7 +70,7 @@ const MIN_FREQ: f64 = 65.0;
 /// Above ~2000Hz, harmonics dominate over fundamentals.
 const MAX_FREQ: f64 = 2000.0;
 
-/// Number of harmonics to consider in Harmonic Product Spectrum weighting.
+/// Number of harmonics summed (with decreasing weights) into each pitch class.
 /// 1 = fundamental only, 3 = fundamental + 2 harmonics.
 const NUM_HARMONICS: usize = 3;
 
@@ -242,7 +242,7 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
 
 /// Segment-based key detection with majority voting.
 ///
-/// Divides audio into overlapping segments, detects key per segment, then picks
+/// Splits audio into overlapping segments, detects key per segment, then picks
 /// the key that wins the most votes (tie-broken by total correlation strength).
 ///
 /// Returns (pitch_class, is_minor, avg_best_corr, avg_second_corr, vote_fraction)
@@ -283,7 +283,7 @@ fn segment_voted_key(
         0.0
     };
 
-    // Total segments that produced a valid result
+    // Total number of segment votes cast
     let total_segments: usize = votes.iter().map(|v| v.0).sum();
     let vote_fraction = if total_segments > 0 {
         best_votes as f64 / total_segments as f64
