@@ -189,17 +189,14 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
 /// something. The phases start from the grid fitted to the pass's beats: its
 /// tempo is close, but those beats can sit on any 16th of the beat (the pass
 /// spaces them by its own period), and each search only reaches an eighth of
-/// a beat, past which the hats on the other 16ths outscore the kicks. When
-/// the beats give no grid (no pass, or too few beats near the candidate), they
-/// start at the candidate's period. None when that low-band strength is zero,
-/// in practice only in digital silence.
+/// a beat, past which the hats on the other 16ths outscore the kicks. A fit
+/// folded from a pass at twice the tempo may sit on either half of the beat;
+/// the four starts cover both. When the beats give no grid (no pass, or too
+/// few beats near the candidate), they start at the candidate's period. None
+/// when that low-band strength is zero, in practice only in digital silence.
 fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
-    if let Some(fit) = fit_grid(beats, candidate, envelope) {
-        let starts = (0..4).map(|i| Grid { phase_s: fit.phase_s + i as f64 * fit.period_s / 4.0, ..fit });
-        return on_the_kicks(starts.map(|start| envelope_search(start, envelope, true)), envelope);
-    }
-    let period_s = 60.0 / candidate;
-    let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
+    let fit = fit_grid(beats, candidate).unwrap_or(Grid { period_s: 60.0 / candidate, phase_s: 0.0 });
+    let starts = (0..4).map(|i| Grid { phase_s: fit.phase_s + i as f64 * fit.period_s / 4.0, ..fit });
     on_the_kicks(starts.map(|start| envelope_search(start, envelope, true)), envelope)
         .filter(|grid| envelope.kick_strength(grid.phase_s, grid.period_s) > 0.0)
 }
@@ -362,17 +359,14 @@ fn pick_consensus(candidates: &[(f64, f64)]) -> Option<f64> {
 }
 
 /// Step 2: the constant grid through the beats near `candidate`. A pass that
-/// tracked twice (or half) the tempo is locked at its own rate, then folded;
-/// folding a faster grid keeps the phase that sits on the kicks.
-fn fit_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
+/// tracked twice (or half) the tempo is locked at its own rate, then folded.
+/// A folded faster grid may sit on the off-beats; `searched_grid` starts from
+/// every quarter beat of it, so the kicks are found either way.
+fn fit_grid(beats: &[f64], candidate: f64) -> Option<Grid> {
     let (pass_bpm, _) = compute_bpm_from_ibis(beats);
     let factor = if pass_bpm > 0.0 { 2f64.powi((pass_bpm / candidate).log2().round().clamp(-2.0, 2.0) as i32) } else { 1.0 };
     let fast = refine_grid(beats, lock_tempo(beats, candidate * factor)?)?;
-    let period_s = fast.period_s * factor;
-    if factor <= 1.0 {
-        return Some(Grid { period_s, phase_s: fast.phase_s });
-    }
-    on_the_kicks((0..factor as usize).map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s }), envelope)
+    Some(Grid { period_s: fast.period_s * factor, phase_s: fast.phase_s })
 }
 
 /// The tempo within ±2 % of `bpm` that the beats line up with best, with its
@@ -598,10 +592,11 @@ mod tests {
 
     #[test]
     fn a_double_time_pass_folds_onto_the_kicks() {
-        // The pass tracked kicks and off-beats; the fold keeps the kicks.
+        // The pass tracked kicks and off-beats, and the fold lands on the
+        // off-beats; the search from it still ends on the kicks.
         let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.379));
         let beats = messy_beats(248.0, 0.137, 60.0);
-        let grid = fit_grid(&beats, 124.0, &envelope).expect("a grid");
+        let grid = searched_grid(&beats, 124.0, &envelope).expect("a grid");
         assert!((grid.bpm() - 124.0).abs() < 0.01, "{:.4} BPM", grid.bpm());
         assert!((grid.nearest(0.379) - 0.379).abs() < 0.002, "beat at {:.4}", grid.nearest(0.379));
     }
@@ -697,7 +692,7 @@ mod tests {
         for (bpm, hats) in [(124.0, 0.0), (124.0, 0.2), (127.33, 0.0)] {
             let envelope = OnsetEnvelope::compute(&offbeat_hats(bpm, 44100, 60.0, 0.137, hats));
             let (beats, candidate) = ([0.5, 1.0, 1.5], bpm * 1.015);
-            assert!(fit_grid(&beats, candidate, &envelope).is_none());
+            assert!(fit_grid(&beats, candidate).is_none());
             let grid = searched_grid(&beats, candidate, &envelope).expect("a grid");
             assert!((grid.bpm() - bpm).abs() <= 0.05, "{bpm} BPM, hats at {hats}: {:.3}", grid.bpm());
             let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
