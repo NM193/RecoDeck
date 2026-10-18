@@ -165,6 +165,7 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const reanalyzeStartingRef = useRef(false)
   // Folder tree state
   const [libraryFolders, setLibraryFolders] = useState<string[]>([])
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
@@ -516,16 +517,19 @@ function AppContent() {
         console.warn("Failed to check version for What's New dialog")
       }
 
-      // Once per analysis version: offer to re-analyze with better detection
-      try {
-        const [status, prompted] = await Promise.all([
-          tauriApi.analysisStatus(),
-          tauriApi.getSetting(PROMPTED_VERSION_KEY),
-        ])
-        if (shouldPromptReanalysis(status, prompted)) setReanalyzeStatus(status)
-      } catch {
-        console.warn('Failed to check whether analysis is current')
-      }
+      // Once per analysis version: offer to re-analyze with better detection.
+      // Not awaited: it checks every file on disk and must not hold start-up back.
+      void (async () => {
+        try {
+          const [status, prompted] = await Promise.all([
+            tauriApi.analysisStatus(),
+            tauriApi.getSetting(PROMPTED_VERSION_KEY),
+          ])
+          if (shouldPromptReanalysis(status, prompted)) setReanalyzeStatus(status)
+        } catch {
+          console.warn('Failed to check whether analysis is current')
+        }
+      })()
 
       // PERFORMANCE: Don't load all tracks on startup - load only total count
       // Tracks will be loaded when user selects a folder or playlist
@@ -1571,19 +1575,24 @@ function AppContent() {
 
   // Every track that needs analysis: the re-analysis prompt and Settings → Database.
   async function reanalyzeLibrary() {
-    if (analyzing) {
+    // `analyzing` is set only inside analyzeTrackIds, after the list is read:
+    // the ref closes the gap in between.
+    if (analyzing || reanalyzeStartingRef.current) {
       toast('Analysis is already running', { kind: 'info' })
       return
     }
+    reanalyzeStartingRef.current = true
     try {
       const ids = await tauriApi.trackIdsNeedingAnalysis()
       if (ids.length === 0) {
         toast('All tracks use the current analysis', { kind: 'info' })
         return
       }
-      void analyzeTrackIds(ids)
+      await analyzeTrackIds(ids)
     } catch (err) {
       toast(`Couldn't start the analysis: ${getErrorMessage(err)}`, { kind: 'error' })
+    } finally {
+      reanalyzeStartingRef.current = false
     }
   }
 
@@ -2092,7 +2101,7 @@ function AppContent() {
                   onFoldersChanged={handleFoldersChanged}
                   onThemeChanged={handleThemeChanged}
                   onNotification={(message, type) => toast(message, { kind: type })}
-                  onReanalyzeLibrary={() => void reanalyzeLibrary()}
+                  onReanalyzeLibrary={() => reanalyzeLibrary()}
                 />
               ) : showSearch ? (
                 <SearchView

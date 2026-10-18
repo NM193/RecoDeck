@@ -55,8 +55,8 @@ export interface SettingsContextValue {
 
   // Callbacks surfaced for sub-components that need them (e.g. DuplicatesModal)
   onFoldersChanged: () => void
-  /** Re-analyzes every track that needs it (spec 2026-10-17, §5); App runs it. */
-  onReanalyzeLibrary?: () => void
+  /** Re-analyzes every track that needs it (spec 2026-10-17, §5); App runs it. Settles once the batch has started. */
+  onReanalyzeLibrary?: () => void | Promise<void>
   onNotification?: (
     message: string,
     type: 'info' | 'success' | 'warning' | 'error',
@@ -112,7 +112,7 @@ export interface SettingsContextValue {
 
 export interface SettingsCallbacks {
   onFoldersChanged: () => void
-  onReanalyzeLibrary?: () => void
+  onReanalyzeLibrary?: () => void | Promise<void>
   onThemeChanged: (theme: string) => void
   onNotification?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void
 }

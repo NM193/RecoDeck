@@ -8,7 +8,8 @@ import { reanalyzeHint } from '../../lib/reanalysis'
 import type { AnalysisStatus } from '../../types/track'
 
 export function DatabaseSection() {
-  const { onFoldersChanged, onNotification, onReanalyzeLibrary } = useSettingsContext()
+  const { onFoldersChanged, onNotification, onReanalyzeLibrary } =
+    useSettingsContext()
 
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
   const [showMissingModal, setShowMissingModal] = useState(false)
@@ -28,12 +29,21 @@ export function DatabaseSection() {
 
   // Which tracks need analysis; read again when an analysis ends.
   const [analysis, setAnalysis] = useState<AnalysisStatus | null>(null)
+  const [analysisFailed, setAnalysisFailed] = useState(false)
+  // Between the click and the batch starting, the button waits.
+  const [startingReanalysis, setStartingReanalysis] = useState(false)
 
   const loadAnalysisStatus = useCallback(() => {
     tauriApi
       .analysisStatus()
-      .then(setAnalysis)
-      .catch(() => setAnalysis(null))
+      .then((status) => {
+        setAnalysis(status)
+        setAnalysisFailed(false)
+      })
+      .catch(() => {
+        setAnalysis(null)
+        setAnalysisFailed(true)
+      })
   }, [])
 
   useEffect(() => {
@@ -86,17 +96,29 @@ export function DatabaseSection() {
         </div>
         <div>
           <button
-            onClick={() => onReanalyzeLibrary?.()}
+            onClick={() => {
+              setStartingReanalysis(true)
+              void Promise.resolve(onReanalyzeLibrary?.()).finally(() =>
+                setStartingReanalysis(false),
+              )
+            }}
             className="btn btn--primary btn--sm"
             style={{ width: '100%' }}
-            disabled={!analysis || analysis.needing === 0 || !onReanalyzeLibrary}
+            disabled={
+              !analysis ||
+              analysis.needing === 0 ||
+              !onReanalyzeLibrary ||
+              startingReanalysis
+            }
           >
             Re-analyze
           </button>
           <p className="settings-hint" style={{ marginTop: '0.5rem' }}>
             {analysis
               ? reanalyzeHint(analysis)
-              : 'Checking which tracks need analysis…'}
+              : analysisFailed
+                ? "Couldn't check the analysis status."
+                : 'Checking which tracks need analysis…'}
           </p>
         </div>
       </div>
