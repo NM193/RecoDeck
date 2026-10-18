@@ -1093,19 +1093,14 @@ mod tests {
     }
 
     #[test]
-    fn test_key_detection_different_sample_rate() {
-        let audio = generate_tone(440.0, 48000, 10.0);
-        let result = detect_key_from_samples(&audio).expect("Key detection should succeed");
-
-        // Pure tone at 48kHz may detect A major (11B), A minor (8A), or harmonically
-        // related keys like F#m (11A) due to independent voting between profiles.
-        // All are valid for a pure 440Hz tone.
-        let camelot_num: u32 = result.camelot[..result.camelot.len() - 1].parse().unwrap();
-        assert!(
-            camelot_num == 11 || camelot_num == 8,
-            "440Hz at 48kHz should detect A-related key, got {} ({})",
-            result.camelot,
-            result.musical_key
+    fn the_same_chords_give_the_same_key_at_44_1_and_48_khz() {
+        // Sample-rate handling, not accuracy: the same music must read the
+        // same at either rate, whichever key that is.
+        let at_44_1 = detect_key_from_samples(&a_minor_progression(44100, 20.0, 0.0)).unwrap();
+        let at_48 = detect_key_from_samples(&a_minor_progression(48000, 20.0, 0.0)).unwrap();
+        assert_eq!(
+            (&at_44_1.camelot, &at_44_1.musical_key),
+            (&at_48.camelot, &at_48.musical_key)
         );
     }
 
@@ -1204,8 +1199,9 @@ mod tests {
     }
 
     /// A minor as four chords (Am, Dm, Am, E: i-iv-i-V), 2.5 s each, under a
-    /// loud kick (a 120 -> 50 Hz sweep, 0.15 s) on every beat at 125 BPM.
-    fn a_minor_under_a_kick(sample_rate: u32, seconds: f64) -> MonoAudio {
+    /// kick (a 120 -> 50 Hz sweep, 0.15 s) of amplitude `kick` on every beat
+    /// at 125 BPM; `kick` 0 is the chords alone.
+    fn a_minor_progression(sample_rate: u32, seconds: f64, kick: f64) -> MonoAudio {
         let chords: [&[f64]; 4] = [
             &[220.0, 261.63, 329.63],
             &[293.66, 349.23, 440.0],
@@ -1227,8 +1223,8 @@ mod tests {
                 }
                 s /= chord.len() as f64 * 1.875;
                 let tk = t % beat;
-                if tk < 0.15 {
-                    s += 1.5
+                if kick > 0.0 && tk < 0.15 {
+                    s += kick
                         * (2.0 * PI * 120.0 * ((sweep * tk).exp() - 1.0) / sweep).sin()
                         * (-tk / 0.08).exp();
                 }
@@ -1241,7 +1237,7 @@ mod tests {
     #[test]
     #[ignore = "phase 3: must pass by Task 23"]
     fn a_minor_under_a_loud_kick_is_8a() {
-        let result = detect_key_from_samples(&a_minor_under_a_kick(44100, 40.0)).unwrap();
+        let result = detect_key_from_samples(&a_minor_progression(44100, 40.0, 1.5)).unwrap();
         assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
     }
 
