@@ -518,7 +518,7 @@ fn grid_confidence(grid: Grid, envelope: &OnsetEnvelope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_signals::{kick_track, offbeat_hats, tempo_change};
+    use crate::audio::test_signals::{kick_track, offbeat_hats, tempo_change, white_noise};
     use std::f32::consts::PI;
 
     fn low_passed(audio: &MonoAudio) -> MonoAudio {
@@ -701,6 +701,28 @@ mod tests {
             }
             assert!(result.confidence >= 0.9, "{case}: confidence {:.2}", result.confidence);
         }
+    }
+
+    #[test]
+    fn noise_gets_no_confident_tempo() {
+        for amplitude in [0.002, 0.1, 0.3] {
+            if let Some(result) = detect_bpm_from_samples(&white_noise(44100, 60.0, amplitude)).unwrap() {
+                assert!(result.confidence < 0.3, "noise at {amplitude}: {:.2} BPM, confidence {:.2}", result.bpm, result.confidence);
+            }
+        }
+    }
+
+    #[test]
+    fn quiet_kicks_keep_their_tempo_and_confidence() {
+        // Kicks at -40 dB over a -60 dB noise floor.
+        let mut audio = kick_track(124.0, 44100, 60.0, 0.137);
+        let noise = white_noise(44100, 60.0, 0.002);
+        for (sample, n) in audio.samples.iter_mut().zip(&noise.samples) {
+            *sample = *sample * 0.01 + n;
+        }
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
+        assert!((result.bpm - 124.0).abs() <= 0.05, "{:.3} BPM", result.bpm);
+        assert!(result.confidence >= 0.9, "confidence {:.2}", result.confidence);
     }
 
     #[test]

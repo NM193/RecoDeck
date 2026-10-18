@@ -65,6 +65,18 @@ pub fn offbeat_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, hat_
     track
 }
 
+/// White noise, uniform in ±`amplitude` (a constant-seeded LCG): no beat at all.
+pub fn white_noise(sample_rate: u32, seconds: f64, amplitude: f64) -> MonoAudio {
+    let mut state: u32 = 0x0BAD_5EED;
+    let samples = (0..(sample_rate as f64 * seconds) as usize)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (((state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0) * amplitude) as f32
+        })
+        .collect();
+    MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
+}
+
 /// `seconds` of kicks at `bpm_a`, then `seconds` at `bpm_b`.
 pub fn tempo_change(bpm_a: f64, bpm_b: f64, sample_rate: u32, seconds: f64) -> MonoAudio {
     let mut track = kick_track(bpm_a, sample_rate, seconds, 0.137);

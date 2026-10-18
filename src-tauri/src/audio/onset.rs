@@ -17,6 +17,9 @@ const MUSIC_WINDOW_S: f64 = 2.0;
 const MUSIC_SHARE: f64 = 0.1;
 /// The first strong onset reaches 30 % of the 99.5th percentile of the track's low-band flux.
 const STRONG_ONSET_SHARE: f32 = 0.3;
+/// A kick near a grid beat stands this many times above the 90th percentile
+/// of the low-band flux around it (see `kick_near`).
+const KICK_OVER_P90: f32 = 3.0;
 /// Where the flux peaks sit from an onset, in ms (negative: before it):
 /// measured on the synthetic kick tests and taken off the frame times, so a
 /// grid found on the envelope sits on the kicks.
@@ -134,12 +137,23 @@ impl OnsetEnvelope {
         t >= self.start_s && windows.get(((t - self.start_s) / window_s) as usize) == Some(&true)
     }
 
-    /// Whether a low-band onset lies within `tolerance_s` of t: the strongest
-    /// low-band flux that close is at least half the strongest within half a
-    /// beat either side.
+    /// Whether a low-band onset that stands out lies within `tolerance_s` of t:
+    /// the strongest low-band flux that close is at least KICK_OVER_P90 times
+    /// the 90th percentile of the flux within half a beat either side.
     pub fn kick_near(&self, t: f64, tolerance_s: f64, period_s: f64) -> bool {
-        let around = self.max_low(t - period_s / 2.0, t + period_s / 2.0);
-        around > 0.0 && self.max_low(t - tolerance_s, t + tolerance_s) >= 0.5 * around
+        if self.low.is_empty() {
+            return false;
+        }
+        // Why the 90th percentile: the flux is mostly near zero, so on noise a
+        // short stretch's peak is many times the median, and at least half the
+        // half beat's peak most of the time. Noise seldom clears its 90th
+        // percentile three times over; a kick, a few frames long, does easily.
+        let (from, to) = (self.frame_at(t - period_s / 2.0), self.frame_at(t + period_s / 2.0));
+        let mut around = self.low[from..=to].to_vec();
+        let index = (around.len() - 1) * 9 / 10;
+        let p90 = *around.select_nth_unstable_by(index, f32::total_cmp).1;
+        let near = self.max_low(t - tolerance_s, t + tolerance_s);
+        near > 0.0 && near >= KICK_OVER_P90 * p90
     }
 
     /// The low-band onset strength at a grid's beats (±10 ms): which of
