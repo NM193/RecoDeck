@@ -585,6 +585,24 @@ mod tests {
     }
 
     #[test]
+    fn a_double_time_pass_folds_onto_the_kicks() {
+        // The pass tracked kicks and off-beats; the fold keeps the kicks.
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.379));
+        let beats = messy_beats(248.0, 0.137, 60.0);
+        let grid = fit_grid(&beats, 124.0, &envelope).expect("a grid");
+        assert!((grid.bpm() - 124.0).abs() < 0.01, "{:.4} BPM", grid.bpm());
+        assert!((grid.nearest(0.379) - 0.379).abs() < 0.002, "beat at {:.4}", grid.nearest(0.379));
+    }
+
+    #[test]
+    fn a_first_beat_before_the_file_moves_one_beat_on() {
+        // The grid beat nearest the first kick (0.137 s) is at -0.1 s.
+        let envelope = OnsetEnvelope::compute(&kick_track(120.0, 44100, 10.0, 0.137));
+        let first_ms = first_beat_ms(Grid { period_s: 0.5, phase_s: -0.1 }, &envelope).expect("a first beat");
+        assert!((first_ms - 400.0).abs() < 1e-6, "{first_ms} ms");
+    }
+
+    #[test]
     fn a_line_through_points() {
         let points: Vec<(f64, f64)> = (0..10).map(|n| (n as f64, 0.25 + 0.5 * n as f64)).collect();
         let (slope, intercept) = fit_line(&points).unwrap();
