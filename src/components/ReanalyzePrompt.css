@@ -3,6 +3,11 @@
   width: min(460px, calc(100vw - 48px));
 }
 
+.reanalyze-prompt:focus {
+  /* Focused by code on open; no ring around the whole dialog. */
+  outline: none;
+}
+
 .reanalyze-prompt h3 {
   margin: 0 0 8px;
 }
