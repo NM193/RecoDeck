@@ -92,15 +92,6 @@ impl OnsetEnvelope {
         frame.min(self.low.len().saturating_sub(1))
     }
 
-    /// The strongest low-band flux between two times.
-    fn max_low(&self, from: f64, to: f64) -> f32 {
-        if self.low.is_empty() {
-            return 0.0;
-        }
-        let (a, b) = (self.frame_at(from), self.frame_at(to));
-        self.low[a.min(b)..=a.max(b)].iter().copied().fold(0.0, f32::max)
-    }
-
     /// When the music starts: the first frame whose low-band flux reaches 30 %
     /// of the track's strong onsets (its 99.5th percentile). None when the low
     /// band never rises.
@@ -155,7 +146,7 @@ impl OnsetEnvelope {
         let mut around = self.low[from..=to].to_vec();
         let index = (around.len() - 1) * 9 / 10;
         let p90 = *around.select_nth_unstable_by(index, f32::total_cmp).1;
-        let near = self.max_low(t - tolerance_s, t + tolerance_s);
+        let near = self.max_of(&self.low, t - tolerance_s, t + tolerance_s);
         near > 0.0 && near >= KICK_OVER_P90 * p90
     }
 
