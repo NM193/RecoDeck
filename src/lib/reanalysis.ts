@@ -22,6 +22,8 @@ export function shouldPromptReanalysis(
 export function reanalyzeHint(status: AnalysisStatus): string {
   if (status.needing === 0) return 'All tracks use the current analysis.'
   const tracks =
-    status.needing === 1 ? "1 track isn't" : `${status.needing} tracks aren't`
+    status.needing === 1
+      ? "1 track isn't"
+      : `${status.needing.toLocaleString('en-US')} tracks aren't`
   return `${tracks} analyzed with the current version (about ${status.estimate_minutes} min).`
 }

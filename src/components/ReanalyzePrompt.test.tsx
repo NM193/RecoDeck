@@ -30,13 +30,13 @@ afterEach(() => {
   host.remove()
 })
 
-function render() {
+function render(over: Partial<AnalysisStatus> = {}) {
   const onLater = vi.fn()
   const onReanalyze = vi.fn()
   act(() =>
     root.render(
       <ReanalyzePrompt
-        status={status}
+        status={{ ...status, ...over }}
         onLater={onLater}
         onReanalyze={onReanalyze}
       />,
@@ -54,10 +54,44 @@ function button(label: string) {
 }
 
 describe('ReanalyzePrompt', () => {
+  it('takes focus on the dialog, not a button', () => {
+    render()
+    const dialog = host.querySelector('[role="dialog"]')
+    expect(document.activeElement).toBe(dialog)
+  })
+
+  it('a click on the backdrop answers nothing', () => {
+    const { onLater, onReanalyze } = render()
+    const overlay = host.querySelector('.modal-overlay') as HTMLElement
+    act(() => overlay.click())
+    expect(onLater).not.toHaveBeenCalled()
+    expect(onReanalyze).not.toHaveBeenCalled()
+  })
+
+  it('Esc is Later, once', () => {
+    const { onLater, onReanalyze } = render()
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+    })
+    expect(onLater).toHaveBeenCalledTimes(1)
+    expect(onReanalyze).not.toHaveBeenCalled()
+  })
+
+  it('counts in words and with separators', () => {
+    render({ needing: 1 })
+    expect(host.textContent).toContain('Re-analyze 1 track now?')
+    act(() => root.unmount())
+    root = createRoot(host)
+    render({ needing: 8000 })
+    expect(host.textContent).toContain('Re-analyze 8,000 tracks now?')
+  })
+
   it('says how many tracks and how long', () => {
     render()
     expect(host.textContent).toContain('Better BPM and key detection')
-    expect(host.textContent).toContain('Re-analyze 1234 tracks now?')
+    expect(host.textContent).toContain('Re-analyze 1,234 tracks now?')
     expect(host.textContent).toContain('about 15 min')
   })
 

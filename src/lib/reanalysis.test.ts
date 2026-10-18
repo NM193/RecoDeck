@@ -24,6 +24,10 @@ describe('shouldPromptReanalysis', () => {
     )
   })
 
+  it('not again for a newer stored version', () => {
+    expect(shouldPromptReanalysis(status(), '2')).toBe(false)
+  })
+
   it('reads a broken setting as never asked', () => {
     expect(shouldPromptReanalysis(status(), 'x')).toBe(true)
   })
@@ -36,6 +40,12 @@ describe('reanalyzeHint', () => {
     )
     expect(reanalyzeHint(status({ needing: 1 }))).toBe(
       "1 track isn't analyzed with the current version (about 5 min).",
+    )
+  })
+
+  it('formats big counts', () => {
+    expect(reanalyzeHint(status({ needing: 8000 }))).toContain(
+      '8,000 tracks aren',
     )
   })
 
