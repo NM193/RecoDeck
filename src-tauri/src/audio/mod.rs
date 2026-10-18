@@ -4,6 +4,7 @@
 pub mod decoder;
 pub mod bpm;
 pub mod key;
+pub mod scoring;
 pub mod waveform;
 
 /// Get MIME type for an audio file based on its extension.
