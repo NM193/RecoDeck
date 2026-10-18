@@ -353,7 +353,7 @@ function AppContent() {
   function handleCancelAnalysis() {
     // Shows "Cancelling…" at once: the workers finish the track they are on.
     setCancellingBatch(analysisProgress?.startTime ?? null)
-    tauriApi.cancelAnalysis().catch(() => {})
+    tauriApi.cancelAnalysis().catch(() => setCancellingBatch(null))
   }
 
   // Listen for batch analysis events from backend
@@ -1058,7 +1058,7 @@ function AppContent() {
         currentTrackName: 'Preparing analysis...',
         totalDurationMs: 0,
         totalSizeBytes: 0,
-        startTime: Date.now(),
+        startTime: analysisStartTimeRef.current,
       })
 
       // Yield to event loop so React commits the progress bar render
@@ -1093,7 +1093,7 @@ function AppContent() {
           first.title || first.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: 0,
         totalSizeBytes: 0,
-        startTime: Date.now(),
+        startTime: analysisStartTimeRef.current,
       })
       await new Promise((r) => setTimeout(r, 0))
       await tauriApi.analyzeTracksBatch(
@@ -1567,7 +1567,7 @@ function AppContent() {
         currentTrackName: 'Preparing analysis...',
         totalDurationMs: 0,
         totalSizeBytes: 0,
-        startTime: Date.now(),
+        startTime: analysisStartTimeRef.current,
       })
 
       // Yield to event loop so React commits the progress bar render
