@@ -4546,6 +4546,9 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | p3-hpss | 4555a2d + binary mask | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 37.4 % | 0.540 | 4.90 | no |
 | p3-hpss-soft | 4555a2d + soft mask | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 36.8 % | 0.528 | 3.91 | — |
 | p3-hpss-final | a2fedad | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 36.8 % | 0.528 | 4.01 | yes |
+| p3-norm | 8b3a07f + Task 20 | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 36.7 % | 0.527 | 3.95 | no |
+| p3-floor100 | 8b3a07f, floor 100 Hz | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 36.8 % | 0.531 | 3.97 | no |
+| p3-floor130 | 8b3a07f, floor 130 Hz | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 35.4 % | 0.519 | 3.98 | no |
 
 Baseline notes (p1-baseline):
 - **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
@@ -4577,6 +4580,7 @@ Phase 2 notes (p2-final, 2026-10-18):
 - **Key errors are mostly a fifth up** (p3-frames, consensus): exact 35.0 %, same mode a fifth up 21.9 %, a fifth down 2.1 %, parallel 18.4 %. That is where the 6A/1A skew comes from (true 5A read as 6A, 12A as 1A). The synthetic A minor under a kick reads 12B (E), the same error. p3-noheur (Task 18) raised the fifth-up share to 25.3 % and MIREX fell to 0.471, so it was dropped; the dominant fix was holding some of this back.
 - **Harmonic/percussive separation (Task 19).** The plan's binary mask gave MIREX 0.540 (exact 37.4 %) but broke `test_key_detection_different_sample_rate`: a pure 440 Hz tone at 48 kHz read 1B, because whitened faint bins were zeroed at random. The kept soft mask H²/(H²+P²) gives MIREX 0.528 (exact 36.8 %) and passes every test. Medians come from running sorted windows, and the spectrogram is processed 512 frames at a time, since the key region is unbounded. The fifth-up share stays 21.9 %. Key confidence separates less: right 0.502, wrong 0.455 (was 0.536 / 0.433).
 - **Times from p2-confenv on** were measured with the Mac in Low Power Mode (`pmset powermode 1`). p3-frames re-ran at 3.64 s/track against 1.55 before, so each step's time is compared with a same-day re-run: p3-hpss-final is 1.10× p3-frames-rerun.
+- **Tasks 20–21.** Per-frame normalisation: MIREX 0.527, dropped. Chroma floor: 65 Hz is today's `MIN_FREQ` and stays (`CHROMA_MIN_FREQ`, 5d736c9). 100 Hz gave 0.531 (about 2–3 tracks, within noise; fifth up 22.7 %) but broke the 48 kHz pure-tone test, the second variant that test blocked. 130 Hz gave 0.519.
 - **Run-to-run noise.** Two runs of the same code differ on about 30 of 1958 first beats by < 1 ms, and on one wrong-tempo track by 204 ms. BPM and key do not move. The source is not found yet (likely state inside aubio).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.
