@@ -94,6 +94,15 @@ const SEGMENT_OVERLAP: f64 = 0.5;
 /// Minimum number of segments needed to use voting instead of single chromagram.
 const MIN_SEGMENTS_FOR_VOTING: usize = 3;
 
+/// Harmonic/percussive separation (spec §3, step 2.1): the median filters'
+/// sizes, in frames along time and in bins along frequency.
+const HPSS_TIME_FRAMES: usize = 9;
+const HPSS_FREQ_BINS: usize = 17;
+
+/// Frames per block of the separation, so that a long mix never holds its
+/// whole spectrogram (about 50 KB per second at 44.1 kHz).
+const HPSS_BLOCK_FRAMES: usize = 512;
+
 /// Shaath's custom key profiles (from libKeyFinder MSc thesis, 2011)
 /// Empirically derived — better for popular/electronic music than Krumhansl-Schmuckler.
 const SHAATH_MAJOR: [f64; 12] = [
@@ -440,6 +449,7 @@ fn used_bins(sample_rate: u32) -> usize {
 /// before any summing.
 ///
 /// Per frame:
+/// - Harmonic part only (`harmonic_part`: drum hits are masked out)
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
 /// - Spectral whitening (removes tonal bias from bass-heavy music)
 /// - Harmonic weighting (reinforces fundamentals over harmonics)
@@ -475,19 +485,156 @@ fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) ->
     } else {
         0
     };
-    (0..frames)
-        .map(|f| {
-            let start = f * HOP_SIZE;
-            let mut buffer: Vec<Complex<f64>> = samples[start..start + FFT_SIZE]
-                .iter()
-                .enumerate()
-                .map(|(i, &s)| Complex::new(s as f64 * window[i], 0.0))
-                .collect();
-            fft.process(&mut buffer);
-            let magnitudes: Vec<f64> = (0..bins).map(|b| buffer[b].norm()).collect();
-            chroma_of(&magnitudes, &bin_info, sample_rate)
-        })
-        .collect()
+    let magnitudes = |f: usize| -> Vec<f32> {
+        let start = f * HOP_SIZE;
+        let mut buffer: Vec<Complex<f64>> = samples[start..start + FFT_SIZE]
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| Complex::new(s as f64 * window[i], 0.0))
+            .collect();
+        fft.process(&mut buffer);
+        (0..bins).map(|b| buffer[b].norm() as f32).collect()
+    };
+    let mut chromas = Vec::with_capacity(frames);
+    harmonic_part_in_blocks(frames, HPSS_BLOCK_FRAMES, magnitudes, |harmonic| {
+        let harmonic: Vec<f64> = harmonic.iter().map(|&v| v as f64).collect();
+        chromas.push(chroma_of(&harmonic, &bin_info, sample_rate));
+    });
+    chromas
+}
+
+/// `harmonic_part` of the spectrogram whose frame `f` is `frame(f)`, made
+/// `block` frames at a time. Each block is separated with HPSS_TIME_FRAMES / 2
+/// frames of context on either side, which is all its time medians read, so
+/// the result is that of the whole spectrogram while only about one block is
+/// held. Calls `each` on the harmonic frames in order.
+fn harmonic_part_in_blocks(
+    frames: usize,
+    block: usize,
+    frame: impl Fn(usize) -> Vec<f32>,
+    mut each: impl FnMut(&[f32]),
+) {
+    let context = HPSS_TIME_FRAMES / 2;
+    let mut start = 0;
+    while start < frames {
+        let end = (start + block.max(1)).min(frames);
+        let first = start.saturating_sub(context);
+        let spectrogram: Vec<Vec<f32>> = (first..(end + context).min(frames)).map(&frame).collect();
+        for harmonic in &harmonic_part(&spectrogram)[start - first..end - first] {
+            each(harmonic);
+        }
+        start = end;
+    }
+}
+
+/// The harmonic part of a magnitude spectrogram (frames × bins): each bin
+/// scaled by the soft mask H² / (H² + P²), where H is the median along time
+/// (held notes) and P the median along frequency (drum hits); 0 where both
+/// are 0. Near the edges the windows are cut short.
+fn harmonic_part(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
+    let frames = spectrogram.len();
+    let Some(bins) = spectrogram.first().map(Vec::len) else { return Vec::new() };
+    let (half_t, half_f) = (HPSS_TIME_FRAMES / 2, HPSS_FREQ_BINS / 2);
+    // One window along time per bin, slid a frame at a time.
+    let mut along_time = vec![SortedWindow::<HPSS_TIME_FRAMES>::default(); bins];
+    for row in &spectrogram[..half_t.min(frames)] {
+        for (window, &v) in along_time.iter_mut().zip(row) {
+            window.insert(v);
+        }
+    }
+    let mut out = Vec::with_capacity(frames);
+    for f in 0..frames {
+        let added = (f + half_t < frames).then(|| &spectrogram[f + half_t]);
+        let removed = (f > half_t).then(|| &spectrogram[f - half_t - 1]);
+        for (b, window) in along_time.iter_mut().enumerate() {
+            match (removed, added) {
+                (Some(old), Some(new)) => window.replace(old[b], new[b]),
+                (None, Some(new)) => window.insert(new[b]),
+                (Some(old), None) => window.remove(old[b]),
+                (None, None) => {}
+            }
+        }
+        let row = &spectrogram[f];
+        let mut along_frequency = SortedWindow::<HPSS_FREQ_BINS>::default();
+        for &v in &row[..half_f.min(bins)] {
+            along_frequency.insert(v);
+        }
+        let mut harmonic = vec![0f32; bins];
+        for b in 0..bins {
+            match (b > half_f, b + half_f < bins) {
+                (true, true) => along_frequency.replace(row[b - half_f - 1], row[b + half_f]),
+                (false, true) => along_frequency.insert(row[b + half_f]),
+                (true, false) => along_frequency.remove(row[b - half_f - 1]),
+                (false, false) => {}
+            }
+            let h = along_time[b].median();
+            let p = along_frequency.median();
+            let (h2, p2) = (h * h, p * p);
+            if h2 + p2 > 0.0 {
+                harmonic[b] = row[b] * (h2 / (h2 + p2));
+            }
+        }
+        out.push(harmonic);
+    }
+    out
+}
+
+/// Up to N values kept sorted, for a running median.
+#[derive(Clone, Copy)]
+struct SortedWindow<const N: usize> {
+    values: [f32; N],
+    len: usize,
+}
+
+impl<const N: usize> Default for SortedWindow<N> {
+    fn default() -> Self {
+        Self { values: [0.0; N], len: 0 }
+    }
+}
+
+impl<const N: usize> SortedWindow<N> {
+    /// The value at position len / 2 in sorted order (the upper of the two
+    /// middle values when len is even).
+    fn median(&self) -> f32 {
+        self.values[self.len / 2]
+    }
+
+    fn insert(&mut self, value: f32) {
+        let mut i = self.len;
+        while i > 0 && self.values[i - 1].total_cmp(&value).is_gt() {
+            self.values[i] = self.values[i - 1];
+            i -= 1;
+        }
+        self.values[i] = value;
+        self.len += 1;
+    }
+
+    fn remove(&mut self, value: f32) {
+        let i = self.position(value);
+        self.values.copy_within(i + 1..self.len, i);
+        self.len -= 1;
+    }
+
+    /// Replaces `old` (which is in the window) with `new`.
+    fn replace(&mut self, old: f32, new: f32) {
+        let mut i = self.position(old);
+        while i > 0 && self.values[i - 1].total_cmp(&new).is_gt() {
+            self.values[i] = self.values[i - 1];
+            i -= 1;
+        }
+        while i + 1 < self.len && self.values[i + 1].total_cmp(&new).is_lt() {
+            self.values[i] = self.values[i + 1];
+            i += 1;
+        }
+        self.values[i] = new;
+    }
+
+    fn position(&self, value: f32) -> usize {
+        self.values[..self.len]
+            .iter()
+            .position(|v| v.to_bits() == value.to_bits())
+            .expect("the value is in the window")
+    }
 }
 
 /// One frame's chroma from its magnitudes: each bin whitened by its
@@ -1089,6 +1236,87 @@ mod tests {
     fn a_minor_under_a_loud_kick_is_8a() {
         let result = detect_key_from_samples(&a_minor_under_a_kick(44100, 40.0)).unwrap();
         assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
+    }
+
+    #[test]
+    fn a_drum_hit_is_not_harmonic() {
+        // 12 frames × 40 bins: a held note in bin 10, a broadband hit in frame 6.
+        let mut spectrogram = vec![vec![0.01f32; 40]; 12];
+        for frame in spectrogram.iter_mut() {
+            frame[10] = 1.0;
+        }
+        for bin in 0..40 {
+            spectrogram[6][bin] = 1.0;
+        }
+        let harmonic = harmonic_part(&spectrogram);
+        assert!(harmonic[3][10] >= 0.9, "the note stays: {}", harmonic[3][10]);
+        assert!(harmonic[6][25] <= 0.1, "the hit goes: {}", harmonic[6][25]);
+    }
+
+    /// The plain definition: medians by sorting each window.
+    fn harmonic_part_by_sorting(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
+        let frames = spectrogram.len();
+        let bins = spectrogram[0].len();
+        let median = |mut values: Vec<f32>| {
+            values.sort_by(f32::total_cmp);
+            values[values.len() / 2]
+        };
+        let (half_t, half_f) = (HPSS_TIME_FRAMES / 2, HPSS_FREQ_BINS / 2);
+        (0..frames)
+            .map(|f| {
+                (0..bins)
+                    .map(|b| {
+                        let t = f.saturating_sub(half_t)..(f + half_t + 1).min(frames);
+                        let h = median(t.map(|g| spectrogram[g][b]).collect());
+                        let p = median(spectrogram[f][b.saturating_sub(half_f)..(b + half_f + 1).min(bins)].to_vec());
+                        let (h2, p2) = (h * h, p * p);
+                        if h2 + p2 > 0.0 { spectrogram[f][b] * (h2 / (h2 + p2)) } else { 0.0 }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A spectrogram of `frames` × `bins` values from a fixed seed, with
+    /// repeats and zeros so the windows hold equal values.
+    fn random_spectrogram(frames: usize, bins: usize, seed: u64) -> Vec<Vec<f32>> {
+        let mut state = seed;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        (0..frames)
+            .map(|_| {
+                (0..bins)
+                    .map(|_| match next() % 10 {
+                        0 => 0.0,
+                        1 => 0.5,
+                        r => (next() % 1000) as f32 / (r as f32 * 37.0),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_blocks_give_the_whole_spectrograms_harmonic_part() {
+        let spectrogram = random_spectrogram(100, 30, 42);
+        let whole = harmonic_part(&spectrogram);
+        for block in [1, 3, 4, 5, 7, 64, 99, 100, 512] {
+            let mut blocked = Vec::new();
+            harmonic_part_in_blocks(spectrogram.len(), block, |f| spectrogram[f].clone(), |h| blocked.push(h.to_vec()));
+            assert_eq!(blocked, whole, "block {block}");
+        }
+    }
+
+    #[test]
+    fn the_running_medians_match_sorting() {
+        for (frames, bins) in [(1, 1), (3, 5), (9, 17), (30, 40), (64, 100)] {
+            let spectrogram = random_spectrogram(frames, bins, 0x9e37_79b9_7f4a_7c15 + frames as u64);
+            assert_eq!(harmonic_part(&spectrogram), harmonic_part_by_sorting(&spectrogram), "{frames} × {bins}");
+        }
     }
 
     #[test]
