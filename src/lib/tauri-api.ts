@@ -22,8 +22,6 @@ import type { DjExportDefaults, DjExportResult, DjTarget } from '../types/djExpo
 import type {
   Track,
   ScanResult,
-  BpmResult,
-  KeyResult,
   TrackAnalysis,
   FolderInfo,
   Playlist,
@@ -421,22 +419,6 @@ export const tauriApi = {
   },
 
   // Analysis commands
-  async analyzeBpm(trackId: number): Promise<BpmResult> {
-    return await invoke('analyze_bpm', { trackId })
-  },
-
-  async analyzeAllBpm(): Promise<BpmResult[]> {
-    return await invoke('analyze_all_bpm')
-  },
-
-  async analyzeKey(trackId: number): Promise<KeyResult> {
-    return await invoke('analyze_key', { trackId })
-  },
-
-  async analyzeAllKeys(): Promise<KeyResult[]> {
-    return await invoke('analyze_all_keys')
-  },
-
   async analyzeTracksBatch(trackIds: number[], force = false): Promise<void> {
     return await invoke('analyze_tracks_batch', { trackIds, force })
   },

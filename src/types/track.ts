@@ -93,20 +93,6 @@ export interface Playlist {
 }
 
 // Analysis result types
-export interface BpmResult {
-  track_id: number
-  bpm: number
-  confidence: number
-}
-
-export interface KeyResult {
-  track_id: number
-  camelot: string
-  open_key: string
-  musical_key: string
-  confidence: number
-}
-
 export interface TrackAnalysis {
   track_id: number
   bpm?: number
