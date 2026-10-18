@@ -4556,6 +4556,11 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | p3-edma-binary | 938d1e9 | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 47.3 % | 0.608 | 3.99 | yes |
 | p3-edma-floor100 | 8e3a714, floor 100 Hz | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 43.8 % | 0.577 | 3.98 | no |
 | p3-nowhiten | c8bd645 | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 74.3 % | 0.803 | 3.90 | yes |
+| p3-nw-base | c8bd645 (re-run) | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 74.3 % | 0.803 | 1.72 | — |
+| p3-nw-soft | c8bd645 + soft mask | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 72.6 % | 0.787 | 1.67 | no |
+| p3-nw-noheur | c8bd645, no heuristics | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 68.8 % | 0.765 | 1.71 | no |
+| p3-nw-norm | 7bb63d1 | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 75.4 % | 0.809 | 1.69 | yes |
+| p3-nw-floor100 | 7bb63d1, floor 100 Hz | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 72.4 % | 0.798 | 1.71 | no |
 
 Baseline notes (p1-baseline):
 - **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
@@ -4600,6 +4605,9 @@ Phase 2 notes (p2-final, 2026-10-18):
   - Full library, consensus: exact 47.3 → 74.3 %, MIREX 0.608 → 0.803; fifth up 17.4 → 7.1 %, parallel 22.0 → 10.0 %; key confidence right/wrong 0.614/0.450. Against Traktor alone 61.1 %, against Rekordbox 61.6 %.
   - The kick test now passes (8A). New test: an A minor triad on a sawtooth reads 8A.
   - Decisions measured with whitening on (soft or binary mask, heuristics, normalisation, the floor) are re-measured on top of this.
+- **Re-measured without whitening** (Low Power Mode off again; p3-nw-base matches p3-nowhiten on every row):
+  - Per-frame normalisation is kept (7bb63d1): MIREX 0.809, exact 75.4 %, fifth up 6.1 %.
+  - The soft mask (0.787), no heuristics (0.765) and the 100 Hz floor on top of normalisation (0.798) were dropped.
 - **Run-to-run noise.** Two runs of the same code differ on about 30 of 1958 first beats by < 1 ms, and on one wrong-tempo track by 204 ms. BPM and key do not move. The source is not found yet (likely state inside aubio).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.
