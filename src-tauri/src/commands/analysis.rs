@@ -10,7 +10,10 @@
 use crate::audio::bpm;
 use crate::audio::decoder;
 use crate::audio::key;
+use crate::audio::ANALYSIS_VERSION;
 use crate::commands::library::AppState;
+use crate::db::analysis::is_current;
+use crate::missing_files::is_missing;
 use crate::error::AppError;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -175,12 +178,10 @@ pub async fn analyze_tracks_batch(
                 .iter()
                 .filter_map(|&id| {
                     let track = db.get_track(id).ok()?;
-                    if !force {
-                        let has_bpm = db.has_bpm_analysis(id).unwrap_or(false);
-                        let has_key = db.has_key_analysis(id).unwrap_or(false);
-                        if has_bpm && has_key {
-                            return None;
-                        }
+                    // Unless forced, only what needs analysis (spec §4): not
+                    // analysed with this version. The file check is the worker's.
+                    if !force && is_current(db.analysis_version(id).unwrap_or(None), ANALYSIS_VERSION) {
+                        return None;
                     }
                     let name = track.title.clone().unwrap_or_else(|| {
                         track.file_path.rsplit('/').next().unwrap_or("Unknown").to_string()
@@ -225,29 +226,41 @@ pub async fn analyze_tracks_batch(
                     return;
                 }
 
-                let path = Path::new(file_path);
-                if !path.exists() {
-                    eprintln!("[batch_analysis] Skipping missing file: {}", file_path);
-                    failed.fetch_add(1, Ordering::SeqCst);
+                let emit = |bpm_value: Option<f64>, key_value: Option<String>| {
                     let current = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
                     let _ = app3.emit("analysis-progress", &AnalysisProgressEvent {
                         current, total, track_id: *track_id, track_name: track_name.clone(),
-                        bpm: None, musical_key: None,
+                        bpm: bpm_value, musical_key: key_value,
                     });
+                };
+                // One save per track whose file was read (spec 2026-10-17, §4).
+                let save = |found_bpm: Option<&bpm::BpmResult>, found_key: Option<&key::KeyResult>| {
+                    let st = app3.state::<AppState>();
+                    let Ok(guard) = st.db.lock() else { return };
+                    if let Some(db) = guard.as_ref() {
+                        if let Err(e) = db.save_analysis(*track_id, found_bpm, found_key, ANALYSIS_VERSION) {
+                            eprintln!("[batch_analysis] Saving track {} failed: {}", track_id, e);
+                        }
+                    }
+                };
+
+                // A file not on disk saves nothing: Missing Files handles it.
+                if is_missing(file_path) {
+                    eprintln!("[batch_analysis] Skipping missing file: {}", file_path);
+                    failed.fetch_add(1, Ordering::SeqCst);
+                    emit(None, None);
                     return;
                 }
 
                 // Decode once
-                let audio = match decoder::decode_to_mono(path) {
+                let audio = match decoder::decode_to_mono(Path::new(file_path)) {
                     Ok(a) => a,
                     Err(e) => {
                         eprintln!("[batch_analysis] Decode failed for track {}: {}", track_id, e);
+                        // Read but not decodable: it waits for the next version or a forced re-analysis.
+                        save(None, None);
                         failed.fetch_add(1, Ordering::SeqCst);
-                        let current = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
-                        let _ = app3.emit("analysis-progress", &AnalysisProgressEvent {
-                            current, total, track_id: *track_id, track_name: track_name.clone(),
-                            bpm: None, musical_key: None,
-                        });
+                        emit(None, None);
                         return;
                     }
                 };
@@ -259,37 +272,14 @@ pub async fn analyze_tracks_batch(
                 // Analyze BPM and Key from the same decoded audio
                 let bpm_result = bpm::detect_bpm_from_samples(&audio).ok().flatten();
                 let key_result = key::detect_key_from_samples(&audio).ok();
-
-                let bpm_val = bpm_result.as_ref().map(|r| r.bpm);
-                let key_val = key_result.as_ref().map(|r| r.camelot.clone());
-
-                // Save results to DB (brief lock)
-                {
-                    let st = app3.state::<AppState>();
-                    let db_lock = st.db.lock();
-                    if let Ok(guard) = db_lock {
-                        if let Some(db) = guard.as_ref() {
-                            if let Some(ref bpm_r) = bpm_result {
-                                let _ = db.save_bpm_analysis(*track_id, bpm_r.bpm, bpm_r.confidence);
-                            }
-                            if let Some(ref key_r) = key_result {
-                                let _ = db.save_key_analysis(*track_id, &key_r.camelot, key_r.confidence);
-                            }
-                        }
-                    }
-                }
+                save(bpm_result.as_ref(), key_result.as_ref());
 
                 if bpm_result.is_some() || key_result.is_some() {
                     analyzed.fetch_add(1, Ordering::SeqCst);
                 } else {
                     failed.fetch_add(1, Ordering::SeqCst);
                 }
-
-                let current = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
-                let _ = app3.emit("analysis-progress", &AnalysisProgressEvent {
-                    current, total, track_id: *track_id, track_name: track_name.clone(),
-                    bpm: bpm_val, musical_key: key_val,
-                });
+                emit(bpm_result.as_ref().map(|r| r.bpm), key_result.as_ref().map(|r| r.camelot.clone()));
             });
 
             let was_cancelled = cancelled.load(Ordering::SeqCst);
