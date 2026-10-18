@@ -1369,6 +1369,9 @@ const STRONG_ONSET_SHARE: f32 = 0.3;
 /// A kick near a grid beat stands this many times above the 90th percentile
 /// of the low-band flux around it (see `kick_near`).
 const KICK_OVER_P90: f32 = 3.0;
+/// How far either side of a grid beat `kick_strength` looks for the low band's
+/// jump: past a kick's attack, and short of the next 16th up to 160 BPM.
+const KICK_JUMP_S: f64 = 0.060;
 
 pub struct OnsetEnvelope {
     /// Seconds between frames, and the time of frame 0's centre.
@@ -1497,14 +1500,6 @@ impl OnsetEnvelope {
         frame.min(self.low.len().saturating_sub(1))
     }
 
-    /// The strongest low-band flux between two times.
-    fn max_low(&self, from: f64, to: f64) -> f32 {
-        if self.low.is_empty() {
-            return 0.0;
-        }
-        self.low[self.frame_at(from)..=self.frame_at(to)].iter().copied().fold(0.0, f32::max)
-    }
-
     /// When the music starts: the first frame whose low-band flux reaches 30 %
     /// of the track's strong onsets (its 99.5th percentile). None when the low
     /// band never rises.
@@ -1555,14 +1550,41 @@ impl OnsetEnvelope {
         let mut around = self.low[from..=to].to_vec();
         let index = (around.len() - 1) * 9 / 10;
         let p90 = *around.select_nth_unstable_by(index, f32::total_cmp).1;
-        let near = self.max_low(t - tolerance_s, t + tolerance_s);
+        let near = self.max_of(&self.low, t - tolerance_s, t + tolerance_s);
         near > 0.0 && near >= KICK_OVER_P90 * p90
     }
 
-    /// The low-band onset strength at a grid's beats (±10 ms): which of
-    /// several phases sits on the kicks.
+    /// How far the low band's level jumps at a grid's beats: which of several
+    /// phases sits on the kicks. Per beat, the loudest the low band gets within
+    /// KICK_JUMP_S after it, less the quietest within KICK_JUMP_S before. The
+    /// kick is the loudest thing there; the low-band flux can't tell, as it is
+    /// log-compressed, so a sidechained bass rising out of near silence on the
+    /// off-beat rises as much as a kick landing on the held bass.
     pub fn kick_strength(&self, phase_s: f64, period_s: f64) -> f64 {
-        self.beats(phase_s, period_s).map(|t| self.max_low(t - 0.010, t + 0.010) as f64).sum()
+        self.beats(phase_s, period_s)
+            .map(|t| {
+                let after = self.max_of(&self.low_energy, t, t + KICK_JUMP_S);
+                let before = self.min_of(&self.low_energy, t - KICK_JUMP_S, t);
+                (after.sqrt() - before.sqrt()).max(0.0) as f64
+            })
+            .sum()
+    }
+
+    /// The largest and smallest value of a per-frame series between two times.
+    fn max_of(&self, v: &[f32], from: f64, to: f64) -> f32 {
+        if v.is_empty() {
+            return 0.0;
+        }
+        let (a, b) = (self.frame_at(from), self.frame_at(to));
+        v[a.min(b)..=a.max(b)].iter().copied().fold(0.0, f32::max)
+    }
+
+    fn min_of(&self, v: &[f32], from: f64, to: f64) -> f32 {
+        if v.is_empty() {
+            return 0.0;
+        }
+        let (a, b) = (self.frame_at(from), self.frame_at(to));
+        v[a.min(b)..=a.max(b)].iter().copied().fold(f32::INFINITY, f32::min)
     }
 
     /// A grid's beats from 0 s to the end of the envelope.
@@ -1741,7 +1763,7 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
 
 **Review fixes (2026-10-18).**
 - **Off-beat lock.** The test signal is open hats on every off-beat (`offbeat_hats`, gain 0.1–0.3). Their full-band flux outscored the kicks, so stage 1's ±½-beat phase span put the grid half a beat (242 ms) off, even when started from the true grid.
-  - Stage 1 now spans ±⅛ beat around the start. That covers aubio's 7–24 ms offset: ⅛ beat is 43 ms even at 174 BPM.
+  - Stage 1 now spans ±⅛ beat around the start. That covers aubio's 7–24 ms offset: ⅛ beat is 47 ms at 160 BPM, the tightest case (174 BPM folds to 87).
   - The hat cases now land within 0.72 ms, with confidence 1.0.
 - **Stage-1 cap.** The coarse tempo step shrank with the duration, so stage 1's cost grew with the duration squared. The step now stops shrinking at `STAGE1_MAX_S` (600 s).
   - Whole detection, release, before → after: 6 min 0.98 → 0.85 s; 60 min 27.2 → 9.0 s.
@@ -1751,9 +1773,25 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
   - `searched_grid` starts the search from four phases ¼ beat apart and keeps the result with the most kick strength. Candidates from 1 % slow to 1.5 % fast land within 4.1 ms.
   - Silence still gives None: the fallback needs some low-band strength on its beats, which only digital silence lacks.
 - **Off-beat start (re-review).** When aubio's beats followed the off-beats, the main path stayed there: a probe ended +241.8 ms off.
-  - The search now also starts half a beat on, and the result with the most kick strength wins.
+  - The search now also starts half a beat on, and the result with the most kick strength wins (since replaced by four starts, below).
   - Kicks under an off-beat 55 Hz bass up to 1.5× the kick's level stay within 0.6 ms. The kick strength at the off-beat rises towards the kicks' (1107 vs 1252), so a bass much louder than the kick could pull the grid over.
   - Whole detection on 6 min: 0.89 s (was 0.85 s).
+
+**Real-library fixes (2026-10-18).**
+- **A: a 16th early.** aubio's candidate runs about 1.5 % fast, so the grid fitted to its beats sits 0.16–0.35 beat off the kicks at the middle of the track, where the search starts.
+  - Each search reaches only ⅛ beat, so both starts (the fit and half a beat on) ended on 16th hats.
+  - Sidechain ducking gave the low band more energy before the kick, so the start a quarter beat early won.
+  - 19.3 % of the right-tempo MP3 tracks were a 16th early this way.
+  - Fix: the main path starts from four phases ¼ beat apart, like the fallback.
+- **B: half a beat off.** `kick_strength` used the log-compressed low-band flux. A sidechained bass rising out of near silence on the off-beat rose as much as a kick landing on the held bass, and won: 6.5 % of the tracks were half a beat off.
+  - Fix: `kick_strength` measures the jump in the low band's level at each beat. That is the loudest low-band energy within `KICK_JUMP_S` (60 ms) after the beat, less the quietest within 60 ms before, compared as square roots.
+- **Results on the full library.**
+  - Main cluster: 68.5 → 95.8 %.
+  - MP3 grid ≤ 20 ms, Traktor's offset removed: 67.3 → 94.2 %.
+  - 8 of 1063 main-cluster tracks got worse.
+  - Two more searches per track cost 13 % more time.
+- **Shared path.** With four starts, the phase `fit_grid` chose when folding a double-time pass no longer changed anything: every folded phase gives the same starts, modulo one beat. `fit_grid` no longer takes the envelope, and the fallback shares the four-start path from a grid at the candidate's period.
+  - Measured result-neutral on 400 library tracks (seed 7): no BPM changed, 6 first beats moved 0.63 ms at most and 3 confidences 0.003 at most, from near ties in the snap's phase refit.
 
 - [ ] **Step 1: Write the failing tests** (in `mod tests`)
 
@@ -1797,7 +1835,7 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
     #[test]
     fn a_tempo_near_a_whole_number_snaps_and_keeps_its_beats() {
         let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.137));
-        let near = Grid { period_s: 60.0 / 124.03, phase_s: 0.137 };
+        let near = Grid { period_s: 60.0 / 124.015, phase_s: 0.137 };
         let snapped = snap(near, &envelope);
         assert!((snapped.bpm() - 124.0).abs() < 1e-9);
         let worst_ms = (0..123)
@@ -1805,8 +1843,10 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
             .map(|t| (snapped.nearest(t) - t).abs() * 1000.0)
             .fold(0.0, f64::max);
         assert!(worst_ms <= 5.0, "a beat {worst_ms:.1} ms off the kicks");
-        let far = Grid { period_s: 60.0 / 124.2, phase_s: 0.137 };
-        assert_eq!(snap(far, &envelope), far);
+        for bpm in [124.03, 124.2] {
+            let far = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            assert_eq!(snap(far, &envelope), far, "{bpm} BPM snapped");
+        }
     }
 
     #[test]
@@ -1836,6 +1876,118 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
             }
         }
     }
+
+    #[test]
+    fn a_double_time_pass_folds_onto_the_kicks() {
+        // The pass tracked kicks and off-beats, and the fold lands on the
+        // off-beats; the search from it still ends on the kicks.
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.379));
+        let beats = messy_beats(248.0, 0.137, 60.0);
+        let grid = searched_grid(&beats, 124.0, &envelope).expect("a grid");
+        assert!((grid.bpm() - 124.0).abs() < 0.01, "{:.4} BPM", grid.bpm());
+        assert!((grid.nearest(0.379) - 0.379).abs() < 0.002, "beat at {:.4}", grid.nearest(0.379));
+    }
+
+    #[test]
+    fn a_first_beat_before_the_file_moves_one_beat_on() {
+        // The grid beat nearest the first kick (0.137 s) is at -0.1 s.
+        let envelope = OnsetEnvelope::compute(&kick_track(120.0, 44100, 10.0, 0.137));
+        let first_ms = first_beat_ms(Grid { period_s: 0.5, phase_s: -0.1 }, &envelope).expect("a first beat");
+        assert!((first_ms - 400.0).abs() < 1e-6, "{first_ms} ms");
+    }
+
+    #[test]
+    fn beats_on_the_off_beat_still_give_a_grid_on_the_kicks() {
+        // The pass's beats sit half a beat after the kicks.
+        let period = 60.0 / 124.0;
+        let beats = messy_beats(124.0, 0.137 + period / 2.0, 60.0);
+        for hats in [0.0, 0.2] {
+            let envelope = OnsetEnvelope::compute(&offbeat_hats(124.0, 44100, 60.0, 0.137, hats));
+            let grid = searched_grid(&beats, 124.0, &envelope).expect("a grid");
+            assert!((grid.bpm() - 124.0).abs() <= 0.05, "hats at {hats}: {:.3} BPM", grid.bpm());
+            let kicks = Grid { period_s: period, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "hats at {hats}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+        }
+    }
+
+    #[test]
+    fn beats_a_sixteenth_off_still_give_a_grid_on_the_kicks() {
+        // The pass's beats sit a quarter beat before or after the kicks, with
+        // hats on every 16th: from there, and from half a beat on, the search
+        // only reaches the hats.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&sixteenth_hats(124.0, 44100, 60.0, 0.137, 0.3));
+        let kicks = Grid { period_s: period, phase_s: 0.137 };
+        for quarter in [0.25, 0.75] {
+            let beats = messy_beats(124.0, 0.137 + quarter * period, 60.0);
+            let grid = searched_grid(&beats, 124.0, &envelope).expect("a grid");
+            assert!((grid.bpm() - 124.0).abs() <= 0.05, "beats {quarter} beat on: {:.3} BPM", grid.bpm());
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "beats {quarter} beat on: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+        }
+    }
+
+    #[test]
+    fn a_tempo_without_a_beat_fit_still_gets_its_grid() {
+        // Too few beats to fit (or no pass): the search starts from the
+        // candidate alone, 1.5 % fast as the consensus often is.
+        for (bpm, hats) in [(124.0, 0.0), (124.0, 0.2), (127.33, 0.0)] {
+            let envelope = OnsetEnvelope::compute(&offbeat_hats(bpm, 44100, 60.0, 0.137, hats));
+            let (beats, candidate) = ([0.5, 1.0, 1.5], bpm * 1.015);
+            assert!(fit_grid(&beats, candidate).is_none());
+            let grid = searched_grid(&beats, candidate, &envelope).expect("a grid");
+            assert!((grid.bpm() - bpm).abs() <= 0.05, "{bpm} BPM, hats at {hats}: {:.3}", grid.bpm());
+            let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{bpm} BPM, hats at {hats}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+        }
+        let silence = MonoAudio { samples: vec![0.0; 44100 * 10], sample_rate: 44100, duration_ms: 10_000 };
+        assert_eq!(searched_grid(&[], 124.0, &OnsetEnvelope::compute(&silence)), None);
+    }
+
+    #[test]
+    fn off_beat_hats_leave_the_grid_on_the_kicks() {
+        // The hats outscore the kicks in the onset envelope's full band.
+        for (bpm, rate, gain) in [(124.0, 44100, 0.1), (124.0, 44100, 0.3), (128.0, 48000, 0.2)] {
+            let case = format!("{bpm} BPM at {rate} Hz, hats at {gain}");
+            let result = detect_bpm_from_samples(&offbeat_hats(bpm, rate, 60.0, 0.137, gain)).unwrap().expect("a tempo");
+            assert!((result.bpm - bpm).abs() <= 0.05, "{case}: {:.3} BPM", result.bpm);
+            let first_ms = result.first_beat_ms.expect("a first beat");
+            assert!((first_ms - 137.0).abs() <= 5.0, "{case}: first beat at {first_ms:.1} ms");
+            let grid = Grid { period_s: 60.0 / result.bpm, phase_s: first_ms / 1000.0 };
+            let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{case}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+            assert!(result.confidence >= 0.9, "{case}: confidence {:.2}", result.confidence);
+        }
+    }
+
+    #[test]
+    fn an_off_beat_bass_leaves_the_grid_on_the_kicks() {
+        // The bass rises out of near silence on every off-beat, the kick
+        // lands on the held bass.
+        for (bpm, rate) in [(124.0, 44100), (128.0, 48000)] {
+            let case = format!("{bpm} BPM at {rate} Hz");
+            let result = detect_bpm_from_samples(&offbeat_bass(bpm, rate, 60.0, 0.137, 110.0, 0.3)).unwrap().expect("a tempo");
+            assert!((result.bpm - bpm).abs() <= 0.05, "{case}: {:.3} BPM", result.bpm);
+            let first_ms = result.first_beat_ms.expect("a first beat");
+            let grid = Grid { period_s: 60.0 / result.bpm, phase_s: first_ms / 1000.0 };
+            let kicks = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            for kick in [0.137, kicks.nearest(30.0), kicks.nearest(59.5)] {
+                let error_ms = (grid.nearest(kick) - kick) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{case}: kick at {kick:.3} s, beat {error_ms:+.1} ms off");
+            }
+        }
+    }
 ```
 
 In `onset.rs`'s `mod tests`, the envelope's timing:
@@ -1851,7 +2003,112 @@ In `onset.rs`'s `mod tests`, the envelope's timing:
             .unwrap();
         assert!((best - 0.137).abs() <= 0.001, "peak at {best:.3}");
     }
+
+    #[test]
+    fn the_kick_phase_is_stronger_than_an_off_beat_bass() {
+        // The bass rises out of silence, the kick on top of the held bass.
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&offbeat_bass(124.0, 44100, 30.0, 0.137, 110.0, 0.3));
+        let (kick, bass) = (envelope.kick_strength(0.137, period), envelope.kick_strength(0.137 + period / 2.0, period));
+        assert!(kick > 1.2 * bass, "kick {kick:.1}, bass {bass:.1}");
+    }
 ```
+
+The signals these tests use, in `test_signals.rs` (`white_noise` is for Task 12):
+
+```rust
+/// `kick_track` with an open hi-hat on every off-beat, as in most house and
+/// techno: white noise, high-passed by a first difference, fading over 40 ms,
+/// at `hat_gain`.
+pub fn offbeat_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, hat_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let total = track.samples.len();
+    let length = (0.08 * rate) as usize;
+    let mut state: u32 = 99;
+    let mut beat = 0;
+    loop {
+        let start = ((first_s + (beat as f64 + 0.5) * 60.0 / bpm) * rate).round() as usize;
+        if start >= total {
+            break;
+        }
+        let mut previous = 0.0;
+        for j in 0..length.min(total - start) {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = (state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0;
+            let t = j as f64 / rate;
+            track.samples[start + j] += (hat_gain * (noise - previous) * (-t / 0.04).exp()) as f32;
+            previous = noise;
+        }
+        beat += 1;
+    }
+    track
+}
+
+/// `kick_track` with a closed hi-hat on each 16th note between the kicks, as
+/// in most house and techno: white noise, high-passed by a first difference,
+/// fading over 15 ms, at `hat_gain`.
+pub fn sixteenth_hats(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, hat_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let total = track.samples.len();
+    let length = (0.05 * rate) as usize;
+    let mut state: u32 = 7;
+    let mut sixteenth = 0;
+    loop {
+        let start = ((first_s + sixteenth as f64 * 15.0 / bpm) * rate).round() as usize;
+        if start >= total {
+            break;
+        }
+        if sixteenth % 4 != 0 {
+            let mut previous = 0.0;
+            for j in 0..length.min(total - start) {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = (state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0;
+                let t = j as f64 / rate;
+                track.samples[start + j] += (hat_gain * (noise - previous) * (-t / 0.015).exp()) as f32;
+                previous = noise;
+            }
+        }
+        sixteenth += 1;
+    }
+    track
+}
+
+/// `kick_track` with a sidechained bass, as in most house: a `bass_hz` sine
+/// at `bass_gain` from each off-beat until the next kick, silent under the
+/// kick. The bass rises from near silence, the kick on top of the bass.
+pub fn offbeat_bass(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64, bass_hz: f64, bass_gain: f64) -> MonoAudio {
+    let mut track = kick_track(bpm, sample_rate, seconds, first_s);
+    let rate = sample_rate as f64;
+    let period = 60.0 / bpm;
+    for (i, sample) in track.samples.iter_mut().enumerate() {
+        let t = i as f64 / rate - first_s;
+        if t < 0.0 {
+            continue;
+        }
+        let in_beat = t / period - (t / period).floor();
+        if in_beat >= 0.5 {
+            *sample += (bass_gain * (2.0 * PI * bass_hz * t).sin()) as f32;
+        }
+    }
+    track
+}
+
+/// White noise, uniform in ±`amplitude` (a constant-seeded LCG): no beat at all.
+pub fn white_noise(sample_rate: u32, seconds: f64, amplitude: f64) -> MonoAudio {
+    let mut state: u32 = 0x0BAD_5EED;
+    let samples = (0..(sample_rate as f64 * seconds) as usize)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (((state >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0) * amplitude) as f32
+        })
+        .collect();
+    MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
+}
+```
+
+The test modules import them: `use crate::audio::test_signals::{kick_track, offbeat_bass, offbeat_hats, sixteenth_hats, tempo_change, white_noise};` in `bpm.rs`, `use crate::audio::test_signals::{kick_track, offbeat_bass};` in `onset.rs`.
 
 Update the old tests to the new result:
 - `.expect("BPM detection should succeed")` becomes `.unwrap().expect("a tempo")`;
@@ -1869,9 +2126,12 @@ Expected: compile errors (`Grid`, `lock_tempo`, `beat_grid`, `onset_strength`…
 Update the module's top comment to describe the new steps (spec §2: candidate, fit, snap, first beat, confidence). Add `use super::onset::OnsetEnvelope;`. Change `detect_bpm` to return `Result<Option<BpmResult>, String>`, and add:
 
 ```rust
-/// A tempo this close to a whole number becomes it (spec §2, step 3). Tuned
-/// with recodeck-eval in Task 13.
-const SNAP_BPM: f64 = 0.05;
+/// A tempo this close to a whole number becomes it (spec §2, step 3).
+/// Measured with recodeck-eval against Traktor on the whole library: 0.02 and
+/// 0.05 give the most tempos within 0.005 BPM and the most MP3 grids within
+/// 20 ms, ahead of no snap and of 0.1. 0.02 is the smaller of the best, so
+/// fewer tempos that really sit off a whole number get moved.
+const SNAP_BPM: f64 = 0.02;
 
 /// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM. Stage 1
 /// of the envelope search spans the same ±2 %, with its own step.
@@ -1950,42 +2210,39 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     Some(snap(searched_grid(&beats, candidate, envelope)?, envelope))
 }
 
-/// Step 2: the envelope search from the grid fitted to the pass's beats, and
-/// from that grid half a beat on, in case the pass followed the off-beats; the
-/// result on the kicks wins. When the beats give no grid (no pass, or too few
-/// beats near the candidate), it starts at the candidate's period from four
-/// phases a quarter beat apart, which together cover the whole beat, and again
-/// the result on the kicks wins: by then each has its tempo, so its low-band
-/// strength over the track means something. None when that low-band strength
-/// is zero, in practice only in digital silence.
+/// Step 2: the envelope search from four phases a quarter beat apart, which
+/// together cover the whole beat, and the result on the kicks wins: by then
+/// each has its tempo, so its low-band strength over the track means
+/// something. The phases start from the grid fitted to the pass's beats: its
+/// tempo is close, but those beats can sit on any 16th of the beat (the pass
+/// spaces them by its own period), and each search only reaches an eighth of
+/// a beat, past which the hats on the other 16ths outscore the kicks. A fit
+/// folded from a pass at twice the tempo may sit on either half of the beat;
+/// the four starts cover both. When the beats give no grid (no pass, or too
+/// few beats near the candidate), they start at the candidate's period. None
+/// when that low-band strength is zero, in practice only in digital silence.
 fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
-    if let Some(fit) = fit_grid(beats, candidate, envelope) {
-        let starts = [fit, Grid { phase_s: fit.phase_s + fit.period_s / 2.0, ..fit }];
-        return on_the_kicks(starts.into_iter().map(|start| envelope_search(start, envelope, true)), envelope);
-    }
-    let period_s = 60.0 / candidate;
-    let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
+    let fit = fit_grid(beats, candidate).unwrap_or(Grid { period_s: 60.0 / candidate, phase_s: 0.0 });
+    let starts = (0..4).map(|i| Grid { phase_s: fit.phase_s + i as f64 * fit.period_s / 4.0, ..fit });
     on_the_kicks(starts.map(|start| envelope_search(start, envelope, true)), envelope)
         .filter(|grid| envelope.kick_strength(grid.phase_s, grid.period_s) > 0.0)
 }
 
-/// Of several grids, the one whose beats carry the most low-band onset strength.
+/// Of several grids, the one whose beats the low band jumps at most: the one
+/// on the kicks (see `kick_strength`).
 fn on_the_kicks(grids: impl Iterator<Item = Grid>, envelope: &OnsetEnvelope) -> Option<Grid> {
     grids.max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
 }
 
 /// Step 2: the constant grid through the beats near `candidate`. A pass that
-/// tracked twice (or half) the tempo is locked at its own rate, then folded;
-/// folding a faster grid keeps the phase that sits on the kicks.
-fn fit_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
+/// tracked twice (or half) the tempo is locked at its own rate, then folded.
+/// A folded faster grid may sit on the off-beats; `searched_grid` starts from
+/// every quarter beat of it, so the kicks are found either way.
+fn fit_grid(beats: &[f64], candidate: f64) -> Option<Grid> {
     let (pass_bpm, _) = compute_bpm_from_ibis(beats);
     let factor = if pass_bpm > 0.0 { 2f64.powi((pass_bpm / candidate).log2().round().clamp(-2.0, 2.0) as i32) } else { 1.0 };
     let fast = refine_grid(beats, lock_tempo(beats, candidate * factor)?)?;
-    let period_s = fast.period_s * factor;
-    if factor <= 1.0 {
-        return Some(Grid { period_s, phase_s: fast.phase_s });
-    }
-    on_the_kicks((0..factor as usize).map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s }), envelope)
+    Some(Grid { period_s: fast.period_s * factor, phase_s: fast.phase_s })
 }
 
 /// The tempo within ±2 % of `bpm` that the beats line up with best, with its
@@ -2070,8 +2327,8 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     // Per stage: BPM step and span either side, phase step and span either side (s).
     // Stage 1's phase stays within an eighth of a beat of the start, as further
     // out the full band's off-beat hats outscore the kicks. A start fitted to
-    // aubio's beats is 7–24 ms off the kicks (searched_grid also tries it half
-    // a beat on); without one, searched_grid covers the beat with four starts.
+    // aubio's beats can be on any 16th of the beat, so searched_grid covers
+    // the beat with four starts a quarter beat apart.
     let stages = [
         (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
@@ -2230,6 +2487,28 @@ git commit -m "feat(bpm): fit a constant grid through precise beats, refine it o
         let changing = detect_bpm_from_samples(&tempo_change(120.0, 126.0, 44100, 30.0)).unwrap().expect("a tempo");
         assert!(steady.confidence >= 0.9, "steady {:.2}", steady.confidence);
         assert!(changing.confidence < steady.confidence, "changing {:.2}, steady {:.2}", changing.confidence, steady.confidence);
+    }
+
+    #[test]
+    fn noise_gets_no_confident_tempo() {
+        for amplitude in [0.002, 0.1, 0.3] {
+            if let Some(result) = detect_bpm_from_samples(&white_noise(44100, 60.0, amplitude)).unwrap() {
+                assert!(result.confidence < 0.3, "noise at {amplitude}: {:.2} BPM, confidence {:.2}", result.bpm, result.confidence);
+            }
+        }
+    }
+
+    #[test]
+    fn quiet_kicks_keep_their_tempo_and_confidence() {
+        // Kicks at -40 dB over a -60 dB noise floor.
+        let mut audio = kick_track(124.0, 44100, 60.0, 0.137);
+        let noise = white_noise(44100, 60.0, 0.002);
+        for (sample, n) in audio.samples.iter_mut().zip(&noise.samples) {
+            *sample = *sample * 0.01 + n;
+        }
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
+        assert!((result.bpm - 124.0).abs() <= 0.05, "{:.3} BPM", result.bpm);
+        assert!(result.confidence >= 0.9, "confidence {:.2}", result.confidence);
     }
 ```
 
