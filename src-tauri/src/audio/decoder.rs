@@ -7,7 +7,7 @@ use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use symphonia::core::units::Time;
+use symphonia::core::units::{Time, TimeBase};
 
 /// PCM audio chunk sent to frontend (f32 samples, interleaved stereo)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,6 +292,24 @@ pub struct MonoAudio {
     pub duration_ms: u64,
 }
 
+/// Frames of silence that stand in for a packet that failed to decode, so
+/// the samples after it keep their time (spec 2026-10-17, §2): the packet's
+/// duration in the track's time base, at the sample rate.
+fn gap_frames(duration: u64, time_base: Option<TimeBase>, sample_rate: u32) -> usize {
+    match time_base {
+        Some(tb) => {
+            let t = tb.calc_time(duration);
+            ((t.seconds as f64 + t.frac) * sample_rate as f64).round() as usize
+        }
+        None => duration as usize,
+    }
+}
+
+/// Whether MP3/AAC encoder delay and padding are trimmed for analysis. Set by
+/// measurement (spec §2, decoder timeline): the setting that lines MP3 grids
+/// up with Traktor's.
+const GAPLESS: bool = false;
+
 /// Decode an entire audio file to mono f32 samples.
 /// 
 /// This is the foundation for all DSP analysis in RecoDeck.
@@ -313,7 +331,12 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
     }
     
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
+            &MetadataOptions::default(),
+        )
         .map_err(|e| format!("Failed to probe audio format: {}", e))?;
     
     let mut format_reader = probed.format;
@@ -324,6 +347,7 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
     
     let track_id = track.id;
     let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+    let time_base = track.codec_params.time_base;
     
     // Calculate duration from frame count
     let duration_ms = if let Some(n_frames) = track.codec_params.n_frames {
@@ -359,8 +383,10 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(symphonia::core::errors::Error::DecodeError(msg)) => {
-                // Skip corrupted packets, continue decoding
-                eprintln!("[decode_to_mono] Skipping corrupted packet: {}", msg);
+                // Silence of the packet's length keeps every later sample at its time.
+                eprintln!("[decode_to_mono] Corrupted packet replaced by silence: {}", msg);
+                let gap = gap_frames(packet.dur(), time_base, sample_rate);
+                all_samples.resize(all_samples.len() + gap, 0.0);
                 continue;
             }
             Err(e) => return Err(format!("Decode error: {}", e)),
@@ -460,6 +486,17 @@ where
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn a_failed_packet_is_silence_of_its_length() {
+        use symphonia::core::units::TimeBase;
+        assert_eq!(gap_frames(1152, Some(TimeBase::new(1, 44100)), 44100), 1152);
+        assert_eq!(gap_frames(1024, Some(TimeBase::new(1, 48000)), 48000), 1024);
+        // A time base finer than the sample rate.
+        assert_eq!(gap_frames(2048, Some(TimeBase::new(1, 96000)), 48000), 1024);
+        // No time base: one frame per tick.
+        assert_eq!(gap_frames(576, None, 44100), 576);
+    }
 
     #[test]
     fn test_audio_decoder_basic() {
