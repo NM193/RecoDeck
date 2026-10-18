@@ -254,12 +254,16 @@ pub async fn analyze_tracks_batch(
                 }
 
                 // Decode once
-                let audio = match decoder::decode_to_mono(Path::new(file_path)) {
+                let audio = match decoder::decode_to_mono_typed(Path::new(file_path)) {
                     Ok(a) => a,
                     Err(e) => {
                         eprintln!("[batch_analysis] Decode failed for track {}: {}", track_id, e);
-                        // Read but not decodable: it waits for the next version or a forced re-analysis.
-                        save(None, None);
+                        // Read but not decodable: it waits for the next version or a
+                        // forced re-analysis. A file that could not be read (no
+                        // permission, a flaky drive) saves nothing and is tried again.
+                        if !e.is_transient() {
+                            save(None, None);
+                        }
                         failed.fetch_add(1, Ordering::SeqCst);
                         emit(None, None);
                         return;

@@ -314,20 +314,106 @@ const MAX_GAP_S: f64 = 10.0;
 /// up with Traktor's.
 const GAPLESS: bool = false;
 
-/// Decode an entire audio file to mono f32 samples.
-/// 
-/// This is the foundation for all DSP analysis in RecoDeck.
-/// It reads the full file, decodes all packets, converts to f32,
-/// and mixes down to mono (if stereo/multichannel).
-///
-/// The samples are NOT resampled — they stay at the file's native sample rate.
-/// Individual analysis modules can resample if needed (e.g., to 16kHz for AI models).
-pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
+/// Why a file could not be decoded. The difference matters to analysis: a file
+/// that could not be read (no permission, a flaky or unmounted drive) may
+/// decode next time, while one that was read but is not decodable audio will
+/// not, so only that one counts as analysed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DecodeError {
+    /// The file could not be opened or read (an I/O error other than its end).
+    Unreadable(String),
+    /// The file was read but is not audio this decoder handles (unsupported
+    /// format, no audio track, codec error).
+    Undecodable(String),
+}
+
+impl DecodeError {
+    /// An I/O error that is not the end of the file means the file could not
+    /// be read; anything else from the decoder is about the content.
+    fn of(e: &symphonia::core::errors::Error, message: String) -> Self {
+        match e {
+            symphonia::core::errors::Error::IoError(io)
+                if io.kind() != std::io::ErrorKind::UnexpectedEof =>
+            {
+                DecodeError::Unreadable(message)
+            }
+            _ => DecodeError::Undecodable(message),
+        }
+    }
+
+    /// True when a later attempt may succeed.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, DecodeError::Unreadable(_))
+    }
+}
+
+/// The file, noting any I/O error other than its end: the probe swallows
+/// read errors into "no suitable format", so the failure kind has to be kept
+/// here.
+struct WatchedFile {
+    file: std::fs::File,
+    failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl WatchedFile {
+    fn note<T>(&self, result: std::io::Result<T>) -> std::io::Result<T> {
+        if let Err(e) = &result {
+            if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                self.failed.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        result
+    }
+}
+
+impl std::io::Read for WatchedFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let result = self.file.read(buf);
+        self.note(result)
+    }
+}
+
+impl std::io::Seek for WatchedFile {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let result = self.file.seek(pos);
+        self.note(result)
+    }
+}
+
+impl symphonia::core::io::MediaSource for WatchedFile {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        self.file.metadata().ok().map(|m| m.len())
+    }
+}
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecodeError::Unreadable(m) | DecodeError::Undecodable(m) => f.write_str(m),
+        }
+    }
+}
+
+/// `decode_to_mono` with the kind of failure kept, for the batch.
+pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
     // Open and probe the audio file
     let file = std::fs::File::open(path)
-        .map_err(|e| format!("Failed to open audio file: {}", e))?;
+        .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
     
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let io_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watched = WatchedFile { file, failed: io_failed.clone() };
+    let mss = MediaSourceStream::new(Box::new(watched), Default::default());
+    // A read error anywhere makes the failure transient, however it surfaced.
+    let classify = |e: DecodeError| {
+        if io_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            DecodeError::Unreadable(e.to_string())
+        } else {
+            e
+        }
+    };
     
     let mut hint = Hint::new();
     if let Some(ext) = path.extension() {
@@ -341,13 +427,13 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
             &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
             &MetadataOptions::default(),
         )
-        .map_err(|e| format!("Failed to probe audio format: {}", e))?;
+        .map_err(|e| classify(DecodeError::of(&e, format!("Failed to probe audio format: {}", e))))?;
     
     let mut format_reader = probed.format;
     
     let track = format_reader
         .default_track()
-        .ok_or_else(|| "No audio tracks found".to_string())?;
+        .ok_or_else(|| DecodeError::Undecodable("No audio tracks found".to_string()))?;
     
     let track_id = track.id;
     let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
@@ -362,7 +448,7 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
     
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| format!("Failed to create decoder: {}", e))?;
+        .map_err(|e| DecodeError::of(&e, format!("Failed to create decoder: {}", e)))?;
     
     // Collect all decoded mono samples
     let mut all_samples: Vec<f32> = Vec::new();
@@ -375,7 +461,7 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
             {
                 break; // End of file
             }
-            Err(e) => return Err(format!("Error reading packet: {}", e)),
+            Err(e) => return Err(classify(DecodeError::of(&e, format!("Error reading packet: {}", e)))),
         };
         
         // Skip packets from other tracks
@@ -394,7 +480,7 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
                 decoder.reset();
                 continue;
             }
-            Err(e) => return Err(format!("Decode error: {}", e)),
+            Err(e) => return Err(classify(DecodeError::of(&e, format!("Decode error: {}", e)))),
         };
         
         // Convert to mono f32 and append
@@ -414,6 +500,18 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
         sample_rate,
         duration_ms: actual_duration_ms,
     })
+}
+
+/// Decode an entire audio file to mono f32 samples.
+/// 
+/// This is the foundation for all DSP analysis in RecoDeck.
+/// It reads the full file, decodes all packets, converts to f32,
+/// and mixes down to mono (if stereo/multichannel).
+///
+/// The samples are NOT resampled — they stay at the file's native sample rate.
+/// Individual analysis modules can resample if needed (e.g., to 16kHz for AI models).
+pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
+    decode_to_mono_typed(path).map_err(|e| e.to_string())
 }
 
 /// Convert decoded audio buffer to mono f32 samples.
@@ -524,5 +622,36 @@ mod tests {
         let chunk = chunk.unwrap();
         assert!(!chunk.samples.is_empty());
         assert!(chunk.sample_rate > 0);
+    }
+
+    #[test]
+    fn a_path_that_cannot_be_read_is_transient_and_garbage_is_not() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // A directory opens but cannot be read.
+        let e = decode_to_mono_typed(dir.path()).unwrap_err();
+        assert!(e.is_transient(), "a directory: {e}");
+
+        // A file that cannot be opened (permission removed).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let locked = dir.path().join("locked.mp3");
+            std::fs::write(&locked, vec![7u8; 4096]).unwrap();
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+            if std::fs::File::open(&locked).is_err() {
+                let e = decode_to_mono_typed(&locked).unwrap_err();
+                assert!(e.is_transient(), "no permission: {e}");
+            }
+        }
+
+        // A file that opens but is no audio.
+        let garbage = dir.path().join("garbage.mp3");
+        let bytes: Vec<u8> = (0..20_000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
+        std::fs::write(&garbage, bytes).unwrap();
+        let e = decode_to_mono_typed(&garbage).unwrap_err();
+        assert!(!e.is_transient(), "garbage: {e}");
+        // The string API keeps working for the other callers.
+        assert!(decode_to_mono(&garbage).is_err());
     }
 }
