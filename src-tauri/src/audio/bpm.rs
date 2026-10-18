@@ -65,9 +65,12 @@ const MIN_BEATS_FOR_IBI: usize = 8;
 /// Tight tolerance for electronic music which has machine-stable tempo.
 const CONSENSUS_TOLERANCE: f64 = 1.5;
 
-/// A tempo this close to a whole number becomes it (spec §2, step 3). Tuned
-/// with recodeck-eval in Task 13.
-const SNAP_BPM: f64 = 0.05;
+/// A tempo this close to a whole number becomes it (spec §2, step 3).
+/// Measured with recodeck-eval against Traktor on the whole library: 0.02 and
+/// 0.05 give the most tempos within 0.005 BPM and the most MP3 grids within
+/// 20 ms, ahead of no snap and of 0.1. 0.02 is the smaller of the best, so
+/// fewer tempos that really sit off a whole number get moved.
+const SNAP_BPM: f64 = 0.02;
 
 /// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM. Stage 1
 /// of the envelope search spans the same ±2 %, with its own step.
@@ -622,7 +625,7 @@ mod tests {
     #[test]
     fn a_tempo_near_a_whole_number_snaps_and_keeps_its_beats() {
         let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.137));
-        let near = Grid { period_s: 60.0 / 124.03, phase_s: 0.137 };
+        let near = Grid { period_s: 60.0 / 124.015, phase_s: 0.137 };
         let snapped = snap(near, &envelope);
         assert!((snapped.bpm() - 124.0).abs() < 1e-9);
         let worst_ms = (0..123)
@@ -630,8 +633,10 @@ mod tests {
             .map(|t| (snapped.nearest(t) - t).abs() * 1000.0)
             .fold(0.0, f64::max);
         assert!(worst_ms <= 5.0, "a beat {worst_ms:.1} ms off the kicks");
-        let far = Grid { period_s: 60.0 / 124.2, phase_s: 0.137 };
-        assert_eq!(snap(far, &envelope), far);
+        for bpm in [124.03, 124.2] {
+            let far = Grid { period_s: 60.0 / bpm, phase_s: 0.137 };
+            assert_eq!(snap(far, &envelope), far, "{bpm} BPM snapped");
+        }
     }
 
     #[test]
