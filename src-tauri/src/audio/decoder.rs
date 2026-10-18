@@ -306,6 +306,56 @@ fn gap_frames(duration: u64, time_base: Option<TimeBase>, sample_rate: u32) -> u
     frames.min((MAX_GAP_S * sample_rate as f64) as usize)
 }
 
+/// Longest stretch of audio the sample buffer is reserved for up front.
+const MAX_RESERVE_S: f64 = 4.0 * 3600.0;
+
+/// Files longer than this are decoded and analysed one at a time (see `long_file_guard`).
+pub const LONG_FILE_S: f64 = 20.0 * 60.0;
+
+/// Held while a long file is decoded and analysed.
+static LONG_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// A file this long or longer by size alone, when its container gives no length.
+const LONG_FILE_BYTES: u64 = 60_000_000;
+
+/// Whether the file is longer than `LONG_FILE_S`, judged from the probe
+/// (frame count) before anything is decoded; by file size when the container
+/// has no frame count.
+fn is_long_file(path: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension() {
+        hint.with_extension(&ext.to_string_lossy());
+    }
+    let Ok(probed) = symphonia::default::get_probe().format(
+        &hint,
+        mss,
+        &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
+        &MetadataOptions::default(),
+    ) else {
+        return false;
+    };
+    let params = &probed.format.default_track().map(|t| t.codec_params.clone());
+    match params.as_ref().and_then(|p| Some((p.n_frames?, p.sample_rate?))) {
+        Some((frames, rate)) if rate > 0 => frames as f64 / rate as f64 > LONG_FILE_S,
+        _ => size > LONG_FILE_BYTES,
+    }
+}
+
+/// Only one file longer than `LONG_FILE_S` is decoded and analysed at a time
+/// across the whole process: a two-hour mix holds gigabytes while it is
+/// worked on, and a batch runs many files in parallel. Keep the guard until
+/// the file's analysis is done. None (nothing held) for an ordinary file.
+pub fn long_file_guard(path: &Path) -> Option<std::sync::MutexGuard<'static, ()>> {
+    if is_long_file(path) {
+        Some(LONG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner()))
+    } else {
+        None
+    }
+}
+
 /// Longest silence one failed packet stands for: real packets last milliseconds, so more is a corrupt header.
 const MAX_GAP_S: f64 = 10.0;
 
@@ -450,8 +500,16 @@ pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|e| DecodeError::of(&e, format!("Failed to create decoder: {}", e)))?;
     
-    // Collect all decoded mono samples
-    let mut all_samples: Vec<f32> = Vec::new();
+    // Collect all decoded mono samples. Reserved from the frame count when the
+    // container gives one, so a long mix is not grown by doubling (which leaves
+    // up to half again as much unused); a corrupt count cannot ask for more than
+    // MAX_RESERVE_S seconds.
+    let reserve = track
+        .codec_params
+        .n_frames
+        .map(|n| n.min((MAX_RESERVE_S * sample_rate as f64) as u64) as usize)
+        .unwrap_or(0);
+    let mut all_samples: Vec<f32> = Vec::with_capacity(reserve);
     
     loop {
         let packet = match format_reader.next_packet() {
@@ -488,6 +546,8 @@ pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
         all_samples.extend_from_slice(&mono_chunk);
     }
     
+    all_samples.shrink_to_fit();
+
     // Recalculate duration from actual sample count if needed
     let actual_duration_ms = if sample_rate > 0 {
         (all_samples.len() as u64 * 1000) / sample_rate as u64
@@ -653,5 +713,40 @@ mod tests {
         assert!(!e.is_transient(), "garbage: {e}");
         // The string API keeps working for the other callers.
         assert!(decode_to_mono(&garbage).is_err());
+    }
+
+    /// A mono 16-bit WAV whose header says it lasts `seconds`, with a little audio.
+    fn wav_claiming(path: &Path, seconds: u32) {
+        let rate = 8000u32;
+        let claimed = rate * seconds * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + claimed).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&claimed.to_le_bytes());
+        bytes.extend_from_slice(&vec![0u8; 4000]);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn only_a_file_over_twenty_minutes_takes_the_long_file_guard() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let short = dir.path().join("short.wav");
+        let long = dir.path().join("long.wav");
+        wav_claiming(&short, 600);
+        wav_claiming(&long, 1500);
+        assert!(long_file_guard(&short).is_none());
+        let held = long_file_guard(&long);
+        assert!(held.is_some());
+        drop(held);
+        assert!(long_file_guard(Path::new("/nonexistent/x.wav")).is_none());
     }
 }

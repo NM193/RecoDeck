@@ -276,6 +276,8 @@ fn analyze(path: String, reference: Reference, min_seconds: f64) -> Outcome {
         let mut bpm = None;
         let mut key = None;
         let mut error = None;
+        // The app's rule: one file longer than 20 minutes at a time.
+        let _long = recodeck_lib::audio::decoder::long_file_guard(Path::new(&file));
         match decode_to_mono(Path::new(&file)) {
             Err(e) => error = Some(e),
             Ok(audio) => {

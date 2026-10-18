@@ -108,29 +108,41 @@ pub fn detect_bpm(path: &Path) -> Result<Option<BpmResult>, String> {
     detect_bpm_from_samples(&audio)
 }
 
-/// Apply a simple 1st-order low-pass filter (RC filter) at the given cutoff frequency.
+/// A filtered copy of the samples, the reference `LowPass` is tested against
+/// (the passes filter hop by hop). 1st-order low-pass (RC filter) at the given cutoff frequency.
 ///
 /// For BPM detection, a cutoff of ~500Hz preserves kick drums and bass while removing
 /// hi-hat and cymbal energy that causes false onset triggers and BPM overestimation.
+#[cfg(test)]
 fn low_pass_filter(samples: &[f32], sample_rate: u32, cutoff_hz: f64) -> Vec<f32> {
-    if samples.is_empty() {
-        return Vec::new();
+    let mut filter = LowPass::new(samples, sample_rate, cutoff_hz);
+    samples.iter().map(|&s| filter.next(s)).collect()
+}
+
+/// The one-pole low-pass of `low_pass_filter`, one sample at a time, so a
+/// pass can filter hop by hop without a second copy of a long file in memory.
+struct LowPass {
+    alpha: f64,
+    prev: f64,
+    started: bool,
+}
+
+impl LowPass {
+    fn new(samples: &[f32], sample_rate: u32, cutoff_hz: f64) -> Self {
+        let rc = 1.0 / (2.0 * PI * cutoff_hz);
+        let dt = 1.0 / sample_rate as f64;
+        LowPass { alpha: dt / (rc + dt), prev: samples.first().copied().unwrap_or(0.0) as f64, started: false }
     }
 
-    let rc = 1.0 / (2.0 * PI * cutoff_hz);
-    let dt = 1.0 / sample_rate as f64;
-    let alpha = dt / (rc + dt);
-
-    let mut filtered = Vec::with_capacity(samples.len());
-    let mut prev = samples[0] as f64;
-    filtered.push(samples[0]);
-
-    for &sample in &samples[1..] {
-        prev = prev + alpha * (sample as f64 - prev);
-        filtered.push(prev as f32);
+    fn next(&mut self, sample: f32) -> f32 {
+        if !self.started {
+            // The first output is the first sample, as the filter starts there.
+            self.started = true;
+            return sample;
+        }
+        self.prev += self.alpha * (sample as f64 - self.prev);
+        self.prev as f32
     }
-
-    filtered
 }
 
 /// Detect BPM and beat grid from decoded audio (spec 2026-10-17, §2). Ok(None)
@@ -152,15 +164,10 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<Option<BpmResult>, S
 /// low-passed SpecFlux pass's beats (or from the candidate alone) and refined
 /// on the envelope, then snapped. None when no tempo is found.
 fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
-    let filtered = MonoAudio {
-        samples: low_pass_filter(&audio.samples, audio.sample_rate, 500.0),
-        sample_rate: audio.sample_rate,
-        duration_ms: audio.duration_ms,
-    };
     let mut candidates: Vec<(f64, f64)> = Vec::new();
     let mut grid_pass: Option<TempoPass> = None;
     for mode in [OnsetMode::SpecFlux, OnsetMode::Hfc, OnsetMode::Complex] {
-        let Ok(pass) = run_tempo_pass(&filtered, mode) else { continue };
+        let Ok(pass) = run_tempo_pass_filtered(audio, mode, Some(500.0)) else { continue };
         let (ibi_bpm, ibi_conf) = compute_bpm_from_ibis(&pass.beats);
         if ibi_bpm > 0.0 {
             candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf));
@@ -231,12 +238,29 @@ fn is_silent(hop: &[f32]) -> bool {
 /// aubio still moves it in hops its silence check rejects, so those are dropped
 /// with the same check.
 fn run_tempo_pass(audio: &MonoAudio, mode: OnsetMode) -> Result<TempoPass, String> {
+    run_tempo_pass_filtered(audio, mode, None)
+}
+
+/// A tempo pass over the audio low-passed at `low_pass_hz` (None: unfiltered),
+/// filtered hop by hop: the same samples as a filtered copy, without the copy.
+fn run_tempo_pass_filtered(audio: &MonoAudio, mode: OnsetMode, low_pass_hz: Option<f64>) -> Result<TempoPass, String> {
+    let mut filter = low_pass_hz.map(|hz| LowPass::new(&audio.samples, audio.sample_rate, hz));
+    let mut filtered_hop = vec![0.0f32; HOP_SIZE];
     let mut tempo = Tempo::new(mode, BUF_SIZE, HOP_SIZE, audio.sample_rate)
         .map_err(|e| format!("Failed to create aubio Tempo detector: {:?}", e))?;
     let rate = audio.sample_rate as f64;
     let mut beats = Vec::new();
     let mut last = tempo.get_last();
-    for (i, hop) in audio.samples.chunks_exact(HOP_SIZE).enumerate() {
+    for (i, raw_hop) in audio.samples.chunks_exact(HOP_SIZE).enumerate() {
+        let hop: &[f32] = match filter.as_mut() {
+            Some(f) => {
+                for (out, &s) in filtered_hop.iter_mut().zip(raw_hop) {
+                    *out = f.next(s);
+                }
+                &filtered_hop
+            }
+            None => raw_hop,
+        };
         tempo.do_result(hop).map_err(|e| format!("Tempo detection error at frame {}: {:?}", i, e))?;
         let now = tempo.get_last();
         if now != last {
@@ -556,6 +580,16 @@ mod tests {
         intervals.sort_by(f64::total_cmp);
         let bpm = 60.0 / intervals[intervals.len() / 2];
         assert!((bpm / 122.0 - 1.0).abs() < 0.02, "median interval gives {bpm:.2} BPM");
+    }
+
+    #[test]
+    fn filtering_hop_by_hop_gives_the_beats_of_a_filtered_copy() {
+        let audio = kick_track(124.0, 44100, 30.0, 0.0);
+        let copy = run_tempo_pass(&low_passed(&audio), OnsetMode::SpecFlux).unwrap();
+        let streamed = run_tempo_pass_filtered(&audio, OnsetMode::SpecFlux, Some(500.0)).unwrap();
+        assert!(!copy.beats.is_empty());
+        assert_eq!(copy.beats, streamed.beats);
+        assert_eq!(copy.aubio_bpm, streamed.aubio_bpm);
     }
 
     #[test]

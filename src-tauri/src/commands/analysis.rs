@@ -253,6 +253,13 @@ pub async fn analyze_tracks_batch(
                     return;
                 }
 
+                // One long file at a time: a mix holds gigabytes while it is worked on.
+                // Held to the end of this file; a cancel while waiting stops here.
+                let _long = decoder::long_file_guard(Path::new(file_path));
+                if cancelled.load(Ordering::SeqCst) {
+                    return;
+                }
+
                 // Decode once
                 let audio = match decoder::decode_to_mono_typed(Path::new(file_path)) {
                     Ok(a) => a,
