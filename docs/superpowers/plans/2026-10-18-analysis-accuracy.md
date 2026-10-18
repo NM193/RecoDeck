@@ -1725,6 +1725,18 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
   - Cost: 0.15 s on 6 minutes and 0.28 s on 8 minutes (release).
 - Before this task, `generate_click_track` got the same quiet noise floor as `kick_track` (its own commit). Task 10's silence check drops aubio's beats in digital silence, which left the old click tests with too few beats.
 
+**Review fixes (2026-10-18).**
+- **Off-beat lock.** The test signal is open hats on every off-beat (`offbeat_hats`, gain 0.1–0.3). Their full-band flux outscored the kicks, so stage 1's ±½-beat phase span put the grid half a beat (242 ms) off, even when started from the true grid.
+  - Stage 1 now spans ±⅛ beat around the start. That covers aubio's 7–24 ms offset: ⅛ beat is 43 ms even at 174 BPM.
+  - The hat cases now land within 0.72 ms, with confidence 1.0.
+- **Stage-1 cap.** The coarse tempo step shrank with the duration, so stage 1's cost grew with the duration squared. The step now stops shrinking at `STAGE1_MAX_S` (600 s).
+  - Whole detection, release, before → after: 6 min 0.98 → 0.85 s; 60 min 27.2 → 9.0 s.
+  - One envelope search alone: 18.8 → 0.8 s.
+- **Fallback start.** With no pass, or too few beats near the candidate, the candidate used to be dropped.
+  - A start at the candidate's period, phased by the whole track's kick strength, failed. Consensus candidates run 1.3–1.5 % fast on the kick tests, so that phase was 65–358 ms off at the middle, and the grids ended ¼–½ beat off.
+  - `searched_grid` starts the search from four phases ¼ beat apart and keeps the result with the most kick strength. Candidates from 1 % slow to 1.5 % fast land within 4.1 ms.
+  - Silence still gives None: the fallback needs a beat on a low-band onset.
+
 - [ ] **Step 1: Write the failing tests** (in `mod tests`)
 
 ```rust
@@ -1843,9 +1855,16 @@ Update the module's top comment to describe the new steps (spec §2: candidate, 
 /// with recodeck-eval in Task 13.
 const SNAP_BPM: f64 = 0.05;
 
-/// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM.
+/// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM. Stage 1
+/// of the envelope search spans the same ±2 %, with its own step.
 const LOCK_RANGE: f64 = 0.02;
 const LOCK_STEP_BPM: f64 = 0.01;
+
+/// The longest duration the envelope search's first tempo step shrinks for.
+/// Tracks up to 10 minutes keep the exact step; past that the step stays put,
+/// so the search's cost grows linearly, not with the square of the duration.
+/// Longer files are DJ mixes, which have no one constant grid anyway.
+const STAGE1_MAX_S: f64 = 600.0;
 
 /// A constant beat grid: beat k at `phase_s + k × period_s` seconds.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1878,8 +1897,8 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<Option<BpmResult>, S
 }
 
 /// Steps 1–3: the candidate tempo from aubio's passes, a grid fitted to the
-/// low-passed SpecFlux pass's beats and refined on the envelope, then snapped.
-/// None when no tempo is found.
+/// low-passed SpecFlux pass's beats (or from the candidate alone) and refined
+/// on the envelope, then snapped. None when no tempo is found.
 fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     let filtered = MonoAudio {
         samples: low_pass_filter(&audio.samples, audio.sample_rate, 500.0),
@@ -1909,8 +1928,29 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
         }
     }
     let candidate = pick_consensus(&candidates)?;
-    let start = fit_grid(&grid_pass?.beats, candidate, envelope)?;
-    Some(snap(envelope_search(start, envelope, true), envelope))
+    let beats = grid_pass.map(|pass| pass.beats).unwrap_or_default();
+    Some(snap(searched_grid(&beats, candidate, envelope)?, envelope))
+}
+
+/// Step 2: the envelope search from the grid fitted to the pass's beats. When
+/// they give none (no pass, or too few beats near the candidate), it starts at
+/// the candidate's period from four phases a quarter beat apart, which
+/// together cover the whole beat, and the result on the kicks wins: by then
+/// each has its tempo, so its low-band strength over the track means something.
+/// None when none of its beats lands on a low-band onset, as in silence.
+fn searched_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
+    if let Some(start) = fit_grid(beats, candidate, envelope) {
+        return Some(envelope_search(start, envelope, true));
+    }
+    let period_s = 60.0 / candidate;
+    let starts = (0..4).map(|i| Grid { period_s, phase_s: i as f64 * period_s / 4.0 });
+    on_the_kicks(starts.map(|start| envelope_search(start, envelope, true)), envelope)
+        .filter(|grid| envelope.kick_strength(grid.phase_s, grid.period_s) > 0.0)
+}
+
+/// Of several grids, the one whose beats carry the most low-band onset strength.
+fn on_the_kicks(grids: impl Iterator<Item = Grid>, envelope: &OnsetEnvelope) -> Option<Grid> {
+    grids.max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
 }
 
 /// Step 2: the constant grid through the beats near `candidate`. A pass that
@@ -1924,9 +1964,7 @@ fn fit_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<G
     if factor <= 1.0 {
         return Some(Grid { period_s, phase_s: fast.phase_s });
     }
-    (0..factor as usize)
-        .map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s })
-        .max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
+    on_the_kicks((0..factor as usize).map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s }), envelope)
 }
 
 /// The tempo within ±2 % of `bpm` that the beats line up with best, with its
@@ -1996,7 +2034,7 @@ fn fit_line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
 /// Step 2's second way (spec §2), needed because aubio's beats drift around
 /// its own period: the tempo (unless `search_tempo` is false) and phase whose
 /// grid carries the most onset strength, searched coarse to fine around the
-/// beat nearest the middle.
+/// start's beat nearest the middle, within an eighth of a beat of it.
 fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> Grid {
     let middle = envelope.duration_s() / 2.0;
     let mut best = Grid { phase_s: grid.nearest(middle), ..grid };
@@ -2004,12 +2042,17 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     // Stage 2 reaches back ±15 ms from the phase stage 1 leaves. Off by half
     // its tempo step, stage 1's grid drifts duration × step / (4 × bpm) by the
     // ends, which smears its phase about as much; this step keeps that drift
-    // at a quarter of the reach, so long tracks get a finer step.
+    // at a quarter of the reach, so long tracks get a finer step (up to
+    // STAGE1_MAX_S).
     let reach_s = 0.015;
-    let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s()).min(0.05);
+    let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s().min(STAGE1_MAX_S)).min(0.05);
     // Per stage: BPM step and span either side, phase step and span either side (s).
+    // Stage 1's phase stays within an eighth of a beat of the start, as further
+    // out the full band's off-beat hats outscore the kicks. A start fitted to
+    // aubio's beats is 7–24 ms off the kicks; without one, searched_grid
+    // covers the beat with four starts.
     let stages = [
-        (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 2.0),
+        (coarse_bpm_step, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 8.0),
         (0.01, 0.05, 0.001, reach_s),
         (0.002, 0.01, 0.001, 0.003),
     ];
