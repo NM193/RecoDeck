@@ -283,8 +283,7 @@ fn analyze(path: String, reference: Reference, min_seconds: f64) -> Outcome {
                 if duration_s < min_seconds {
                     short = true;
                 } else {
-                    // Today's detection reports a failure as BPM 0.
-                    bpm = detect_bpm_from_samples(&audio).ok().filter(|r| r.bpm > 0.0);
+                    bpm = detect_bpm_from_samples(&audio).ok().flatten();
                     key = detect_key_from_samples(&audio).ok();
                 }
             }

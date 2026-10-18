@@ -1,7 +1,7 @@
 // src-tauri/src/audio/onset.rs
 // The onset envelope (spec 2026-10-17, §2): spectral flux in a low band (the
 // kick) and over the whole spectrum, every 128 samples. The beat grid uses it
-// for its first beat and its confidence.
+// to refine its tempo and phase, for its first beat and its confidence.
 
 use super::decoder::MonoAudio;
 use rustfft::{num_complex::Complex, FftPlanner};
@@ -17,6 +17,10 @@ const MUSIC_WINDOW_S: f64 = 2.0;
 const MUSIC_SHARE: f64 = 0.1;
 /// The first strong onset reaches 30 % of the 99.5th percentile of the track's low-band flux.
 const STRONG_ONSET_SHARE: f32 = 0.3;
+/// Where the flux peaks sit from an onset, in ms (negative: before it):
+/// measured on the synthetic kick tests and taken off the frame times, so a
+/// grid found on the envelope sits on the kicks.
+const ENVELOPE_LATENCY_MS: f64 = -2.13;
 
 pub struct OnsetEnvelope {
     /// Seconds between frames, and the time of frame 0's centre.
@@ -24,8 +28,6 @@ pub struct OnsetEnvelope {
     start_s: f64,
     /// Per frame: low-band flux, full-band flux, low-band energy.
     low: Vec<f32>,
-    // Read by the envelope search of a later task.
-    #[allow(dead_code)]
     full: Vec<f32>,
     low_energy: Vec<f32>,
 }
@@ -70,7 +72,7 @@ impl OnsetEnvelope {
             full.push(a);
             low_energy.push(e);
         }
-        Self { frame_s: HOP as f64 / rate, start_s: (FRAME / 2) as f64 / rate, low, full, low_energy }
+        Self { frame_s: HOP as f64 / rate, start_s: (FRAME / 2) as f64 / rate - ENVELOPE_LATENCY_MS / 1000.0, low, full, low_energy }
     }
 
     /// The track's length as the envelope covers it, in seconds.
@@ -146,6 +148,26 @@ impl OnsetEnvelope {
         self.beats(phase_s, period_s).map(|t| self.max_low(t - 0.010, t + 0.010) as f64).sum()
     }
 
+    /// Low plus full-band flux at time t, interpolated between frames.
+    fn flux_at(&self, t: f64) -> f64 {
+        let x = (t - self.start_s) / self.frame_s;
+        if x < 0.0 || self.low.is_empty() {
+            return 0.0;
+        }
+        let i = x.floor() as usize;
+        if i + 1 >= self.low.len() {
+            return 0.0;
+        }
+        let w = x - i as f64;
+        let at = |j: usize| (self.low[j] + self.full[j]) as f64;
+        at(i) * (1.0 - w) + at(i + 1) * w
+    }
+
+    /// The onset strength on a grid's beats: what the envelope search maximises.
+    pub fn onset_strength(&self, phase_s: f64, period_s: f64) -> f64 {
+        self.beats(phase_s, period_s).map(|t| self.flux_at(t)).sum()
+    }
+
     /// A grid's beats from 0 s to the end of the envelope.
     pub fn beats(&self, phase_s: f64, period_s: f64) -> Box<dyn Iterator<Item = f64> + '_> {
         if !(phase_s.is_finite() && period_s.is_finite() && period_s > 0.0) {
@@ -202,6 +224,17 @@ mod tests {
         let period = 60.0 / 124.0;
         let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 30.0, 0.137));
         assert!(envelope.kick_strength(0.137, period) > 2.0 * envelope.kick_strength(0.137 + period / 2.0, period));
+    }
+
+    #[test]
+    fn the_onset_strength_peaks_on_the_kicks() {
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 30.0, 0.137));
+        let best = (100..=180)
+            .map(|ms| ms as f64 / 1000.0)
+            .max_by(|a, b| envelope.onset_strength(*a, period).total_cmp(&envelope.onset_strength(*b, period)))
+            .unwrap();
+        assert!((best - 0.137).abs() <= 0.001, "peak at {best:.3}");
     }
 
     #[test]

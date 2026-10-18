@@ -257,7 +257,7 @@ pub async fn analyze_tracks_batch(
                 }
 
                 // Analyze BPM and Key from the same decoded audio
-                let bpm_result = bpm::detect_bpm_from_samples(&audio).ok();
+                let bpm_result = bpm::detect_bpm_from_samples(&audio).ok().flatten();
                 let key_result = key::detect_key_from_samples(&audio).ok();
 
                 let bpm_val = bpm_result.as_ref().map(|r| r.bpm);

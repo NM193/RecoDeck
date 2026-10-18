@@ -1711,7 +1711,14 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
 ### Task 11: The grid fit, snap and `Option` result
 
 **Files:**
-- Modify: `src-tauri/src/audio/bpm.rs`, `src-tauri/src/commands/analysis.rs`, `src-tauri/src/bin/recodeck-eval.rs`
+- Modify: `src-tauri/src/audio/bpm.rs`, `src-tauri/src/audio/onset.rs`, `src-tauri/src/commands/analysis.rs`, `src-tauri/src/bin/recodeck-eval.rs`
+
+**Why the envelope search is in this task (measured 2026-10-18).**
+- aubio spaces its beats by its own period, about 1.3 % fast on the kick tests, and re-syncs to the kicks every 4–7 beats.
+- Against the kicks, its beats form a sawtooth whose mean offset differs per track (−7 to −24 ms on the six kick cases). It also grows after the first 10–20 s, which tilts a least-squares line by up to 0.04 BPM.
+- No single latency fits that. With one constant (`BEAT_LATENCY_MS`, the mean, −11.62 ms), two of the six cases stayed −12.6 and +5.5 ms off.
+- The onset envelope sits at a steady offset from the kicks (about −2 ms). So the grid fitted to aubio's beats is only the starting point. The envelope search (first planned as Task 14) sets the final tempo and phase, and the snap refits the phase on the envelope.
+- Before this task, `generate_click_track` got the same quiet noise floor as `kick_track` (its own commit). Task 10's silence check drops aubio's beats in digital silence, which left the old click tests with too few beats.
 
 - [ ] **Step 1: Write the failing tests** (in `mod tests`)
 
@@ -1754,13 +1761,17 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
 
     #[test]
     fn a_tempo_near_a_whole_number_snaps_and_keeps_its_beats() {
-        let beats = messy_beats(124.0, 0.137, 300.0);
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.137));
         let near = Grid { period_s: 60.0 / 124.03, phase_s: 0.137 };
-        let snapped = snap(near, &beats);
+        let snapped = snap(near, &envelope);
         assert!((snapped.bpm() - 124.0).abs() < 1e-9);
-        assert!((snapped.nearest(0.137) - 0.137).abs() < 0.002, "beat at {:.4}", snapped.nearest(0.137));
+        let worst_ms = (0..123)
+            .map(|k| 0.137 + k as f64 * 60.0 / 124.0)
+            .map(|t| (snapped.nearest(t) - t).abs() * 1000.0)
+            .fold(0.0, f64::max);
+        assert!(worst_ms <= 5.0, "a beat {worst_ms:.1} ms off the kicks");
         let far = Grid { period_s: 60.0 / 124.2, phase_s: 0.137 };
-        assert_eq!(snap(far, &beats), far);
+        assert_eq!(snap(far, &envelope), far);
     }
 
     #[test]
@@ -1777,6 +1788,21 @@ git commit -m "fix(bpm): beat times from aubio's last beat, precise within the h
     }
 ```
 
+In `onset.rs`'s `mod tests`, the envelope's timing:
+
+```rust
+    #[test]
+    fn the_onset_strength_peaks_on_the_kicks() {
+        let period = 60.0 / 124.0;
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 30.0, 0.137));
+        let best = (100..=180)
+            .map(|ms| ms as f64 / 1000.0)
+            .max_by(|a, b| envelope.onset_strength(*a, period).total_cmp(&envelope.onset_strength(*b, period)))
+            .unwrap();
+        assert!((best - 0.137).abs() <= 0.001, "peak at {best:.3}");
+    }
+```
+
 Update the old tests to the new result:
 - `.expect("BPM detection should succeed")` becomes `.unwrap().expect("a tempo")`;
 - `test_bpm_detection_silence` asserts `detect_bpm_from_samples(&audio).unwrap().is_none()`;
@@ -1786,7 +1812,7 @@ Update the old tests to the new result:
 - [ ] **Step 2: Run to see them fail**
 
 Run: `cd src-tauri && cargo test --lib audio::bpm`
-Expected: compile errors (`Grid`, `lock_tempo`, `beat_grid`… missing).
+Expected: compile errors (`Grid`, `lock_tempo`, `beat_grid`, `onset_strength`… missing).
 
 - [ ] **Step 3: Implement**
 
@@ -1796,11 +1822,6 @@ Update the module's top comment to describe the new steps (spec §2: candidate, 
 /// A tempo this close to a whole number becomes it (spec §2, step 3). Tuned
 /// with recodeck-eval in Task 13.
 const SNAP_BPM: f64 = 0.05;
-
-/// How late aubio reports beats, in ms. aubio compensates no latency (tempo.c,
-/// delay = 0); this is measured on the synthetic kick tests and taken off the
-/// grid pass's beats, so the grid sits on the onsets.
-const BEAT_LATENCY_MS: f64 = 0.0;
 
 /// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM.
 const LOCK_RANGE: f64 = 0.02;
@@ -1837,7 +1858,8 @@ pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<Option<BpmResult>, S
 }
 
 /// Steps 1–3: the candidate tempo from aubio's passes, a grid fitted to the
-/// low-passed SpecFlux pass's beats, then snapped. None when no tempo is found.
+/// low-passed SpecFlux pass's beats and refined on the envelope, then snapped.
+/// None when no tempo is found.
 fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
     let filtered = MonoAudio {
         samples: low_pass_filter(&audio.samples, audio.sample_rate, 500.0),
@@ -1867,9 +1889,8 @@ fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
         }
     }
     let candidate = pick_consensus(&candidates)?;
-    let beats: Vec<f64> = grid_pass?.beats.iter().map(|t| t - BEAT_LATENCY_MS / 1000.0).collect();
-    let grid = fit_grid(&beats, candidate, envelope)?;
-    Some(snap(grid, &beats))
+    let start = fit_grid(&grid_pass?.beats, candidate, envelope)?;
+    Some(snap(envelope_search(start, envelope, true), envelope))
 }
 
 /// Step 2: the constant grid through the beats near `candidate`. A pass that
@@ -1952,27 +1973,49 @@ fn fit_line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
     Some((slope, mean_y - slope * mean_x))
 }
 
+/// Step 2's second way (spec §2), needed because aubio's beats drift around
+/// its own period: the tempo (unless `search_tempo` is false) and phase whose
+/// grid carries the most onset strength, searched coarse to fine around the
+/// beat nearest the middle.
+fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> Grid {
+    let middle = envelope.duration_s() / 2.0;
+    let mut best = Grid { phase_s: grid.nearest(middle), ..grid };
+    let mut best_score = envelope.onset_strength(best.phase_s, best.period_s);
+    // Per stage: BPM step and span either side, phase step and span either side (s).
+    let stages = [
+        (0.05, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 2.0),
+        (0.01, 0.05, 0.001, 0.005),
+        (0.002, 0.01, 0.001, 0.003),
+    ];
+    for (bpm_step, bpm_span, phase_step, phase_span) in stages {
+        let centre = best;
+        let bpm_steps = if search_tempo { (bpm_span / bpm_step).round() as i64 } else { 0 };
+        let phase_steps = (phase_span / phase_step).round() as i64;
+        for b in -bpm_steps..=bpm_steps {
+            let period_s = 60.0 / (centre.bpm() + b as f64 * bpm_step);
+            for p in -phase_steps..=phase_steps {
+                let candidate = Grid { period_s, phase_s: centre.phase_s + p as f64 * phase_step };
+                let score = envelope.onset_strength(candidate.phase_s, candidate.period_s);
+                if score > best_score {
+                    best = candidate;
+                    best_score = score;
+                }
+            }
+        }
+    }
+    best
+}
+
 /// Step 3: a tempo within SNAP_BPM of a whole number becomes it, and the phase
-/// is refitted at that tempo: the mean offset of the beats within a quarter
-/// beat, counted from the beat nearest the middle, so the new tempo moves the
-/// ends least.
-fn snap(grid: Grid, beats: &[f64]) -> Grid {
+/// is refitted at that tempo on the envelope, around the beat nearest the
+/// middle, so the new tempo moves the ends least.
+fn snap(grid: Grid, envelope: &OnsetEnvelope) -> Grid {
     let whole = grid.bpm().round();
-    if (grid.bpm() - whole).abs() > SNAP_BPM || beats.is_empty() {
+    if (grid.bpm() - whole).abs() > SNAP_BPM {
         return grid;
     }
-    let period_s = 60.0 / whole;
-    let anchor = grid.nearest(beats[beats.len() / 2]);
-    let offsets: Vec<f64> = beats
-        .iter()
-        .filter_map(|&t| {
-            let n = ((t - anchor) / period_s).round();
-            let offset = t - (anchor + n * period_s);
-            (offset.abs() <= period_s / 4.0).then_some(offset)
-        })
-        .collect();
-    let shift = if offsets.is_empty() { 0.0 } else { offsets.iter().sum::<f64>() / offsets.len() as f64 };
-    Grid { period_s, phase_s: anchor + shift }
+    let anchor = grid.nearest(envelope.duration_s() / 2.0);
+    envelope_search(Grid { period_s: 60.0 / whole, phase_s: anchor }, envelope, false)
 }
 ```
 
@@ -2004,20 +2047,51 @@ fn pick_consensus(candidates: &[(f64, f64)]) -> Option<f64> {
 }
 ```
 
+In `onset.rs`:
+- Add `ENVELOPE_LATENCY_MS` (start at 0.0) and subtract it in `start_s`: `(FRAME / 2) as f64 / rate - ENVELOPE_LATENCY_MS / 1000.0`.
+- Remove the `dead_code` allow on `full`.
+- Add `onset_strength`, which samples `low + full` linearly interpolated at each grid beat:
+
+```rust
+/// Where the flux peaks sit from an onset, in ms (negative: before it):
+/// measured on the synthetic kick tests and taken off the frame times, so a
+/// grid found on the envelope sits on the kicks.
+const ENVELOPE_LATENCY_MS: f64 = 0.0;
+
+    /// Low plus full-band flux at time t, interpolated between frames.
+    fn flux_at(&self, t: f64) -> f64 {
+        let x = (t - self.start_s) / self.frame_s;
+        if x < 0.0 || self.low.is_empty() {
+            return 0.0;
+        }
+        let i = x.floor() as usize;
+        if i + 1 >= self.low.len() {
+            return 0.0;
+        }
+        let w = x - i as f64;
+        let at = |j: usize| (self.low[j] + self.full[j]) as f64;
+        at(i) * (1.0 - w) + at(i + 1) * w
+    }
+
+    /// The onset strength on a grid's beats: what the envelope search maximises.
+    pub fn onset_strength(&self, phase_s: f64, period_s: f64) -> f64 {
+        self.beats(phase_s, period_s).map(|t| self.flux_at(t)).sum()
+    }
+```
+
 Callers:
 - `commands/analysis.rs`, `analyze_tracks_batch`: `let bpm_result = bpm::detect_bpm_from_samples(&audio).ok().flatten();`
-- `recodeck-eval.rs`, `analyze`: `outcome.bpm = detect_bpm_from_samples(&audio).ok().flatten();` and delete the "Today's detection reports a failure as BPM 0." comment.
+- `recodeck-eval.rs`, `analyze`: `bpm = detect_bpm_from_samples(&audio).ok().flatten();` and delete the "Today's detection reports a failure as BPM 0." comment.
 
-- [ ] **Step 4: Calibrate `BEAT_LATENCY_MS`**
+- [ ] **Step 4: Calibrate `ENVELOPE_LATENCY_MS`**
 
-Run: `cd src-tauri && cargo test --lib audio::bpm::tests::kick_tracks_give_their_tempo_and_grid -- --nocapture`
+Run: `cd src-tauri && cargo test --lib -- audio::bpm::tests::kick_tracks_give_their_tempo_and_grid audio::onset::tests::the_onset_strength_peaks_on_the_kicks --nocapture`
 
-The phase assertion fails with "beat +X ms off". All six cases should be off by about the same amount; X is aubio's latency. To see every case, temporarily add `eprintln!` before the assertion. Set `BEAT_LATENCY_MS` to the mean of the six errors and run again.
+- Temporarily add `eprintln!` before the kick test's assertions, so every case shows its phase error.
+- Set `ENVELOPE_LATENCY_MS` to the mean of the six errors, run again, then remove the prints.
+- Measured 2026-10-18. At 0.0 the six errors were −1.97, −2.12, −2.64, −1.84, −1.72 and −2.47 ms, so the constant is −2.13. After that every case is within ±0.64 ms over the whole track, and within 0.001 BPM. `onset_strength` peaks at 0.137 s.
 
-Expected: PASS. If any case is still beyond ±5 ms, or a BPM is beyond ±0.05:
-- do not loosen the test;
-- mark only that assertion's loop `#[ignore = "needs the envelope search (Task 14)"]` by splitting the phase check into its own test;
-- note in the commit message that Task 14 is required.
+Expected: PASS. If any case is still beyond ±5 ms or ±0.05 BPM, do not loosen the test: stop and report the numbers.
 
 - [ ] **Step 5: Run everything**
 
@@ -2027,8 +2101,8 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src-tauri/src/audio/bpm.rs src-tauri/src/commands/analysis.rs src-tauri/src/bin/recodeck-eval.rs
-git commit -m "feat(bpm): fit a constant grid through precise beats, snap, no 0 BPM"
+git add src-tauri/src/audio/bpm.rs src-tauri/src/audio/onset.rs src-tauri/src/commands/analysis.rs src-tauri/src/bin/recodeck-eval.rs docs/superpowers/plans/2026-10-18-analysis-accuracy.md
+git commit -m "feat(bpm): fit a constant grid through precise beats, refine it on the onset envelope, snap, no 0 BPM"
 ```
 
 ### Task 12: First beat and confidence
@@ -2146,9 +2220,9 @@ git add src-tauri/src/audio/bpm.rs src-tauri/src/audio/decoder.rs docs/superpowe
 git commit -m "tune(bpm): snap and gapless settings measured against Traktor"
 ```
 
-### Task 14: Envelope search (only if needed)
+### Task 14: Envelope search (done in Task 11)
 
-**Do this task only if** Task 13 missed the BPM or the grid target, or Task 11 left an `#[ignore]` on the phase test. Otherwise mark it skipped in Results and go to Task 15.
+**Done in Task 11** (needed: aubio's beat phase drifts). Task 11 has the final code; this task's text is what it started from. Go from Task 13 to Task 15.
 
 **Files:**
 - Modify: `src-tauri/src/audio/onset.rs`, `src-tauri/src/audio/bpm.rs`

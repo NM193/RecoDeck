@@ -1,30 +1,30 @@
-// BPM (tempo) detection using aubio's Tempo tracker with multi-mode consensus.
+// BPM (tempo) and beat grid detection (spec 2026-10-17, §2).
 //
-// Improvements over basic aubio get_bpm():
-// 1. IBI-based detection: collect actual beat positions from do_result(),
-//    compute BPM from median inter-beat intervals (much more robust)
-// 2. Multi-mode consensus: run multiple onset detection modes and cross-validate
-// 3. DJ-range octave folding: normalize to 70–160 BPM (covers all dance music)
-// 4. Low-pass filtering: 500Hz cutoff removes hi-hat interference that causes
-//    onset detectors to trigger between kicks, producing overestimated BPM
-// 5. Cross-check: SpecFlux on unfiltered audio as independent reference
+// 1. Candidate: aubio Tempo passes (SpecFlux, Hfc, Complex) on audio low-passed
+//    at 500 Hz, plus SpecFlux on the unfiltered audio as a cross-check. Each
+//    pass gives a tempo from its median inter-beat interval and aubio's own
+//    estimate; all are folded to 70–160 BPM and the best cluster's median is
+//    the candidate.
+// 2. Fit: the constant grid that lines up best with the low-passed SpecFlux
+//    pass's precise beat times: a tempo search within ±2 % of the candidate,
+//    then a least-squares line through the beats within a quarter beat. That
+//    grid is refined on the onset envelope: aubio spaces its beats by its own,
+//    slightly fast period, so their phase drifts by a varying amount, while
+//    the envelope sits at a steady offset from the kicks.
+// 3. Snap: a tempo within SNAP_BPM of a whole number becomes it, and the phase
+//    is refitted on the envelope.
+// 4. First beat: the grid beat nearest the first strong low-band onset.
+// 5. Confidence: the share of grid beats inside music sections with a kick
+//    within 20 ms.
 //
-// Algorithm overview:
-// 1. Decode audio file to mono f32 PCM
-// 2. Low-pass filter audio at 500Hz to isolate kick drum transients
-// 3. Run aubio Tempo with multiple onset modes on filtered audio
-// 4. Run SpecFlux on original unfiltered audio as cross-check
-// 5. For each mode: collect beat positions, compute BPM from median IBI
-// 6. Also get aubio's own get_bpm() estimate as a secondary signal
-// 7. Fold all candidates into DJ range (70–160 BPM)
-// 8. Cluster candidates and pick the consensus BPM
-// 9. Return BPM and confidence
+// No tempo found gives None, never a BPM of 0.
 
 use bliss_audio_aubio_rs::{OnsetMode, Tempo};
 use std::f64::consts::PI;
 use std::path::Path;
 
 use super::decoder::{decode_to_mono, MonoAudio};
+use super::onset::OnsetEnvelope;
 
 /// Result of BPM detection for a single track
 #[derive(Debug, Clone)]
@@ -61,8 +61,34 @@ const MIN_BEATS_FOR_IBI: usize = 8;
 /// Tight tolerance for electronic music which has machine-stable tempo.
 const CONSENSUS_TOLERANCE: f64 = 1.5;
 
+/// A tempo this close to a whole number becomes it (spec §2, step 3). Tuned
+/// with recodeck-eval in Task 13.
+const SNAP_BPM: f64 = 0.05;
+
+/// The tempo search around the candidate: ±2 %, in steps of 0.01 BPM.
+const LOCK_RANGE: f64 = 0.02;
+const LOCK_STEP_BPM: f64 = 0.01;
+
+/// A constant beat grid: beat k at `phase_s + k × period_s` seconds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Grid {
+    period_s: f64,
+    phase_s: f64,
+}
+
+impl Grid {
+    fn bpm(&self) -> f64 {
+        60.0 / self.period_s
+    }
+
+    /// The grid beat nearest t.
+    fn nearest(&self, t: f64) -> f64 {
+        self.phase_s + ((t - self.phase_s) / self.period_s).round() * self.period_s
+    }
+}
+
 /// Detect the BPM (tempo) of an audio file.
-pub fn detect_bpm(path: &Path) -> Result<BpmResult, String> {
+pub fn detect_bpm(path: &Path) -> Result<Option<BpmResult>, String> {
     let audio = decode_to_mono(path)?;
     detect_bpm_from_samples(&audio)
 }
@@ -92,63 +118,52 @@ fn low_pass_filter(samples: &[f32], sample_rate: u32, cutoff_hz: f64) -> Vec<f32
     filtered
 }
 
-/// Detect BPM from pre-decoded mono audio samples.
-///
-/// Uses multi-mode consensus with low-pass filtering:
-/// 1. Low-pass filter audio at 500Hz to remove hi-hat interference
-/// 2. Run all onset modes (SpecFlux, Hfc, Complex) on filtered audio
-/// 3. Also run SpecFlux on original unfiltered audio as cross-check
-/// 4. Fold candidates into DJ range and pick consensus
-pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<BpmResult, String> {
+/// Detect BPM and beat grid from decoded audio (spec 2026-10-17, §2). Ok(None)
+/// when no tempo is found; never a BPM of 0.
+pub fn detect_bpm_from_samples(audio: &MonoAudio) -> Result<Option<BpmResult>, String> {
     if audio.samples.is_empty() {
         return Err("No audio samples to analyze".to_string());
     }
+    let envelope = OnsetEnvelope::compute(audio);
+    let Some(grid) = beat_grid(audio, &envelope) else { return Ok(None) };
+    // Step 4 (first beat) and step 5 (confidence) come in Task 12.
+    Ok(Some(BpmResult { bpm: grid.bpm(), confidence: 0.0, first_beat_ms: None }))
+}
 
-    // Low-pass filter to remove hi-hat interference that causes BPM overestimation
-    let filtered_samples = low_pass_filter(&audio.samples, audio.sample_rate, 500.0);
-    let filtered_audio = MonoAudio {
-        samples: filtered_samples,
+/// Steps 1–3: the candidate tempo from aubio's passes, a grid fitted to the
+/// low-passed SpecFlux pass's beats and refined on the envelope, then snapped.
+/// None when no tempo is found.
+fn beat_grid(audio: &MonoAudio, envelope: &OnsetEnvelope) -> Option<Grid> {
+    let filtered = MonoAudio {
+        samples: low_pass_filter(&audio.samples, audio.sample_rate, 500.0),
         sample_rate: audio.sample_rate,
         duration_ms: audio.duration_ms,
     };
-
-    let mut candidates: Vec<(f64, f64)> = Vec::new(); // (bpm, confidence)
-
-    // Run all onset modes on filtered audio (hi-hat removed)
-    let modes_filtered = [OnsetMode::SpecFlux, OnsetMode::Hfc, OnsetMode::Complex];
-    for &mode in &modes_filtered {
-        if let Ok(pass) = run_tempo_pass(&filtered_audio, mode) {
-            // IBI-based result (primary - more robust)
-            let (ibi_bpm, ibi_conf) = compute_bpm_from_ibis(&pass.beats);
-            if ibi_bpm > 0.0 {
-                candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf));
-            }
-            // aubio's own get_bpm() (secondary signal), slight penalty vs IBI
-            if pass.aubio_bpm > 0.0 {
-                candidates.push((fold_to_dj_range(pass.aubio_bpm), pass.aubio_confidence * 0.8));
-            }
+    let mut candidates: Vec<(f64, f64)> = Vec::new();
+    let mut grid_pass: Option<TempoPass> = None;
+    for mode in [OnsetMode::SpecFlux, OnsetMode::Hfc, OnsetMode::Complex] {
+        let Ok(pass) = run_tempo_pass(&filtered, mode) else { continue };
+        let (ibi_bpm, ibi_conf) = compute_bpm_from_ibis(&pass.beats);
+        if ibi_bpm > 0.0 {
+            candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf));
+        }
+        if pass.aubio_bpm > 0.0 {
+            candidates.push((fold_to_dj_range(pass.aubio_bpm), pass.aubio_confidence * 0.8));
+        }
+        if mode == OnsetMode::SpecFlux {
+            grid_pass = Some(pass);
         }
     }
-
-    // Cross-check: run SpecFlux on original unfiltered audio
-    // SpecFlux is least affected by hi-hats; the unfiltered result acts as a reference
+    // Cross-check on the unfiltered audio, at a lower weight.
     if let Ok(pass) = run_tempo_pass(audio, OnsetMode::SpecFlux) {
         let (ibi_bpm, ibi_conf) = compute_bpm_from_ibis(&pass.beats);
         if ibi_bpm > 0.0 {
-            candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf * 0.6)); // lower weight for unfiltered
+            candidates.push((fold_to_dj_range(ibi_bpm), ibi_conf * 0.6));
         }
     }
-
-    if candidates.is_empty() {
-        return Ok(BpmResult {
-            bpm: 0.0,
-            confidence: 0.0,
-            first_beat_ms: None,
-        });
-    }
-
-    // Find consensus among candidates
-    pick_consensus(&candidates)
+    let candidate = pick_consensus(&candidates)?;
+    let start = fit_grid(&grid_pass?.beats, candidate, envelope)?;
+    Some(snap(envelope_search(start, envelope, true), envelope))
 }
 
 /// aubio's silence threshold (`aubio_silence_detection`, default -90 dB).
@@ -278,96 +293,153 @@ fn fold_to_dj_range(bpm: f64) -> f64 {
     b
 }
 
-/// Pick the consensus BPM from a list of (bpm, confidence) candidates.
-///
-/// Strategy:
-/// 1. Sort candidates by BPM
-/// 2. Cluster candidates within CONSENSUS_TOLERANCE of each other
-/// 3. Score each cluster by: sum of confidences * number of members
-/// 4. Pick the best cluster
-/// 5. Return the median BPM from that cluster (robust against outliers)
-/// 6. Snap to nearest integer if within ±0.3 BPM (electronic music convention)
-fn pick_consensus(candidates: &[(f64, f64)]) -> Result<BpmResult, String> {
-    if candidates.is_empty() {
-        return Ok(BpmResult {
-            bpm: 0.0,
-            confidence: 0.0,
-            first_beat_ms: None,
-        });
-    }
-
-    if candidates.len() == 1 {
-        return Ok(BpmResult {
-            bpm: candidates[0].0,
-            confidence: candidates[0].1,
-            first_beat_ms: None,
-        });
-    }
-
-    // Sort by BPM
-    let mut sorted: Vec<(f64, f64)> = candidates.to_vec();
-    sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
-    // Cluster: group candidates within CONSENSUS_TOLERANCE BPM of each other
+/// Step 1: the candidate tempo: the median of the best cluster of folded
+/// candidates, each cluster scored by its confidences times its size.
+fn pick_consensus(candidates: &[(f64, f64)]) -> Option<f64> {
+    let mut sorted = candidates.to_vec();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (&first, rest) = sorted.split_first()?;
     let mut clusters: Vec<Vec<(f64, f64)>> = Vec::new();
-    let mut current_cluster: Vec<(f64, f64)> = vec![sorted[0]];
-
-    for &(bpm, conf) in &sorted[1..] {
-        let cluster_center = current_cluster.iter().map(|c| c.0).sum::<f64>()
-            / current_cluster.len() as f64;
-
-        if (bpm - cluster_center).abs() <= CONSENSUS_TOLERANCE {
-            current_cluster.push((bpm, conf));
+    let mut current = vec![first];
+    for &(bpm, conf) in rest {
+        let centre = current.iter().map(|c| c.0).sum::<f64>() / current.len() as f64;
+        if (bpm - centre).abs() <= CONSENSUS_TOLERANCE {
+            current.push((bpm, conf));
         } else {
-            clusters.push(current_cluster);
-            current_cluster = vec![(bpm, conf)];
+            clusters.push(std::mem::replace(&mut current, vec![(bpm, conf)]));
         }
     }
-    clusters.push(current_cluster);
+    clusters.push(current);
+    let score = |c: &Vec<(f64, f64)>| c.iter().map(|x| x.1).sum::<f64>() * c.len() as f64;
+    let best = clusters.iter().max_by(|a, b| score(a).total_cmp(&score(b)))?;
+    let mut bpms: Vec<f64> = best.iter().map(|c| c.0).collect();
+    bpms.sort_by(f64::total_cmp);
+    Some(bpms[bpms.len() / 2])
+}
 
-    // Score each cluster: sum_of_confidences * member_count (rewards agreement)
-    let best_cluster = clusters
-        .iter()
-        .max_by(|a, b| {
-            let score_a = a.iter().map(|c| c.1).sum::<f64>() * a.len() as f64;
-            let score_b = b.iter().map(|c| c.1).sum::<f64>() * b.len() as f64;
-            score_a.partial_cmp(&score_b).unwrap()
-        })
-        .unwrap();
+/// Step 2: the constant grid through the beats near `candidate`. A pass that
+/// tracked twice (or half) the tempo is locked at its own rate, then folded;
+/// folding a faster grid keeps the phase that sits on the kicks.
+fn fit_grid(beats: &[f64], candidate: f64, envelope: &OnsetEnvelope) -> Option<Grid> {
+    let (pass_bpm, _) = compute_bpm_from_ibis(beats);
+    let factor = if pass_bpm > 0.0 { 2f64.powi((pass_bpm / candidate).log2().round().clamp(-2.0, 2.0) as i32) } else { 1.0 };
+    let fast = refine_grid(beats, lock_tempo(beats, candidate * factor)?)?;
+    let period_s = fast.period_s * factor;
+    if factor <= 1.0 {
+        return Some(Grid { period_s, phase_s: fast.phase_s });
+    }
+    (0..factor as usize)
+        .map(|i| Grid { period_s, phase_s: fast.phase_s + i as f64 * fast.period_s })
+        .max_by(|a, b| envelope.kick_strength(a.phase_s, a.period_s).total_cmp(&envelope.kick_strength(b.phase_s, b.period_s)))
+}
 
-    // Median BPM from the best cluster (more robust than confidence-weighted average)
-    let mut cluster_bpms: Vec<f64> = best_cluster.iter().map(|c| c.0).collect();
-    cluster_bpms.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let bpm = cluster_bpms[cluster_bpms.len() / 2];
+/// The tempo within ±2 % of `bpm` that the beats line up with best, with its
+/// phase. Each beat is a unit vector at its phase within the beat; the tempo
+/// whose vectors add up longest wins, and their direction is the phase.
+/// Missing beats cost nothing, and off-beat strays mostly cancel out.
+fn lock_tempo(beats: &[f64], bpm: f64) -> Option<Grid> {
+    if beats.len() < MIN_BEATS_FOR_IBI {
+        return None;
+    }
+    let steps = (bpm * LOCK_RANGE / LOCK_STEP_BPM).round() as i64;
+    let mut best = (f64::NEG_INFINITY, 0.0, bpm); // (length, angle, bpm)
+    for s in -steps..=steps {
+        let candidate = bpm + s as f64 * LOCK_STEP_BPM;
+        let period = 60.0 / candidate;
+        let (mut x, mut y) = (0.0, 0.0);
+        for &t in beats {
+            let angle = 2.0 * PI * t / period;
+            x += angle.cos();
+            y += angle.sin();
+        }
+        let length = x.hypot(y);
+        if length > best.0 {
+            best = (length, y.atan2(x), candidate);
+        }
+    }
+    let period_s = 60.0 / best.2;
+    Some(Grid { period_s, phase_s: (best.1 / (2.0 * PI)).rem_euclid(1.0) * period_s })
+}
 
-    // Overall confidence: based on cluster agreement
-    let max_conf = best_cluster
-        .iter()
-        .map(|c| c.1)
-        .fold(0.0f64, f64::max);
+/// Least squares through the beats within a quarter beat of `grid`: beat
+/// time = phase + n × period over their beat numbers n. Done twice, so beats
+/// the first fit moved out of reach drop out. None with too few beats.
+fn refine_grid(beats: &[f64], mut grid: Grid) -> Option<Grid> {
+    for _ in 0..2 {
+        let points: Vec<(f64, f64)> = beats
+            .iter()
+            .filter_map(|&t| {
+                let n = ((t - grid.phase_s) / grid.period_s).round();
+                let offset = t - (grid.phase_s + n * grid.period_s);
+                (offset.abs() <= grid.period_s / 4.0).then_some((n, t))
+            })
+            .collect();
+        if points.len() < MIN_BEATS_FOR_IBI {
+            return None;
+        }
+        let (period_s, phase_s) = fit_line(&points)?;
+        grid = Grid { period_s, phase_s };
+    }
+    Some(grid)
+}
 
-    // Bonus for multi-mode agreement
-    let agreement_bonus = if best_cluster.len() >= 3 {
-        0.15
-    } else if best_cluster.len() >= 2 {
-        0.08
-    } else {
-        0.0
-    };
+/// Ordinary least squares y = a + b·x, as (b, a). None when x does not vary.
+fn fit_line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
+    let n = points.len() as f64;
+    let mean_x = points.iter().map(|p| p.0).sum::<f64>() / n;
+    let mean_y = points.iter().map(|p| p.1).sum::<f64>() / n;
+    let sxx: f64 = points.iter().map(|p| (p.0 - mean_x).powi(2)).sum();
+    if sxx <= 0.0 {
+        return None;
+    }
+    let sxy: f64 = points.iter().map(|p| (p.0 - mean_x) * (p.1 - mean_y)).sum();
+    let slope = sxy / sxx;
+    Some((slope, mean_y - slope * mean_x))
+}
 
-    let confidence = (max_conf + agreement_bonus).clamp(0.0, 1.0);
+/// Step 2's second way (spec §2), needed because aubio's beats drift around
+/// its own period: the tempo (unless `search_tempo` is false) and phase whose
+/// grid carries the most onset strength, searched coarse to fine around the
+/// beat nearest the middle.
+fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> Grid {
+    let middle = envelope.duration_s() / 2.0;
+    let mut best = Grid { phase_s: grid.nearest(middle), ..grid };
+    let mut best_score = envelope.onset_strength(best.phase_s, best.period_s);
+    // Per stage: BPM step and span either side, phase step and span either side (s).
+    let stages = [
+        (0.05, grid.bpm() * LOCK_RANGE, 0.005, grid.period_s / 2.0),
+        (0.01, 0.05, 0.001, 0.005),
+        (0.002, 0.01, 0.001, 0.003),
+    ];
+    for (bpm_step, bpm_span, phase_step, phase_span) in stages {
+        let centre = best;
+        let bpm_steps = if search_tempo { (bpm_span / bpm_step).round() as i64 } else { 0 };
+        let phase_steps = (phase_span / phase_step).round() as i64;
+        for b in -bpm_steps..=bpm_steps {
+            let period_s = 60.0 / (centre.bpm() + b as f64 * bpm_step);
+            for p in -phase_steps..=phase_steps {
+                let candidate = Grid { period_s, phase_s: centre.phase_s + p as f64 * phase_step };
+                let score = envelope.onset_strength(candidate.phase_s, candidate.period_s);
+                if score > best_score {
+                    best = candidate;
+                    best_score = score;
+                }
+            }
+        }
+    }
+    best
+}
 
-    // Integer snap: electronic music almost always has whole-number BPM.
-    // If within ±0.3 of an integer, snap to it.
-    let nearest_int = bpm.round();
-    let bpm = if (bpm - nearest_int).abs() <= 0.3 {
-        nearest_int
-    } else {
-        // Keep 2 decimal places for non-integer BPMs
-        (bpm * 100.0).round() / 100.0
-    };
-
-    Ok(BpmResult { bpm, confidence, first_beat_ms: None })
+/// Step 3: a tempo within SNAP_BPM of a whole number becomes it, and the phase
+/// is refitted at that tempo on the envelope, around the beat nearest the
+/// middle, so the new tempo moves the ends least.
+fn snap(grid: Grid, envelope: &OnsetEnvelope) -> Grid {
+    let whole = grid.bpm().round();
+    if (grid.bpm() - whole).abs() > SNAP_BPM {
+        return grid;
+    }
+    let anchor = grid.nearest(envelope.duration_s() / 2.0);
+    envelope_search(Grid { period_s: 60.0 / whole, phase_s: anchor }, envelope, false)
 }
 
 #[cfg(test)]
@@ -411,6 +483,70 @@ mod tests {
         assert!(pass.beats.iter().all(|&t| t > 7.9), "a beat at {:?}", pass.beats.first());
     }
 
+    /// Beats at `bpm` from `phase` over `seconds`: a few ms of jitter, every
+    /// tenth missing, and an off-beat stray every 25th.
+    fn messy_beats(bpm: f64, phase: f64, seconds: f64) -> Vec<f64> {
+        let period = 60.0 / bpm;
+        let mut beats = Vec::new();
+        let mut k = 0usize;
+        while phase + k as f64 * period < seconds {
+            let t = phase + k as f64 * period;
+            if k % 10 != 3 {
+                beats.push(t + ((k * 7919 % 7) as f64 - 3.0) / 1000.0);
+            }
+            if k % 25 == 11 {
+                beats.push(t + period / 2.0);
+            }
+            k += 1;
+        }
+        beats.sort_by(f64::total_cmp);
+        beats
+    }
+
+    #[test]
+    fn the_grid_locks_onto_messy_beats() {
+        let beats = messy_beats(124.0, 0.137, 300.0);
+        let grid = refine_grid(&beats, lock_tempo(&beats, 123.2).unwrap()).unwrap();
+        assert!((grid.bpm() - 124.0).abs() < 0.01, "{:.4} BPM", grid.bpm());
+        assert!((grid.nearest(0.137) - 0.137).abs() < 0.002, "beat at {:.4}", grid.nearest(0.137));
+    }
+
+    #[test]
+    fn a_line_through_points() {
+        let points: Vec<(f64, f64)> = (0..10).map(|n| (n as f64, 0.25 + 0.5 * n as f64)).collect();
+        let (slope, intercept) = fit_line(&points).unwrap();
+        assert!((slope - 0.5).abs() < 1e-12 && (intercept - 0.25).abs() < 1e-12);
+        assert!(fit_line(&[(1.0, 1.0), (1.0, 2.0)]).is_none());
+    }
+
+    #[test]
+    fn a_tempo_near_a_whole_number_snaps_and_keeps_its_beats() {
+        let envelope = OnsetEnvelope::compute(&kick_track(124.0, 44100, 60.0, 0.137));
+        let near = Grid { period_s: 60.0 / 124.03, phase_s: 0.137 };
+        let snapped = snap(near, &envelope);
+        assert!((snapped.bpm() - 124.0).abs() < 1e-9);
+        let worst_ms = (0..123)
+            .map(|k| 0.137 + k as f64 * 60.0 / 124.0)
+            .map(|t| (snapped.nearest(t) - t).abs() * 1000.0)
+            .fold(0.0, f64::max);
+        assert!(worst_ms <= 5.0, "a beat {worst_ms:.1} ms off the kicks");
+        let far = Grid { period_s: 60.0 / 124.2, phase_s: 0.137 };
+        assert_eq!(snap(far, &envelope), far);
+    }
+
+    #[test]
+    fn kick_tracks_give_their_tempo_and_grid() {
+        for rate in [44100, 48000] {
+            for bpm in [122.0, 123.5, 127.33] {
+                let audio = kick_track(bpm, rate, 60.0, 0.137);
+                let grid = beat_grid(&audio, &OnsetEnvelope::compute(&audio)).expect("a grid");
+                assert!((grid.bpm() - bpm).abs() <= 0.05, "{bpm} BPM at {rate} Hz: {:.3}", grid.bpm());
+                let error_ms = (grid.nearest(0.137) - 0.137) * 1000.0;
+                assert!(error_ms.abs() <= 5.0, "{bpm} BPM at {rate} Hz: beat {error_ms:+.1} ms off");
+            }
+        }
+    }
+
     /// Generate a synthetic click track at a known BPM for testing, with a
     /// quiet noise floor (about -60 dB) from the first click on, as real music
     /// never goes digitally silent between hits.
@@ -451,20 +587,19 @@ mod tests {
     #[test]
     fn test_bpm_detection_120bpm() {
         let audio = generate_click_track(120.0, 44100, 30.0);
-        let result = detect_bpm_from_samples(&audio).expect("BPM detection should succeed");
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
 
         assert!(
             (result.bpm - 120.0).abs() < 3.0,
             "Expected BPM ~120, got {:.1}",
             result.bpm
         );
-        assert!(result.confidence > 0.0, "Confidence should be positive");
     }
 
     #[test]
     fn test_bpm_detection_128bpm() {
         let audio = generate_click_track(128.0, 44100, 30.0);
-        let result = detect_bpm_from_samples(&audio).expect("BPM detection should succeed");
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
 
         assert!(
             (result.bpm - 128.0).abs() < 3.0,
@@ -476,7 +611,7 @@ mod tests {
     #[test]
     fn test_bpm_detection_140bpm() {
         let audio = generate_click_track(140.0, 44100, 30.0);
-        let result = detect_bpm_from_samples(&audio).expect("BPM detection should succeed");
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
 
         assert!(
             (result.bpm - 140.0).abs() < 3.0,
@@ -503,14 +638,7 @@ mod tests {
             sample_rate: 44100,
             duration_ms: 30000,
         };
-        let result = detect_bpm_from_samples(&audio).expect("Should not error on silence");
-
-        assert!(
-            result.bpm == 0.0 || result.confidence < 0.3,
-            "Silence should produce BPM=0 or low confidence, got bpm={:.1} conf={:.2}",
-            result.bpm,
-            result.confidence
-        );
+        assert!(detect_bpm_from_samples(&audio).unwrap().is_none());
     }
 
     #[test]
@@ -523,7 +651,7 @@ mod tests {
     #[test]
     fn test_bpm_detection_different_sample_rate() {
         let audio = generate_click_track(125.0, 48000, 30.0);
-        let result = detect_bpm_from_samples(&audio).expect("BPM detection should succeed");
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
 
         assert!(
             (result.bpm - 125.0).abs() < 3.0,
@@ -535,7 +663,7 @@ mod tests {
     #[test]
     fn test_bpm_result_fields() {
         let audio = generate_click_track(126.0, 44100, 30.0);
-        let result = detect_bpm_from_samples(&audio).expect("BPM detection should succeed");
+        let result = detect_bpm_from_samples(&audio).unwrap().expect("a tempo");
 
         assert!(
             result.confidence >= 0.0 && result.confidence <= 1.0,
