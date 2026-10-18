@@ -23,6 +23,7 @@ import type {
   Track,
   ScanResult,
   TrackAnalysis,
+  AnalysisStatus,
   FolderInfo,
   Playlist,
   GenreCount,
@@ -425,6 +426,14 @@ export const tauriApi = {
 
   async cancelAnalysis(): Promise<void> {
     return await invoke('cancel_analysis')
+  },
+
+  async analysisStatus(): Promise<AnalysisStatus> {
+    return await invoke('analysis_status')
+  },
+
+  async trackIdsNeedingAnalysis(): Promise<number[]> {
+    return await invoke('track_ids_needing_analysis')
   },
 
   async getTrackAnalysis(trackId: number): Promise<TrackAnalysis | null> {

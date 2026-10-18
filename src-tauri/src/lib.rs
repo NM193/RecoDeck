@@ -537,6 +537,8 @@ pub fn run() {
             commands::analysis::get_waveform,
             commands::analysis::analyze_tracks_batch,
             commands::analysis::cancel_analysis,
+            commands::analysis::analysis_status,
+            commands::analysis::track_ids_needing_analysis,
             // Playlist commands
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,

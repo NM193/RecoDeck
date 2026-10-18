@@ -93,6 +93,16 @@ export interface Playlist {
 }
 
 // Analysis result types
+/** What analysis_status reports (spec 2026-10-17, §5). */
+export interface AnalysisStatus {
+  version: number
+  /** Tracks that need analysis, files on disk only. */
+  needing: number
+  /** Of those, tracks with a BPM or key from an older analysis (not a tag). */
+  with_old_values: number
+  estimate_minutes: number
+}
+
 export interface TrackAnalysis {
   track_id: number
   bpm?: number

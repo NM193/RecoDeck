@@ -12,7 +12,8 @@ use crate::audio::decoder;
 use crate::audio::key;
 use crate::audio::ANALYSIS_VERSION;
 use crate::commands::library::AppState;
-use crate::db::analysis::is_current;
+use crate::audio::SECONDS_PER_TRACK;
+use crate::db::analysis::{is_current, on_disk, NotCurrent};
 use crate::missing_files::is_missing;
 use crate::error::AppError;
 use rayon::prelude::*;
@@ -295,10 +296,84 @@ pub async fn analyze_tracks_batch(
     Ok(())
 }
 
+/// What analysis status Settings and the start-up prompt show (spec §5).
+#[derive(Debug, Clone, Serialize)]
+pub struct AnalysisStatus {
+    /// ANALYSIS_VERSION.
+    pub version: i64,
+    /// Tracks that need analysis (§4), files on disk only.
+    pub needing: usize,
+    /// Of those, tracks with a BPM or key from an older analysis (not a tag).
+    pub with_old_values: usize,
+    pub estimate_minutes: u32,
+}
+
+/// tracks × seconds per track ÷ cores, in minutes, rounded up to 5.
+pub fn estimate_minutes(tracks: usize, seconds_per_track: f64, cores: usize) -> u32 {
+    if tracks == 0 {
+        return 0;
+    }
+    let minutes = tracks as f64 * seconds_per_track / cores.max(1) as f64 / 60.0;
+    ((minutes / 5.0).ceil().max(1.0) * 5.0) as u32
+}
+
+/// Tracks that need analysis (§4): read under the lock, then the disk is
+/// checked after it is released, as `count_missing_tracks` does.
+fn needing_analysis(app: &AppHandle) -> Result<Vec<NotCurrent>, AppError> {
+    let candidates = {
+        let state = app.state::<AppState>();
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+        db.tracks_not_current(ANALYSIS_VERSION)
+            .map_err(|e| AppError::Database(format!("Failed to list tracks to analyze: {}", e)))?
+    };
+    Ok(on_disk(candidates))
+}
+
+/// Async, off the main thread: it runs at start-up and on every Settings visit,
+/// and a sleeping drive can make the disk check slow.
+#[tauri::command]
+pub async fn analysis_status(app: AppHandle) -> Result<AnalysisStatus, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let tracks = needing_analysis(&app)?;
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        Ok(AnalysisStatus {
+            version: ANALYSIS_VERSION,
+            needing: tracks.len(),
+            with_old_values: tracks.iter().filter(|t| t.has_old_values).count(),
+            estimate_minutes: estimate_minutes(tracks.len(), SECONDS_PER_TRACK, cores),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Analysis status task failed: {}", e)))?
+}
+
+/// The tracks `analysis_status` counts as needing analysis.
+#[tauri::command]
+pub async fn track_ids_needing_analysis(app: AppHandle) -> Result<Vec<i64>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || Ok(needing_analysis(&app)?.into_iter().map(|t| t.id).collect()))
+        .await
+        .map_err(|e| AppError::Internal(format!("Analysis list task failed: {}", e)))?
+}
+
 /// Cancel an in-progress batch analysis.
 /// Sets the cancellation flag; Rayon workers will stop at next check point.
 #[tauri::command]
 pub fn cancel_analysis(state: State<AppState>) -> Result<(), AppError> {
     state.analysis_cancelled.store(true, Ordering::SeqCst);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_estimate_rounds_up_to_five_minutes() {
+        assert_eq!(estimate_minutes(0, 2.0, 8), 0);
+        assert_eq!(estimate_minutes(10, 2.0, 8), 5);
+        assert_eq!(estimate_minutes(1200, 2.0, 8), 5); // 300 s
+        assert_eq!(estimate_minutes(1201, 2.0, 8), 10);
+        assert_eq!(estimate_minutes(8000, 2.0, 0), 270); // no core count: one core
+    }
 }
