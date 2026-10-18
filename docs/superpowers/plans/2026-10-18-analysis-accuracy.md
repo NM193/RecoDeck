@@ -1302,7 +1302,9 @@ use super::decoder::MonoAudio;
 use std::f64::consts::PI;
 
 /// A kick (a 150 → 50 Hz sweep fading over 0.12 s) with a short click on
-/// top, on every beat at `bpm`, the first at `first_s`, silence before it.
+/// top, on every beat at `bpm`, the first at `first_s`, silence before it, and
+/// a quiet noise floor (about -60 dB) after, as real music never goes
+/// digitally silent between kicks.
 pub fn kick_track(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64) -> MonoAudio {
     let rate = sample_rate as f64;
     let total = (rate * seconds) as usize;
@@ -1322,6 +1324,13 @@ pub fn kick_track(bpm: f64, sample_rate: u32, seconds: f64, first_s: f64) -> Mon
             samples[start + j] += (0.8 * kick + 0.3 * click) as f32;
         }
         beat += 1;
+    }
+    // Deterministic noise (a constant-seeded LCG), uniform in +-0.002, from the first kick on.
+    let mut state: u32 = 0x1234_5678;
+    let from = ((first_s * rate).round() as usize).min(total);
+    for sample in &mut samples[from..] {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        *sample += ((state >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0) * 0.002;
     }
     MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
 }
