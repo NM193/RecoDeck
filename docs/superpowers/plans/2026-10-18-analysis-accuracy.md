@@ -4563,6 +4563,7 @@ Aggregate numbers only. "Target set" is BPM where Traktor and Rekordbox agree wi
 | p3-nw-floor100 | 7bb63d1, floor 100 Hz | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 72.4 % | 0.798 | 1.71 | no |
 | p1-warm3 (time only) | ec524f0 | 20.3 % | 20.9 % | — | — | 34.8 % | 0.501 | 1.33 | — |
 | p3-final | c190151 | 98.9 % | 98.9 % | 4.8 % (94.3 % at -26.8 ms) | 100.0 % | 75.4 % | 0.809 | 1.81 | yes |
+| p4-final | dcbd693 | 98.9 % | 98.9 % | 4.8 % (94.2 % at -26.8 ms) | 100.0 % | 75.4 % | 0.809 | 1.93 | yes |
 
 Baseline notes (p1-baseline):
 - **BPM errors point up.** Most misses are above Traktor: 34.6 % are +0.5 to +1.5 and 43.7 % are above +1.5. Half or double is 0 %.
@@ -4617,6 +4618,7 @@ Phase 2 notes (p2-final, 2026-10-18):
   - Key confidence right/wrong: 0.618/0.440.
   - Time, p1-warm3 and p3-final back to back with Low Power Mode off: 1.33 → 1.81 s per track, 1.36× the baseline.
   - 717 lib tests, none ignored; the kick test passes.
+- **Checkpoint 4 (p4-final, dcbd693).** BPM and key are unchanged from p3-final: Phase 4 doesn't touch detection. 1.93 s/track, measured while other checks ran (1.81 on a quiet machine). `SECONDS_PER_TRACK` is set to 1.9, so the estimate errs long.
 - **Run-to-run noise.** Two runs of the same code differ on about 30 of 1958 first beats by < 1 ms, and on one wrong-tempo track by 204 ms. BPM and key do not move. The source is not found yet (likely state inside aubio).
 - **Time.** p1-warm and p2-final ran back to back on a warm file cache with nothing else running: 1.26 → 1.75 s per track, 1.39× the baseline. The other rows' times are not comparable: p2-grid and p2-gapless ran with a cold cache, the others warm.
 - **Fast and long tracks.** 7 of 1591 measured tracks are above 160 BPM in Traktor. 17 are longer than 10 min; the slowest takes 30 s.

@@ -17,8 +17,9 @@ pub(crate) mod test_signals;
 pub const ANALYSIS_VERSION: i64 = 1;
 
 /// Seconds one core spends on a track (decode, BPM, key), from recodeck-eval:
-/// the re-analysis estimate (spec §5). Final value set in Task 32.
-pub const SECONDS_PER_TRACK: f64 = 1.7;
+/// the re-analysis estimate (spec §5). Measured 2026-10-18: 1.81 s on a quiet
+/// machine (p3-final), 1.93 s with other work running (p4-final).
+pub const SECONDS_PER_TRACK: f64 = 1.9;
 
 /// Get MIME type for an audio file based on its extension.
 /// Shared across stream:// protocol handler (lib.rs) and companion server streaming (streaming.rs).
