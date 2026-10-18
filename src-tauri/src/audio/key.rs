@@ -2,15 +2,23 @@
 //
 // Improvements over basic chromagram approach:
 // 1. Tuning estimation: detects if A≠440Hz and adjusts pitch-class mapping
-// 2. Harmonic weighting: each spectral peak also adds weighted energy for its
+// 2. Harmonic/percussive separation: median filters along time and frequency
+//    keep held notes and drop drum hits before the chroma is taken
+// 3. Harmonic weighting: each spectral peak also adds weighted energy for its
 //    harmonics' pitch classes, giving a cleaner pitch-class distribution
-// 3. EDMA key profiles (measured best of Shaath, EDMA, Krumhansl, Temperley and
-//    their vote), with minor key bias and dominant confusion correction for
-//    ambiguous detections
 // 4. Frequency weighting to reduce sub-bass influence (kick drums in EDM)
-// 5. Segment-based voting: divides track into overlapping segments, detects key
+// 5. Each frame's chroma is scaled to sum 1, so loud frames weigh no more than
+//    quiet ones
+// 6. EDMA key profiles, measured best against Shaath, Krumhansl and Temperley
+//    alone and against the vote of Shaath, EDMA and Krumhansl. A minor key
+//    bias, a dominant confusion correction and a cross-mode check settle
+//    ambiguous detections
+// 7. Segment-based voting: divides track into overlapping segments, detects key
 //    per segment, and takes the majority vote — eliminates tritone errors caused
 //    by individual sections with ambiguous harmonic content
+//
+// The magnitudes are not whitened: whitening evens out a note's partials and
+// reads keys a fifth up (see `chroma_of`).
 //
 // Algorithm overview:
 // 1. Decode audio file to mono f32 PCM (reuses existing decoder)
@@ -56,7 +64,8 @@ const FFT_SIZE: usize = 8192;
 /// 4096 = 50% overlap for good temporal coverage without excessive computation.
 const HOP_SIZE: usize = 4096;
 
-/// Minimum frequency to consider for chromagram (Hz). ~C2 = 65Hz.
+/// The lowest frequency the tuning estimate reads (Hz). ~C2 = 65Hz. The
+/// chroma has its own floor, CHROMA_MIN_FREQ.
 const MIN_FREQ: f64 = 65.0;
 
 /// The lowest frequency the chroma reads (Hz); tuning keeps MIN_FREQ.
@@ -424,7 +433,8 @@ fn used_bins(sample_rate: u32) -> usize {
 /// before any summing.
 ///
 /// Per frame:
-/// - Harmonic part only (`harmonic_part`)
+/// - Harmonic part only (`harmonic_part`: a bin where drum hits outweigh held
+///   notes becomes 0)
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
 /// - Harmonic weighting (reinforces fundamentals over harmonics)
 /// - Frequency weighting (reduces sub-bass kick drum influence)
@@ -617,8 +627,9 @@ impl<const N: usize> SortedWindow<N> {
 /// class, a note's partials included: its 3rd and 6th partials are a fifth
 /// above it, its 5th a major third. Their natural fall-off keeps them below
 /// the note itself. Dividing each bin by its neighbourhood's mean evened the
-/// partials out, and keys read a fifth up on 17 % of tracks (7 % without)
-/// and as the parallel mode on 22 % (10 % without), measured.
+/// partials out, and keys read a fifth up or in the parallel mode far more
+/// often (measured; see the Results in
+/// docs/superpowers/plans/2026-10-18-analysis-accuracy.md).
 fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>]) -> [f64; 12] {
     let mut chroma = [0.0f64; 12];
     for (bin, info) in bin_info.iter().enumerate() {
@@ -670,6 +681,8 @@ fn sum_chromas(frames: &[[f64; 12]]) -> [f64; 12] {
 /// 1. Minor key bias for ambiguous major/minor detections (electronic music is ~70% minor)
 /// 2. Dominant confusion penalty — if the detected key might be the dominant (V) of the
 ///    true tonic, prefer the tonic when correlations are close
+/// 3. Cross-mode check — the same for the tonic in the other mode (e.g. E major
+///    detected for A minor)
 ///
 /// Returns (pitch_class_index, is_minor, best_correlation, second_best_correlation)
 fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
