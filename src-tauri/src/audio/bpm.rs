@@ -69,6 +69,12 @@ const SNAP_BPM: f64 = 0.05;
 const LOCK_RANGE: f64 = 0.02;
 const LOCK_STEP_BPM: f64 = 0.01;
 
+/// The longest duration the envelope search's first tempo step shrinks for.
+/// Tracks up to 10 minutes keep the exact step; past that the step stays put,
+/// so the search's cost grows linearly, not with the square of the duration.
+/// Longer files are DJ mixes, which have no one constant grid anyway.
+const STAGE1_MAX_S: f64 = 600.0;
+
 /// A constant beat grid: beat k at `phase_s + k × period_s` seconds.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Grid {
@@ -411,9 +417,10 @@ fn envelope_search(grid: Grid, envelope: &OnsetEnvelope, search_tempo: bool) -> 
     // Stage 2 reaches back ±15 ms from the phase stage 1 leaves. Off by half
     // its tempo step, stage 1's grid drifts duration × step / (4 × bpm) by the
     // ends, which smears its phase about as much; this step keeps that drift
-    // at a quarter of the reach, so long tracks get a finer step.
+    // at a quarter of the reach, so long tracks get a finer step (up to
+    // STAGE1_MAX_S).
     let reach_s = 0.015;
-    let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s()).min(0.05);
+    let coarse_bpm_step = (grid.bpm() * reach_s / envelope.duration_s().min(STAGE1_MAX_S)).min(0.05);
     // Per stage: BPM step and span either side, phase step and span either side (s).
     // Stage 1's phase stays within an eighth of a beat of the start, which is
     // already on the kicks (aubio's beats sit 7–24 ms early): further out, the
