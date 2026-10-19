@@ -3618,6 +3618,8 @@ dependencies = [
  "local-ip-address",
  "lofty",
  "notify",
+ "objc2",
+ "objc2-foundation",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.28",

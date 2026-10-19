@@ -10,6 +10,7 @@ pub mod formats;
 pub mod missing_files;
 pub mod scanner;
 pub mod server;
+pub mod user_activity;
 #[cfg(test)]
 mod test_support;
 

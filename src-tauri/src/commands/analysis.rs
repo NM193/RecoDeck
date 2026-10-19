@@ -221,6 +221,8 @@ pub async fn analyze_tracks_batch(
             let analyzed = AtomicUsize::new(0);
             let failed = AtomicUsize::new(0);
             let progress_counter = AtomicUsize::new(0);
+            // Full speed while the window is hidden or the screen is off, to the end of the batch.
+            let _activity = crate::user_activity::UserActivity::begin("Analyzing tracks");
 
             tracks_to_analyze.par_iter().for_each(|(track_id, file_path, track_name)| {
                 if cancelled.load(Ordering::SeqCst) {
