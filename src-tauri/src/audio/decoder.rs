@@ -334,21 +334,9 @@ const LONG_FILE_BYTES: u64 = 60_000_000;
 /// (frame count) before anything is decoded; by file size when the container
 /// has no frame count.
 fn is_long_file(path: &Path) -> bool {
-    let Ok(file) = std::fs::File::open(path) else { return false };
-    let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension() {
-        hint.with_extension(&ext.to_string_lossy());
-    }
-    let Ok(probed) = symphonia::default::get_probe().format(
-        &hint,
-        mss,
-        &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
-        &MetadataOptions::default(),
-    ) else {
-        return false;
-    };
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let io_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let Ok(probed) = probe(path, &io_failed) else { return false };
     let params = &probed.format.default_track().map(|t| t.codec_params.clone());
     match params.as_ref().and_then(|p| Some((p.n_frames?, p.sample_rate?))) {
         Some((frames, rate)) if rate > 0 => frames as f64 / rate as f64 > LONG_FILE_S,
@@ -411,9 +399,10 @@ impl DecodeError {
 
 /// The file, noting any I/O error other than its end: the probe swallows
 /// read errors into "no suitable format", so the failure kind has to be kept
-/// here.
+/// here. Seen from byte `start` on, so the probe can begin past a tag.
 struct WatchedFile {
     file: std::fs::File,
+    start: u64,
     failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -437,7 +426,18 @@ impl std::io::Read for WatchedFile {
 
 impl std::io::Seek for WatchedFile {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        let result = self.file.seek(pos);
+        let pos = match pos {
+            std::io::SeekFrom::Start(n) => std::io::SeekFrom::Start(n.saturating_add(self.start)),
+            other => other,
+        };
+        let result = self.file.seek(pos).and_then(|n| {
+            if n >= self.start {
+                return Ok(n - self.start);
+            }
+            // Before the media's first byte, as a file refuses a position before 0.
+            self.file.seek(std::io::SeekFrom::Start(self.start))?;
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek before the start of the media"))
+        });
         self.note(result)
     }
 }
@@ -447,8 +447,66 @@ impl symphonia::core::io::MediaSource for WatchedFile {
         true
     }
     fn byte_len(&self) -> Option<u64> {
-        self.file.metadata().ok().map(|m| m.len())
+        self.file.metadata().ok().map(|m| m.len().saturating_sub(self.start))
     }
+}
+
+/// The bytes an ID3v2 tag at the start of the file takes (header, body and
+/// footer), from its header; None when the file doesn't start with one.
+fn id3v2_tag_len(path: &Path) -> Option<u64> {
+    use std::io::Read;
+    let mut header = [0u8; 10];
+    std::fs::File::open(path).ok()?.read_exact(&mut header).ok()?;
+    if &header[..3] != b"ID3" || header[6..].iter().any(|b| b & 0x80 != 0) {
+        return None;
+    }
+    let body = header[6..].iter().fold(0u64, |n, &b| (n << 7) | b as u64);
+    let footer = if header[5] & 0x10 != 0 { 10 } else { 0 };
+    Some(10 + body + footer)
+}
+
+/// Probes the file from byte `start` on.
+fn probe_from(
+    path: &Path,
+    start: u64,
+    io_failed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<symphonia::core::probe::ProbeResult, DecodeError> {
+    use std::io::Seek;
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
+    file.seek(std::io::SeekFrom::Start(start))
+        .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
+    let watched = WatchedFile { file, start, failed: io_failed.clone() };
+    let mss = MediaSourceStream::new(Box::new(watched), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension() {
+        hint.with_extension(&ext.to_string_lossy());
+    }
+    symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| DecodeError::of(&e, format!("Failed to probe audio format: {}", e)))
+}
+
+/// Probes the file for its format. When the probe fails on a file that starts
+/// with an ID3v2 tag, it is tried again from just past the tag: the probe
+/// gives up on a tag it can't read (a text frame in an encoding the standard
+/// doesn't have, as some taggers write), though the audio after it is fine.
+fn probe(
+    path: &Path,
+    io_failed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<symphonia::core::probe::ProbeResult, DecodeError> {
+    let first = probe_from(path, 0, io_failed);
+    if matches!(first, Err(DecodeError::Undecodable(_))) && !io_failed.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Some(start) = id3v2_tag_len(path) {
+            return probe_from(path, start, io_failed);
+        }
+    }
+    first
 }
 
 impl std::fmt::Display for DecodeError {
@@ -470,13 +528,7 @@ pub fn decode_to_mono_cancellable(
     path: &Path,
     cancelled: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<MonoAudio, DecodeError> {
-    // Open and probe the audio file
-    let file = std::fs::File::open(path)
-        .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
-    
     let io_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let watched = WatchedFile { file, failed: io_failed.clone() };
-    let mss = MediaSourceStream::new(Box::new(watched), Default::default());
     // A read error anywhere makes the failure transient, however it surfaced.
     let classify = |e: DecodeError| {
         if io_failed.load(std::sync::atomic::Ordering::SeqCst) {
@@ -485,21 +537,10 @@ pub fn decode_to_mono_cancellable(
             e
         }
     };
-    
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension() {
-        hint.with_extension(&ext.to_string_lossy());
-    }
-    
-    let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
-            &MetadataOptions::default(),
-        )
-        .map_err(|e| classify(DecodeError::of(&e, format!("Failed to probe audio format: {}", e))))?;
-    
+
+    // Open and probe the audio file
+    let probed = probe(path, &io_failed).map_err(classify)?;
+
     let mut format_reader = probed.format;
     
     let track = format_reader
@@ -784,6 +825,57 @@ mod tests {
         // Not cancelled: decodes as usual.
         let go = AtomicBool::new(false);
         assert!(decode_to_mono_cancellable(&file, Some(&go)).is_ok());
+    }
+
+    /// An ID3v2.4 tag whose one text frame names an encoding the standard
+    /// doesn't have, as some taggers write.
+    fn broken_id3v2() -> Vec<u8> {
+        let frame = [b"TIT2".as_slice(), &[0, 0, 0, 2], &[0, 0], &[0x05, b'x']].concat();
+        let size = frame.len() as u8;
+        [b"ID3".as_slice(), &[4, 0, 0], &[0, 0, 0, size], &frame].concat()
+    }
+
+    #[test]
+    fn a_file_seen_from_past_its_tag_seeks_and_reads_from_there() {
+        use std::io::{Read, Seek, SeekFrom};
+        use symphonia::core::io::MediaSource;
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("ten.bin");
+        std::fs::write(&path, (0u8..10).collect::<Vec<_>>()).unwrap();
+        let mut file = std::fs::File::open(&path).unwrap();
+        file.seek(SeekFrom::Start(4)).unwrap();
+        let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut watched = WatchedFile { file, start: 4, failed };
+        let mut byte = [0u8; 1];
+
+        assert_eq!(watched.byte_len(), Some(6));
+        assert_eq!(watched.seek(SeekFrom::Start(0)).unwrap(), 0);
+        watched.read_exact(&mut byte).unwrap();
+        assert_eq!(byte[0], 4);
+        assert_eq!(watched.seek(SeekFrom::End(0)).unwrap(), 6);
+        // Before the media's first byte: refused, and the next read is that byte.
+        assert!(watched.seek(SeekFrom::Current(-8)).is_err());
+        watched.read_exact(&mut byte).unwrap();
+        assert_eq!(byte[0], 4);
+    }
+
+    #[test]
+    fn audio_behind_a_tag_the_probe_cannot_read_still_decodes() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let plain = dir.path().join("plain.wav");
+        wav_claiming(&plain, 1);
+        let tagged = dir.path().join("tagged.wav");
+        std::fs::write(&tagged, [broken_id3v2(), std::fs::read(&plain).unwrap()].concat()).unwrap();
+
+        let audio = decode_to_mono_typed(&tagged).expect("the audio after the tag");
+        assert_eq!(audio.samples, decode_to_mono_typed(&plain).unwrap().samples);
+
+        // The long-file check reads the same way.
+        let long = dir.path().join("long.wav");
+        wav_claiming(&long, 1500);
+        let long_tagged = dir.path().join("long_tagged.wav");
+        std::fs::write(&long_tagged, [broken_id3v2(), std::fs::read(&long).unwrap()].concat()).unwrap();
+        assert!(long_file_guard(&long_tagged).is_some());
     }
 
     #[test]
