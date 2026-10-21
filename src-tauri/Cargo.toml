@@ -65,7 +65,10 @@ tower = { version = "0.5", features = ["util"] }
 [features]
 eval = ["dep:roxmltree"]
 
+# Outside src/bin on purpose: the Tauri CLI bundles every file in src/bin,
+# even a bin it skipped for its required features, and the Windows
+# installer then fails on the missing exe.
 [[bin]]
 name = "recodeck-eval"
-path = "src/bin/recodeck-eval.rs"
+path = "tools/recodeck-eval.rs"
 required-features = ["eval"]
