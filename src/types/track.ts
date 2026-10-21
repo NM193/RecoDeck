@@ -93,18 +93,14 @@ export interface Playlist {
 }
 
 // Analysis result types
-export interface BpmResult {
-  track_id: number
-  bpm: number
-  confidence: number
-}
-
-export interface KeyResult {
-  track_id: number
-  camelot: string
-  open_key: string
-  musical_key: string
-  confidence: number
+/** What analysis_status reports (spec 2026-10-17, §5). */
+export interface AnalysisStatus {
+  version: number
+  /** Tracks that need analysis, files on disk only. */
+  needing: number
+  /** Of those, tracks with a BPM or key from an older analysis (not a tag). */
+  with_old_values: number
+  estimate_minutes: number
 }
 
 export interface TrackAnalysis {

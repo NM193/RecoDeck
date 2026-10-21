@@ -20,11 +20,14 @@ export interface AnalysisProgressData {
 interface AnalysisProgressProps {
   progress: AnalysisProgressData | null
   onCancel?: () => void
+  /** Cancel was pressed; the batch is finishing the tracks in flight. */
+  cancelling?: boolean
 }
 
 export function AnalysisProgress({
   progress,
   onCancel,
+  cancelling = false,
 }: AnalysisProgressProps) {
   const [elapsedTime, setElapsedTime] = useState(0)
 
@@ -129,7 +132,12 @@ export function AnalysisProgress({
           <span className="analysis-stat">
             {formatSize(progress.totalSizeBytes)}
           </span>
-          {timeRemaining && (
+          {cancelling ? (
+            <>
+              <span className="analysis-stat-separator">•</span>
+              <span className="analysis-stat analysis-stat-time">Cancelling…</span>
+            </>
+          ) : timeRemaining && (
             <>
               <span className="analysis-stat-separator">•</span>
               <span className="analysis-stat analysis-stat-time">
@@ -141,6 +149,7 @@ export function AnalysisProgress({
             <button
               className="analysis-cancel-btn"
               onClick={onCancel}
+              disabled={cancelling}
               data-tip="Cancel analysis" aria-label="Cancel analysis"
             >
               ✕

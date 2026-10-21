@@ -637,11 +637,11 @@ pub fn export_playlist_to_folder(
                 if let Ok(new_id) = db.create_track(&new_track) {
                     // Mirror BPM/key analysis so the new rows show BPM & Key columns filled in
                     if let Some(bpm) = src_track.bpm {
-                        let _ = db.save_bpm_analysis(
-                            new_id,
-                            bpm,
-                            src_track.bpm_confidence.unwrap_or(1.0),
-                        );
+                        // A tag BPM has no confidence; the copy keeps it that way.
+                        let _ = match src_track.bpm_confidence {
+                            Some(confidence) => db.save_bpm_analysis(new_id, bpm, confidence),
+                            None => db.save_tag_analysis(new_id, Some(bpm), None),
+                        };
                     }
                     imported += 1;
                 }

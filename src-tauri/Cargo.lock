@@ -3610,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "recodeck"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "axum",
  "bliss-audio-aubio-rs",
@@ -3618,9 +3618,12 @@ dependencies = [
  "local-ip-address",
  "lofty",
  "notify",
+ "objc2",
+ "objc2-foundation",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.28",
+ "roxmltree",
  "rusqlite",
  "rustfft",
  "serde",
@@ -3838,6 +3841,15 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "roxmltree"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

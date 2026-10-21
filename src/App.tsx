@@ -24,6 +24,8 @@ import { SharePlaylistModal } from './components/SharePlaylistModal'
 import { ExportPlaylistModal } from './components/ExportPlaylistModal'
 import { DjExportModal } from './components/DjExportModal'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
+import { ReanalyzePrompt } from './components/ReanalyzePrompt'
+import { PROMPTED_VERSION_KEY, shouldPromptReanalysis } from './lib/reanalysis'
 import { getChangesForVersion, type VersionChanges } from './lib/changelog'
 import { importSet, setsToAutoImport } from './lib/tracklist/importSet'
 import type { ChannelNews } from './types/youtube'
@@ -91,6 +93,7 @@ import type {
   LibraryFolder,
   MoveReport,
   AnalysisProgressEvent,
+  AnalysisStatus,
   AnalysisCompleteEvent,
 } from './types/track'
 import { EASE, MOTION } from './lib/motion'
@@ -162,6 +165,7 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const reanalyzeStartingRef = useRef(false)
   // Folder tree state
   const [libraryFolders, setLibraryFolders] = useState<string[]>([])
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
@@ -282,6 +286,9 @@ function AppContent() {
   // Pending update from auto-check on launch
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
 
+  // Re-analysis prompt (spec 2026-10-17, §5): shown once What's New is closed
+  const [reanalyzeStatus, setReanalyzeStatus] = useState<AnalysisStatus | null>(null)
+
   // What's New dialog state
   const [whatsNew, setWhatsNew] = useState<{
     version: string
@@ -299,6 +306,8 @@ function AppContent() {
   })
 
   // Analysis progress state
+  // The batch (by its start time) Cancel was pressed for; a new batch starts clean.
+  const [cancellingBatch, setCancellingBatch] = useState<number | null>(null)
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgressData | null>(null)
   const analysisStartTimeRef = useRef<number>(0)
@@ -342,7 +351,9 @@ function AppContent() {
 
   // Cancel analysis — tells backend to stop Rayon workers
   function handleCancelAnalysis() {
-    tauriApi.cancelAnalysis().catch(() => {})
+    // Shows "Cancelling…" at once: the workers finish the track they are on.
+    setCancellingBatch(analysisProgress?.startTime ?? null)
+    tauriApi.cancelAnalysis().catch(() => setCancellingBatch(null))
   }
 
   // Listen for batch analysis events from backend
@@ -384,6 +395,8 @@ function AppContent() {
             toast(
               `Analyzed ${e.total_analyzed} tracks${e.total_failed > 0 ? ` (${e.total_failed} failed)` : ''}`,
             )
+          } else if (e.total_failed > 0) {
+            toast('No tracks could be analyzed', { kind: 'warning' })
           } else {
             toast('All tracks already have BPM and Key analysis', { kind: 'info' })
           }
@@ -509,6 +522,24 @@ function AppContent() {
       } catch {
         console.warn("Failed to check version for What's New dialog")
       }
+
+      // Once per analysis version: offer to re-analyze with better detection.
+      // Not awaited: it checks every file on disk and must not hold start-up back.
+      void (async () => {
+        try {
+          // Answered for this version already: skip the status, which checks
+          // every file on disk. Settings reads it when it opens.
+          const [prompted, version] = await Promise.all([
+            tauriApi.getSetting(PROMPTED_VERSION_KEY),
+            tauriApi.analysisVersion(),
+          ])
+          if (Number(prompted ?? 0) >= version) return
+          const status = await tauriApi.analysisStatus()
+          if (shouldPromptReanalysis(status, prompted)) setReanalyzeStatus(status)
+        } catch {
+          console.warn('Failed to check whether analysis is current')
+        }
+      })()
 
       // PERFORMANCE: Don't load all tracks on startup - load only total count
       // Tracks will be loaded when user selects a folder or playlist
@@ -1027,7 +1058,7 @@ function AppContent() {
         currentTrackName: 'Preparing analysis...',
         totalDurationMs: 0,
         totalSizeBytes: 0,
-        startTime: Date.now(),
+        startTime: analysisStartTimeRef.current,
       })
 
       // Yield to event loop so React commits the progress bar render
@@ -1062,7 +1093,7 @@ function AppContent() {
           first.title || first.file_path.split('/').pop() || 'Unknown',
         totalDurationMs: 0,
         totalSizeBytes: 0,
-        startTime: Date.now(),
+        startTime: analysisStartTimeRef.current,
       })
       await new Promise((r) => setTimeout(r, 0))
       await tauriApi.analyzeTracksBatch(
@@ -1521,8 +1552,9 @@ function AppContent() {
     void analyzeTrackIds(trackIds)
   }
 
-  // BPM and key for these tracks, skipping those that have both (the
-  // sidebar's Analyze All Tracks and Home's Analyze all).
+  // BPM and key for these tracks, skipping those already analyzed with the
+  // current version (the needs-analysis rule, spec 2026-10-17, §4): Home's list,
+  // the re-analysis prompt and Settings → Database.
   async function analyzeTrackIds(trackIds: number[]) {
     try {
       // Show progress bar immediately with "preparing" state
@@ -1535,7 +1567,7 @@ function AppContent() {
         currentTrackName: 'Preparing analysis...',
         totalDurationMs: 0,
         totalSizeBytes: 0,
-        startTime: Date.now(),
+        startTime: analysisStartTimeRef.current,
       })
 
       // Yield to event loop so React commits the progress bar render
@@ -1549,6 +1581,39 @@ function AppContent() {
       setError(err instanceof Error ? err.message : String(err))
       toast(`Analysis failed: ${getErrorMessage(err)}`, { kind: 'error' })
     }
+  }
+
+  // Every track that needs analysis: the re-analysis prompt and Settings → Database.
+  async function reanalyzeLibrary() {
+    // `analyzing` is set only inside analyzeTrackIds, after the list is read:
+    // the ref closes the gap in between.
+    if (analyzing || reanalyzeStartingRef.current) {
+      toast('Analysis is already running', { kind: 'info' })
+      return
+    }
+    reanalyzeStartingRef.current = true
+    try {
+      const ids = await tauriApi.trackIdsNeedingAnalysis()
+      if (ids.length === 0) {
+        toast('All tracks use the current analysis', { kind: 'info' })
+        return
+      }
+      await analyzeTrackIds(ids)
+    } catch (err) {
+      toast(`Couldn't start the analysis: ${getErrorMessage(err)}`, { kind: 'error' })
+    } finally {
+      reanalyzeStartingRef.current = false
+    }
+  }
+
+  // Both answers save the version, so the prompt shows once per version.
+  function closeReanalyzePrompt(reanalyze: boolean) {
+    const status = reanalyzeStatus
+    setReanalyzeStatus(null)
+    if (status) {
+      tauriApi.setSetting(PROMPTED_VERSION_KEY, String(status.version)).catch(() => {})
+    }
+    if (reanalyze) void reanalyzeLibrary()
   }
 
   // Handler for when user clicks on track metadata in player
@@ -1930,6 +1995,9 @@ function AppContent() {
       <AnalysisProgress
         progress={analysisProgress}
         onCancel={handleCancelAnalysis}
+        cancelling={
+          cancellingBatch !== null && analysisProgress?.startTime === cancellingBatch
+        }
       />
 
       {/* Scan progress bar (global — visible from any view) */}
@@ -2046,6 +2114,7 @@ function AppContent() {
                   onFoldersChanged={handleFoldersChanged}
                   onThemeChanged={handleThemeChanged}
                   onNotification={(message, type) => toast(message, { kind: type })}
+                  onReanalyzeLibrary={() => reanalyzeLibrary()}
                 />
               ) : showSearch ? (
                 <SearchView
@@ -2353,6 +2422,14 @@ function AppContent() {
           version={whatsNew.version}
           changes={whatsNew.changes}
           onClose={() => setWhatsNew(null)}
+        />
+      )}
+
+      {reanalyzeStatus && !whatsNew && (
+        <ReanalyzePrompt
+          status={reanalyzeStatus}
+          onLater={() => closeReanalyzePrompt(false)}
+          onReanalyze={() => closeReanalyzePrompt(true)}
         />
       )}
 

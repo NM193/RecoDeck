@@ -10,34 +10,17 @@
 use crate::audio::bpm;
 use crate::audio::decoder;
 use crate::audio::key;
+use crate::audio::ANALYSIS_VERSION;
 use crate::commands::library::AppState;
+use crate::audio::SECONDS_PER_TRACK;
+use crate::db::analysis::{is_current, on_disk, NotCurrent};
+use crate::missing_files::is_missing;
 use crate::error::AppError;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
-
-/// DTO for BPM analysis result sent to frontend
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BpmResultDTO {
-    pub track_id: i64,
-    pub bpm: f64,
-    pub confidence: f64,
-}
-
-/// DTO for key analysis result sent to frontend
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyResultDTO {
-    pub track_id: i64,
-    /// Camelot notation (e.g., "8A", "11B")
-    pub camelot: String,
-    /// Open Key notation (e.g., "8m", "11d") -- used by Traktor
-    pub open_key: String,
-    /// Musical notation (e.g., "Am", "C")
-    pub musical_key: String,
-    pub confidence: f64,
-}
 
 /// DTO for full track analysis result sent to frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,55 +34,6 @@ pub struct TrackAnalysisDTO {
     pub dynamic_range: Option<f64>,
     pub spectral_centroid: Option<f64>,
     pub analyzed_at: Option<String>,
-}
-
-/// Analyze a single track's BPM.
-///
-/// Workflow:
-/// 1. Look up the track's file_path in the database
-/// 2. Decode the audio file and run aubio BPM detection
-/// 3. Store the result in the track_analysis table
-/// 4. Return the BPM and confidence to the frontend
-#[tauri::command]
-pub fn analyze_bpm(state: State<AppState>, track_id: i64) -> Result<BpmResultDTO, AppError> {
-    // Get the track's file path from the database
-    let file_path = {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        let track = db.get_track(track_id)
-            .map_err(|e| AppError::Database(format!("Failed to get track {}: {}", track_id, e)))?;
-        track.file_path
-    };
-
-    // Run BPM detection on the audio file
-    let path = Path::new(&file_path);
-    if !path.exists() {
-        return Err(AppError::NotFound(format!("Audio file not found: {}", file_path)));
-    }
-
-    eprintln!("[analyze_bpm] Analyzing track {} at: {}", track_id, file_path);
-
-    let bpm_result = bpm::detect_bpm(path)
-        .map_err(|e| AppError::Internal(format!("BPM detection failed for track {}: {}", track_id, e)))?;
-
-    eprintln!(
-        "[analyze_bpm] Track {}: BPM={:.1}, confidence={:.2}",
-        track_id, bpm_result.bpm, bpm_result.confidence
-    );
-
-    // Save the result to the database
-    {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        db.save_bpm_analysis(track_id, bpm_result.bpm, bpm_result.confidence)
-            .map_err(|e| AppError::Database(format!("Failed to save BPM analysis: {}", e)))?;
-    }
-
-    Ok(BpmResultDTO {
-        track_id,
-        bpm: bpm_result.bpm,
-        confidence: bpm_result.confidence,
-    })
 }
 
 /// Get the analysis data for a track (returns whatever analysis has been done so far)
@@ -122,192 +56,6 @@ pub fn get_track_analysis(state: State<AppState>, track_id: i64) -> Result<Optio
         spectral_centroid: a.spectral_centroid,
         analyzed_at: a.analyzed_at,
     }))
-}
-
-/// Analyze a single track's musical key.
-///
-/// Workflow:
-/// 1. Look up the track's file_path in the database
-/// 2. Decode the audio file and compute chromagram via FFT
-/// 3. Match against Krumhansl-Schmuckler key profiles for all 24 keys
-/// 4. Store the result (Camelot notation) in the track_analysis table
-/// 5. Return the key and confidence to the frontend
-#[tauri::command]
-pub fn analyze_key(state: State<AppState>, track_id: i64) -> Result<KeyResultDTO, AppError> {
-    // Get the track's file path from the database
-    let file_path = {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        let track = db.get_track(track_id)
-            .map_err(|e| AppError::Database(format!("Failed to get track {}: {}", track_id, e)))?;
-        track.file_path
-    };
-
-    // Run key detection on the audio file
-    let path = Path::new(&file_path);
-    if !path.exists() {
-        return Err(AppError::NotFound(format!("Audio file not found: {}", file_path)));
-    }
-
-    eprintln!("[analyze_key] Analyzing track {} at: {}", track_id, file_path);
-
-    let key_result = key::detect_key(path)
-        .map_err(|e| AppError::Internal(format!("Key detection failed for track {}: {}", track_id, e)))?;
-
-    eprintln!(
-        "[analyze_key] Track {}: Key={} ({}), confidence={:.2}",
-        track_id, key_result.camelot, key_result.musical_key, key_result.confidence
-    );
-
-    // Save the result to the database (stores Camelot notation as the key value)
-    {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        db.save_key_analysis(track_id, &key_result.camelot, key_result.confidence)
-            .map_err(|e| AppError::Database(format!("Failed to save key analysis: {}", e)))?;
-    }
-
-    Ok(KeyResultDTO {
-        track_id,
-        camelot: key_result.camelot,
-        open_key: key_result.open_key,
-        musical_key: key_result.musical_key,
-        confidence: key_result.confidence,
-    })
-}
-
-/// Analyze key for all tracks that haven't had key analysis yet.
-/// Returns the list of results.
-/// Releases the DB mutex during heavy DSP work so other commands aren't blocked.
-#[tauri::command]
-pub fn analyze_all_keys(state: State<AppState>) -> Result<Vec<KeyResultDTO>, AppError> {
-    // Get all tracks that need key analysis (brief lock)
-    let tracks_to_analyze: Vec<(i64, String)> = {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        let all_tracks = db.get_all_tracks()
-            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
-
-        all_tracks
-            .into_iter()
-            .filter_map(|t| {
-                let id = t.id?;
-                let has_key = db.has_key_analysis(id).unwrap_or(false);
-                if has_key { None } else { Some((id, t.file_path)) }
-            })
-            .collect()
-    }; // lock released
-
-    eprintln!("[analyze_all_keys] {} tracks need key analysis", tracks_to_analyze.len());
-
-    let mut results = Vec::new();
-
-    for (track_id, file_path) in &tracks_to_analyze {
-        let path = Path::new(file_path);
-        if !path.exists() {
-            eprintln!("[analyze_all_keys] Skipping missing file: {}", file_path);
-            continue;
-        }
-
-        // Heavy DSP work -- no lock held
-        match key::detect_key(path) {
-            Ok(key_result) => {
-                eprintln!(
-                    "[analyze_all_keys] Track {}: Key={} ({}), confidence={:.2}",
-                    track_id, key_result.camelot, key_result.musical_key, key_result.confidence
-                );
-
-                // Brief lock to save result
-                {
-                    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-                    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-                    db.save_key_analysis(*track_id, &key_result.camelot, key_result.confidence)
-                        .map_err(|e| AppError::Database(format!("Failed to save key analysis: {}", e)))?;
-                }
-
-                results.push(KeyResultDTO {
-                    track_id: *track_id,
-                    camelot: key_result.camelot,
-                    open_key: key_result.open_key,
-                    musical_key: key_result.musical_key,
-                    confidence: key_result.confidence,
-                });
-            }
-            Err(e) => {
-                eprintln!("[analyze_all_keys] Error analyzing track {}: {}", track_id, e);
-            }
-        }
-    }
-
-    eprintln!("[analyze_all_keys] Completed: {} tracks analyzed", results.len());
-
-    Ok(results)
-}
-
-/// Analyze BPM for all tracks that haven't been analyzed yet.
-/// Returns the number of tracks analyzed.
-/// Releases the DB mutex during heavy DSP work so other commands aren't blocked.
-#[tauri::command]
-pub fn analyze_all_bpm(state: State<AppState>) -> Result<Vec<BpmResultDTO>, AppError> {
-    // Get all tracks that need BPM analysis (brief lock)
-    let tracks_to_analyze: Vec<(i64, String)> = {
-        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-        let all_tracks = db.get_all_tracks()
-            .map_err(|e| AppError::Database(format!("Failed to get tracks: {}", e)))?;
-
-        all_tracks
-            .into_iter()
-            .filter_map(|t| {
-                let id = t.id?;
-                let has_bpm = db.has_bpm_analysis(id).unwrap_or(false);
-                if has_bpm { None } else { Some((id, t.file_path)) }
-            })
-            .collect()
-    }; // lock released
-
-    eprintln!("[analyze_all_bpm] {} tracks need BPM analysis", tracks_to_analyze.len());
-
-    let mut results = Vec::new();
-
-    for (track_id, file_path) in &tracks_to_analyze {
-        let path = Path::new(file_path);
-        if !path.exists() {
-            eprintln!("[analyze_all_bpm] Skipping missing file: {}", file_path);
-            continue;
-        }
-
-        // Heavy DSP work -- no lock held
-        match bpm::detect_bpm(path) {
-            Ok(bpm_result) => {
-                eprintln!(
-                    "[analyze_all_bpm] Track {}: BPM={:.1}, confidence={:.2}",
-                    track_id, bpm_result.bpm, bpm_result.confidence
-                );
-
-                // Brief lock to save result
-                {
-                    let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
-                    let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-                    db.save_bpm_analysis(*track_id, bpm_result.bpm, bpm_result.confidence)
-                        .map_err(|e| AppError::Database(format!("Failed to save BPM analysis: {}", e)))?;
-                }
-
-                results.push(BpmResultDTO {
-                    track_id: *track_id,
-                    bpm: bpm_result.bpm,
-                    confidence: bpm_result.confidence,
-                });
-            }
-            Err(e) => {
-                eprintln!("[analyze_all_bpm] Error analyzing track {}: {}", track_id, e);
-            }
-        }
-    }
-
-    eprintln!("[analyze_all_bpm] Completed: {} tracks analyzed", results.len());
-
-    Ok(results)
 }
 
 /// DTO for waveform data sent to frontend
@@ -431,12 +179,10 @@ pub async fn analyze_tracks_batch(
                 .iter()
                 .filter_map(|&id| {
                     let track = db.get_track(id).ok()?;
-                    if !force {
-                        let has_bpm = db.has_bpm_analysis(id).unwrap_or(false);
-                        let has_key = db.has_key_analysis(id).unwrap_or(false);
-                        if has_bpm && has_key {
-                            return None;
-                        }
+                    // Unless forced, only what needs analysis (spec §4): not
+                    // analysed with this version. The file check is the worker's.
+                    if !force && is_current(db.analysis_version(id).unwrap_or(None), ANALYSIS_VERSION) {
+                        return None;
                     }
                     let name = track.title.clone().unwrap_or_else(|| {
                         track.file_path.rsplit('/').next().unwrap_or("Unknown").to_string()
@@ -475,35 +221,61 @@ pub async fn analyze_tracks_batch(
             let analyzed = AtomicUsize::new(0);
             let failed = AtomicUsize::new(0);
             let progress_counter = AtomicUsize::new(0);
+            // Full speed while the window is hidden or the screen is off, to the end of the batch.
+            let _activity = crate::user_activity::UserActivity::begin("Analyzing tracks");
 
             tracks_to_analyze.par_iter().for_each(|(track_id, file_path, track_name)| {
                 if cancelled.load(Ordering::SeqCst) {
                     return;
                 }
 
-                let path = Path::new(file_path);
-                if !path.exists() {
-                    eprintln!("[batch_analysis] Skipping missing file: {}", file_path);
-                    failed.fetch_add(1, Ordering::SeqCst);
+                let emit = |bpm_value: Option<f64>, key_value: Option<String>| {
                     let current = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
                     let _ = app3.emit("analysis-progress", &AnalysisProgressEvent {
                         current, total, track_id: *track_id, track_name: track_name.clone(),
-                        bpm: None, musical_key: None,
+                        bpm: bpm_value, musical_key: key_value,
                     });
+                };
+                // One save per track whose file was read (spec 2026-10-17, §4).
+                let save = |found_bpm: Option<&bpm::BpmResult>, found_key: Option<&key::KeyResult>| {
+                    let st = app3.state::<AppState>();
+                    let Ok(guard) = st.db.lock() else { return };
+                    if let Some(db) = guard.as_ref() {
+                        if let Err(e) = db.save_analysis(*track_id, found_bpm, found_key, ANALYSIS_VERSION) {
+                            eprintln!("[batch_analysis] Saving track {} failed: {}", track_id, e);
+                        }
+                    }
+                };
+
+                // A file not on disk saves nothing: Missing Files handles it.
+                if is_missing(file_path) {
+                    eprintln!("[batch_analysis] Skipping missing file: {}", file_path);
+                    failed.fetch_add(1, Ordering::SeqCst);
+                    emit(None, None);
+                    return;
+                }
+
+                // One long file at a time: a mix holds gigabytes while it is worked on.
+                // Held to the end of this file; a cancel while waiting stops here.
+                let _long = decoder::long_file_guard(Path::new(file_path));
+                if cancelled.load(Ordering::SeqCst) {
                     return;
                 }
 
                 // Decode once
-                let audio = match decoder::decode_to_mono(path) {
+                let audio = match decoder::decode_to_mono_cancellable(Path::new(file_path), Some(cancelled.as_ref())) {
                     Ok(a) => a,
+                    Err(_) if cancelled.load(Ordering::SeqCst) => return,
                     Err(e) => {
                         eprintln!("[batch_analysis] Decode failed for track {}: {}", track_id, e);
+                        // Read but not decodable: it waits for the next version or a
+                        // forced re-analysis. A file that could not be read (no
+                        // permission, a flaky drive) saves nothing and is tried again.
+                        if !e.is_transient() {
+                            save(None, None);
+                        }
                         failed.fetch_add(1, Ordering::SeqCst);
-                        let current = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
-                        let _ = app3.emit("analysis-progress", &AnalysisProgressEvent {
-                            current, total, track_id: *track_id, track_name: track_name.clone(),
-                            bpm: None, musical_key: None,
-                        });
+                        emit(None, None);
                         return;
                     }
                 };
@@ -513,39 +285,21 @@ pub async fn analyze_tracks_batch(
                 }
 
                 // Analyze BPM and Key from the same decoded audio
-                let bpm_result = bpm::detect_bpm_from_samples(&audio).ok();
-                let key_result = key::detect_key_from_samples(&audio).ok();
-
-                let bpm_val = bpm_result.as_ref().map(|r| r.bpm);
-                let key_val = key_result.as_ref().map(|r| r.camelot.clone());
-
-                // Save results to DB (brief lock)
-                {
-                    let st = app3.state::<AppState>();
-                    let db_lock = st.db.lock();
-                    if let Ok(guard) = db_lock {
-                        if let Some(db) = guard.as_ref() {
-                            if let Some(ref bpm_r) = bpm_result {
-                                let _ = db.save_bpm_analysis(*track_id, bpm_r.bpm, bpm_r.confidence);
-                            }
-                            if let Some(ref key_r) = key_result {
-                                let _ = db.save_key_analysis(*track_id, &key_r.camelot, key_r.confidence);
-                            }
-                        }
-                    }
+                let bpm_result = bpm::detect_bpm_from_samples(&audio).ok().flatten();
+                // Cancelled between BPM and key: save nothing, or the BPM alone would
+                // write the version and mark the key as analysed.
+                if cancelled.load(Ordering::SeqCst) {
+                    return;
                 }
+                let key_result = key::detect_key_from_samples(&audio).ok();
+                save(bpm_result.as_ref(), key_result.as_ref());
 
                 if bpm_result.is_some() || key_result.is_some() {
                     analyzed.fetch_add(1, Ordering::SeqCst);
                 } else {
                     failed.fetch_add(1, Ordering::SeqCst);
                 }
-
-                let current = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
-                let _ = app3.emit("analysis-progress", &AnalysisProgressEvent {
-                    current, total, track_id: *track_id, track_name: track_name.clone(),
-                    bpm: bpm_val, musical_key: key_val,
-                });
+                emit(bpm_result.as_ref().map(|r| r.bpm), key_result.as_ref().map(|r| r.camelot.clone()));
             });
 
             let was_cancelled = cancelled.load(Ordering::SeqCst);
@@ -561,10 +315,91 @@ pub async fn analyze_tracks_batch(
     Ok(())
 }
 
+/// What analysis status Settings and the start-up prompt show (spec §5).
+#[derive(Debug, Clone, Serialize)]
+pub struct AnalysisStatus {
+    /// ANALYSIS_VERSION.
+    pub version: i64,
+    /// Tracks that need analysis (§4), files on disk only.
+    pub needing: usize,
+    /// Of those, tracks with a BPM or key from an older analysis (not a tag).
+    pub with_old_values: usize,
+    pub estimate_minutes: u32,
+}
+
+/// tracks × seconds per track ÷ cores, in minutes, rounded up to 5.
+pub fn estimate_minutes(tracks: usize, seconds_per_track: f64, cores: usize) -> u32 {
+    if tracks == 0 {
+        return 0;
+    }
+    let minutes = tracks as f64 * seconds_per_track / cores.max(1) as f64 / 60.0;
+    ((minutes / 5.0).ceil().max(1.0) * 5.0) as u32
+}
+
+/// Tracks that need analysis (§4): read under the lock, then the disk is
+/// checked after it is released, as `count_missing_tracks` does.
+fn needing_analysis(app: &AppHandle) -> Result<Vec<NotCurrent>, AppError> {
+    let candidates = {
+        let state = app.state::<AppState>();
+        let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
+        let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+        db.tracks_not_current(ANALYSIS_VERSION)
+            .map_err(|e| AppError::Database(format!("Failed to list tracks to analyze: {}", e)))?
+    };
+    Ok(on_disk(candidates))
+}
+
+/// Async, off the main thread: it runs at start-up and on every Settings visit,
+/// and a sleeping drive can make the disk check slow.
+#[tauri::command]
+pub async fn analysis_status(app: AppHandle) -> Result<AnalysisStatus, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let tracks = needing_analysis(&app)?;
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        Ok(AnalysisStatus {
+            version: ANALYSIS_VERSION,
+            needing: tracks.len(),
+            with_old_values: tracks.iter().filter(|t| t.has_old_values).count(),
+            estimate_minutes: estimate_minutes(tracks.len(), SECONDS_PER_TRACK, cores),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Analysis status task failed: {}", e)))?
+}
+
+/// The current analysis version, without looking at any file: the start-up
+/// check compares it with the version the prompt was last answered for.
+#[tauri::command]
+pub fn analysis_version() -> i64 {
+    ANALYSIS_VERSION
+}
+
+/// The tracks `analysis_status` counts as needing analysis.
+#[tauri::command]
+pub async fn track_ids_needing_analysis(app: AppHandle) -> Result<Vec<i64>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || Ok(needing_analysis(&app)?.into_iter().map(|t| t.id).collect()))
+        .await
+        .map_err(|e| AppError::Internal(format!("Analysis list task failed: {}", e)))?
+}
+
 /// Cancel an in-progress batch analysis.
 /// Sets the cancellation flag; Rayon workers will stop at next check point.
 #[tauri::command]
 pub fn cancel_analysis(state: State<AppState>) -> Result<(), AppError> {
     state.analysis_cancelled.store(true, Ordering::SeqCst);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_estimate_rounds_up_to_five_minutes() {
+        assert_eq!(estimate_minutes(0, 2.0, 8), 0);
+        assert_eq!(estimate_minutes(10, 2.0, 8), 5);
+        assert_eq!(estimate_minutes(1200, 2.0, 8), 5); // 300 s
+        assert_eq!(estimate_minutes(1201, 2.0, 8), 10);
+        assert_eq!(estimate_minutes(8000, 2.0, 0), 270); // no core count: one core
+    }
 }

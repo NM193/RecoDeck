@@ -7,7 +7,7 @@ use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
-use symphonia::core::units::Time;
+use symphonia::core::units::{Time, TimeBase};
 
 /// PCM audio chunk sent to frontend (f32 samples, interleaved stereo)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,38 +292,264 @@ pub struct MonoAudio {
     pub duration_ms: u64,
 }
 
-/// Decode an entire audio file to mono f32 samples.
-/// 
-/// This is the foundation for all DSP analysis in RecoDeck.
-/// It reads the full file, decodes all packets, converts to f32,
-/// and mixes down to mono (if stereo/multichannel).
-///
-/// The samples are NOT resampled — they stay at the file's native sample rate.
-/// Individual analysis modules can resample if needed (e.g., to 16kHz for AI models).
-pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
-    // Open and probe the audio file
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("Failed to open audio file: {}", e))?;
-    
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    
+/// Frames of silence that stand in for a packet that failed to decode, so
+/// the samples after it keep their time (spec 2026-10-17, §2): the packet's
+/// duration in the track's time base, at the sample rate.
+fn gap_frames(duration: u64, time_base: Option<TimeBase>, sample_rate: u32) -> usize {
+    let frames = match time_base {
+        Some(tb) if tb.numer != 0 && tb.denom != 0 => {
+            let t = tb.calc_time(duration);
+            ((t.seconds as f64 + t.frac) * sample_rate as f64).round() as usize
+        }
+        _ => duration as usize,
+    };
+    frames.min((MAX_GAP_S * sample_rate as f64) as usize)
+}
+
+/// Frames of audio per file byte no format comes close to (a 32 kbps MP3 holds
+/// about 11): a frame count beyond it is a corrupt header.
+const MAX_FRAMES_PER_BYTE: u64 = 64;
+
+/// How many samples to reserve: the container's frame count, but never more
+/// than MAX_RESERVE_S of audio nor more than the file's size can hold.
+fn reservation_frames(n_frames: Option<u64>, sample_rate: u32, file_bytes: u64) -> usize {
+    let by_time = (MAX_RESERVE_S * sample_rate as f64) as u64;
+    let by_size = file_bytes.saturating_mul(MAX_FRAMES_PER_BYTE);
+    n_frames.map_or(0, |n| n.min(by_time).min(by_size)) as usize
+}
+
+/// Longest stretch of audio the sample buffer is reserved for up front.
+const MAX_RESERVE_S: f64 = 4.0 * 3600.0;
+
+/// Files longer than this are decoded and analysed one at a time (see `long_file_guard`).
+pub const LONG_FILE_S: f64 = 20.0 * 60.0;
+
+/// Held while a long file is decoded and analysed.
+static LONG_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// A file this long or longer by size alone, when its container gives no length.
+const LONG_FILE_BYTES: u64 = 60_000_000;
+
+/// Whether the file is longer than `LONG_FILE_S`, judged from the probe
+/// (frame count) before anything is decoded; by file size when the container
+/// has no frame count.
+fn is_long_file(path: &Path) -> bool {
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let io_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let Ok(probed) = probe(path, &io_failed) else { return false };
+    let params = &probed.format.default_track().map(|t| t.codec_params.clone());
+    match params.as_ref().and_then(|p| Some((p.n_frames?, p.sample_rate?))) {
+        Some((frames, rate)) if rate > 0 => frames as f64 / rate as f64 > LONG_FILE_S,
+        _ => size > LONG_FILE_BYTES,
+    }
+}
+
+/// Only one file longer than `LONG_FILE_S` is decoded and analysed at a time
+/// across the whole process: a two-hour mix holds gigabytes while it is
+/// worked on, and a batch runs many files in parallel. Keep the guard until
+/// the file's analysis is done. None (nothing held) for an ordinary file.
+pub fn long_file_guard(path: &Path) -> Option<std::sync::MutexGuard<'static, ()>> {
+    if is_long_file(path) {
+        Some(LONG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner()))
+    } else {
+        None
+    }
+}
+
+/// Longest silence one failed packet stands for: real packets last milliseconds, so more is a corrupt header.
+const MAX_GAP_S: f64 = 10.0;
+
+/// Whether MP3/AAC encoder delay and padding are trimmed for analysis. Set by
+/// measurement (spec §2, decoder timeline): the setting that lines MP3 grids
+/// up with Traktor's.
+const GAPLESS: bool = false;
+
+/// Why a file could not be decoded. The difference matters to analysis: a file
+/// that could not be read (no permission, a flaky or unmounted drive) may
+/// decode next time, while one that was read but is not decodable audio will
+/// not, so only that one counts as analysed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DecodeError {
+    /// The file could not be opened or read (an I/O error other than its end).
+    Unreadable(String),
+    /// The file was read but is not audio this decoder handles (unsupported
+    /// format, no audio track, codec error).
+    Undecodable(String),
+}
+
+impl DecodeError {
+    /// An I/O error that is not the end of the file means the file could not
+    /// be read; anything else from the decoder is about the content.
+    fn of(e: &symphonia::core::errors::Error, message: String) -> Self {
+        match e {
+            symphonia::core::errors::Error::IoError(io)
+                if io.kind() != std::io::ErrorKind::UnexpectedEof =>
+            {
+                DecodeError::Unreadable(message)
+            }
+            _ => DecodeError::Undecodable(message),
+        }
+    }
+
+    /// True when a later attempt may succeed.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, DecodeError::Unreadable(_))
+    }
+}
+
+/// The file, noting any I/O error other than its end: the probe swallows
+/// read errors into "no suitable format", so the failure kind has to be kept
+/// here. Seen from byte `start` on, so the probe can begin past a tag.
+struct WatchedFile {
+    file: std::fs::File,
+    start: u64,
+    failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl WatchedFile {
+    fn note<T>(&self, result: std::io::Result<T>) -> std::io::Result<T> {
+        if let Err(e) = &result {
+            if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                self.failed.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        result
+    }
+}
+
+impl std::io::Read for WatchedFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let result = self.file.read(buf);
+        self.note(result)
+    }
+}
+
+impl std::io::Seek for WatchedFile {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let pos = match pos {
+            std::io::SeekFrom::Start(n) => std::io::SeekFrom::Start(n.saturating_add(self.start)),
+            other => other,
+        };
+        let result = self.file.seek(pos).and_then(|n| {
+            if n >= self.start {
+                return Ok(n - self.start);
+            }
+            // Before the media's first byte, as a file refuses a position before 0.
+            self.file.seek(std::io::SeekFrom::Start(self.start))?;
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek before the start of the media"))
+        });
+        self.note(result)
+    }
+}
+
+impl symphonia::core::io::MediaSource for WatchedFile {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        self.file.metadata().ok().map(|m| m.len().saturating_sub(self.start))
+    }
+}
+
+/// The bytes an ID3v2 tag at the start of the file takes (header, body and
+/// footer), from its header; None when the file doesn't start with one.
+fn id3v2_tag_len(path: &Path) -> Option<u64> {
+    use std::io::Read;
+    let mut header = [0u8; 10];
+    std::fs::File::open(path).ok()?.read_exact(&mut header).ok()?;
+    if &header[..3] != b"ID3" || header[6..].iter().any(|b| b & 0x80 != 0) {
+        return None;
+    }
+    let body = header[6..].iter().fold(0u64, |n, &b| (n << 7) | b as u64);
+    let footer = if header[5] & 0x10 != 0 { 10 } else { 0 };
+    Some(10 + body + footer)
+}
+
+/// Probes the file from byte `start` on.
+fn probe_from(
+    path: &Path,
+    start: u64,
+    io_failed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<symphonia::core::probe::ProbeResult, DecodeError> {
+    use std::io::Seek;
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
+    file.seek(std::io::SeekFrom::Start(start))
+        .map_err(|e| DecodeError::Unreadable(format!("Failed to open audio file: {}", e)))?;
+    let watched = WatchedFile { file, start, failed: io_failed.clone() };
+    let mss = MediaSourceStream::new(Box::new(watched), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension() {
         hint.with_extension(&ext.to_string_lossy());
     }
-    
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
-        .map_err(|e| format!("Failed to probe audio format: {}", e))?;
-    
+    symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &FormatOptions { enable_gapless: GAPLESS, ..Default::default() },
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| DecodeError::of(&e, format!("Failed to probe audio format: {}", e)))
+}
+
+/// Probes the file for its format. When the probe fails on a file that starts
+/// with an ID3v2 tag, it is tried again from just past the tag: the probe
+/// gives up on a tag it can't read (a text frame in an encoding the standard
+/// doesn't have, as some taggers write), though the audio after it is fine.
+fn probe(
+    path: &Path,
+    io_failed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<symphonia::core::probe::ProbeResult, DecodeError> {
+    let first = probe_from(path, 0, io_failed);
+    if matches!(first, Err(DecodeError::Undecodable(_))) && !io_failed.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Some(start) = id3v2_tag_len(path) {
+            return probe_from(path, start, io_failed);
+        }
+    }
+    first
+}
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecodeError::Unreadable(m) | DecodeError::Undecodable(m) => f.write_str(m),
+        }
+    }
+}
+
+/// `decode_to_mono` with the kind of failure kept, for the batch.
+pub fn decode_to_mono_typed(path: &Path) -> Result<MonoAudio, DecodeError> {
+    decode_to_mono_cancellable(path, None)
+}
+
+/// `decode_to_mono_typed` that stops between packets once `cancelled` is set,
+/// with a transient error so nothing is saved for the file. For the batch.
+pub fn decode_to_mono_cancellable(
+    path: &Path,
+    cancelled: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<MonoAudio, DecodeError> {
+    let io_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // A read error anywhere makes the failure transient, however it surfaced.
+    let classify = |e: DecodeError| {
+        if io_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            DecodeError::Unreadable(e.to_string())
+        } else {
+            e
+        }
+    };
+
+    // Open and probe the audio file
+    let probed = probe(path, &io_failed).map_err(classify)?;
+
     let mut format_reader = probed.format;
     
     let track = format_reader
         .default_track()
-        .ok_or_else(|| "No audio tracks found".to_string())?;
+        .ok_or_else(|| DecodeError::Undecodable("No audio tracks found".to_string()))?;
     
     let track_id = track.id;
     let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+    let time_base = track.codec_params.time_base;
     
     // Calculate duration from frame count
     let duration_ms = if let Some(n_frames) = track.codec_params.n_frames {
@@ -334,12 +560,22 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
     
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| format!("Failed to create decoder: {}", e))?;
+        .map_err(|e| DecodeError::of(&e, format!("Failed to create decoder: {}", e)))?;
     
-    // Collect all decoded mono samples
+    // Collect all decoded mono samples. Reserved from the frame count when the
+    // container gives one, so a long mix is not grown by doubling (which leaves
+    // up to half again as much unused); a corrupt count cannot ask for more than
+    // MAX_RESERVE_S seconds.
+    let file_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let reserve = reservation_frames(track.codec_params.n_frames, sample_rate, file_bytes);
     let mut all_samples: Vec<f32> = Vec::new();
+    // A refused reservation is no failure: the buffer then just grows as it fills.
+    let _ = all_samples.try_reserve_exact(reserve);
     
     loop {
+        if cancelled.is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
+            return Err(DecodeError::Unreadable("Decoding cancelled".to_string()));
+        }
         let packet = match format_reader.next_packet() {
             Ok(packet) => packet,
             Err(symphonia::core::errors::Error::IoError(e))
@@ -347,7 +583,7 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
             {
                 break; // End of file
             }
-            Err(e) => return Err(format!("Error reading packet: {}", e)),
+            Err(e) => return Err(classify(DecodeError::of(&e, format!("Error reading packet: {}", e)))),
         };
         
         // Skip packets from other tracks
@@ -359,11 +595,14 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(symphonia::core::errors::Error::DecodeError(msg)) => {
-                // Skip corrupted packets, continue decoding
-                eprintln!("[decode_to_mono] Skipping corrupted packet: {}", msg);
+                // Silence of the packet's length keeps every later sample at its time.
+                eprintln!("[decode_to_mono] Corrupted packet replaced by silence: {}", msg);
+                let gap = gap_frames(packet.dur(), time_base, sample_rate);
+                all_samples.resize(all_samples.len() + gap, 0.0);
+                decoder.reset();
                 continue;
             }
-            Err(e) => return Err(format!("Decode error: {}", e)),
+            Err(e) => return Err(classify(DecodeError::of(&e, format!("Decode error: {}", e)))),
         };
         
         // Convert to mono f32 and append
@@ -371,6 +610,8 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
         all_samples.extend_from_slice(&mono_chunk);
     }
     
+    all_samples.shrink_to_fit();
+
     // Recalculate duration from actual sample count if needed
     let actual_duration_ms = if sample_rate > 0 {
         (all_samples.len() as u64 * 1000) / sample_rate as u64
@@ -383,6 +624,18 @@ pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
         sample_rate,
         duration_ms: actual_duration_ms,
     })
+}
+
+/// Decode an entire audio file to mono f32 samples.
+/// 
+/// This is the foundation for all DSP analysis in RecoDeck.
+/// It reads the full file, decodes all packets, converts to f32,
+/// and mixes down to mono (if stereo/multichannel).
+///
+/// The samples are NOT resampled — they stay at the file's native sample rate.
+/// Individual analysis modules can resample if needed (e.g., to 16kHz for AI models).
+pub fn decode_to_mono(path: &Path) -> Result<MonoAudio, String> {
+    decode_to_mono_typed(path).map_err(|e| e.to_string())
 }
 
 /// Convert decoded audio buffer to mono f32 samples.
@@ -462,6 +715,19 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn a_failed_packet_is_silence_of_its_length() {
+        use symphonia::core::units::TimeBase;
+        assert_eq!(gap_frames(1152, Some(TimeBase::new(1, 44100)), 44100), 1152);
+        assert_eq!(gap_frames(1024, Some(TimeBase::new(1, 48000)), 48000), 1024);
+        // A time base finer than the sample rate.
+        assert_eq!(gap_frames(2048, Some(TimeBase::new(1, 96000)), 48000), 1024);
+        // No time base: one frame per tick.
+        assert_eq!(gap_frames(576, None, 44100), 576);
+        // A corrupt header cannot ask for an endless gap.
+        assert_eq!(gap_frames(u32::MAX as u64, Some(TimeBase::new(1, 1)), 44100), 441_000);
+    }
+
+    #[test]
     fn test_audio_decoder_basic() {
         // This test requires a test audio file
         // Skip if not available (would need to be added to test fixtures)
@@ -480,5 +746,149 @@ mod tests {
         let chunk = chunk.unwrap();
         assert!(!chunk.samples.is_empty());
         assert!(chunk.sample_rate > 0);
+    }
+
+    #[test]
+    fn a_path_that_cannot_be_read_is_transient_and_garbage_is_not() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // A directory opens but cannot be read.
+        let e = decode_to_mono_typed(dir.path()).unwrap_err();
+        assert!(e.is_transient(), "a directory: {e}");
+
+        // A file that cannot be opened (permission removed).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let locked = dir.path().join("locked.mp3");
+            std::fs::write(&locked, vec![7u8; 4096]).unwrap();
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+            if std::fs::File::open(&locked).is_err() {
+                let e = decode_to_mono_typed(&locked).unwrap_err();
+                assert!(e.is_transient(), "no permission: {e}");
+            }
+        }
+
+        // A file that opens but is no audio.
+        let garbage = dir.path().join("garbage.mp3");
+        let bytes: Vec<u8> = (0..20_000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
+        std::fs::write(&garbage, bytes).unwrap();
+        let e = decode_to_mono_typed(&garbage).unwrap_err();
+        assert!(!e.is_transient(), "garbage: {e}");
+        // The string API keeps working for the other callers.
+        assert!(decode_to_mono(&garbage).is_err());
+    }
+
+    /// A mono 16-bit WAV whose header says it lasts `seconds`, with a little audio.
+    fn wav_claiming(path: &Path, seconds: u32) {
+        let rate = 8000u32;
+        let claimed = rate * seconds * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + claimed).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&claimed.to_le_bytes());
+        bytes.extend_from_slice(&vec![0u8; 4000]);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn a_corrupt_frame_count_reserves_little_and_the_file_still_decodes() {
+        // 4 GB of audio claimed by a header, 4000 bytes of it present.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("liar.wav");
+        wav_claiming(&file, 250_000);
+        assert!(reservation_frames(Some(2_000_000_000), 8000, 4044) <= 4044 * MAX_FRAMES_PER_BYTE as usize);
+        assert_eq!(reservation_frames(None, 44100, 1_000_000), 0);
+        assert_eq!(reservation_frames(Some(1000), 44100, 1_000_000), 1000);
+        let audio = decode_to_mono_typed(&file).expect("decodes what is there");
+        assert_eq!(audio.samples.len(), 2000);
+    }
+
+    #[test]
+    fn a_cancelled_decode_stops_early_and_is_transient() {
+        use std::sync::atomic::AtomicBool;
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("a.wav");
+        wav_claiming(&file, 1);
+        let cancelled = AtomicBool::new(true);
+        let e = decode_to_mono_cancellable(&file, Some(&cancelled)).unwrap_err();
+        assert!(e.is_transient(), "{e}");
+        // Not cancelled: decodes as usual.
+        let go = AtomicBool::new(false);
+        assert!(decode_to_mono_cancellable(&file, Some(&go)).is_ok());
+    }
+
+    /// An ID3v2.4 tag whose one text frame names an encoding the standard
+    /// doesn't have, as some taggers write.
+    fn broken_id3v2() -> Vec<u8> {
+        let frame = [b"TIT2".as_slice(), &[0, 0, 0, 2], &[0, 0], &[0x05, b'x']].concat();
+        let size = frame.len() as u8;
+        [b"ID3".as_slice(), &[4, 0, 0], &[0, 0, 0, size], &frame].concat()
+    }
+
+    #[test]
+    fn a_file_seen_from_past_its_tag_seeks_and_reads_from_there() {
+        use std::io::{Read, Seek, SeekFrom};
+        use symphonia::core::io::MediaSource;
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("ten.bin");
+        std::fs::write(&path, (0u8..10).collect::<Vec<_>>()).unwrap();
+        let mut file = std::fs::File::open(&path).unwrap();
+        file.seek(SeekFrom::Start(4)).unwrap();
+        let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut watched = WatchedFile { file, start: 4, failed };
+        let mut byte = [0u8; 1];
+
+        assert_eq!(watched.byte_len(), Some(6));
+        assert_eq!(watched.seek(SeekFrom::Start(0)).unwrap(), 0);
+        watched.read_exact(&mut byte).unwrap();
+        assert_eq!(byte[0], 4);
+        assert_eq!(watched.seek(SeekFrom::End(0)).unwrap(), 6);
+        // Before the media's first byte: refused, and the next read is that byte.
+        assert!(watched.seek(SeekFrom::Current(-8)).is_err());
+        watched.read_exact(&mut byte).unwrap();
+        assert_eq!(byte[0], 4);
+    }
+
+    #[test]
+    fn audio_behind_a_tag_the_probe_cannot_read_still_decodes() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let plain = dir.path().join("plain.wav");
+        wav_claiming(&plain, 1);
+        let tagged = dir.path().join("tagged.wav");
+        std::fs::write(&tagged, [broken_id3v2(), std::fs::read(&plain).unwrap()].concat()).unwrap();
+
+        let audio = decode_to_mono_typed(&tagged).expect("the audio after the tag");
+        assert_eq!(audio.samples, decode_to_mono_typed(&plain).unwrap().samples);
+
+        // The long-file check reads the same way.
+        let long = dir.path().join("long.wav");
+        wav_claiming(&long, 1500);
+        let long_tagged = dir.path().join("long_tagged.wav");
+        std::fs::write(&long_tagged, [broken_id3v2(), std::fs::read(&long).unwrap()].concat()).unwrap();
+        assert!(long_file_guard(&long_tagged).is_some());
+    }
+
+    #[test]
+    fn only_a_file_over_twenty_minutes_takes_the_long_file_guard() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let short = dir.path().join("short.wav");
+        let long = dir.path().join("long.wav");
+        wav_claiming(&short, 600);
+        wav_claiming(&long, 1500);
+        assert!(long_file_guard(&short).is_none());
+        let held = long_file_guard(&long);
+        assert!(held.is_some());
+        drop(held);
+        assert!(long_file_guard(Path::new("/nonexistent/x.wav")).is_none());
     }
 }

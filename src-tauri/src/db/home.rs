@@ -127,18 +127,21 @@ impl Database {
         rows.collect()
     }
 
-    /// Every track with no BPM (no analysis row, or one without a BPM), by
-    /// id: what Home's Analyze all analyzes, and its length is Not analyzed's
-    /// number. `analyze_tracks_batch(ids, false)` skips only tracks with both
-    /// a BPM and a key, so all of these are analyzed.
+    /// Every track with no BPM (no analysis row, or one without a BPM) that
+    /// has not been read with the current analysis version, by id: what
+    /// Home's Analyze all analyzes, and its length is Not analyzed's number.
+    /// `analyze_tracks_batch(ids, false)` skips only tracks analysed with the
+    /// current version (spec 2026-10-17, §4), so all of these are analyzed
+    /// and a track read without finding a BPM leaves the list.
     pub fn get_track_ids_without_bpm(&self) -> Result<Vec<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.id FROM tracks t
              LEFT JOIN track_analysis a ON a.track_id = t.id
              WHERE a.bpm IS NULL
+               AND (a.analysis_version IS NULL OR a.analysis_version < ?1)
              ORDER BY t.id",
         )?;
-        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+        let rows = stmt.query_map([crate::audio::ANALYSIS_VERSION], |row| row.get::<_, i64>(0))?;
         rows.collect()
     }
 
@@ -352,6 +355,16 @@ mod tests {
             }
         );
         assert_eq!(db.get_upcoming_gigs("2026-10-04", 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_track_read_without_a_bpm_leaves_the_list() {
+        let db = db();
+        let read = track(&db, "read");
+        let old = track(&db, "old");
+        db.save_analysis(read, None, None, crate::audio::ANALYSIS_VERSION).unwrap();
+        db.save_analysis(old, None, None, crate::audio::ANALYSIS_VERSION - 1).unwrap();
+        assert_eq!(db.get_track_ids_without_bpm().unwrap(), vec![old]);
     }
 
     #[test]

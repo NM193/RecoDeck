@@ -55,6 +55,8 @@ export interface SettingsContextValue {
 
   // Callbacks surfaced for sub-components that need them (e.g. DuplicatesModal)
   onFoldersChanged: () => void
+  /** Re-analyzes every track that needs it (spec 2026-10-17, §5); App runs it. Settles once the batch has started. */
+  onReanalyzeLibrary?: () => void | Promise<void>
   onNotification?: (
     message: string,
     type: 'info' | 'success' | 'warning' | 'error',
@@ -110,6 +112,7 @@ export interface SettingsContextValue {
 
 export interface SettingsCallbacks {
   onFoldersChanged: () => void
+  onReanalyzeLibrary?: () => void | Promise<void>
   onThemeChanged: (theme: string) => void
   onNotification?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void
 }
@@ -129,7 +132,7 @@ export function SettingsProvider({
   callbacks: SettingsCallbacks
   children: ReactNode
 }) {
-  const { onFoldersChanged, onThemeChanged, onNotification } = callbacks
+  const { onFoldersChanged, onThemeChanged, onNotification, onReanalyzeLibrary } = callbacks
 
   // --- State ---
   const [folders, setFolders] = useState<string[]>([])
@@ -691,7 +694,7 @@ export function SettingsProvider({
     currentTheme, handleThemeChange,
     crossfadeEnabled, crossfadeDuration,
     handleCrossfadeEnabledChange, handleCrossfadeDurationChange,
-    onFoldersChanged, onNotification,
+    onFoldersChanged, onNotification, onReanalyzeLibrary,
     isApiKeyConfigured, apiKeyInput, setApiKeyInput, showApiKey, setShowApiKey, aiSaving,
     handleSaveApiKey, handleDeleteApiKey,
     ytKeyConfigured, ytKeyInput, setYtKeyInput: updateYtKeyInput, showYtKey, setShowYtKey, ytSaving, ytTesting,

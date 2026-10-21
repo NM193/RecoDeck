@@ -10,6 +10,7 @@ pub mod formats;
 pub mod missing_files;
 pub mod scanner;
 pub mod server;
+pub mod user_activity;
 #[cfg(test)]
 mod test_support;
 
@@ -532,15 +533,14 @@ pub fn run() {
             commands::playback::stop,
             commands::playback::get_playback_status,
             // Analysis commands
-            commands::analysis::analyze_bpm,
-            commands::analysis::analyze_all_bpm,
-            commands::analysis::analyze_key,
-            commands::analysis::analyze_all_keys,
             commands::analysis::get_track_analysis,
             commands::analysis::analyze_waveform,
             commands::analysis::get_waveform,
             commands::analysis::analyze_tracks_batch,
             commands::analysis::cancel_analysis,
+            commands::analysis::analysis_status,
+            commands::analysis::analysis_version,
+            commands::analysis::track_ids_needing_analysis,
             // Playlist commands
             commands::playlists::create_playlist,
             commands::playlists::create_playlist_folder,

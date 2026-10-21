@@ -44,6 +44,24 @@ pub fn location(path: &str, boot_volume: &str) -> TraktorLocation {
     TraktorLocation { volume, dir, file: file.to_string() }
 }
 
+#[cfg(any(feature = "eval", test))]
+/// The file a Traktor LOCATION names, the inverse of `location`: DIR's `/:`
+/// become `/`, a Windows drive stays in front, and a volume other than the
+/// boot volume is a drive under /Volumes. NFC, as Traktor writes names.
+pub fn path_from_location(volume: &str, dir: &str, file: &str, boot_volume: &str) -> String {
+    let folders: String = dir.split("/:").filter(|f| !f.is_empty()).map(|f| format!("/{f}")).collect();
+    let rest = format!("{folders}/{file}");
+    let volume: String = volume.nfc().collect();
+    let path = if matches!(volume.as_bytes(), [l, b':'] if l.is_ascii_alphabetic()) {
+        format!("{volume}{rest}")
+    } else if volume.is_empty() || volume == boot_volume.nfc().collect::<String>() {
+        rest
+    } else {
+        format!("/Volumes/{volume}{rest}")
+    };
+    path.nfc().collect()
+}
+
 /// The whole file. Tracks whose file is gone are left out of the collection
 /// and of every playlist.
 pub fn write(lib: &ExportLibrary, boot_volume: &str) -> String {
@@ -442,5 +460,23 @@ mod tests {
         let (o, r) = (entry_elements(&ours), entry_elements(REAL));
         assert_eq!(o, ["LOCATION", "ALBUM", "INFO", "TEMPO", "MUSICAL_KEY"]);
         assert!(in_order(&o, &r), "{o:?} is not in the order of {r:?}");
+    }
+
+    #[test]
+    fn a_location_leads_back_to_its_file() {
+        for path in ["/Users/dj/Music/a.mp3", "/Volumes/USB Stick/Sets/b.aiff", "/Volumes/USB/a.mp3", "d:/x.mp3", "/m/\u{10D}/\u{10D}.mp3"] {
+            let at = location(path, BOOT);
+            assert_eq!(path_from_location(&at.volume, &at.dir, &at.file, BOOT), path);
+        }
+    }
+
+    #[test]
+    fn a_traktor_entry_names_its_file() {
+        // As Traktor 3.11.1 writes a LOCATION.
+        assert_eq!(
+            path_from_location("Macintosh HD", "/:Users/:dj/:Music/:Deep House/:", "a b.mp3", BOOT),
+            "/Users/dj/Music/Deep House/a b.mp3"
+        );
+        assert_eq!(path_from_location("USB", "/:Sets/:", "c.wav", BOOT), "/Volumes/USB/Sets/c.wav");
     }
 }

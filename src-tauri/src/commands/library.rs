@@ -328,7 +328,7 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
             };
 
             // 4. Insert into DB (brief lock per file)
-            let (track, tag_bpm, tag_genre) = metadata;
+            let (track, tag_bpm, tag_genre, tag_key) = metadata;
             {
                 let db_lock = state.db.lock().map_err(|_| AppError::Internal("State lock failed".to_string()))?;
                 let db = db_lock.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
@@ -357,12 +357,7 @@ pub async fn scan_directory(app: AppHandle, path: String) -> Result<ScanResultDT
 
                 match db.create_track(&track) {
                     Ok(id) => {
-                        if let Some(bpm) = tag_bpm {
-                            let _ = db.save_bpm_analysis(id, bpm, 0.99);
-                        }
-                        if let Some(genre) = tag_genre {
-                            let _ = db.save_track_genre(id, &genre, "tag");
-                        }
+                        Scanner::save_tag_values(db, id, tag_bpm, tag_genre, tag_key);
                         imported += 1;
                     }
                     Err(e) => {

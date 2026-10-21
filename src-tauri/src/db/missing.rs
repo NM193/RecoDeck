@@ -74,6 +74,9 @@ pub(crate) fn relink_on(conn: &Connection, track_id: i64, facts: &FileFacts) -> 
         Some(_) => return Ok(RelinkOutcome::Taken),
         None => {}
     }
+    let old_hash: Option<String> = conn
+        .query_row("SELECT file_hash FROM tracks WHERE id = ?1", [track_id], |row| row.get(0))
+        .optional()?;
     let changed = conn.execute(
         "UPDATE tracks SET file_path = ?1, file_hash = ?2, file_size = ?3, file_format = ?4,
                 bitrate = ?5, sample_rate = ?6, duration_ms = ?7
@@ -91,6 +94,14 @@ pub(crate) fn relink_on(conn: &Connection, track_id: i64, facts: &FileFacts) -> 
     )?;
     if changed == 0 {
         return Ok(RelinkOutcome::TrackGone);
+    }
+    // The beat grid belongs to the file that was read: a different file (another
+    // hash) has none, and is analysed again.
+    if old_hash.as_deref() != Some(facts.file_hash.as_str()) {
+        conn.execute(
+            "UPDATE track_analysis SET first_beat_ms = NULL, analysis_version = NULL WHERE track_id = ?1",
+            [track_id],
+        )?;
     }
     conn.execute("DELETE FROM skipped_files WHERE file_path = ?1", [&facts.path])?;
     Ok(RelinkOutcome::Relinked)
@@ -397,6 +408,38 @@ mod tests {
         assert_eq!((t.bitrate, t.sample_rate, t.duration_ms), (Some(1411), Some(44100), Some(7000)));
         assert_eq!(t.title.as_deref(), Some("Song"));
         assert_eq!(t.rating, 4);
+    }
+
+    #[test]
+    fn a_relink_to_a_different_file_drops_the_grid_and_version_but_a_move_keeps_them() {
+        let db = db();
+        let changed = insert(&db, "/old/a.mp3", "old-hash");
+        let moved = insert(&db, "/old/b.mp3", "new-hash");
+        for id in [changed, moved] {
+            db.conn
+                .execute(
+                    "INSERT INTO track_analysis (track_id, bpm, bpm_confidence, first_beat_ms, analysis_version)
+                     VALUES (?1, 124.0, 0.9, 137.0, 1)",
+                    [id],
+                )
+                .unwrap();
+        }
+
+        db.relink_track(changed, &facts("/new/a.wav")).unwrap(); // hash old-hash -> new-hash
+        db.relink_track(moved, &facts("/new/b.mp3")).unwrap(); // same hash
+
+        let row = |id: i64| -> (Option<f64>, Option<f64>, Option<i64>) {
+            db.conn
+                .query_row(
+                    "SELECT bpm, first_beat_ms, analysis_version FROM track_analysis WHERE track_id = ?1",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .unwrap()
+        };
+        // The grid belongs to the file that was read: another file has none, and is re-analysed.
+        assert_eq!(row(changed), (Some(124.0), None, None));
+        assert_eq!(row(moved), (Some(124.0), Some(137.0), Some(1)));
     }
 
     #[test]

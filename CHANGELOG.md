@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-21
+
+### Added
+- **Better BPM and key detection**: BPM lands on the track's real tempo instead of one or two above it, and keys are read from the harmony of the music, so far fewer come out wrong. Each track also remembers where its first beat falls
+- Once after this update, RecoDeck offers to re-analyze the tracks an older version analyzed, and says about how long it takes. You can keep using the app while it runs. Settings › Database › Re-analyze does the same at any time and says how many tracks still need it
+- The key written in a file's tags is read on import, like its BPM
+
+### Changed
+- Analysis skips tracks the current version already analyzed. Analyze from a track's or a folder's menu still analyzes again
+- Long files (DJ sets, mixes) take half the memory to analyze, and only one is analyzed at a time
+- RecoDeck keeps macOS from slowing it down while an analysis runs with the window hidden
+
+### Fixed
+- Cancel shows at once and stops the analysis between a track's BPM and key
+- Some MP3 files with a damaged tag at the start could not be analyzed
+- A damaged spot in a file no longer shifts the beats after it
+- A file that reports a wrong length can no longer crash RecoDeck during analysis
+- A file that could not be read (no permission, a drive that dropped out) is tried again next time instead of being marked as analyzed
+- Re-analyze can't be started twice
+
 ## [0.10.0] - 2026-10-16
 
 ### Added

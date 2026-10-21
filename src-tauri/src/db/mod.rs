@@ -3,6 +3,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 
+pub mod analysis;
 pub mod dj;
 pub mod duplicates;
 pub mod home;
@@ -446,6 +447,39 @@ impl Database {
         // Uses CREATE TABLE IF NOT EXISTS — safe to re-run
         self.conn
             .execute_batch(include_str!("migrations/021_share_links.sql"))?;
+
+        // Migration 022: the beat grid and the analysis version (spec
+        // 2026-10-17, §4). ALTER TABLE is not idempotent, so the column is
+        // checked for first.
+        let has_analysis_version: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('track_analysis') WHERE name = 'analysis_version'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_analysis_version {
+            // One transaction: a failure midway leaves no half-added columns.
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migrations/022_analysis_grid.sql"))?;
+            tx.commit()?;
+        }
+
+        // An older release sharing this database still writes bpm = 0 when its
+        // detection fails; cleared on every start, with the grid and version it
+        // may sit on, so the track is retried.
+        self.conn.execute(
+            "UPDATE track_analysis SET bpm = NULL, bpm_confidence = NULL, first_beat_ms = NULL, analysis_version = NULL WHERE bpm = 0",
+            [],
+        )?;
+
+        // Older releases stored a BPM read from the tags with confidence 0.99.
+        // Tag values carry none (spec 2026-10-17, §4), so such a row must not
+        // count as an older analysis. Only BPM: those releases never stored a
+        // tag key; and only 0.99, as an analysed BPM's confidence can be 1.0.
+        self.conn.execute(
+            "UPDATE track_analysis SET bpm_confidence = NULL
+             WHERE analysis_version IS NULL AND bpm IS NOT NULL AND ABS(bpm_confidence - 0.99) < 1e-9",
+            [],
+        )?;
 
         Ok(())
     }
@@ -1094,6 +1128,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Get BPM analysis result for a track. Returns (bpm, confidence) or None if not analyzed.
     pub fn get_bpm_analysis(&self, track_id: i64) -> Result<Option<(f64, f64)>> {
         let mut stmt = self.conn.prepare(
@@ -1144,6 +1179,7 @@ impl Database {
         }
     }
 
+    #[cfg(test)]
     /// Check if a track has BPM analysis data
     pub fn has_bpm_analysis(&self, track_id: i64) -> Result<bool> {
         let count: i64 = self.conn.query_row(
@@ -1156,6 +1192,7 @@ impl Database {
 
     // --- Key Analysis operations ---
 
+    #[cfg(test)]
     /// Save key analysis result for a track.
     /// Uses upsert: inserts a new row or updates existing key fields.
     /// Does NOT overwrite BPM fields if they already exist — only touches key columns.
@@ -1172,6 +1209,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     /// Get key analysis result for a track. Returns (key, confidence) or None if not analyzed.
     pub fn get_key_analysis(&self, track_id: i64) -> Result<Option<(String, f64)>> {
         let mut stmt = self.conn.prepare(
@@ -1192,6 +1230,7 @@ impl Database {
         }
     }
 
+    #[cfg(test)]
     /// Check if a track has key analysis data
     pub fn has_key_analysis(&self, track_id: i64) -> Result<bool> {
         let count: i64 = self.conn.query_row(

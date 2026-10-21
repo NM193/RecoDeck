@@ -1,48 +1,55 @@
-// Musical key detection using Chromagram + multi-profile matching with segment voting.
+// Musical key detection using Chromagram + EDMA profile matching with segment voting.
 //
-// Improvements over basic chromagram approach:
+// How it works (each step was kept because it measured better, spec 2026-10-17):
 // 1. Tuning estimation: detects if A≠440Hz and adjusts pitch-class mapping
-// 2. Harmonic Product Spectrum (HPS) weighting: accounts for harmonics of each
-//    fundamental frequency, giving a cleaner pitch-class distribution
-// 3. 3-way independent voting: Shaath + EDMA + Krumhansl profiles vote independently,
-//    majority rule (2+ agree) determines winner, with minor key bias and dominant
-//    confusion correction for ambiguous detections
-// 4. Spectral whitening to remove bass-heavy bias
-// 5. Frequency weighting to reduce sub-bass influence (kick drums in EDM)
-// 6. Segment-based voting: divides track into overlapping segments, detects key
+// 2. The chroma of every frame is computed once (`frame_chromas`) and the
+//    segments are sums of those frames, so overlapping segments do not repeat
+//    the FFT work
+// 3. A harmonic mask (median filters along time and frequency) keeps held
+//    notes and drops drum hits before a frame's chroma is taken
+// 4. Harmonic weighting: each spectral peak also adds weighted energy for its
+//    harmonics' pitch classes; low frequencies are weighted down so kick
+//    drums count for less
+// 5. Normalisation: each frame's chroma is scaled to sum 1, so loud frames
+//    weigh no more than quiet ones
+// 6. EDMA key profiles, measured best against Shaath, Krumhansl and Temperley
+//    alone and against the vote of Shaath, EDMA and Krumhansl. A minor key
+//    bias, a dominant confusion correction and a cross-mode check settle
+//    ambiguous detections
+// 7. Segment-based voting: divides track into overlapping segments, detects key
 //    per segment, and takes the majority vote — eliminates tritone errors caused
 //    by individual sections with ambiguous harmonic content
+// 8. No whitening: whitening evens out a note's partials and reads keys a
+//    fifth up (see `chroma_of`). Digital silence gives no key at all.
 //
 // Algorithm overview:
-// 1. Decode audio file to mono f32 PCM (reuses existing decoder)
+// 1. Decode audio file to mono f32 PCM (reuses existing decoder), or take
+//    the samples the caller has already decoded
 // 2. Estimate tuning offset from A=440Hz (±50 cents)
 // 3. Skip 15% intro + 15% outro
 // 4. If track is long enough (>= 3 segments): segment-based voting
 //    a. Divide into 30-second overlapping segments (50% overlap)
-//    b. Compute chromagram per segment
+//    b. Sum the per-frame chromas that fall in each segment
 //    c. Match key profiles per segment
 //    d. Take majority vote across all segments
 // 5. Otherwise: single chromagram for the whole analysis region
 // 6. Return the best matching key in Camelot/Open Key/musical notation
 //
 // References:
-// - Krumhansl, C.L. (1990). Cognitive Foundations of Musical Pitch.
-// - Shaath, I. (2011). Estimation of key in digital music recordings (MSc thesis).
 // - Mauch, M. & Dixon, S. (2010). Approximate Note Transcription (harmonic analysis).
 // - Essentia Key algorithm: EDMA profiles from MTG, UPF Barcelona.
 
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::f64::consts::PI;
-use std::path::Path;
 
-use super::decoder::{decode_to_mono, MonoAudio};
+use super::decoder::MonoAudio;
 
 /// Result of key detection for a single track
 #[derive(Debug, Clone)]
 pub struct KeyResult {
     /// Detected key in Camelot notation (e.g., "8A", "11B")
     pub camelot: String,
-    /// Detected key in Open Key notation (e.g., "8m", "11d")
+    /// Detected key in Open Key notation (e.g., "1m", "11d")
     pub open_key: String,
     /// Detected key in standard musical notation (e.g., "Am", "C")
     pub musical_key: String,
@@ -59,18 +66,18 @@ const FFT_SIZE: usize = 8192;
 /// 4096 = 50% overlap for good temporal coverage without excessive computation.
 const HOP_SIZE: usize = 4096;
 
-/// Number of bins for spectral whitening moving average.
-/// 40 bins ≈ 215Hz at 44100/8192 — wide enough to flatten bass bias in EDM.
-const WHITENING_WINDOW: usize = 40;
-
-/// Minimum frequency to consider for chromagram (Hz). ~C2 = 65Hz.
+/// The lowest frequency the tuning estimate reads (Hz). ~C2 = 65Hz. The
+/// chroma has its own floor, CHROMA_MIN_FREQ.
 const MIN_FREQ: f64 = 65.0;
+
+/// The lowest frequency the chroma reads (Hz); tuning keeps MIN_FREQ.
+const CHROMA_MIN_FREQ: f64 = 65.0;
 
 /// Maximum frequency to consider for chromagram (Hz).
 /// Above ~2000Hz, harmonics dominate over fundamentals.
 const MAX_FREQ: f64 = 2000.0;
 
-/// Number of harmonics to consider in Harmonic Product Spectrum weighting.
+/// Number of harmonics summed (with decreasing weights) into each pitch class.
 /// 1 = fundamental only, 3 = fundamental + 2 harmonics.
 const NUM_HARMONICS: usize = 3;
 
@@ -94,36 +101,24 @@ const SEGMENT_OVERLAP: f64 = 0.5;
 /// Minimum number of segments needed to use voting instead of single chromagram.
 const MIN_SEGMENTS_FOR_VOTING: usize = 3;
 
-/// Shaath's custom key profiles (from libKeyFinder MSc thesis, 2011)
-/// Empirically derived — better for popular/electronic music than Krumhansl-Schmuckler.
-const SHAATH_MAJOR: [f64; 12] = [
-    6.6, 2.0, 3.5, 2.3, 4.6, 4.0, 2.5, 5.2, 2.4, 3.7, 2.3, 3.2,
-];
+/// Harmonic/percussive separation (spec §3, step 2.1): the median filters'
+/// sizes, in frames along time and in bins along frequency.
+const HPSS_TIME_FRAMES: usize = 9;
+const HPSS_FREQ_BINS: usize = 17;
 
-const SHAATH_MINOR: [f64; 12] = [
-    6.5, 2.7, 3.5, 5.4, 2.6, 3.5, 2.5, 4.7, 4.0, 2.7, 3.4, 3.2,
-];
+/// Frames per block of the separation, so that a long mix never holds its
+/// whole spectrogram (about 50 KB per second at 44.1 kHz).
+const HPSS_BLOCK_FRAMES: usize = 512;
 
 /// EDMA key profiles (auto-extracted from Electronic Dance Music corpus)
 /// From Essentia library (Music Technology Group, UPF Barcelona).
-/// Optimized for EDM/electronic genres — typically outperforms Shaath on electronic music.
+/// Optimized for EDM/electronic genres.
 const EDMA_MAJOR: [f64; 12] = [
     1.00, 0.29, 0.50, 0.40, 0.60, 0.56, 0.32, 0.80, 0.31, 0.45, 0.42, 0.39,
 ];
 
 const EDMA_MINOR: [f64; 12] = [
     1.00, 0.31, 0.44, 0.58, 0.33, 0.49, 0.29, 0.78, 0.43, 0.29, 0.53, 0.32,
-];
-
-/// Krumhansl-Schmuckler key profiles (from Cognitive Foundations of Musical Pitch, 1990)
-/// Derived from listener ratings — have a stronger tonic bias than Shaath/EDMA, which
-/// helps counteract dominant confusion in key detection.
-const KRUMHANSL_MAJOR: [f64; 12] = [
-    6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
-];
-
-const KRUMHANSL_MINOR: [f64; 12] = [
-    6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
 ];
 
 /// Musical key names for major keys (indexed by pitch class: 0=C, 1=C#/Db, ..., 11=B)
@@ -145,22 +140,6 @@ const CAMELOT_MAJOR: [&str; 12] = [
 const CAMELOT_MINOR: [&str; 12] = [
     "5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A",
 ];
-
-/// Open Key notation for major keys (indexed by pitch class: 0=C, ..., 11=B)
-const OPENKEY_MAJOR: [&str; 12] = [
-    "8d", "3d", "10d", "5d", "12d", "7d", "2d", "9d", "4d", "11d", "6d", "1d",
-];
-
-/// Open Key notation for minor keys (indexed by pitch class)
-const OPENKEY_MINOR: [&str; 12] = [
-    "5m", "12m", "7m", "2m", "9m", "4m", "11m", "6m", "1m", "8m", "3m", "10m",
-];
-
-/// Detect the musical key of an audio file.
-pub fn detect_key(path: &Path) -> Result<KeyResult, String> {
-    let audio = decode_to_mono(path)?;
-    detect_key_from_samples(&audio)
-}
 
 /// Detect key from pre-decoded mono audio samples.
 ///
@@ -197,27 +176,27 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
     let segment_samples = (SEGMENT_DURATION * audio.sample_rate as f64) as usize;
     let segment_hop = (segment_samples as f64 * (1.0 - SEGMENT_OVERLAP)) as usize;
 
-    let num_segments = if analysis_samples.len() >= segment_samples {
-        (analysis_samples.len() - segment_samples) / segment_hop + 1
+    let frames = frame_chromas(analysis_samples, audio.sample_rate, tuning_offset_cents);
+    let segment_frames = segment_samples.saturating_sub(FFT_SIZE) / HOP_SIZE + 1;
+    let segment_hop_frames = (segment_hop / HOP_SIZE).max(1);
+    let num_segments = if frames.len() >= segment_frames {
+        (frames.len() - segment_frames) / segment_hop_frames + 1
     } else {
         0
     };
 
     let (best_key_index, best_is_minor, best_corr, second_best_corr, vote_fraction) =
         if num_segments >= MIN_SEGMENTS_FOR_VOTING {
-            segment_voted_key(
-                analysis_samples,
-                audio.sample_rate,
-                tuning_offset_cents,
-                segment_samples,
-                segment_hop,
-            )
+            segment_voted_key(&frames, segment_frames, segment_hop_frames)
         } else {
-            let chromagram =
-                compute_chromagram(analysis_samples, audio.sample_rate, tuning_offset_cents)?;
-            let (k, m, c1, c2) = match_key_profiles(&chromagram);
+            let (k, m, c1, c2) = match_key_profiles(&sum_chromas(&frames));
             (k, m, c1, c2, 1.0) // single pass = 100% "agreement"
         };
+
+    // Nothing correlates with any key (digital silence): no key, not a guess.
+    if !(best_corr > 0.0) {
+        return Err("No pitched content to find a key in".to_string());
+    }
 
     // Step 4: Convert to Camelot, Open Key, and musical notation
     let camelot = if best_is_minor {
@@ -226,11 +205,7 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
         CAMELOT_MAJOR[best_key_index].to_string()
     };
 
-    let open_key = if best_is_minor {
-        OPENKEY_MINOR[best_key_index].to_string()
-    } else {
-        OPENKEY_MAJOR[best_key_index].to_string()
-    };
+    let open_key = crate::formats::keys::open_key(&camelot).unwrap_or_default();
 
     let musical_key = if best_is_minor {
         MINOR_NAMES[best_key_index].to_string()
@@ -261,30 +236,26 @@ pub fn detect_key_from_samples(audio: &MonoAudio) -> Result<KeyResult, String> {
 
 /// Segment-based key detection with majority voting.
 ///
-/// Divides audio into overlapping segments, detects key per segment, then picks
+/// Splits audio into overlapping segments, detects key per segment, then picks
 /// the key that wins the most votes (tie-broken by total correlation strength).
 ///
 /// Returns (pitch_class, is_minor, avg_best_corr, avg_second_corr, vote_fraction)
 fn segment_voted_key(
-    samples: &[f32],
-    sample_rate: u32,
-    tuning_offset_cents: f64,
-    segment_size: usize,
-    segment_hop: usize,
+    frames: &[[f64; 12]],
+    segment_frames: usize,
+    hop_frames: usize,
 ) -> (usize, bool, f64, f64, f64) {
     // Each of 24 keys is encoded as root*2 + (1 if minor, 0 if major)
     let mut votes: [(usize, f64); 24] = [(0, 0.0); 24]; // (count, total_correlation)
 
     let mut offset = 0;
-    while offset + segment_size <= samples.len() {
-        let segment = &samples[offset..offset + segment_size];
-        if let Ok(chromagram) = compute_chromagram(segment, sample_rate, tuning_offset_cents) {
-            let (key, is_minor, corr, _) = match_key_profiles(&chromagram);
-            let index = key * 2 + if is_minor { 1 } else { 0 };
-            votes[index].0 += 1;
-            votes[index].1 += corr;
-        }
-        offset += segment_hop;
+    while offset + segment_frames <= frames.len() {
+        let chromagram = sum_chromas(&frames[offset..offset + segment_frames]);
+        let (key, is_minor, corr, _) = match_key_profiles(&chromagram);
+        let index = key * 2 + if is_minor { 1 } else { 0 };
+        votes[index].0 += 1;
+        votes[index].1 += corr;
+        offset += hop_frames;
     }
 
     // Find best key by vote count, tie-break by total correlation
@@ -306,7 +277,7 @@ fn segment_voted_key(
         0.0
     };
 
-    // Total segments that produced a valid result
+    // Total number of segment votes cast
     let total_segments: usize = votes.iter().map(|v| v.0).sum();
     let vote_fraction = if total_segments > 0 {
         best_votes as f64 / total_segments as f64
@@ -453,27 +424,27 @@ fn freq_weight(freq: f64) -> f64 {
     }
 }
 
-/// Compute a chromagram (12-dimensional pitch class energy distribution) from audio samples.
+/// The bins the chroma reads: up to the highest harmonic.
+fn used_bins(sample_rate: u32) -> usize {
+    let top = (MAX_FREQ * NUM_HARMONICS as f64 * FFT_SIZE as f64 / sample_rate as f64).ceil() as usize;
+    (top + 1).min(FFT_SIZE / 2 + 1)
+}
+
+/// The chroma of each frame of `samples` (FFT_SIZE samples every HOP_SIZE),
+/// before any summing.
 ///
-/// Analyzes the given sample buffer directly (no intro/outro skipping — caller handles that).
-///
-/// Enhanced with:
+/// Per frame:
+/// - Harmonic part only (`harmonic_part`: a bin where drum hits outweigh held
+///   notes becomes 0)
 /// - Tuning correction (adjusts reference frequency based on estimated offset)
-/// - Harmonic Product Spectrum weighting (reinforces fundamentals over harmonics)
-/// - Spectral whitening (removes tonal bias from bass-heavy music)
+/// - Harmonic weighting (reinforces fundamentals over harmonics)
 /// - Frequency weighting (reduces sub-bass kick drum influence)
-fn compute_chromagram(
-    samples: &[f32],
-    sample_rate: u32,
-    tuning_offset_cents: f64,
-) -> Result<[f64; 12], String> {
+/// - Scaled to sum 1 (`normalized`), so loud frames weigh no more than quiet ones
+fn frame_chromas(samples: &[f32], sample_rate: u32, tuning_offset_cents: f64) -> Vec<[f64; 12]> {
     // Tuning-corrected reference frequency for A
     let ref_a = 440.0 * 2.0f64.powf(tuning_offset_cents / 1200.0);
-
-    let mut chromagram = [0.0f64; 12];
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(FFT_SIZE);
-    let half_fft = FFT_SIZE / 2 + 1;
+    let fft = FftPlanner::new().plan_fft_forward(FFT_SIZE);
+    let bins = used_bins(sample_rate);
 
     // Precompute Hanning window coefficients
     let window: Vec<f64> = (0..FFT_SIZE)
@@ -481,10 +452,10 @@ fn compute_chromagram(
         .collect();
 
     // Precompute frequency-to-pitch-class mapping with tuning correction and frequency weight.
-    let bin_info: Vec<Option<(usize, f64)>> = (0..half_fft)
+    let bin_info: Vec<Option<(usize, f64)>> = (0..bins)
         .map(|bin| {
             let freq = bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
-            if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
+            if !(CHROMA_MIN_FREQ..=MAX_FREQ).contains(&freq) {
                 None
             } else {
                 // Use tuning-corrected reference instead of fixed 440Hz
@@ -495,211 +466,238 @@ fn compute_chromagram(
         })
         .collect();
 
-    // Process audio in overlapping frames
-    let num_frames = (samples.len().saturating_sub(FFT_SIZE)) / HOP_SIZE + 1;
-
-    for frame_idx in 0..num_frames {
-        let start = frame_idx * HOP_SIZE;
-        let end = start + FFT_SIZE;
-        if end > samples.len() {
-            break;
-        }
-
-        // Apply Hanning window and convert to complex values for FFT
-        let mut buffer: Vec<Complex<f64>> = samples[start..end]
+    let frames = if samples.len() >= FFT_SIZE {
+        (samples.len() - FFT_SIZE) / HOP_SIZE + 1
+    } else {
+        0
+    };
+    let magnitudes = |f: usize| -> Vec<f32> {
+        let start = f * HOP_SIZE;
+        let mut buffer: Vec<Complex<f64>> = samples[start..start + FFT_SIZE]
             .iter()
             .enumerate()
             .map(|(i, &s)| Complex::new(s as f64 * window[i], 0.0))
             .collect();
-
         fft.process(&mut buffer);
-
-        // Extract magnitudes for the positive frequency half
-        let magnitudes: Vec<f64> = (0..half_fft).map(|bin| buffer[bin].norm()).collect();
-
-        // Spectral whitening: divide each bin by the local average magnitude
-        let half_w = WHITENING_WINDOW / 2;
-
-        // HPS-weighted chromagram accumulation
-        for (bin, info) in bin_info.iter().enumerate() {
-            if let Some((pc, weight)) = info {
-                // Spectral whitening for the fundamental
-                let lo = bin.saturating_sub(half_w);
-                let hi = (bin + half_w + 1).min(half_fft);
-                let local_avg: f64 = magnitudes[lo..hi].iter().sum::<f64>() / (hi - lo) as f64;
-                let whitened = if local_avg > 1e-12 {
-                    magnitudes[bin] / local_avg
-                } else {
-                    0.0
-                };
-
-                // Fundamental contribution with frequency weight
-                let mut weighted_energy = whitened * HARMONIC_WEIGHTS[0] * weight;
-
-                // Harmonic contributions: check if harmonics at 2x, 3x, etc.
-                // also map to the same pitch class (reinforces the fundamental)
-                for h in 1..NUM_HARMONICS {
-                    let harmonic_bin = bin * (h + 1);
-                    if harmonic_bin < half_fft {
-                        let h_freq =
-                            harmonic_bin as f64 * sample_rate as f64 / FFT_SIZE as f64;
-                        if h_freq <= MAX_FREQ * (NUM_HARMONICS as f64) {
-                            // Whiten the harmonic bin too
-                            let h_lo = harmonic_bin.saturating_sub(half_w);
-                            let h_hi = (harmonic_bin + half_w + 1).min(half_fft);
-                            let h_avg: f64 = magnitudes[h_lo..h_hi].iter().sum::<f64>()
-                                / (h_hi - h_lo) as f64;
-                            let h_whitened = if h_avg > 1e-12 {
-                                magnitudes[harmonic_bin] / h_avg
-                            } else {
-                                0.0
-                            };
-                            // Harmonics also get frequency weight of the fundamental
-                            weighted_energy += h_whitened * HARMONIC_WEIGHTS[h] * weight;
-                        }
-                    }
-                }
-
-                chromagram[*pc] += weighted_energy;
-            }
-        }
-    }
-
-    // Normalize chromagram to sum to 1.0
-    let total: f64 = chromagram.iter().sum();
-    if total > 0.0 {
-        for val in chromagram.iter_mut() {
-            *val /= total;
-        }
-    }
-
-    Ok(chromagram)
+        (0..bins).map(|b| buffer[b].norm() as f32).collect()
+    };
+    let mut chromas = Vec::with_capacity(frames);
+    harmonic_part_in_blocks(frames, HPSS_BLOCK_FRAMES, magnitudes, |harmonic| {
+        let harmonic: Vec<f64> = harmonic.iter().map(|&v| v as f64).collect();
+        chromas.push(normalized(chroma_of(&harmonic, &bin_info)));
+    });
+    chromas
 }
 
-/// Match the computed chromagram against all 24 key profiles using 3-way independent voting.
+/// `harmonic_part` of the spectrogram whose frame `f` is `frame(f)`, made
+/// `block` frames at a time. Each block is separated with HPSS_TIME_FRAMES / 2
+/// frames of context on either side, which is all its time medians read, so
+/// the result is that of the whole spectrogram while only about one block is
+/// held. Calls `each` on the harmonic frames in order.
+fn harmonic_part_in_blocks(
+    frames: usize,
+    block: usize,
+    frame: impl Fn(usize) -> Vec<f32>,
+    mut each: impl FnMut(&[f32]),
+) {
+    let context = HPSS_TIME_FRAMES / 2;
+    let mut start = 0;
+    while start < frames {
+        let end = (start + block.max(1)).min(frames);
+        let first = start.saturating_sub(context);
+        let spectrogram: Vec<Vec<f32>> = (first..(end + context).min(frames)).map(&frame).collect();
+        for harmonic in &harmonic_part(&spectrogram)[start - first..end - first] {
+            each(harmonic);
+        }
+        start = end;
+    }
+}
+
+/// The harmonic part of a magnitude spectrogram (frames × bins): a bin keeps
+/// its magnitude where H, the median along time (held notes), is at least P,
+/// the median along frequency (drum hits), else it becomes 0. Near the edges
+/// the windows are cut short.
+fn harmonic_part(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
+    let frames = spectrogram.len();
+    let Some(bins) = spectrogram.first().map(Vec::len) else { return Vec::new() };
+    let (half_t, half_f) = (HPSS_TIME_FRAMES / 2, HPSS_FREQ_BINS / 2);
+    // One window along time per bin, slid a frame at a time.
+    let mut along_time = vec![SortedWindow::<HPSS_TIME_FRAMES>::default(); bins];
+    for row in &spectrogram[..half_t.min(frames)] {
+        for (window, &v) in along_time.iter_mut().zip(row) {
+            window.insert(v);
+        }
+    }
+    let mut out = Vec::with_capacity(frames);
+    for f in 0..frames {
+        let added = (f + half_t < frames).then(|| &spectrogram[f + half_t]);
+        let removed = (f > half_t).then(|| &spectrogram[f - half_t - 1]);
+        for (b, window) in along_time.iter_mut().enumerate() {
+            match (removed, added) {
+                (Some(old), Some(new)) => window.replace(old[b], new[b]),
+                (None, Some(new)) => window.insert(new[b]),
+                (Some(old), None) => window.remove(old[b]),
+                (None, None) => {}
+            }
+        }
+        let row = &spectrogram[f];
+        let mut along_frequency = SortedWindow::<HPSS_FREQ_BINS>::default();
+        for &v in &row[..half_f.min(bins)] {
+            along_frequency.insert(v);
+        }
+        let mut harmonic = vec![0f32; bins];
+        for b in 0..bins {
+            match (b > half_f, b + half_f < bins) {
+                (true, true) => along_frequency.replace(row[b - half_f - 1], row[b + half_f]),
+                (false, true) => along_frequency.insert(row[b + half_f]),
+                (true, false) => along_frequency.remove(row[b - half_f - 1]),
+                (false, false) => {}
+            }
+            if along_time[b].median() >= along_frequency.median() {
+                harmonic[b] = row[b];
+            }
+        }
+        out.push(harmonic);
+    }
+    out
+}
+
+/// Up to N values kept sorted, for a running median.
+#[derive(Clone, Copy)]
+struct SortedWindow<const N: usize> {
+    values: [f32; N],
+    len: usize,
+}
+
+impl<const N: usize> Default for SortedWindow<N> {
+    fn default() -> Self {
+        Self { values: [0.0; N], len: 0 }
+    }
+}
+
+impl<const N: usize> SortedWindow<N> {
+    /// The value at position len / 2 in sorted order (the upper of the two
+    /// middle values when len is even).
+    fn median(&self) -> f32 {
+        self.values[self.len / 2]
+    }
+
+    fn insert(&mut self, value: f32) {
+        debug_assert!(self.len < N, "the window is full");
+        let mut i = self.len;
+        while i > 0 && self.values[i - 1].total_cmp(&value).is_gt() {
+            self.values[i] = self.values[i - 1];
+            i -= 1;
+        }
+        self.values[i] = value;
+        self.len += 1;
+    }
+
+    fn remove(&mut self, value: f32) {
+        let i = self.position(value);
+        self.values.copy_within(i + 1..self.len, i);
+        self.len -= 1;
+    }
+
+    /// Replaces `old` (which is in the window) with `new`.
+    fn replace(&mut self, old: f32, new: f32) {
+        let mut i = self.position(old);
+        while i > 0 && self.values[i - 1].total_cmp(&new).is_gt() {
+            self.values[i] = self.values[i - 1];
+            i -= 1;
+        }
+        while i + 1 < self.len && self.values[i + 1].total_cmp(&new).is_lt() {
+            self.values[i] = self.values[i + 1];
+            i += 1;
+        }
+        self.values[i] = new;
+    }
+
+    fn position(&self, value: f32) -> usize {
+        self.values[..self.len]
+            .iter()
+            .position(|v| v.to_bits() == value.to_bits())
+            .expect("the value is in the window")
+    }
+}
+
+/// One frame's chroma from its magnitudes: each bin with its harmonics,
+/// weighted by frequency.
 ///
-/// Three profile sets (Shaath, EDMA, Krumhansl) each independently select their top-1 key.
-/// Majority vote (2+ agree) determines the winner. If all three disagree, the profile with
-/// the highest absolute correlation wins. Post-processing applies:
+/// The magnitudes are not whitened. Every bin counts towards its own pitch
+/// class, a note's partials included: its 3rd and 6th partials are a fifth
+/// above it, its 5th a major third. Their natural fall-off keeps them below
+/// the note itself. Dividing each bin by its neighbourhood's mean evened the
+/// partials out, and keys read a fifth up or in the parallel mode far more
+/// often (measured; see the Results in
+/// docs/superpowers/plans/2026-10-18-analysis-accuracy.md).
+fn chroma_of(magnitudes: &[f64], bin_info: &[Option<(usize, f64)>]) -> [f64; 12] {
+    let mut chroma = [0.0f64; 12];
+    for (bin, info) in bin_info.iter().enumerate() {
+        let Some((pc, weight)) = info else { continue };
+        let mut energy = magnitudes[bin] * HARMONIC_WEIGHTS[0] * weight;
+        for h in 1..NUM_HARMONICS {
+            let harmonic_bin = bin * (h + 1);
+            if harmonic_bin < magnitudes.len() {
+                energy += magnitudes[harmonic_bin] * HARMONIC_WEIGHTS[h] * weight;
+            }
+        }
+        chroma[*pc] += energy;
+    }
+    chroma
+}
+
+/// A frame's chroma scaled to sum 1, so loud frames (drums) weigh no more
+/// than quiet ones (spec §3, step 2.2).
+fn normalized(mut chroma: [f64; 12]) -> [f64; 12] {
+    let total: f64 = chroma.iter().sum();
+    if total > 1e-12 {
+        for value in chroma.iter_mut() {
+            *value /= total;
+        }
+    }
+    chroma
+}
+
+/// Frame chromas summed and normalised to 1.
+fn sum_chromas(frames: &[[f64; 12]]) -> [f64; 12] {
+    let mut chroma = [0.0f64; 12];
+    for frame in frames {
+        for (total, value) in chroma.iter_mut().zip(frame) {
+            *total += value;
+        }
+    }
+    let total: f64 = chroma.iter().sum();
+    if total > 0.0 {
+        for value in chroma.iter_mut() {
+            *value /= total;
+        }
+    }
+    chroma
+}
+
+/// Match the computed chromagram against the 24 EDMA key profiles.
+///
+/// Post-processing applies:
 /// 1. Minor key bias for ambiguous major/minor detections (electronic music is ~70% minor)
 /// 2. Dominant confusion penalty — if the detected key might be the dominant (V) of the
 ///    true tonic, prefer the tonic when correlations are close
+/// 3. Cross-mode check — the same for the tonic in the other mode (e.g. E major
+///    detected for A minor)
 ///
 /// Returns (pitch_class_index, is_minor, best_correlation, second_best_correlation)
 fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
-    let profile_sets: [(&[f64; 12], &[f64; 12]); 3] = [
-        (&SHAATH_MAJOR, &SHAATH_MINOR),
-        (&EDMA_MAJOR, &EDMA_MINOR),
-        (&KRUMHANSL_MAJOR, &KRUMHANSL_MINOR),
-    ];
-
-    // Each profile set independently selects its best key
-    // Stores: (key, is_minor, best_corr, second_corr)
-    let mut profile_winners: [(usize, bool, f64, f64); 3] =
-        [(0, false, f64::NEG_INFINITY, f64::NEG_INFINITY); 3];
-
-    for (p_idx, (major_p, minor_p)) in profile_sets.iter().enumerate() {
-        let mut best_corr = f64::NEG_INFINITY;
-        let mut second_corr = f64::NEG_INFINITY;
-        let mut best_key = 0;
-        let mut best_is_minor = false;
-
-        for root in 0..12 {
-            for is_minor in [false, true] {
-                let profile = if is_minor { minor_p } else { major_p };
-                let corr = pearson_correlation(chromagram, profile, root);
-
-                if corr > best_corr {
-                    second_corr = best_corr;
-                    best_corr = corr;
-                    best_key = root;
-                    best_is_minor = is_minor;
-                } else if corr > second_corr {
-                    second_corr = corr;
-                }
-            }
-        }
-
-        profile_winners[p_idx] = (best_key, best_is_minor, best_corr, second_corr);
-    }
-
-    // 3-way majority vote: check if any key got 2+ votes
-    let (mut best_key, mut best_is_minor, mut best_corr, second_best_corr) = {
-        let mut found_majority = None;
-
-        // Check each pair for agreement
-        for i in 0..3 {
-            for j in (i + 1)..3 {
-                if profile_winners[i].0 == profile_winners[j].0
-                    && profile_winners[i].1 == profile_winners[j].1
-                {
-                    // Found at least 2 agreeing — use this key
-                    let key = profile_winners[i].0;
-                    let is_minor = profile_winners[i].1;
-
-                    // Average correlations from all agreeing profiles
-                    let mut corr_sum = 0.0;
-                    let mut second_sum = 0.0;
-                    let mut count = 0.0;
-                    for w in &profile_winners {
-                        if w.0 == key && w.1 == is_minor {
-                            corr_sum += w.2;
-                            second_sum += w.3;
-                            count += 1.0;
-                        }
-                    }
-
-                    let avg_corr = corr_sum / count;
-                    let avg_second = second_sum / count;
-
-                    // Prefer majority with more voters (3 > 2)
-                    if let Some((_, _, _, _, prev_count)) = found_majority {
-                        if count > prev_count {
-                            found_majority = Some((key, is_minor, avg_corr, avg_second, count));
-                        }
-                    } else {
-                        found_majority = Some((key, is_minor, avg_corr, avg_second, count));
-                    }
-                }
-            }
-        }
-
-        if let Some((key, is_minor, corr, second, _)) = found_majority {
-            (key, is_minor, corr, second)
-        } else {
-            // All three disagree → use whichever profile had the highest absolute correlation
-            let winner = profile_winners
-                .iter()
-                .enumerate()
-                .max_by(|a, b| a.1 .2.abs().partial_cmp(&b.1 .2.abs()).unwrap())
-                .map(|(idx, _)| idx)
-                .unwrap_or(0);
-            (
-                profile_winners[winner].0,
-                profile_winners[winner].1,
-                profile_winners[winner].2,
-                profile_winners[winner].3,
-            )
-        }
-    };
+    let (mut best_key, mut best_is_minor, mut best_corr, second_best_corr) =
+        best_key_of(chromagram, &EDMA_MAJOR, &EDMA_MINOR);
 
     // Minor key bias: electronic music is ~70% minor keys. When the correlation
     // difference between major and minor variants of the same root is very small,
     // bias toward minor.
     if !best_is_minor {
-        let num_profiles = profile_sets.len() as f64;
-        let major_avg: f64 = profile_sets
-            .iter()
-            .map(|(major_p, _)| pearson_correlation(chromagram, major_p, best_key))
-            .sum::<f64>()
-            / num_profiles;
-        let minor_avg: f64 = profile_sets
-            .iter()
-            .map(|(_, minor_p)| pearson_correlation(chromagram, minor_p, best_key))
-            .sum::<f64>()
-            / num_profiles;
+        let major = pearson_correlation(chromagram, &EDMA_MAJOR, best_key);
+        let minor = pearson_correlation(chromagram, &EDMA_MINOR, best_key);
 
-        if major_avg - minor_avg < 0.02 {
+        if major - minor < 0.02 {
             best_is_minor = true;
         }
     }
@@ -709,17 +707,10 @@ fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
     // In semitone math: 5 semitones up from the detected key = a 4th up = a 5th down,
     // i.e., the detected key is the dominant of the candidate tonic.
     let tonic_candidate = (best_key + 5) % 12;
-    let num_profiles = profile_sets.len() as f64;
+    let profile = |is_minor: bool| if is_minor { &EDMA_MINOR } else { &EDMA_MAJOR };
 
     // Check same quality (major→major, minor→minor)
-    let tonic_corr: f64 = profile_sets
-        .iter()
-        .map(|(major_p, minor_p)| {
-            let profile = if best_is_minor { minor_p } else { major_p };
-            pearson_correlation(chromagram, profile, tonic_candidate)
-        })
-        .sum::<f64>()
-        / num_profiles;
+    let tonic_corr = pearson_correlation(chromagram, profile(best_is_minor), tonic_candidate);
 
     if best_corr - tonic_corr < 0.05 {
         best_key = tonic_candidate;
@@ -728,14 +719,7 @@ fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
 
     // Also check cross quality: if we detected major, the tonic might be minor
     // (e.g., detected E major but actual key is A minor)
-    let tonic_cross_corr: f64 = profile_sets
-        .iter()
-        .map(|(major_p, minor_p)| {
-            let profile = if best_is_minor { major_p } else { minor_p };
-            pearson_correlation(chromagram, profile, tonic_candidate)
-        })
-        .sum::<f64>()
-        / num_profiles;
+    let tonic_cross_corr = pearson_correlation(chromagram, profile(!best_is_minor), tonic_candidate);
 
     if best_corr - tonic_cross_corr < 0.05 {
         best_key = tonic_candidate;
@@ -744,6 +728,33 @@ fn match_key_profiles(chromagram: &[f64; 12]) -> (usize, bool, f64, f64) {
     }
 
     (best_key, best_is_minor, best_corr, second_best_corr)
+}
+
+/// One profile set's best key for the chromagram: (pitch class, is_minor,
+/// best correlation, second-best correlation).
+fn best_key_of(chromagram: &[f64; 12], major_p: &[f64; 12], minor_p: &[f64; 12]) -> (usize, bool, f64, f64) {
+    let mut best_corr = f64::NEG_INFINITY;
+    let mut second_corr = f64::NEG_INFINITY;
+    let mut best_key = 0;
+    let mut best_is_minor = false;
+
+    for root in 0..12 {
+        for is_minor in [false, true] {
+            let profile = if is_minor { minor_p } else { major_p };
+            let corr = pearson_correlation(chromagram, profile, root);
+
+            if corr > best_corr {
+                second_corr = best_corr;
+                best_corr = corr;
+                best_key = root;
+                best_is_minor = is_minor;
+            } else if corr > second_corr {
+                second_corr = corr;
+            }
+        }
+    }
+
+    (best_key, best_is_minor, best_corr, second_corr)
 }
 
 /// Compute Pearson correlation between the chromagram and a key profile,
@@ -936,12 +947,8 @@ mod tests {
             sample_rate: 44100,
             duration_ms: 10000,
         };
-        let result = detect_key_from_samples(&audio).expect("Should handle silence");
-        assert!(
-            result.confidence < 0.5,
-            "Silence should produce low confidence, got {:.2}",
-            result.confidence
-        );
+        // Silence has no key: no result, so a key from the tags is kept.
+        assert!(detect_key_from_samples(&audio).is_err());
     }
 
     #[test]
@@ -978,20 +985,30 @@ mod tests {
     }
 
     #[test]
-    fn test_key_detection_different_sample_rate() {
-        let audio = generate_tone(440.0, 48000, 10.0);
-        let result = detect_key_from_samples(&audio).expect("Key detection should succeed");
+    fn the_same_chords_give_the_same_key_at_44_1_and_48_khz() {
+        // Sample-rate handling, not accuracy: the same music must read the
+        // same at either rate, whichever key that is. 20 s gives one chroma
+        // for the whole region; 120 s (84 s analysed, four 30 s segments)
+        // takes the segment vote.
+        for seconds in [20.0, 120.0] {
+            let at_44_1 = detect_key_from_samples(&a_minor_progression(44100, seconds, 0.0)).unwrap();
+            let at_48 = detect_key_from_samples(&a_minor_progression(48000, seconds, 0.0)).unwrap();
+            assert_eq!(
+                (&at_44_1.camelot, &at_44_1.musical_key),
+                (&at_48.camelot, &at_48.musical_key),
+                "{seconds} s"
+            );
+        }
+    }
 
-        // Pure tone at 48kHz may detect A major (11B), A minor (8A), or harmonically
-        // related keys like F#m (11A) due to independent voting between profiles.
-        // All are valid for a pure 440Hz tone.
-        let camelot_num: u32 = result.camelot[..result.camelot.len() - 1].parse().unwrap();
-        assert!(
-            camelot_num == 11 || camelot_num == 8,
-            "440Hz at 48kHz should detect A-related key, got {} ({})",
-            result.camelot,
-            result.musical_key
-        );
+    #[test]
+    fn the_same_chords_give_the_same_chroma_at_44_1_and_48_khz() {
+        let chroma = |rate| sum_chromas(&frame_chromas(&a_minor_progression(rate, 20.0, 0.0).samples, rate, 0.0));
+        let (a, b) = (chroma(44100), chroma(48000));
+        let dot: f64 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
+        let norm = |c: &[f64; 12]| c.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let cosine = dot / (norm(&a) * norm(&b));
+        assert!(cosine >= 0.99, "cosine {cosine}: {a:?} against {b:?}");
     }
 
     #[test]
@@ -1086,6 +1103,207 @@ mod tests {
             "Consistent signal across segments should produce decent confidence, got {:.2}",
             result.confidence
         );
+    }
+
+    /// A minor as four chords (Am, Dm, Am, E: i-iv-i-V), 2.5 s each, under a
+    /// kick (a 120 -> 50 Hz sweep, 0.15 s) of amplitude `kick` on every beat
+    /// at 125 BPM; `kick` 0 is the chords alone.
+    fn a_minor_progression(sample_rate: u32, seconds: f64, kick: f64) -> MonoAudio {
+        let chords: [&[f64]; 4] = [
+            &[220.0, 261.63, 329.63],
+            &[293.66, 349.23, 440.0],
+            &[220.0, 261.63, 329.63],
+            &[329.63, 415.30, 493.88],
+        ];
+        let rate = sample_rate as f64;
+        let beat = 60.0 / 125.0;
+        let sweep = (50.0f64 / 120.0).ln() / 0.15;
+        let samples = (0..(rate * seconds) as usize)
+            .map(|i| {
+                let t = i as f64 / rate;
+                let chord = chords[((t / 2.5) as usize) % 4];
+                let mut s = 0.0;
+                for &f in chord {
+                    for (h, w) in [(1.0, 1.0), (2.0, 0.5), (3.0, 0.25), (4.0, 0.125)] {
+                        s += w * (2.0 * PI * f * h * t).sin();
+                    }
+                }
+                s /= chord.len() as f64 * 1.875;
+                let tk = t % beat;
+                if kick > 0.0 && tk < 0.15 {
+                    s += kick
+                        * (2.0 * PI * 120.0 * ((sweep * tk).exp() - 1.0) / sweep).sin()
+                        * (-tk / 0.08).exp();
+                }
+                (s * 0.5) as f32
+            })
+            .collect();
+        MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
+    }
+
+    #[test]
+    fn a_minor_under_a_loud_kick_is_8a() {
+        let result = detect_key_from_samples(&a_minor_progression(44100, 40.0, 1.5)).unwrap();
+        assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
+    }
+
+    /// `chord` held for `seconds`, each note a sawtooth-like tone (partials
+    /// 1 to 10 at 1/h), the usual synth of electronic music.
+    fn sawtooth_chord(chord: &[f64], sample_rate: u32, seconds: f64) -> MonoAudio {
+        let rate = sample_rate as f64;
+        let samples = (0..(rate * seconds) as usize)
+            .map(|i| {
+                let t = i as f64 / rate;
+                let mut s = 0.0;
+                for &f in chord {
+                    for h in 1..=10 {
+                        s += (2.0 * PI * f * h as f64 * t).sin() / h as f64;
+                    }
+                }
+                (s / (chord.len() as f64 * 4.0)) as f32
+            })
+            .collect();
+        MonoAudio { samples, sample_rate, duration_ms: (seconds * 1000.0) as u64 }
+    }
+
+    #[test]
+    fn an_a_minor_chord_on_a_sawtooth_is_8a() {
+        // Each note's 3rd and 6th partials sit a fifth above it. They must
+        // not outweigh the notes themselves, or A minor reads E minor (9A).
+        let result = detect_key_from_samples(&sawtooth_chord(&[220.0, 261.63, 329.63], 44100, 10.0)).unwrap();
+        assert_eq!(result.camelot, "8A", "got {} ({})", result.camelot, result.musical_key);
+    }
+
+    #[test]
+    fn a_profile_picks_the_key_it_was_rotated_to() {
+        // The A minor profile itself, as a chroma: A minor with correlation 1.
+        let chroma: [f64; 12] = std::array::from_fn(|pc| EDMA_MINOR[(pc + 12 - 9) % 12]);
+        let (key, is_minor, best, second) = best_key_of(&chroma, &EDMA_MAJOR, &EDMA_MINOR);
+        assert_eq!((key, is_minor), (9, true));
+        assert!((best - 1.0).abs() < 1e-12 && second < best);
+    }
+
+    #[test]
+    fn a_frame_sums_to_one() {
+        let frame = normalized([2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!((frame.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert_eq!(normalized([0.0; 12]), [0.0; 12]);
+    }
+
+    #[test]
+    fn a_drum_hit_is_not_harmonic() {
+        // 12 frames × 40 bins: a held note in bin 10, a broadband hit in frame 6.
+        let mut spectrogram = vec![vec![0.01f32; 40]; 12];
+        for frame in spectrogram.iter_mut() {
+            frame[10] = 1.0;
+        }
+        for bin in 0..40 {
+            spectrogram[6][bin] = 1.0;
+        }
+        let harmonic = harmonic_part(&spectrogram);
+        assert_eq!(harmonic[3][10], 1.0); // the note stays
+        assert_eq!(harmonic[6][25], 0.0); // the hit goes
+    }
+
+    #[test]
+    fn a_steady_bin_is_kept() {
+        // Equal medians count as harmonic, however faint the bin.
+        let harmonic = harmonic_part(&vec![vec![1e-23f32; 20]; 10]);
+        assert_eq!(harmonic[5][10], 1e-23);
+    }
+
+    /// The plain definition: medians by sorting each window.
+    fn harmonic_part_by_sorting(spectrogram: &[Vec<f32>]) -> Vec<Vec<f32>> {
+        let frames = spectrogram.len();
+        let bins = spectrogram[0].len();
+        let median = |mut values: Vec<f32>| {
+            values.sort_by(f32::total_cmp);
+            values[values.len() / 2]
+        };
+        let (half_t, half_f) = (HPSS_TIME_FRAMES / 2, HPSS_FREQ_BINS / 2);
+        (0..frames)
+            .map(|f| {
+                (0..bins)
+                    .map(|b| {
+                        let t = f.saturating_sub(half_t)..(f + half_t + 1).min(frames);
+                        let h = median(t.map(|g| spectrogram[g][b]).collect());
+                        let p = median(spectrogram[f][b.saturating_sub(half_f)..(b + half_f + 1).min(bins)].to_vec());
+                        if h >= p { spectrogram[f][b] } else { 0.0 }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A spectrogram of `frames` × `bins` values from a fixed seed, with
+    /// repeats and zeros so the windows hold equal values.
+    fn random_spectrogram(frames: usize, bins: usize, seed: u64) -> Vec<Vec<f32>> {
+        let mut state = seed;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        (0..frames)
+            .map(|_| {
+                (0..bins)
+                    .map(|_| match next() % 10 {
+                        0 => 0.0,
+                        1 => 0.5,
+                        r => (next() % 1000) as f32 / (r as f32 * 37.0),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_blocks_give_the_whole_spectrograms_harmonic_part() {
+        let spectrogram = random_spectrogram(100, 30, 42);
+        let whole = harmonic_part(&spectrogram);
+        for block in [1, 3, 4, 5, 7, 64, 99, 100, 512] {
+            let mut blocked = Vec::new();
+            harmonic_part_in_blocks(spectrogram.len(), block, |f| spectrogram[f].clone(), |h| blocked.push(h.to_vec()));
+            assert_eq!(blocked, whole, "block {block}");
+        }
+    }
+
+    #[test]
+    fn a_sorted_window_has_the_sorted_median() {
+        // Fill, slide (replace), then empty a window of 9 over random values
+        // with repeats; after each step its median is that of the values in it.
+        let values: Vec<f32> = random_spectrogram(1, 200, 11).remove(0);
+        let mut window = SortedWindow::<9>::default();
+        let mut held: Vec<f32> = Vec::new();
+        let check = |window: &SortedWindow<9>, held: &[f32]| {
+            let mut sorted = held.to_vec();
+            sorted.sort_by(f32::total_cmp);
+            assert_eq!(window.median(), sorted[sorted.len() / 2], "{sorted:?}");
+        };
+        for &v in &values[..9] {
+            window.insert(v);
+            held.push(v);
+            check(&window, &held);
+        }
+        for (i, &v) in values[9..].iter().enumerate() {
+            window.replace(values[i], v);
+            held.remove(0);
+            held.push(v);
+            check(&window, &held);
+        }
+        while held.len() > 1 {
+            window.remove(held.remove(0));
+            check(&window, &held);
+        }
+    }
+
+    #[test]
+    fn the_running_medians_match_sorting() {
+        for (frames, bins) in [(1, 1), (3, 5), (9, 17), (30, 40), (64, 100)] {
+            let spectrogram = random_spectrogram(frames, bins, 0x9e37_79b9_7f4a_7c15 + frames as u64);
+            assert_eq!(harmonic_part(&spectrogram), harmonic_part_by_sorting(&spectrogram), "{frames} × {bins}");
+        }
     }
 
     #[test]

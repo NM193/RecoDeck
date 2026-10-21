@@ -220,9 +220,46 @@ fn merge_track_columns(conn: &Connection, k: i64, r: i64) -> Result<()> {
     Ok(())
 }
 
-/// Columns that describe a file's own audio: never carried to another copy.
-/// The app regenerates a missing waveform on demand.
-const AUDIO_PICTURE_COLUMNS: [&str; 3] = ["waveform_overview", "waveform_detail", "spectrogram_data"];
+/// track_analysis columns the column-by-column fill leaves alone: the file's
+/// own audio pictures (never carried to another copy; the app regenerates a
+/// missing waveform on demand); the BPM and key, which move in pairs with
+/// their confidence (`fill_analysis_pairs`); and the grid and version, which
+/// belong to the file that was read (spec 2026-10-17, §4). A kept copy
+/// without them is re-analysed.
+const ANALYSIS_NOT_FILLED: [&str; 9] = [
+    "waveform_overview",
+    "waveform_detail",
+    "spectrogram_data",
+    "bpm",
+    "bpm_confidence",
+    "musical_key",
+    "key_confidence",
+    "first_beat_ms",
+    "analysis_version",
+];
+
+/// K takes R's BPM with R's confidence when K has no BPM, and likewise the
+/// key: a value never pairs with another value's confidence. Runs before
+/// `fill_row_from`, which deletes R's row.
+fn fill_analysis_pairs(conn: &Connection, k: i64, r: i64) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO track_analysis (track_id)
+         SELECT ?1 WHERE EXISTS (SELECT 1 FROM track_analysis WHERE track_id = ?2)",
+        params![k, r],
+    )?;
+    for (value, confidence) in [("bpm", "bpm_confidence"), ("musical_key", "key_confidence")] {
+        conn.execute(
+            &format!(
+                "UPDATE track_analysis SET
+                    {value} = (SELECT {value} FROM track_analysis WHERE track_id = ?2),
+                    {confidence} = (SELECT {confidence} FROM track_analysis WHERE track_id = ?2)
+                 WHERE track_id = ?1 AND {value} IS NULL"
+            ),
+            params![k, r],
+        )?;
+    }
+    Ok(())
+}
 
 /// Fills each NULL column of K's row in `table` (keyed by `track_id`) from
 /// R's row, except the `skip` columns. Creates K's row if it has none. Then
@@ -275,7 +312,8 @@ fn merge_one(conn: &Connection, k: i64, r: i64) -> Result<usize> {
         repoint_or_drop(conn, table, "track_id", k, r)?;
     }
     // Partial rows are common (waveform-only, tag-BPM-only): fill column by column.
-    fill_row_from(conn, "track_analysis", k, r, &AUDIO_PICTURE_COLUMNS)?;
+    fill_analysis_pairs(conn, k, r)?;
+    fill_row_from(conn, "track_analysis", k, r, &ANALYSIS_NOT_FILLED)?;
     fill_row_from(conn, "track_deep_analysis", k, r, &[])?;
     merge_cues(conn, k, r)?;
     merge_track_columns(conn, k, r)?;
@@ -782,6 +820,61 @@ mod tests {
             )
             .unwrap();
         assert_eq!(row, (Some(126.0), None, None));
+    }
+
+    #[test]
+    fn bpm_and_key_move_with_their_confidence_and_the_grid_stays_with_its_file() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        // K: a tag BPM (no confidence), no key. R: analysed BPM, grid, key and version.
+        db.conn.execute("INSERT INTO track_analysis (track_id, bpm) VALUES (?1, 124.0)", [k]).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO track_analysis (track_id, bpm, bpm_confidence, first_beat_ms, musical_key, key_confidence, analysis_version)
+                 VALUES (?1, 125.0, 0.9, 137.0, '8A', 0.7, 1)",
+                [r],
+            )
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let row: (Option<f64>, Option<f64>, Option<f64>, Option<String>, Option<f64>, Option<i64>) = db
+            .conn
+            .query_row(
+                "SELECT bpm, bpm_confidence, first_beat_ms, musical_key, key_confidence, analysis_version
+                 FROM track_analysis WHERE track_id = ?1",
+                [k],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (Some(124.0), None, None, Some("8A".into()), Some(0.7), None));
+    }
+
+    #[test]
+    fn a_kept_copy_without_analysis_takes_the_bpm_but_not_the_grid() {
+        let db = db();
+        let k = track(&db, "K");
+        let r = track(&db, "R");
+        db.conn
+            .execute(
+                "INSERT INTO track_analysis (track_id, bpm, bpm_confidence, first_beat_ms, analysis_version)
+                 VALUES (?1, 125.0, 0.9, 137.0, 1)",
+                [r],
+            )
+            .unwrap();
+
+        merge(&db, k, &[r]);
+
+        let row: (Option<f64>, Option<f64>, Option<f64>, Option<i64>) = db
+            .conn
+            .query_row(
+                "SELECT bpm, bpm_confidence, first_beat_ms, analysis_version FROM track_analysis WHERE track_id = ?1",
+                [k],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (Some(125.0), Some(0.9), None, None));
     }
 
     #[test]
