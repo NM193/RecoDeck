@@ -79,7 +79,7 @@ Also out of scope:
 
 ## 1. Measurement tool: `recodeck-eval`
 
-New binary `src-tauri/src/bin/recodeck-eval.rs`, for development only. It never opens the library database.
+New binary `src-tauri/tools/recodeck-eval.rs`, for development only. It never opens the library database.
 
 **Build.** It sits behind a Cargo feature, so the app gains no dependency:
 - `[[bin]] name = "recodeck-eval"`, `required-features = ["eval"]`;
