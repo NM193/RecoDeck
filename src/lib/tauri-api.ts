@@ -1070,7 +1070,10 @@ export const tauriApi = {
 
   // Artwork command
   async getTrackArtwork(trackId: number): Promise<ArrayBuffer> {
-    return await invoke<ArrayBuffer>('get_track_artwork', { trackId })
+    // Raw bytes arrive as an ArrayBuffer over the IPC protocol, but as an
+    // array of numbers when Tauri falls back to postMessage.
+    const bytes = await invoke<ArrayBuffer | number[]>('get_track_artwork', { trackId })
+    return bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer
   },
 
   // Companion server commands

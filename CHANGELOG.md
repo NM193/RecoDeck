@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-24
+
+### Fixed
+- Covers show in the track table of the installed app. Until now every row there showed an empty square
+
 ## [0.11.1] - 2026-10-24
 
 ### Fixed
