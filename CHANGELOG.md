@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-24
+
+### Fixed
+- With crossfade on, the next track no longer stops for a few seconds when the previous one ends
+
+### Changed
+- After a crossfade the next track keeps the tempo it was matched to until it ends, and the next crossfade matches that tempo. Tracks more than 8% apart in tempo (half and double time count, as with Master BPM) crossfade without tempo matching
+
 ## [0.11.0] - 2026-10-21
 
 ### Added
