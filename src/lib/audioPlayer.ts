@@ -40,15 +40,11 @@ export class AudioPlayer {
   private crossfadeRafId: number | null = null
   private outgoingBpm: number | null = null
   private incomingBpm: number | null = null
-  private _bpmRampRafId: number | null = null
   private incomingBaseRate: number = 1.0 // master rate of the track fading in
-  // Master BPM: the rate the current track plays at (1 when master BPM is off).
-  // Crossfade ramps and resets return to this instead of 1.0.
+  // Master BPM: the rate a track is loaded at (1 when master BPM is off). A track
+  // that came in by crossfade keeps the rate it was matched at instead.
   private _baseRate: number = 1.0
   private _masterBpm: number | null = null
-  private _bpmRampStartTime: number = 0
-  private _bpmRampFromRate: number = 1.0
-  private readonly BPM_RAMP_DURATION_MS = 4000 // ms to ramp back to original BPM after crossfade
 
   // Native (Rust decode -> PCM -> WebAudio) fallback for formats WebView can't decode (e.g. ogg on macOS).
   private audioCtx: AudioContext | null = null
@@ -1297,12 +1293,23 @@ export class AudioPlayer {
         this.incomingBpm &&
         this.incomingBpm > 0
       ) {
-        playbackRate = this.outgoingBpm / this.incomingBpm
-        // Clamp playback rate to reasonable range (0.5x to 2x)
-        playbackRate = Math.max(0.5, Math.min(2.0, playbackRate))
-        console.log(
-          `[AudioPlayer] Beatmatch: ${this.outgoingBpm} BPM → ${this.incomingBpm} BPM, playbackRate=${playbackRate.toFixed(3)}`,
-        )
+        // Match the tempo the playing track is heard at: one that came in by
+        // crossfade still plays at the rate it was matched at. The incoming
+        // track keeps its rate to its end (WebKit stalls a playing element
+        // whenever its playbackRate changes), so it is matched only within
+        // MAX_STRETCH, half and double time included, as master BPM does.
+        const heardBpm = this.outgoingBpm * this.audio.playbackRate
+        const match = masterRate(heardBpm, this.incomingBpm)
+        if (match.kind === 'matched') {
+          playbackRate = match.rate
+          console.log(
+            `[AudioPlayer] Beatmatch: ${heardBpm.toFixed(1)} BPM → ${this.incomingBpm} BPM, playbackRate=${playbackRate.toFixed(3)}`,
+          )
+        } else {
+          console.log(
+            `[AudioPlayer] Crossfade without beatmatch: ${heardBpm.toFixed(1)} BPM and ${this.incomingBpm} BPM are too far apart`,
+          )
+        }
       } else {
         console.log(
           '[AudioPlayer] Crossfade without beatmatch (missing BPM data)',
@@ -1418,9 +1425,6 @@ export class AudioPlayer {
     this.audio.removeAttribute('src')
     this.audio.load()
 
-    // Capture beatmatched rate before swap — will ramp back to 1.0 after
-    const matchedRate = this.crossfadeAudio.playbackRate
-
     // Swap: incoming becomes current
     const newAudio = this.crossfadeAudio
     this.audio = newAudio
@@ -1452,19 +1456,12 @@ export class AudioPlayer {
       this.crossfadeRafId = null
     }
 
-    // With master BPM the incoming track keeps its master rate; the player bar
-    // sets the same value again once the track change reaches it.
+    // The incoming track keeps the rate it started at: changing a playing
+    // element's playbackRate stalls it in WebKit (the ramp back to 1.0 that ran
+    // here froze it for seconds). With master BPM that is its master rate, which
+    // the player bar sets again, unchanged, once the track change reaches it.
     if (this._masterBpm != null) {
       this._baseRate = this.incomingBaseRate
-      this.applyRate(this.audio, this._baseRate)
-    } else if (Math.abs(matchedRate - 1.0) > 0.005) {
-      // Start smooth BPM ramp back to 1.0 if beatmatching was active
-      this._bpmRampFromRate = matchedRate
-      this._bpmRampStartTime = Date.now()
-      console.log(
-        `[AudioPlayer] BPM ramp: ${matchedRate.toFixed(3)} → 1.0 over ${this.BPM_RAMP_DURATION_MS}ms`,
-      )
-      this.updateBpmRamp()
     }
 
     // Immediately update position/duration from the new audio element so the
@@ -1491,31 +1488,10 @@ export class AudioPlayer {
     this._isCompletingCrossfade = false
   }
 
-  private updateBpmRamp() {
-    const elapsed = Date.now() - this._bpmRampStartTime
-    const progress = Math.min(1.0, elapsed / this.BPM_RAMP_DURATION_MS)
-    this.audio.playbackRate =
-      this._bpmRampFromRate + (this._baseRate - this._bpmRampFromRate) * progress
-
-    if (progress < 1.0) {
-      this._bpmRampRafId = requestAnimationFrame(() => this.updateBpmRamp())
-    } else {
-      this.audio.playbackRate = this._baseRate
-      this._bpmRampRafId = null
-      console.log('[AudioPlayer] BPM ramp complete, playbackRate restored')
-    }
-  }
-
   private abortCrossfade() {
     if (this.crossfadeRafId !== null) {
       cancelAnimationFrame(this.crossfadeRafId)
       this.crossfadeRafId = null
-    }
-
-    // Cancel any in-progress BPM ramp
-    if (this._bpmRampRafId !== null) {
-      cancelAnimationFrame(this._bpmRampRafId)
-      this._bpmRampRafId = null
     }
 
     if (this.crossfadeAudio) {
@@ -1526,10 +1502,10 @@ export class AudioPlayer {
     }
     this.crossfadeTrackId = null
 
-    // Restore outgoing track volume and playback rate
+    // Restore outgoing track volume. Its rate is left alone: a crossfade never
+    // changes it, and changing a playing element's rate stalls it in WebKit.
     if (this.audio) {
       this.audio.volume = 1.0
-      this.audio.playbackRate = this._baseRate
     }
 
     this.isCrossfading = false
